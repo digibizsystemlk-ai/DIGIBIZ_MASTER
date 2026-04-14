@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distributor HQ - DIGIBIZ</title>
+    <style>
+        html.digibiz-sidebar-reserved body { margin-left: 260px; }
+        @media (max-width: 768px) {
+            html.digibiz-sidebar-reserved body { margin-left: 0; }
+        }
+        /* Keep main column beside fixed sidebar; avoid overlap with high z-index nav */
+        #sidebar-container {
+            position: relative;
+            z-index: 0;
+        }
+        .main-content {
+            position: relative;
+            z-index: 1;
+            min-width: 0;
+        }
+    </style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=31"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/auth-roles.js?v=31"></script>
+    <script src="/core/business-types.js?v=31"></script>
+    <script src="/core/dashboard-core.js?v=31"></script>
+    <script src="/core/subscription-manager.js?v=2"></script>
+    <script src="/core/distributor-inventory.js?v=31"></script>
+    <script src="/core/mw-trading-dsl-config.js?v=31"></script>
+    <script src="/core/sidebar.js?v=31"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #f3f4f6;
+        }
+        /* Sidebar handles the margin - DO NOT add margin-left here */
+        .main-content {
+            padding: 24px;
+            min-height: 100vh;
+        }
+        .page-header {
+            margin-bottom: 24px;
+        }
+        .page-header h1 {
+            font-size: 24px;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+        .page-header p {
+            color: #6b7280;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stat-title {
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #10b981;
+        }
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .tab {
+            padding: 8px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            background: #f3f4f6;
+            transition: all 0.2s;
+        }
+        .tab.active {
+            background: #10b981;
+            color: white;
+        }
+        .orders-table {
+            background: white;
+            border-radius: 16px;
+            overflow-x: auto;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .rep-summary {
+            background: white;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .rep-summary-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        .rep-summary-head h3 {
+            font-size: 16px;
+            color: #111827;
+        }
+        .rep-filter {
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 12px;
+        }
+        .rep-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .rep-table th, .rep-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+        }
+        .rep-table th {
+            background: #f9fafb;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 800px;
+        }
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        th {
+            background: #f9fafb;
+            font-weight: 600;
+            color: #374151;
+        }
+        .status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            display: inline-block;
+        }
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .status-approved {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .status-dispatched {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        .status-delivered {
+            background: #ccfbf1;
+            color: #115e59;
+        }
+        .status-rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .btn {
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            margin: 2px;
+        }
+        .btn-approve {
+            background: #10b981;
+            color: white;
+        }
+        .btn-reject {
+            background: #ef4444;
+            color: white;
+        }
+        .btn-view {
+            background: #3b82f6;
+            color: white;
+        }
+        .btn-dispatch {
+            background: #8b5cf6;
+            color: white;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 10050;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-content h3 {
+            margin-bottom: 16px;
+        }
+        .order-detail-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #9ca3af;
+        }
+        .btn-print {
+            background: #0f766e;
+            color: white;
+        }
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .main-content {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar-container"></div>
+    <div class="main-content">
+        <div class="page-header">
+            <h1>📑 Order Status</h1>
+            <p>Pending queue and all rep orders in one place — approve, reject, dispatch, and mark delivered.</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-title">⏳ Pending</div>
+                <div class="stat-value" id="pendingCount">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">✅ Approved</div>
+                <div class="stat-value" id="approvedCount">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">❌ Rejected</div>
+                <div class="stat-value" id="rejectedCount">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">🚚 Dispatched</div>
+                <div class="stat-value" id="dispatchedCount">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">📬 Delivered</div>
+                <div class="stat-value" id="deliveredCount">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">📦 Today (all)</div>
+                <div class="stat-value" id="todayCount">-</div>
+            </div>
+        </div>
+        <div class="rep-summary">
+            <div class="rep-summary-head">
+                <h3>📌 Rep Summary</h3>
+                <select id="repFilter" class="rep-filter">
+                    <option value="ALL">All Reps</option>
+                </select>
+            </div>
+            <table class="rep-table">
+                <thead>
+                    <tr>
+                        <th>Rep</th>
+                        <th>Total Orders</th>
+                        <th>Free Issues</th>
+                        <th>Collections</th>
+                    </tr>
+                </thead>
+                <tbody id="repSummaryList">
+                    <tr><td colspan="4" class="loading">Loading rep summary...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-status="pending" onclick="switchTab('pending')">⏳ Pending</div>
+            <div class="tab" data-status="approved" onclick="switchTab('approved')">✅ Approved</div>
+            <div class="tab" data-status="rejected" onclick="switchTab('rejected')">❌ Rejected</div>
+            <div class="tab" data-status="dispatched" onclick="switchTab('dispatched')">🚚 Dispatched</div>
+            <div class="tab" data-status="delivered" onclick="switchTab('delivered')">📬 Delivered</div>
+            <div class="tab" data-status="all" onclick="switchTab('all')">📋 All</div>
+        </div>
+        <script>
+            (function () {
+                try {
+                    var p = new URLSearchParams(window.location.search).get('tab');
+                    if (!['pending', 'approved', 'rejected', 'dispatched', 'delivered', 'all'].includes(p)) return;
+                    document.querySelectorAll('.tabs .tab').forEach(function (t) { t.classList.remove('active'); });
+                    var el = document.querySelector('.tabs .tab[data-status="' + p + '"]');
+                    if (el) el.classList.add('active');
+                } catch (e) {}
+            })();
+        </script>
+
+        <div class="orders-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Order #</th>
+                        <th>Date</th>
+                        <th>Rep</th>
+                        <th>Shop</th>
+                        <th>Brands</th>
+                        <th>Items</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="ordersList">
+                    <tr><td colspan="9" class="loading">Loading orders...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Order Details Modal -->
+    <div id="orderModal" class="modal">
+        <div class="modal-content">
+            <h3 id="modalTitle">Order Details</h3>
+            <div id="modalBody"></div>
+            <div id="modalActions" style="margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end;"></div>
+            <button onclick="closeModal()" style="margin-top: 16px; padding: 8px; width: 100%; background: #f3f4f6; border: none; border-radius: 8px;">Close</button>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let currentBusinessId = null;
+        const ORDER_TABS = ['pending', 'approved', 'rejected', 'dispatched', 'delivered', 'all'];
+        const urlTabParam = (typeof URLSearchParams !== 'undefined')
+            ? new URLSearchParams(window.location.search).get('tab')
+            : null;
+        let currentStatus = ORDER_TABS.includes(urlTabParam)
+            ? urlTabParam
+            : 'pending';
+        let allOrders = [];
+        let repSummaryRows = [];
+        let currentBusinessName = '';
+        let currentBusinessData = null;
+
+        function escapeBillHtml(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function summarizeLineBrands(order) {
+            const items = Array.isArray(order.items) ? order.items : [];
+            const set = new Set();
+            items.forEach((item) => {
+                const b = String(item.productBrand || item.brand || '').trim();
+                if (b) set.add(b);
+            });
+            const arr = Array.from(set);
+            if (!arr.length) return '—';
+            const shown = arr.slice(0, 4).join(', ');
+            return arr.length > 4 ? `${shown}…` : shown;
+        }
+
+        function formatBillMoney(n) {
+            const v = Number(n) || 0;
+            return `Rs ${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+
+        function thermalBillSharedCss() {
+            return `@page { size: 80mm auto; margin: 4mm; }
+html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Segoe UI',Arial,sans-serif;font-size:11px;}
+.bill{width:72mm;max-width:72mm;margin:0 auto;}
+.dsl-title{font-family:Impact,'Arial Black',Arial,sans-serif;font-size:15px;letter-spacing:0.04em;text-align:center;line-height:1.15;text-transform:uppercase;}
+.biz-title{font-family:Impact,'Arial Black',Arial,sans-serif;font-size:14px;text-align:center;line-height:1.2;text-transform:uppercase;}
+.dsl-sub,.biz-sub{font-size:10px;text-align:center;margin-top:4px;line-height:1.35;}
+.meta{margin-top:8px;font-size:10px;line-height:1.45;}
+.meta-row{display:flex;justify-content:space-between;gap:4px;border-bottom:1px dotted #ccc;padding:2px 0;}
+.bill-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:9px;}
+.bill-table th,.bill-table td{border:1px solid #000;padding:3px 4px;vertical-align:top;}
+.bill-table th{font-size:7.5px;text-align:center;background:#f0f0f0;line-height:1.2;}
+.bill-item-name{white-space:normal;word-break:break-word;}
+.bill-qtyrate{font-size:8px;margin-top:2px;color:#222;}
+.bill-num{text-align:right;white-space:nowrap;}
+.summary{margin-top:10px;font-size:10px;line-height:1.5;}
+.summary-row{display:flex;justify-content:space-between;border-bottom:1px dotted #999;padding:2px 0;}
+.footer{margin-top:12px;text-align:center;font-size:10px;font-weight:600;}
+.agent-note{margin-top:8px;text-align:center;font-size:9px;font-weight:600;}
+.softby{margin-top:8px;text-align:center;font-size:7px;color:#333;line-height:1.35;}`;
+        }
+
+        function computeBillLines(order) {
+            let subTotal = 0;
+            const items = Array.isArray(order.items) ? order.items : [];
+            const rows = items.map((item) => {
+                const name = item.productName || 'Item';
+                const brand = String(item.productBrand || '').trim();
+                const rate = Number(item.unitPrice) || 0;
+                const oq = Number(item.orderedQty) || 0;
+                const fq = Number(item.freeQty) || 0;
+                const rq = Number(item.returnQty) || 0;
+                const lineTotal = Number(item.totalPrice) != null && !Number.isNaN(Number(item.totalPrice))
+                    ? Number(item.totalPrice)
+                    : (oq * rate + fq * rate - rq * rate);
+                subTotal += lineTotal;
+                const qtyRateLine = `${oq} × ${formatBillMoney(rate)}`;
+                const brandLine = brand ? `<div class="bill-qtyrate" style="font-style:italic;">Brand: ${escapeBillHtml(brand)}</div>` : '';
+                return `
+                    <tr>
+                        <td class="bill-item-name">${escapeBillHtml(name).replace(/\n/g, '<br>')}${brandLine}<div class="bill-qtyrate">${escapeBillHtml(qtyRateLine)}</div></td>
+                        <td class="bill-num">${fq}</td>
+                        <td class="bill-num">${rq}</td>
+                        <td class="bill-num">${lineTotal.toFixed(2)}</td>
+                    </tr>`;
+            }).join('');
+            const total = Number(order.totalAmount) != null ? Number(order.totalAmount) : subTotal;
+            const paid = Number(order.collectionAmount) || Number(order.collectedAmount) || 0;
+            const payMethod = String(order.paymentMethod || 'CASH').toUpperCase();
+            const paidCash = payMethod === 'CASH' && paid === 0 ? total : paid;
+            const balance = Math.max(0, total - paidCash);
+            return { rows, subTotal, total, paidCash, balance };
+        }
+
+        function buildMetaBlockHtml(order, shopData) {
+            const customer = order.shopName || 'Walk-in';
+            const custAddr = (shopData && (shopData.address || shopData.shopAddress)) || order.customerAddress || '';
+            const billNo = order.orderNumber || order.id;
+            const cashier = order.repName || order.repId || '—';
+            const dt = order.orderDate?.toDate ? order.orderDate.toDate() : (order.orderDate ? new Date(order.orderDate) : new Date());
+            const dtStr = dt.toLocaleString('en-LK', { hour12: true });
+            return `
+<div class="meta">
+<div class="meta-row"><span>Customer</span><span style="text-align:right;max-width:55%">${escapeBillHtml(customer)}</span></div>
+<div class="meta-row"><span>Address</span><span style="text-align:right;max-width:55%">${escapeBillHtml(custAddr) || '—'}</span></div>
+<div class="meta-row"><span>Bill No</span><span>${escapeBillHtml(String(billNo))}</span></div>
+<div class="meta-row"><span>Cashier (Rep)</span><span>${escapeBillHtml(String(cashier))}</span></div>
+<div class="meta-row"><span>Date &amp; Time</span><span>${escapeBillHtml(dtStr)}</span></div>
+</div>`;
+        }
+
+        function buildMwDslThermalBillHtml(order, shopData) {
+            const cfg = window.DigibizMwDslConfig || {};
+            const billNo = order.orderNumber || order.id;
+            const { rows, subTotal, total, paidCash, balance } = computeBillLines(order);
+            const meta = buildMetaBlockHtml(order, shopData);
+            const tableBody = rows || '<tr><td colspan="4" style="text-align:center">No items</td></tr>';
+            return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bill ${escapeBillHtml(billNo)}</title>
+<style>${thermalBillSharedCss()}</style></head><body><div class="bill">
+<div class="dsl-title">${escapeBillHtml(cfg.DSL_HEADER || 'DSL ENTERPRISES')}</div>
+<div class="dsl-sub">${escapeBillHtml(cfg.DSL_SUBHEADER || '')}</div>
+${meta}
+<table class="bill-table">
+<thead><tr>
+<th>Item / brand (Qty × Rate)</th><th>Free Qty</th><th>Return Qty</th><th>Amount</th>
+</tr></thead><tbody>${tableBody}</tbody></table>
+<div class="summary">
+<div class="summary-row"><span>Sub Total</span><span>${subTotal.toFixed(2)}</span></div>
+<div class="summary-row"><span>Total</span><span>${total.toFixed(2)}</span></div>
+<div class="summary-row"><span>Paid (Cash)</span><span>${paidCash.toFixed(2)}</span></div>
+<div class="summary-row"><span>Balance</span><span>${balance.toFixed(2)}</span></div>
+</div>
+<div class="footer">Thank You! Come Again......</div>
+<div class="agent-note">${escapeBillHtml(cfg.AGENT_FOOTER_NOTE || 'Agent: MW Trading Solutions')}</div>
+<div class="softby">${escapeBillHtml(cfg.FOOTER_DIGIBIZ || 'Software Solution by DIGIBIZ - 0713446500')}</div>
+</div></body></html>`;
+        }
+
+        function buildGenericThermalBillHtml(order, shopData, bizData) {
+            const cfg = window.DigibizMwDslConfig || {};
+            const billNo = order.orderNumber || order.id;
+            const biz = bizData || {};
+            const title = String(biz.name || 'Invoice').trim() || 'Invoice';
+            const subLine = [biz.address, biz.city, biz.phone || biz.telephone || biz.mobile].filter(Boolean).join(' | ') || ' ';
+            const { rows, subTotal, total, paidCash, balance } = computeBillLines(order);
+            const meta = buildMetaBlockHtml(order, shopData);
+            const tableBody = rows || '<tr><td colspan="4" style="text-align:center">No items</td></tr>';
+            return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bill ${escapeBillHtml(billNo)}</title>
+<style>${thermalBillSharedCss()}</style></head><body><div class="bill">
+<div class="biz-title">${escapeBillHtml(title)}</div>
+<div class="biz-sub">${escapeBillHtml(subLine)}</div>
+${meta}
+<table class="bill-table">
+<thead><tr>
+<th>Item / brand (Qty × Rate)</th><th>Free Qty</th><th>Return Qty</th><th>Amount</th>
+</tr></thead><tbody>${tableBody}</tbody></table>
+<div class="summary">
+<div class="summary-row"><span>Sub Total</span><span>${subTotal.toFixed(2)}</span></div>
+<div class="summary-row"><span>Total</span><span>${total.toFixed(2)}</span></div>
+<div class="summary-row"><span>Paid (Cash)</span><span>${paidCash.toFixed(2)}</span></div>
+<div class="summary-row"><span>Balance</span><span>${balance.toFixed(2)}</span></div>
+</div>
+<div class="footer">Thank You! Come Again......</div>
+<div class="softby">${escapeBillHtml(cfg.FOOTER_DIGIBIZ || 'Software Solution by DIGIBIZ - 0713446500')}</div>
+</div></body></html>`;
+        }
+
+        async function printDistributorThermalBill(orderId) {
+            const order = allOrders.find((o) => o.id === orderId);
+            if (!order) return;
+            let shopData = null;
+            try {
+                if (order.shopId) {
+                    const s = await db.collection('shops').doc(order.shopId).get();
+                    if (s.exists) shopData = s.data();
+                }
+            } catch (e) {
+                console.warn('Shop lookup failed', e);
+            }
+            const isMw = !!(window.DigibizMwDslConfig && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
+            const html = isMw
+                ? buildMwDslThermalBillHtml(order, shopData)
+                : buildGenericThermalBillHtml(order, shopData, currentBusinessData);
+            const w = window.open('', '_blank', 'width=400,height=700');
+            if (!w) {
+                alert('Please allow pop-ups to print the bill.');
+                return;
+            }
+            w.document.open();
+            w.document.write(html);
+            w.document.close();
+            setTimeout(() => {
+                try {
+                    w.focus();
+                    w.print();
+                } catch (e) {
+                    console.warn('Print failed', e);
+                }
+                setTimeout(() => {
+                    try { w.close(); } catch (e2) {}
+                }, 500);
+            }, 350);
+        }
+
+        async function loadStats() {
+            try {
+                const pendingSnapshot = await db.collection('pendingOrders')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                const approvedSnapshot = await db.collection('orders')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                
+                let pending = 0, approved = 0, rejected = 0, dispatched = 0, delivered = 0, today = 0;
+                const todayStart = new Date();
+                todayStart.setHours(0, 0, 0, 0);
+                
+                pendingSnapshot.docs.forEach(doc => {
+                    const order = doc.data();
+                    pending++;
+                    const orderDate = order.orderDate?.toDate ? order.orderDate.toDate() : null;
+                    if (orderDate && orderDate >= todayStart) today++;
+                });
+                approvedSnapshot.docs.forEach(doc => {
+                    const order = doc.data();
+                    const status = String(order.status || '').toLowerCase();
+                    if (status === 'approved') approved++;
+                    if (status === 'rejected') rejected++;
+                    if (status === 'dispatched') dispatched++;
+                    if (status === 'delivered') delivered++;
+                    const orderDate = order.orderDate?.toDate ? order.orderDate.toDate() : null;
+                    if (orderDate && orderDate >= todayStart) today++;
+                });
+                
+                document.getElementById('pendingCount').innerText = pending;
+                document.getElementById('approvedCount').innerText = approved;
+                document.getElementById('rejectedCount').innerText = rejected;
+                document.getElementById('dispatchedCount').innerText = dispatched;
+                document.getElementById('deliveredCount').innerText = delivered;
+                document.getElementById('todayCount').innerText = today;
+                
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function enrichOrderRow(doc, forcedStatus) {
+            const order = doc.data();
+            let repName = order.repId;
+            try {
+                const repDoc = await db.collection('reps').doc(order.repId).get();
+                if (repDoc.exists) repName = repDoc.data().name;
+            } catch (e) { /* ignore */ }
+            let shopName = order.shopId;
+            try {
+                const shopDoc = await db.collection('shops').doc(order.shopId).get();
+                if (shopDoc.exists) shopName = shopDoc.data().name;
+            } catch (e2) { /* ignore */ }
+            const normalizedStatus = forcedStatus != null ? forcedStatus : String(order.status || '').toLowerCase();
+            return {
+                id: doc.id,
+                ...order,
+                status: normalizedStatus,
+                repName,
+                shopName
+            };
+        }
+
+        async function loadOrders() {
+            try {
+                let orders = [];
+                if (currentStatus === 'all') {
+                    const [pSnap, oSnap] = await Promise.all([
+                        db.collection('pendingOrders')
+                            .where('businessId', '==', currentBusinessId)
+                            .orderBy('orderDate', 'desc')
+                            .limit(80)
+                            .get(),
+                        db.collection('orders')
+                            .where('businessId', '==', currentBusinessId)
+                            .orderBy('orderDate', 'desc')
+                            .limit(80)
+                            .get()
+                    ]);
+                    const pendingRows = await Promise.all(pSnap.docs.map((d) => enrichOrderRow(d, 'pending')));
+                    const orderRows = await Promise.all(oSnap.docs.map((d) => enrichOrderRow(d, null)));
+                    orders = [...pendingRows, ...orderRows].sort((a, b) => {
+                        const ta = a.orderDate?.toDate ? a.orderDate.toDate().getTime() : 0;
+                        const tb = b.orderDate?.toDate ? b.orderDate.toDate().getTime() : 0;
+                        return tb - ta;
+                    }).slice(0, 120);
+                } else if (currentStatus === 'pending') {
+                    const snapshot = await db.collection('pendingOrders')
+                        .where('businessId', '==', currentBusinessId)
+                        .orderBy('orderDate', 'desc')
+                        .limit(100)
+                        .get();
+                    orders = await Promise.all(snapshot.docs.map((d) => enrichOrderRow(d, 'pending')));
+                } else {
+                    let query = db.collection('orders')
+                        .where('businessId', '==', currentBusinessId)
+                        .where('status', '==', currentStatus)
+                        .orderBy('orderDate', 'desc');
+                    const snapshot = await query.limit(100).get();
+                    orders = await Promise.all(snapshot.docs.map((d) => enrichOrderRow(d, null)));
+                }
+
+                allOrders = orders;
+                displayOrders();
+                
+            } catch (error) {
+                console.error('Error loading orders:', error);
+                document.getElementById('ordersList').innerHTML = '<tr><td colspan="9" class="loading">Error loading orders</td></tr>';
+            }
+        }
+
+        function renderRepSummaryTable() {
+            const tbody = document.getElementById('repSummaryList');
+            const selectedRep = document.getElementById('repFilter').value;
+            const rows = repSummaryRows.filter((row) => selectedRep === 'ALL' || row.repId === selectedRep);
+            tbody.innerHTML = rows.map((row) => `
+                <tr>
+                    <td>${row.repName}</td>
+                    <td>${row.totalOrders}</td>
+                    <td>${row.freeIssues}</td>
+                    <td>Rs ${(row.collections || 0).toLocaleString()}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="4" class="loading">No rep data</td></tr>';
+        }
+
+        async function loadRepSummary() {
+            try {
+                const pendingSnapshot = await db.collection('pendingOrders')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                const approvedSnapshot = await db.collection('orders')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                const repMap = {};
+                [...pendingSnapshot.docs, ...approvedSnapshot.docs].forEach((doc) => {
+                    const order = doc.data();
+                    const repId = order.repId || 'UNASSIGNED';
+                    const repName = order.repName || order.salesRepName || order.repId || 'Unassigned Rep';
+                    if (!repMap[repId]) {
+                        repMap[repId] = { repId, repName, totalOrders: 0, freeIssues: 0, collections: 0 };
+                    }
+                    repMap[repId].totalOrders += 1;
+                    const freeIssues = Array.isArray(order.items)
+                        ? order.items.reduce((sum, item) => sum + (Number(item.freeQty) || 0), 0)
+                        : 0;
+                    repMap[repId].freeIssues += freeIssues;
+                    repMap[repId].collections += Number(order.collectionAmount) || Number(order.collectedAmount) || 0;
+                });
+                repSummaryRows = Object.values(repMap).sort((a, b) => b.totalOrders - a.totalOrders);
+                const filter = document.getElementById('repFilter');
+                const current = filter.value;
+                filter.innerHTML = '<option value="ALL">All Reps</option>' + repSummaryRows
+                    .map((row) => `<option value="${row.repId}">${row.repName}</option>`).join('');
+                filter.value = repSummaryRows.some((row) => row.repId === current) ? current : 'ALL';
+                renderRepSummaryTable();
+            } catch (error) {
+                console.error('Error loading rep summary:', error);
+            }
+        }
+
+        function displayOrders() {
+            const tbody = document.getElementById('ordersList');
+            
+            if (allOrders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="loading">No orders found</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = allOrders.map(order => {
+                const itemCount = order.items?.reduce((sum, i) => sum + (i.orderedQty || 0) + (i.freeQty || 0), 0) || 0;
+                const brands = summarizeLineBrands(order);
+                return `
+                    <tr>
+                        <td><strong>${order.orderNumber || order.id.slice(-8)}</strong></td>
+                        <td>${order.orderDate?.toDate ? new Date(order.orderDate.toDate()).toLocaleDateString() : '-'}</td>
+                        <td>${order.repName}</td>
+                        <td>${order.shopName}</td>
+                        <td style="max-width:180px;font-size:12px;color:#475569;">${brands}</td>
+                        <td>${itemCount} items</td>
+                        <td>Rs ${(order.totalAmount || 0).toLocaleString()}</td>
+                        <td><span class="status status-${order.status}">${order.status}</span></td>
+                        <td>${getActionButtons(order)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function thermalPrintBtn(orderId) {
+            return `<button type="button" class="btn btn-print" onclick="printDistributorThermalBill('${orderId}')">🖨 80mm</button>`;
+        }
+
+        function getActionButtons(order) {
+            if (order.status === 'pending') {
+                return `
+                    <button class="btn btn-approve" onclick="approveOrder('${order.id}')">✓ Approve</button>
+                    <button class="btn btn-reject" onclick="rejectOrder('${order.id}')">✕ Reject</button>
+                    <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
+                    ${thermalPrintBtn(order.id)}
+                `;
+            } else if (order.status === 'approved') {
+                return `
+                    <button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}')">🚚 Dispatch</button>
+                    <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
+                    ${thermalPrintBtn(order.id)}
+                `;
+            } else if (order.status === 'dispatched') {
+                return `
+                    <button class="btn btn-approve" onclick="markDelivered('${order.id}')">📬 Delivered</button>
+                    <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
+                    ${thermalPrintBtn(order.id)}
+                `;
+            } else {
+                return `
+                    <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
+                    ${thermalPrintBtn(order.id)}
+                `;
+            }
+        }
+
+        async function adjustInventoryForApprovedOrder(order) {
+            const inv = window.DigiBizDistributorInventory;
+            const batch = db.batch();
+            const items = Array.isArray(order.items) ? order.items : [];
+            const productsSnap = await db.collection('products').where('businessId', '==', currentBusinessId).get();
+            const byId = {};
+            const byName = {};
+            productsSnap.docs.forEach((doc) => {
+                byId[doc.id] = doc;
+                byName[String(doc.data().name || '').toLowerCase()] = doc;
+            });
+            items.forEach((item) => {
+                const delta = inv ? inv.orderApprovalStockDelta(item) : -(Number(item.orderedQty) || 0) - (Number(item.freeQty) || 0) + (Number(item.returnQty) || 0);
+                if (!delta) return;
+                const productDoc = item.productId ? byId[item.productId] : byName[String(item.productName || '').toLowerCase()];
+                if (!productDoc) return;
+                const cur = inv ? inv.numericStock(productDoc.data()) : (Number(productDoc.data().stock) || 0);
+                const next = Math.max(0, cur + delta);
+                const payload = inv ? inv.syncStockPayload(next) : { stock: next, currentStock: next };
+                batch.update(productDoc.ref, { ...payload, updatedAt: new Date() });
+            });
+            await batch.commit();
+        }
+
+        async function approveOrder(orderId) {
+            if (!confirm('Approve this order?')) return;
+            try {
+                const order = allOrders.find(o => o.id === orderId);
+                if (!order) return;
+                const pendingRef = db.collection('pendingOrders').doc(orderId);
+                await adjustInventoryForApprovedOrder(order);
+                const approvedPayload = {
+                    ...order,
+                    status: 'approved',
+                    approvedBy: currentUser?.uid,
+                    approvedAt: new Date(),
+                    source: 'pendingOrders'
+                };
+                await db.collection('orders').doc(orderId).set(approvedPayload);
+                await pendingRef.delete();
+                if (window.eventBus && order) {
+                    window.eventBus.publish('DISTRIBUTOR_ORDER_APPROVED', {
+                        orderId,
+                        orderNo: order.orderNumber || orderId,
+                        amount: Number(order.totalAmount) || 0,
+                        businessId: currentBusinessId,
+                        approvedBy: currentUser?.uid || ''
+                    });
+                }
+                alert('Order approved!');
+                loadStats();
+                loadOrders();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error approving order');
+            }
+        }
+
+        async function dispatchOrder(orderId) {
+            if (!confirm('Mark as dispatched?')) return;
+            try {
+                await db.collection('orders').doc(orderId).update({
+                    status: 'dispatched',
+                    dispatchedAt: new Date()
+                });
+                alert('Order dispatched!');
+                loadStats();
+                loadOrders();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error dispatching order');
+            }
+        }
+
+        async function rejectOrder(orderId) {
+            if (!confirm('Reject this order? It will leave the pending queue and be recorded as rejected.')) return;
+            try {
+                const order = allOrders.find((o) => o.id === orderId);
+                if (!order || order.status !== 'pending') return;
+                const pendingRef = db.collection('pendingOrders').doc(orderId);
+                const rejectedPayload = {
+                    ...order,
+                    status: 'rejected',
+                    rejectedBy: currentUser?.uid,
+                    rejectedAt: new Date(),
+                    source: 'pendingOrders'
+                };
+                await db.collection('orders').doc(orderId).set(rejectedPayload);
+                await pendingRef.delete();
+                alert('Order rejected.');
+                loadStats();
+                loadOrders();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error rejecting order');
+            }
+        }
+
+        async function markDelivered(orderId) {
+            if (!confirm('Mark this order as delivered?')) return;
+            try {
+                await db.collection('orders').doc(orderId).update({
+                    status: 'delivered',
+                    deliveredAt: new Date()
+                });
+                alert('Marked as delivered.');
+                loadStats();
+                loadOrders();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error updating order');
+            }
+        }
+
+        async function viewOrder(orderId) {
+            const order = allOrders.find(o => o.id === orderId);
+            if (!order) return;
+            
+            const modal = document.getElementById('orderModal');
+            const modalBody = document.getElementById('modalBody');
+            const modalActions = document.getElementById('modalActions');
+            
+            document.getElementById('modalTitle').innerHTML = `📦 Order ${order.orderNumber || order.id.slice(-8)}`;
+            
+            let itemsHtml = '<div style="margin-bottom: 16px;"><strong>Items:</strong></div>';
+            order.items?.forEach(item => {
+                const rc = Number(item.returnCompanyQty) || 0;
+                const rr = Number(item.returnResellQty) || 0;
+                const leg = Number(item.returnQty) || 0;
+                let retLine = '';
+                if (rc || rr) {
+                    if (rc) retLine += `<div style="font-size: 11px; color: #b45309;">↩️ Return to company: ${rc}</div>`;
+                    if (rr) retLine += `<div style="font-size: 11px; color: #047857;">↩️ Return to resell: ${rr}</div>`;
+                } else if (leg) {
+                    retLine += `<div style="font-size: 11px; color: #6b7280;">↩️ Return: ${leg} (${item.returnReason || '—'})</div>`;
+                }
+                const pb = String(item.productBrand || '').trim();
+                itemsHtml += `
+                    <div class="order-detail-item">
+                        ${item.productName}${pb ? `<span style="font-size:12px;color:#64748b;"> · ${pb}</span>` : ''}<br>
+                        <span style="font-size: 12px; color: #6b7280;">
+                            Qty: ${item.orderedQty || 0} units
+                            ${item.freeQty ? `+ ${item.freeQty} FREE` : ''}
+                            @ Rs ${item.unitPrice}
+                        </span>
+                        ${item.freeReason ? `<div style="font-size: 11px; color: #92400e;">🎁 ${item.freeReason}</div>` : ''}
+                        ${retLine}
+                    </div>
+                `;
+            });
+            
+            let returnsHtml = '';
+            if (order.returns?.length > 0) {
+                returnsHtml = '<div style="margin-top: 16px;"><strong>Returns:</strong></div>';
+                order.returns.forEach(ret => {
+                    returnsHtml += `
+                        <div class="order-detail-item">
+                            ${ret.productName}<br>
+                            <span style="font-size: 12px; color: #ef4444;">
+                                Qty: ${ret.returnQty} | Reason: ${ret.reason}
+                            </span>
+                        </div>
+                    `;
+                });
+            }
+            
+            modalBody.innerHTML = `
+                <div><strong>Shop:</strong> ${order.shopName}</div>
+                <div><strong>Rep:</strong> ${order.repName}</div>
+                <div><strong>Date:</strong> ${order.orderDate?.toDate ? new Date(order.orderDate.toDate()).toLocaleString() : '-'}</div>
+                <div style="margin: 12px 0;"><strong>Status:</strong> <span class="status status-${order.status}">${order.status}</span></div>
+                ${itemsHtml}
+                ${returnsHtml}
+                <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
+                    <strong>Total Amount: Rs ${(order.totalAmount || 0).toLocaleString()}</strong>
+                </div>
+            `;
+            
+            const print80 = `<button type="button" class="btn btn-print" onclick="printDistributorThermalBill('${order.id}')">🖨 Print 80mm</button>`;
+            if (order.status === 'pending') {
+                modalActions.innerHTML = `${print80}<button class="btn btn-approve" onclick="approveOrder('${order.id}'); closeModal();">✓ Approve</button><button class="btn btn-reject" onclick="rejectOrder('${order.id}'); closeModal();">✕ Reject</button>`;
+            } else if (order.status === 'approved') {
+                modalActions.innerHTML = `${print80}<button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}'); closeModal();">🚚 Dispatch</button>`;
+            } else if (order.status === 'dispatched') {
+                modalActions.innerHTML = `${print80}<button class="btn btn-approve" onclick="markDelivered('${order.id}'); closeModal();">📬 Delivered</button>`;
+            } else {
+                modalActions.innerHTML = print80;
+            }
+            
+            modal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('orderModal').style.display = 'none';
+        }
+
+        function switchTab(status) {
+            currentStatus = status;
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            const t = document.querySelector(`.tab[data-status="${status}"]`);
+            if (t) t.classList.add('active');
+            try {
+                const u = new URL(window.location.href);
+                u.searchParams.set('tab', status);
+                history.replaceState(null, '', u.pathname + '?' + u.searchParams.toString());
+            } catch (e) { /* ignore */ }
+            loadOrders();
+        }
+
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (user) {
+                currentUser = user;
+                const roleInfo = window.getUserRole ? await window.getUserRole(user.uid) : null;
+                const userRole = String(roleInfo?.role || '').toUpperCase();
+                if (userRole === 'REP') {
+                    window.location.href = '/modules/distributor/mobile/order.html';
+                    return;
+                }
+                currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                if (!currentBusinessId) {
+                    const context = window.dashboardCore ? await window.dashboardCore.getContext(user) : null;
+                    currentBusinessId = context ? context.businessId : null;
+                }
+                if (!currentBusinessId) {
+                    alert('Please select a business first');
+                    window.location.href = '/modules/core/dashboard.html';
+                    return;
+                }
+                localStorage.setItem('currentBusinessId', currentBusinessId);
+                sessionStorage.setItem('currentBusinessId', currentBusinessId);
+                try {
+                    const bdSnap = await db.collection('businesses').doc(currentBusinessId).get();
+                    currentBusinessData = bdSnap.exists ? bdSnap.data() : null;
+                    currentBusinessName = currentBusinessData ? String(currentBusinessData.name || '') : '';
+                    if (window.DigibizMwDslConfig) {
+                        await window.DigibizMwDslConfig.ensureMwTradingTenantProvisioned(db, currentBusinessId);
+                        const bdAfter = await db.collection('businesses').doc(currentBusinessId).get();
+                        if (bdAfter.exists) {
+                            currentBusinessData = bdAfter.data();
+                            currentBusinessName = currentBusinessData ? String(currentBusinessData.name || '') : '';
+                        }
+                        await window.DigibizMwDslConfig.resolveMwTradingBusinessId(db);
+                    }
+                    window.__DIGIBIZ_IS_MW_TRADING__ = !!(window.DigibizMwDslConfig
+                        && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
+                } catch (e) {
+                    currentBusinessData = null;
+                    currentBusinessName = '';
+                    window.__DIGIBIZ_IS_MW_TRADING__ = false;
+                }
+                document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
+                const activeTabEl = document.querySelector(`.tab[data-status="${currentStatus}"]`);
+                if (activeTabEl) activeTabEl.classList.add('active');
+                await loadStats();
+                await loadOrders();
+                await loadRepSummary();
+                document.getElementById('repFilter').addEventListener('change', renderRepSummaryTable);
+                
+                db.collection('orders').where('businessId', '==', currentBusinessId).onSnapshot(() => {
+                    loadStats();
+                    loadOrders();
+                    loadRepSummary();
+                });
+                db.collection('pendingOrders').where('businessId', '==', currentBusinessId).onSnapshot(() => {
+                    loadStats();
+                    loadOrders();
+                    loadRepSummary();
+                });
+            } else {
+                window.location.href = '/auth/login.html';
+            }
+        });
+    </script>
+</body>
+</html>

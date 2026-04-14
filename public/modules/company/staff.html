@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staff Management - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=31"></script>
+    <script src="../../core/auth-roles.js?v=31"></script>
+    <script src="../../core/dashboard-core.js?v=31"></script>
+    <script src="../../core/sidebar.js?v=31"></script>
+    <style>
+        body{font-family:Inter,Arial,sans-serif;background:#f1f5f9;margin:0;}
+        .main{padding:24px;}
+        .card{background:#fff;border-radius:14px;padding:18px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.1);}
+        .grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;}
+        input,select,button{padding:10px;border-radius:8px;border:1px solid #d1d5db;}
+        button{background:#0f766e;color:#fff;border:none;cursor:pointer;}
+        button:disabled{opacity:0.5;cursor:not-allowed;}
+        table{width:100%;border-collapse:collapse;}
+        th,td{padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;}
+        tr.mw-owner-row{background:#ecfdf5;font-weight:600;}
+        .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:3000;align-items:center;justify-content:center;padding:20px;}
+        .modal-panel{background:#fff;border-radius:14px;max-width:440px;width:100%;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.2);}
+        .modal-panel h3{margin:0 0 14px;font-size:18px;}
+        .modal-panel .form-group{margin-bottom:12px;}
+        .modal-panel label{display:block;font-size:13px;margin-bottom:4px;color:#374151;}
+        .modal-panel input,.modal-panel select{width:100%;box-sizing:border-box;}
+        .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;}
+        .btn-outline{background:#fff;color:#0f766e;border:1px solid #0f766e;}
+    </style>
+</head>
+<body>
+    <div class="main">
+        <div class="card">
+            <h2>Create Staff Account Link</h2>
+            <div class="grid">
+                <input id="staffName" placeholder="Staff Name">
+                <input id="staffEmail" placeholder="Staff Email">
+                <select id="staffRole">
+                    <option value="REP">Rep</option>
+                    <option value="ACCOUNTANT">Accountant</option>
+                    <option value="BUSINESS_OWNER">Owner</option>
+                </select>
+                <button type="button" id="addStaffBtn">Add Staff</button>
+            </div>
+            <p style="font-size:12px;color:#64748b;margin-top:8px;">Master account: if the email is new, a DIGIBIZ login is created automatically (default password <strong>MwTrading@123</strong> — ask them to change it after first sign-in). Existing emails are linked only. You stay signed in.</p>
+        </div>
+        <div class="card">
+            <h3>Linked Staff</h3>
+            <table>
+                <thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead>
+                <tbody id="staffRows"><tr><td colspan="3">Loading...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="staffModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="staffModalTitle">
+        <div class="modal-panel">
+            <h3 id="staffModalTitle">Add staff</h3>
+            <div class="form-group">
+                <label for="modalStaffName">Staff name</label>
+                <input id="modalStaffName" type="text" placeholder="Staff name">
+            </div>
+            <div class="form-group">
+                <label for="modalStaffEmail">Email (existing or new)</label>
+                <input id="modalStaffEmail" type="email" placeholder="email@example.com">
+            </div>
+            <div class="form-group">
+                <label for="modalStaffRole">Role</label>
+                <select id="modalStaffRole">
+                    <option value="REP">Rep</option>
+                    <option value="ACCOUNTANT">Accountant</option>
+                    <option value="BUSINESS_OWNER">Owner</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-outline" id="staffModalCancel">Cancel</button>
+                <button type="button" id="staffModalSave">Link staff</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const MW_MASTER_EMAIL = 'mwtradingsolutions@gmail.com';
+        const MW_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        let currentUser = null;
+        let context = null;
+
+        /** Master key: normalized email only (no name checks). */
+        function isMwMasterEmail(user) {
+            return String(user && user.email || '').trim().toLowerCase() === MW_MASTER_EMAIL;
+        }
+
+        const DEFAULT_STAFF_PASSWORD = 'MwTrading@123';
+
+        function escapeHtml(s) {
+            if (s == null) return '';
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        async function createStaffFirebaseAuthUser(email, password) {
+            if (typeof window.getDigiBizSecondaryAuth !== 'function') {
+                throw new Error('Secondary auth is not available. Reload the page.');
+            }
+            const sec = window.getDigiBizSecondaryAuth();
+            const cred = await sec.createUserWithEmailAndPassword(email, password);
+            const newUid = cred.user.uid;
+            await sec.signOut();
+            return newUid;
+        }
+
+        async function resolveOwnerDisplayNameFromFirestore(uid) {
+            var name = '';
+            try {
+                const u = await window.db.collection('users').doc(uid).get();
+                if (u.exists) {
+                    const d = u.data() || {};
+                    name = d.name || d.ownerName || d.displayName || '';
+                }
+            } catch (e) { console.warn('[Staff] users/{uid} read', e); }
+            if (!name) {
+                try {
+                    const b = await window.db.collection('businesses').doc(MW_BUSINESS_ID).collection('users').doc(uid).get();
+                    if (b.exists) name = (b.data() || {}).name || '';
+                } catch (e2) { console.warn('[Staff] biz users read', e2); }
+            }
+            if (!name && currentUser && currentUser.displayName) name = String(currentUser.displayName);
+            return name || '—';
+        }
+
+        function openStaffModalInstant() {
+            var modal = document.getElementById('staffModal');
+            if (!modal) return;
+            document.getElementById('modalStaffName').value = document.getElementById('staffName').value || '';
+            document.getElementById('modalStaffEmail').value = document.getElementById('staffEmail').value || '';
+            document.getElementById('modalStaffRole').value = document.getElementById('staffRole').value || 'REP';
+            modal.style.display = 'flex';
+            console.log('[Staff] Add Staff modal opened (email master; no pre-check)');
+        }
+
+        function closeStaffModal() {
+            var modal = document.getElementById('staffModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function loadStaff() {
+            const body = document.getElementById('staffRows');
+            const bid = context.businessId;
+            const snap = await window.db.collection('businesses').doc(bid).collection('users').get();
+            const uid = currentUser && currentUser.uid;
+            const mw = isMwMasterEmail(currentUser);
+
+            const rows = [];
+            if (mw && uid) {
+                const ownerName = await resolveOwnerDisplayNameFromFirestore(uid);
+                rows.push('<tr class="mw-owner-row"><td>' + escapeHtml(ownerName) + '</td><td>' + escapeHtml(MW_MASTER_EMAIL) + '</td><td>Owner</td></tr>');
+            }
+            snap.docs.forEach(function (doc) {
+                if (mw && uid && doc.id === uid) return;
+                const row = doc.data();
+                rows.push('<tr><td>' + escapeHtml(row.name || '-') + '</td><td>' + escapeHtml(row.email || '-') + '</td><td>' + escapeHtml(row.role || '-') + '</td></tr>');
+            });
+            body.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="3">No staff yet</td></tr>';
+        }
+
+        async function linkStaffFromInputs(name, email, role) {
+            console.log('[Staff] linkStaffFromInputs', { name: !!name, email: !!email, role: role });
+            if (!name || !email) { alert('Name and email required'); return; }
+            email = String(email).trim().toLowerCase();
+            const targetBusinessId = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : (context && context.businessId);
+            if (!targetBusinessId) { alert('Business context not ready. Please wait and try again.'); return; }
+            const userSnap = await window.db.collection('users').where('email', '==', email).limit(1).get();
+            let staffUid;
+            if (!userSnap.empty) {
+                staffUid = userSnap.docs[0].id;
+            } else {
+                if (!isMwMasterEmail(currentUser)) {
+                    alert('No DIGIBIZ profile found for this email. Only the master account can create new users automatically.');
+                    return;
+                }
+                try {
+                    staffUid = await createStaffFirebaseAuthUser(email, DEFAULT_STAFF_PASSWORD);
+                } catch (e) {
+                    const code = e && e.code;
+                    if (code === 'auth/email-already-in-use') {
+                        alert('This email is already registered in Firebase Auth. They must sign in once to get a Firestore profile, or use a different email.');
+                    } else if (code === 'auth/weak-password') {
+                        alert('Firebase rejected the default password. Enable a stronger default or relax password policy in Firebase Console → Authentication.');
+                    } else if (code === 'auth/operation-not-allowed') {
+                        alert('Email/password sign-up is disabled in Firebase Console. Enable it under Authentication → Sign-in method.');
+                    } else {
+                        alert('Could not create user: ' + (e && e.message ? e.message : String(e)));
+                    }
+                    console.error('[Staff] createStaffFirebaseAuthUser', e);
+                    return;
+                }
+                await window.db.collection('users').doc(staffUid).set({
+                    email: email,
+                    name: name,
+                    businessId: targetBusinessId,
+                    role: role,
+                    createdAt: new Date(),
+                    provisionedByStaffLink: true
+                });
+            }
+            await window.db.collection('businesses').doc(targetBusinessId).collection('users').doc(staffUid).set({
+                name: name, email: email, role: role, businessId: targetBusinessId, linkedAt: new Date(), linkedBy: currentUser.uid
+            }, { merge: true });
+            await window.db.collection('users').doc(staffUid).set({
+                role: role, businessId: targetBusinessId, ownerName: name, updatedAt: new Date()
+            }, { merge: true });
+            if (String(role || '').toUpperCase() === 'REP') {
+                let repLoginCode = '';
+                try {
+                    const biz = await window.db.collection('businesses').doc(targetBusinessId).get();
+                    repLoginCode = (biz.exists && biz.data().repLoginCode) ? String(biz.data().repLoginCode) : '';
+                } catch (e) { console.warn('[Staff] repLoginCode read', e); }
+                await window.db.collection('reps').doc(staffUid).set({
+                    userId: staffUid,
+                    businessId: targetBusinessId,
+                    businessCode: repLoginCode || null,
+                    name: name,
+                    email: email,
+                    phone: '',
+                    route: '',
+                    isActive: true,
+                    provisionedFromStaff: true,
+                    updatedAt: new Date()
+                }, { merge: true });
+            }
+            await loadStaff();
+            alert(userSnap.empty ? 'Staff created and linked. Default password: ' + DEFAULT_STAFF_PASSWORD + ' (ask them to change it after first login).' : 'Staff linked successfully');
+            closeStaffModal();
+        }
+
+        async function addStaff() {
+            console.log('[Staff] addStaff invoked', { contextOk: !!context, businessId: context && context.businessId });
+            const name = String(document.getElementById('staffName').value || '').trim();
+            const email = String(document.getElementById('staffEmail').value || '').trim().toLowerCase();
+            const role = document.getElementById('staffRole').value;
+            await linkStaffFromInputs(name, email, role);
+        }
+
+        async function submitStaffModal() {
+            const name = String(document.getElementById('modalStaffName').value || '').trim();
+            const email = String(document.getElementById('modalStaffEmail').value || '').trim();
+            const role = document.getElementById('modalStaffRole').value;
+            await linkStaffFromInputs(name, email, role);
+        }
+
+        function setAddStaffEnabledByEmail() {
+            const btn = document.getElementById('addStaffBtn');
+            if (!btn) return;
+            if (isMwMasterEmail(currentUser)) {
+                btn.disabled = false;
+                btn.removeAttribute('disabled');
+                console.log('[Staff] Add Staff enabled (MW master email only)');
+            }
+        }
+
+        function wireAddStaffButton() {
+            const addBtn = document.getElementById('addStaffBtn');
+            if (!addBtn) {
+                console.warn('[Staff] addStaffBtn not found — cannot bind click');
+                return;
+            }
+            const fresh = addBtn.cloneNode(true);
+            addBtn.parentNode.replaceChild(fresh, addBtn);
+            fresh.disabled = false;
+            fresh.removeAttribute('disabled');
+            fresh.addEventListener('click', function staffAddClick(ev) {
+                console.log('[Staff] Add Staff click', { type: ev.type, mwMaster: isMwMasterEmail(currentUser) });
+                if (isMwMasterEmail(currentUser)) {
+                    openStaffModalInstant();
+                    return;
+                }
+                if (fresh.disabled) {
+                    console.warn('[Staff] Add Staff ignored: button disabled');
+                    return;
+                }
+                void addStaff();
+            });
+            console.log('[Staff] Add Staff button wired');
+        }
+
+        document.getElementById('staffModalCancel').addEventListener('click', closeStaffModal);
+        document.getElementById('staffModalSave').addEventListener('click', function () { void submitStaffModal(); });
+        document.getElementById('staffModal').addEventListener('click', function (e) {
+            if (e.target && e.target.id === 'staffModal') closeStaffModal();
+        });
+
+        wireAddStaffButton();
+
+        window.auth.onAuthStateChanged(async (user) => {
+            if (!user) { window.location.href = '../../auth/login.html'; return; }
+            currentUser = user;
+            setAddStaffEnabledByEmail();
+            try {
+                if (typeof window.ensureMwTradingOwnerBizMembership === 'function') {
+                    await window.ensureMwTradingOwnerBizMembership(user);
+                }
+                context = await window.dashboardCore.getContext(user);
+
+                if (isMwMasterEmail(user)) {
+                    context.businessId = MW_BUSINESS_ID;
+                    if (window.dashboardCore && typeof window.dashboardCore.persistContext === 'function') {
+                        window.dashboardCore.persistContext({
+                            businessId: MW_BUSINESS_ID,
+                            businessType: context.businessType || 'distributor',
+                            businessName: context.businessName || 'Business'
+                        });
+                    }
+                    window.__DIGIBIZ_LOCAL_ROLE__ = 'BUSINESS_OWNER';
+                    console.log('[Staff] MW master email: forced businessId + role (email-only gate)');
+                } else {
+                    const roleInfo = await window.getUserRole(user.uid, context.businessId);
+                    const role = String(roleInfo && roleInfo.role || '').toUpperCase();
+                    window.__DIGIBIZ_LOCAL_ROLE__ = role;
+                    const allowed = ['BUSINESS_OWNER', 'SUPER_ADMIN', 'DISTRIBUTOR_OWNER'];
+                    if (!allowed.includes(role)) {
+                        alert('Access denied');
+                        window.location.href = '../core/dashboard.html';
+                        return;
+                    }
+                }
+
+                setAddStaffEnabledByEmail();
+                await loadStaff();
+            } catch (err) {
+                console.error('[Staff] init failed', err);
+            }
+        });
+    </script>
+</body>
+</html>

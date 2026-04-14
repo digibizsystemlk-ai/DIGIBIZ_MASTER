@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Pharmacy POS</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=4"></script>
+    <script src="../../core/event-validation.js?v=4"></script>
+    <script src="../../core/event-bus.js?v=4"></script>
+    <script src="../../core/accounts-core.js?v=4"></script>
+    <script src="../../core/auth-roles.js?v=4"></script>
+    <script src="../../core/business-types.js?v=4"></script>
+    <script src="../../core/dashboard-core.js?v=4"></script>
+    <script src="../../core/subscription-manager.js?v=4"></script>
+    <script src="../../core/sidebar.js?v=30"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter','Segoe UI',sans-serif;background:#f4f8f6;color:#0f172a;}
+        .main{padding:18px;}
+        .top{background:#fff;padding:14px 16px;border-radius:12px;border-left:4px solid #0f3b2c;margin-bottom:12px;}
+        .top h1{font-size:22px;color:#0f3b2c;}
+        .layout{display:grid;grid-template-columns:1.35fr 1fr;gap:12px;}
+        .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px;}
+        .row{display:grid;grid-template-columns:1fr 150px;gap:8px;margin-bottom:10px;}
+        input,button{padding:10px;border:1px solid #cbd5e1;border-radius:8px;}
+        button{cursor:pointer;border:none;background:#0f3b2c;color:#fff;}
+        table{width:100%;border-collapse:collapse;font-size:12px;}
+        th,td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left;}
+        th{background:#f8fafc;}
+        .expired{background:#fef2f2;color:#b91c1c;}
+        .soon{background:#fffbeb;color:#c2410c;}
+        .lock{color:#b91c1c;font-weight:700;font-size:11px;}
+        .ok{color:#15803d;font-weight:700;font-size:11px;}
+        .cart-total{font-size:22px;font-weight:700;color:#0f3b2c;text-align:right;margin-top:10px;}
+        .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px;}
+        .print-btn{background:#1d4ed8;}
+        @media (max-width:980px){.layout{grid-template-columns:1fr;}.row{grid-template-columns:1fr;}}
+    </style>
+</head>
+<body>
+    <div class="main">
+        <div class="top">
+            <h1>💊 Pharmacy POS</h1>
+            <p>Batch-aware billing with expiry lock and prescription safety.</p>
+        </div>
+        <div class="layout">
+            <div class="card">
+                <div class="row">
+                    <input id="searchInput" placeholder="Search medicine name...">
+                    <input id="customerName" placeholder="Customer name">
+                </div>
+                <div style="max-height:460px;overflow:auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Medicine</th>
+                                <th>Batch</th>
+                                <th>Expiry</th>
+                                <th>Stock</th>
+                                <th>Price</th>
+                                <th>Status</th>
+                                <th>Qty</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batchBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Invoice Cart</h3>
+                <div style="max-height:360px;overflow:auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Medicine</th>
+                                <th>Batch</th>
+                                <th>Qty</th>
+                                <th class="text-right">Amount</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="cartBody"></tbody>
+                    </table>
+                </div>
+                <div class="cart-total" id="cartTotal">LKR 0.00</div>
+                <div class="actions">
+                    <button id="checkoutBtn">Complete Sale</button>
+                    <button class="print-btn" id="printBtn">Print Invoice</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let state = { context: null, user: null, products: [], cart: [] };
+
+        function formatLKR(v) {
+            return `LKR ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+        function toDateSafe(input) {
+            if (!input) return null;
+            if (input.toDate) return input.toDate();
+            const d = new Date(input);
+            return Number.isNaN(d.getTime()) ? null : d;
+        }
+        function getExpiryMeta(expiryDate) {
+            const d = toDateSafe(expiryDate);
+            if (!d) return { label: 'N/A', cls: '', locked: false, soon: false };
+            const now = new Date(); now.setHours(0, 0, 0, 0);
+            const in30 = new Date(now); in30.setDate(in30.getDate() + 30);
+            if (d < now) return { label: d.toLocaleDateString(), cls: 'expired', locked: true, soon: false };
+            if (d <= in30) return { label: d.toLocaleDateString(), cls: 'soon', locked: false, soon: true };
+            return { label: d.toLocaleDateString(), cls: '', locked: false, soon: false };
+        }
+        function buildInvoiceNo() {
+            const n = Date.now();
+            return `PH-${String(n).slice(-8)}`;
+        }
+
+        async function loadBatches() {
+            const snap = await window.db.collection('products')
+                .doc(state.context.businessId)
+                .collection('list')
+                .where('businessType', '==', 'pharmacy')
+                .get();
+            state.products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            renderBatches();
+        }
+
+        function renderBatches() {
+            const q = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+            const sorted = [...state.products]
+                .filter((p) => (p.name || '').toLowerCase().includes(q))
+                .sort((a, b) => {
+                    const da = toDateSafe(a.expiryDate) || new Date('9999-12-31');
+                    const dbb = toDateSafe(b.expiryDate) || new Date('9999-12-31');
+                    return da - dbb;
+                });
+
+            document.getElementById('batchBody').innerHTML = sorted.map((p) => {
+                const exp = getExpiryMeta(p.expiryDate);
+                const stock = Number(p.stock) || 0;
+                const locked = exp.locked || stock <= 0;
+                const statusText = exp.locked ? 'Expired - Locked' : (exp.soon ? 'Expiring Soon' : 'Sellable');
+                return `
+                    <tr class="${exp.cls}">
+                        <td>${p.name || '-'}</td>
+                        <td>${p.batchNumber || '-'}</td>
+                        <td>${exp.label}</td>
+                        <td>${stock}</td>
+                        <td>${formatLKR(p.sellPrice || 0)}</td>
+                        <td><span class="${locked ? 'lock' : 'ok'}">${statusText}</span></td>
+                        <td><input id="qty-${p.id}" type="number" min="1" max="${stock}" value="1" style="width:70px;"></td>
+                        <td><button ${locked ? 'disabled' : ''} onclick="addToCart('${p.id}')">${locked ? 'Locked' : 'Add'}</button></td>
+                    </tr>
+                `;
+            }).join('') || '<tr><td colspan="8">No medicine batches found.</td></tr>';
+        }
+
+        function renderCart() {
+            document.getElementById('cartBody').innerHTML = state.cart.map((line, idx) => `
+                <tr>
+                    <td>${line.name}</td>
+                    <td>${line.batchNumber || '-'}</td>
+                    <td>${line.qty}</td>
+                    <td class="text-right">${formatLKR(line.qty * line.price)}</td>
+                    <td><button onclick="removeCart(${idx})">X</button></td>
+                </tr>
+            `).join('') || '<tr><td colspan="5">Cart is empty.</td></tr>';
+            const total = state.cart.reduce((s, l) => s + (l.qty * l.price), 0);
+            document.getElementById('cartTotal').textContent = formatLKR(total);
+        }
+
+        function addToCart(id) {
+            const item = state.products.find((p) => p.id === id);
+            if (!item) return;
+            const exp = getExpiryMeta(item.expiryDate);
+            if (exp.locked) { alert('Expired medicine cannot be sold.'); return; }
+            const qty = Number(document.getElementById(`qty-${id}`).value) || 1;
+            if (qty <= 0 || qty > (Number(item.stock) || 0)) { alert('Invalid quantity.'); return; }
+            const existing = state.cart.find((c) => c.id === id);
+            if (existing) existing.qty += qty;
+            else state.cart.push({
+                id: item.id,
+                name: item.name || 'Medicine',
+                batchNumber: item.batchNumber || '-',
+                expiryDate: item.expiryDate || null,
+                qty,
+                price: Number(item.sellPrice) || 0
+            });
+            renderCart();
+        }
+
+        function removeCart(index) {
+            state.cart.splice(index, 1);
+            renderCart();
+        }
+
+        function printInvoice(order) {
+            const rows = order.items.map((it) => `
+                <tr>
+                    <td>${it.name}</td>
+                    <td>${it.batchNumber || '-'}</td>
+                    <td>${it.qty}</td>
+                    <td>${formatLKR(it.price)}</td>
+                    <td>${formatLKR(it.qty * it.price)}</td>
+                </tr>
+            `).join('');
+            const win = window.open('', '_blank');
+            win.document.write(`
+                <html><head><title>Invoice ${order.invoiceNo}</title>
+                <style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}h2{margin:0 0 10px;} .t{text-align:right;}</style>
+                </head><body>
+                    <h2>DIGIBIZ Pharmacy Invoice</h2>
+                    <div>Invoice No: <strong>${order.invoiceNo}</strong></div>
+                    <div>Date: ${new Date(order.date).toLocaleString()}</div>
+                    <div>Customer: ${order.customerName || 'Walk-in Customer'}</div>
+                    <hr/>
+                    <table>
+                        <thead><tr><th>Medicine</th><th>Batch</th><th>Qty</th><th>Price</th><th>Amount</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                    <h3 class="t">Total: ${formatLKR(order.total)}</h3>
+                </body></html>
+            `);
+            win.document.close();
+            win.focus();
+            win.print();
+        }
+
+        async function checkout() {
+            if (!state.cart.length) { alert('Cart is empty.'); return; }
+            const customerName = document.getElementById('customerName').value.trim() || 'Walk-in Customer';
+            const total = state.cart.reduce((s, i) => s + (i.qty * i.price), 0);
+            const invoiceNo = buildInvoiceNo();
+            const order = {
+                invoiceNo,
+                customerName,
+                businessId: state.context.businessId,
+                businessType: state.context.businessType,
+                items: state.cart,
+                total,
+                status: 'Completed',
+                createdBy: state.user.uid,
+                date: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            const batch = window.db.batch();
+            const orderRef = window.db.collection('orders').doc(state.context.businessId).collection('list').doc();
+            batch.set(orderRef, order);
+            state.cart.forEach((line) => {
+                const ref = window.db.collection('products').doc(state.context.businessId).collection('list').doc(line.id);
+                batch.update(ref, {
+                    stock: firebase.firestore.FieldValue.increment(-line.qty),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            });
+            await batch.commit();
+
+            if (window.eventBus && window.eventBus.publish) {
+                window.eventBus.publish('SALE_COMPLETED', {
+                    amount: total,
+                    invoiceNo,
+                    businessId: state.context.businessId
+                });
+            }
+
+            alert(`Sale completed: ${invoiceNo}`);
+            const completedOrder = { ...order, total, invoiceNo, date: new Date() };
+            state.cart = [];
+            renderCart();
+            await loadBatches();
+            printInvoice(completedOrder);
+        }
+
+        window.addToCart = addToCart;
+        window.removeCart = removeCart;
+        document.getElementById('searchInput').addEventListener('input', renderBatches);
+        document.getElementById('checkoutBtn').addEventListener('click', checkout);
+        document.getElementById('printBtn').addEventListener('click', () => {
+            const total = state.cart.reduce((s, i) => s + (i.qty * i.price), 0);
+            printInvoice({
+                invoiceNo: 'DRAFT',
+                customerName: document.getElementById('customerName').value.trim() || 'Walk-in Customer',
+                items: state.cart,
+                total,
+                date: new Date()
+            });
+        });
+
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) { window.location.href = '../../auth/login.html'; return; }
+            state.user = user;
+            state.context = await window.dashboardCore.getContext(user);
+            if (!state.context || state.context.businessType !== 'pharmacy') {
+                alert('This page is only for Pharmacy business.');
+                window.location.href = '../core/dashboard.html';
+                return;
+            }
+            await loadBatches();
+            renderCart();
+        });
+    </script>
+</body>
+</html>

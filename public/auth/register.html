@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - DIGIBIZ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap&v=4" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css?v=4">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="../core/firebase-init.js?v=4"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#10b981 0%,#059669 100%);min-height:100vh;display:flex;justify-content:center;align-items:center;}
+        .register-card{background:white;border-radius:24px;padding:40px;width:100%;max-width:450px;box-shadow:0 20px 40px rgba(0,0,0,0.2);}
+        h1{color:#1a1a2e;margin-bottom:8px;text-align:center;}
+        .sub{color:#64748b;margin-bottom:24px;text-align:center;}
+        input{width:100%;padding:12px;margin-bottom:16px;border:1px solid #e9ecef;border-radius:10px;font-size:14px;font-family:'Inter',sans-serif;}
+        button{width:100%;padding:14px;background:#10b981;color:white;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:12px;}
+        button:hover{background:#059669;}
+        .google-btn{background:#fff;color:#1a1a2e;border:1px solid #e9ecef;display:flex;align-items:center;justify-content:center;gap:10px;}
+        .google-btn:hover{background:#f8f9fa;}
+        .error{color:#ef4444;margin-bottom:16px;font-size:14px;text-align:center;}
+        .success{color:#10b981;margin-bottom:16px;font-size:14px;text-align:center;}
+        .login-link{text-align:center;margin-top:20px;}
+        a{color:#10b981;text-decoration:none;}
+        hr{margin:20px 0;border:1px solid #e9ecef;}
+    </style>
+</head>
+<body>
+    <div class="register-card">
+        <h1>📝 Create Account</h1>
+        <p class="sub">Start your 7-day free trial</p>
+        <div id="message" class="error"></div>
+        <input type="text" id="ownerName" placeholder="Owner Name *">
+        <input type="email" id="email" placeholder="Email Address *">
+        <input type="tel" id="phone" placeholder="Phone Number">
+        <input type="password" id="password" placeholder="Password (min 6 characters) *">
+        <input type="text" id="businessName" placeholder="Business Name *">
+        <!-- Business Type dropdown removed - defaulting to retail -->
+        <button id="registerBtn">Start Free Trial →</button>
+        <hr>
+        <button id="googleBtn" class="google-btn"><i class="fab fa-google"></i> Continue with Google</button>
+        <div class="login-link">Already have an account? <a href="login.html">Login</a></div>
+    </div>
+
+    <script>
+        const registerBtn = document.getElementById('registerBtn');
+        const googleBtn = document.getElementById('googleBtn');
+        const messageDiv = document.getElementById('message');
+
+        async function routeToUniversalDashboard(userId) {
+            try {
+                const userDoc = await db.collection('users').doc(userId).get();
+                const businessId = userDoc.exists ? (userDoc.data().businessId || userId) : userId;
+                let businessType = 'retail';
+                const businessDoc = await db.collection('businesses').doc(businessId).get();
+                if (businessDoc.exists) businessType = businessDoc.data().businessType || businessType;
+                localStorage.setItem('currentBusinessId', businessId);
+                sessionStorage.setItem('currentBusinessId', businessId);
+                localStorage.setItem('currentBusinessType', businessType);
+                sessionStorage.setItem('currentBusinessType', businessType);
+            } catch (error) {
+                console.warn('Register context resolution failed:', error);
+            }
+            window.location.href = '../modules/core/dashboard.html';
+        }
+
+        async function createBusinessAndRedirect(userId, ownerName, userEmail, userPhone, businessName) {
+            try {
+                console.log('Creating business for user:', userId);
+                const businessId = userId;
+                const normalizedBusinessName = String(businessName || 'MY BUSINESS').trim().toUpperCase();
+                const businessData = {
+                    name: normalizedBusinessName,
+                    ownerName: String(ownerName || '').trim(),
+                    email: userEmail,
+                    phone: userPhone || '',
+                    businessType: 'retail',  // Always retail
+                    subscriptionStatus: 'trial',
+                    trialEndDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                    status: 'active',
+                    createdAt: new Date()
+                };
+                await db.collection('businesses').doc(businessId).set(businessData);
+                console.log('Business created successfully');
+                
+                // Update user with business ID
+                await db.collection('users').doc(userId).update({
+                    businessId: businessId,
+                    name: ownerName,
+                    ownerName: ownerName,
+                    phone: userPhone || ''
+                });
+                console.log('User updated with business ID');
+                
+                // Create default chart of accounts
+                const defaultAccounts = [
+                    { code: '1-1010-01', name: 'Cash', type: 'ASSET', openingBalance: 0, currentBalance: 0 },
+                    { code: '1-1020-01', name: 'Bank', type: 'ASSET', openingBalance: 0, currentBalance: 0 },
+                    { code: '1-1030-01', name: 'Accounts Receivable', type: 'ASSET', openingBalance: 0, currentBalance: 0 },
+                    { code: '1-1040-01', name: 'Inventory', type: 'ASSET', openingBalance: 0, currentBalance: 0 },
+                    { code: '2-2010-01', name: 'Accounts Payable', type: 'LIABILITY', openingBalance: 0, currentBalance: 0 },
+                    { code: '3-3010-01', name: 'Capital', type: 'EQUITY', openingBalance: 0, currentBalance: 0 },
+                    { code: '4-4010-01', name: 'Sales Revenue', type: 'INCOME', openingBalance: 0, currentBalance: 0 },
+                    { code: '5-5010-01', name: 'Cost of Goods Sold', type: 'EXPENSE', openingBalance: 0, currentBalance: 0 },
+                    { code: '5-5020-01', name: 'Expenses', type: 'EXPENSE', openingBalance: 0, currentBalance: 0 }
+                ];
+                
+                for (const acc of defaultAccounts) {
+                    await db.collection('accounts').doc(businessId).collection('list').doc(acc.code).set(acc);
+                }
+                console.log('Chart of accounts created');
+                
+                return businessId;
+            } catch (error) {
+                console.error('Error in createBusinessAndRedirect:', error);
+                throw error;
+            }
+        }
+
+        registerBtn.onclick = async () => {
+            const ownerName = document.getElementById('ownerName').value;
+            const email = document.getElementById('email').value;
+            const phone = document.getElementById('phone').value;
+            const password = document.getElementById('password').value;
+            const businessName = document.getElementById('businessName').value;
+            const normalizedBusinessName = String(businessName || '').trim().toUpperCase();
+            
+            if (!ownerName || !email || !password || !normalizedBusinessName) {
+                messageDiv.textContent = 'Please fill all required fields';
+                return;
+            }
+            if (password.length < 6) {
+                messageDiv.textContent = 'Password must be at least 6 characters';
+                return;
+            }
+            
+            try {
+                messageDiv.textContent = 'Creating your account...';
+                messageDiv.className = 'success';
+                
+                console.log('Creating user with email:', email);
+                
+                // Create user in Firebase Auth
+                const userCred = await auth.createUserWithEmailAndPassword(email, password);
+                const userId = userCred.user.uid;
+                console.log('User created in Auth, UID:', userId);
+                
+                // Create user document in Firestore
+                await db.collection('users').doc(userId).set({
+                    name: ownerName,
+                    ownerName: ownerName,
+                    email: email,
+                    phone: phone,
+                    role: 'BUSINESS_OWNER',
+                    businessId: userId,
+                    createdAt: new Date()
+                });
+                console.log('User document created in Firestore');
+                
+                // Create business and accounts
+                await createBusinessAndRedirect(userId, ownerName, email, phone, normalizedBusinessName);
+                
+                messageDiv.className = 'success';
+                messageDiv.textContent = '✅ Account created successfully! Redirecting to dashboard...';
+                
+                // Redirect to Core Dashboard
+                setTimeout(() => {
+                    routeToUniversalDashboard(userId);
+                }, 2000);
+                
+            } catch (error) {
+                console.error('Registration error:', error);
+                messageDiv.className = 'error';
+                messageDiv.textContent = error.message;
+            }
+        };
+        
+        googleBtn.onclick = async () => {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            try {
+                const result = await auth.signInWithPopup(provider);
+                const user = result.user;
+                const userId = user.uid;
+                
+                console.log('Google user signed in:', userId);
+                
+                // Check if user already exists in Firestore
+                const userDoc = await db.collection('users').doc(userId).get();
+                if (!userDoc.exists) {
+                    const businessName = prompt('Enter your business name:', 'My Business');
+                    const normalizedBusinessName = String(businessName || 'My Business').trim().toUpperCase();
+                    
+                    await db.collection('users').doc(userId).set({
+                        name: user.displayName || user.email,
+                        ownerName: user.displayName || user.email,
+                        email: user.email,
+                        role: 'BUSINESS_OWNER',
+                        businessId: userId,
+                        createdAt: new Date()
+                    });
+                    console.log('Google user document created');
+                    
+                    await createBusinessAndRedirect(userId, user.displayName || user.email, user.email, '', normalizedBusinessName);
+                }
+                
+                await routeToUniversalDashboard(userId);
+            } catch (error) {
+                console.error('Google registration error:', error);
+                messageDiv.className = 'error';
+                messageDiv.textContent = error.message;
+            }
+        };
+    </script>
+</body>
+</html>

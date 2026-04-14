@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purchase Management - DIGIBIZ Retail</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    
+    <script src="../../core/firebase-init.js?v=3"></script>
+    <script src="../../core/event-validation.js?v=3"></script>
+    <script src="../../core/event-bus.js?v=3"></script>
+    <script src="../../core/accounts-core.js?v=3"></script>
+    <script src="../../core/auth-roles.js?v=3"></script>
+    <script src="../../core/business-types.js?v=3"></script>
+    <script src="../../core/dashboard-core.js?v=3"></script>
+    <script src="../../core/subscription-manager.js?v=3"></script>
+    <script src="../../core/sidebar.js?v=30"></script>
+    
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter',sans-serif;background:#f5f6fa;color:#1a1a2e;}
+        
+        .main-content{padding:30px 35px;min-height:100vh;}
+        @media (max-width:768px){.main-content{padding:20px;}}
+        
+        .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px;flex-wrap:wrap;gap:15px;}
+        .page-header h1{font-size:26px;font-weight:700;color:#1a1a2e;}
+        .page-header h1 i{color:#10b981;margin-right:12px;}
+        
+        .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-bottom:25px;}
+        .stat-card{background:white;border-radius:16px;padding:20px;border:1px solid #e9ecef;}
+        .stat-card .label{font-size:12px;color:#64748b;margin-bottom:5px;}
+        .stat-card .value{font-size:28px;font-weight:700;color:#1a1a2e;}
+        
+        .tabs{display:flex;gap:10px;margin-bottom:25px;border-bottom:2px solid #e9ecef;}
+        .tab-btn{background:none;border:none;padding:12px 24px;font-size:14px;font-weight:500;cursor:pointer;color:#64748b;}
+        .tab-btn i{margin-right:8px;}
+        .tab-btn.active{color:#10b981;border-bottom:2px solid #10b981;}
+        
+        .tab-pane{display:none;}
+        .tab-pane.active{display:block;}
+        
+        .filter-bar{background:white;border-radius:16px;padding:15px 20px;margin-bottom:25px;display:flex;gap:15px;flex-wrap:wrap;align-items:center;border:1px solid #e9ecef;}
+        .filter-bar input,.filter-bar select{flex:1;min-width:150px;padding:10px;border:1px solid #e9ecef;border-radius:8px;}
+        .filter-bar button{background:#10b981;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;}
+        
+        .btn-primary{background:#10b981;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;}
+        .btn-outline{background:transparent;border:1px solid #10b981;color:#10b981;padding:10px 20px;border-radius:8px;cursor:pointer;}
+        
+        .card{background:white;border-radius:20px;border:1px solid #e9ecef;overflow:hidden;}
+        .card-header{padding:18px 22px;border-bottom:1px solid #e9ecef;background:#fafbfc;display:flex;justify-content:space-between;align-items:center;}
+        .card-header h3{font-size:16px;font-weight:600;}
+        .card-header h3 i{margin-right:10px;color:#10b981;}
+        .card-body{padding:0;overflow-x:auto;}
+        
+        .data-table{width:100%;border-collapse:collapse;}
+        .data-table th,.data-table td{padding:14px 18px;text-align:left;border-bottom:1px solid #e9ecef;font-size:13px;}
+        .data-table th{background:#fafbfc;font-weight:600;}
+        .data-table tr:hover{background:#f8f9fa;}
+        
+        .badge{padding:4px 10px;border-radius:30px;font-size:11px;}
+        .badge-received{background:#d1fae5;color:#10b981;}
+        .badge-pending{background:#fed7aa;color:#f59e0b;}
+        .badge-cancelled{background:#fee2e2;color:#ef4444;}
+        
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:2000;justify-content:center;align-items:center;}
+        .modal-content{background:white;border-radius:24px;padding:32px;width:90%;max-width:600px;}
+        .modal-content input,.modal-content select,.modal-content textarea{width:100%;padding:12px;margin-bottom:15px;border:1px solid #e9ecef;border-radius:10px;}
+        .modal-buttons{display:flex;gap:12px;justify-content:flex-end;margin-top:15px;}
+        
+        .purchase-item{display:flex;gap:10px;margin-bottom:10px;align-items:center;}
+        .purchase-item select{flex:2;padding:10px;border:1px solid #e9ecef;border-radius:8px;}
+        .purchase-item input{flex:1;padding:10px;border:1px solid #e9ecef;border-radius:8px;}
+        .purchase-item button{background:#ef4444;color:white;border:none;padding:10px;border-radius:8px;cursor:pointer;}
+        
+        .toast{position:fixed;bottom:30px;right:30px;background:#1a1a2e;color:white;padding:12px 20px;border-radius:10px;z-index:3000;display:none;align-items:center;gap:10px;}
+        .toast.show{display:flex;animation:slideIn 0.3s;}
+        @keyframes slideIn{from{transform:translateX(100%);opacity:0;}to{transform:translateX(0);opacity:1;}}
+        
+        footer{text-align:center;padding:25px;color:#adb5bd;font-size:12px;border-top:1px solid #e9ecef;margin-top:25px;}
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="page-header">
+            <h1><i class="fas fa-truck"></i> Purchase Management</h1>
+            <button class="btn-primary" id="newPurchaseBtn"><i class="fas fa-plus"></i> New Purchase Order</button>
+        </div>
+        
+        <div class="stats-row">
+            <div class="stat-card"><div class="label">Total Purchases</div><div class="value" id="totalPurchases">Rs. 0</div></div>
+            <div class="stat-card"><div class="label">This Month</div><div class="value" id="monthPurchases">Rs. 0</div></div>
+            <div class="stat-card"><div class="label">Pending Orders</div><div class="value" id="pendingOrders">0</div></div>
+            <div class="stat-card"><div class="label">Suppliers</div><div class="value" id="supplierCount">0</div></div>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="purchases"><i class="fas fa-list"></i> Purchase Orders</button>
+            <button class="tab-btn" data-tab="suppliers"><i class="fas fa-building"></i> Suppliers</button>
+        </div>
+        
+        <!-- Purchase Orders Tab -->
+        <div id="tab-purchases" class="tab-pane active">
+            <div class="filter-bar">
+                <input type="text" id="searchPO" placeholder="Search by PO number or supplier...">
+                <select id="poStatusFilter">
+                    <option value="all">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="received">Received</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+                <input type="date" id="startDate">
+                <input type="date" id="endDate">
+                <button id="filterPOBtn"><i class="fas fa-search"></i> Search</button>
+                <button id="exportPOBtn" class="btn-outline"><i class="fas fa-download"></i> Export</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-header"><h3><i class="fas fa-file-invoice"></i> Purchase Orders</h3><span id="poCount"></span></div>
+                <div class="card-body">
+                    <table class="data-table" id="poTable">
+                        <thead>
+                            <tr><th>PO No</th><th>Date</th><th>Supplier</th><th>Items</th><th>Total</th><th>Status</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody id="poList"><tr><td colspan="7" style="text-align:center;padding:40px;">Loading...</tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Suppliers Tab -->
+        <div id="tab-suppliers" class="tab-pane">
+            <div class="filter-bar">
+                <input type="text" id="searchSupplier" placeholder="Search supplier...">
+                <button id="addSupplierBtn" class="btn-primary"><i class="fas fa-plus"></i> Add Supplier</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-header"><h3><i class="fas fa-building"></i> Suppliers List</h3></div>
+                <div class="card-body">
+                    <table class="data-table" id="supplierTable">
+                        <thead>
+                            <tr><th>Code</th><th>Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody id="supplierList"><tr><td colspan="6" style="text-align:center;padding:40px;">Loading...</tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <footer><p>© 2025 DIGIBIZ Universal - Purchase Management System</p></footer>
+    </div>
+    
+    <!-- New Purchase Order Modal -->
+    <div id="purchaseModal" class="modal">
+        <div class="modal-content" style="max-width:700px;">
+            <h3>New Purchase Order</h3>
+            <select id="poSupplier">
+                <option value="">Select Supplier</option>
+            </select>
+            <div id="poItemsList">
+                <div class="purchase-item">
+                    <select class="po-product-select">
+                        <option value="">Select Product</option>
+                    </select>
+                    <input type="number" class="po-qty" placeholder="Qty" value="1">
+                    <input type="number" class="po-price" placeholder="Unit Price">
+                    <button class="remove-item-btn" disabled>✕</button>
+                </div>
+            </div>
+            <button id="addItemBtn" class="btn-outline" style="width:100%;margin-bottom:15px;"><i class="fas fa-plus"></i> Add Item</button>
+            <div style="text-align:right;margin-bottom:15px;"><strong>Total: <span id="poTotal">Rs. 0</span></strong></div>
+            <textarea id="poNotes" placeholder="Notes (optional)"></textarea>
+            <div class="modal-buttons">
+                <button class="btn-outline" id="closePOModal">Cancel</button>
+                <button class="btn-primary" id="savePOBtn">Create Purchase Order</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Receive Stock Modal -->
+    <div id="receiveModal" class="modal">
+        <div class="modal-content">
+            <h3>Receive Stock</h3>
+            <p id="receivePONo"></p>
+            <div id="receiveItems"></div>
+            <div class="modal-buttons">
+                <button class="btn-outline" id="closeReceiveModal">Cancel</button>
+                <button class="btn-primary" id="confirmReceiveBtn">Receive & Update Stock</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Supplier Modal -->
+    <div id="supplierModal" class="modal">
+        <div class="modal-content">
+            <h3 id="supplierModalTitle">Add Supplier</h3>
+            <input type="text" id="supplierCode" placeholder="Supplier Code">
+            <input type="text" id="supplierName" placeholder="Supplier Name">
+            <input type="text" id="supplierContact" placeholder="Contact Person">
+            <input type="email" id="supplierEmail" placeholder="Email">
+            <input type="tel" id="supplierPhone" placeholder="Phone">
+            <input type="text" id="supplierAddress" placeholder="Address">
+            <div class="modal-buttons">
+                <button class="btn-outline" id="closeSupplierModal">Cancel</button>
+                <button class="btn-primary" id="saveSupplierBtn">Save Supplier</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="toast" class="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
+
+    <script>
+        let currentBusinessId = null;
+        let products = [];
+        let suppliers = [];
+        let purchaseOrders = [];
+        let editingSupplierId = null;
+        
+        function formatCurrency(amt){ return 'Rs. ' + (amt||0).toLocaleString('en-LK'); }
+        
+        function showToast(msg, isError=false){
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerHTML = msg;
+            toast.style.background = isError ? '#ef4444' : '#10b981';
+            toast.classList.add('show');
+            setTimeout(()=>toast.classList.remove('show'), 3000);
+        }
+        
+        // Load products
+        async function loadProducts(){
+            const snapshot = await db.collection('products').doc(currentBusinessId).collection('list').get();
+            products = [];
+            snapshot.forEach(doc => products.push({id: doc.id, ...doc.data()}));
+            updateProductSelects();
+        }
+        
+        function updateProductSelects(){
+            const selects = document.querySelectorAll('.po-product-select');
+            const options = '<option value="">Select Product</option>' + products.map(p => `<option value="${p.id}" data-price="${p.cost || p.price}">${p.name} (${p.code})</option>`).join('');
+            selects.forEach(select => { select.innerHTML = options; });
+        }
+        
+        // Load suppliers
+        async function loadSuppliers(){
+            const snapshot = await db.collection('suppliers').doc(currentBusinessId).collection('list').get();
+            suppliers = [];
+            snapshot.forEach(doc => suppliers.push({id: doc.id, ...doc.data()}));
+            renderSuppliers();
+            updateSupplierSelects();
+            document.getElementById('supplierCount').innerHTML = suppliers.length;
+        }
+        
+        function renderSuppliers(){
+            const tbody = document.getElementById('supplierList');
+            if(suppliers.length === 0){
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;">No suppliers found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = suppliers.map(s => `<tr>
+                <td>${s.code || s.id.substring(0,8)}</td>
+                <td><strong>${s.name}</strong></td>
+                <td>${s.contact || '-'}</td>
+                <td>${s.email || '-'}</td>
+                <td>${s.phone || '-'}</td>
+                <td>
+                    <button class="btn-outline" onclick="editSupplier('${s.id}')" style="padding:5px 10px;"><i class="fas fa-edit"></i></button>
+                    <button class="btn-danger" onclick="deleteSupplier('${s.id}')" style="padding:5px 10px;"><i class="fas fa-trash"></i></button>
+                 </td>
+            </td>`).join('');
+        }
+        
+        function updateSupplierSelects(){
+            const select = document.getElementById('poSupplier');
+            select.innerHTML = '<option value="">Select Supplier</option>' + suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        }
+        
+        // Load purchase orders
+        async function loadPurchaseOrders(){
+            const snapshot = await db.collection('purchases').doc(currentBusinessId).collection('orders').orderBy('createdAt', 'desc').get();
+            purchaseOrders = [];
+            snapshot.forEach(doc => purchaseOrders.push({id: doc.id, ...doc.data()}));
+            renderPurchaseOrders();
+            updateStats();
+        }
+        
+        function renderPurchaseOrders(){
+            const tbody = document.getElementById('poList');
+            if(purchaseOrders.length === 0){
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;">No purchase orders</td></tr>';
+                document.getElementById('poCount').innerHTML = '0 records';
+                return;
+            }
+            tbody.innerHTML = purchaseOrders.map(po => {
+                const statusClass = po.status === 'received' ? 'badge-received' : (po.status === 'cancelled' ? 'badge-cancelled' : 'badge-pending');
+                const statusText = po.status === 'received' ? 'Received' : (po.status === 'cancelled' ? 'Cancelled' : 'Pending');
+                return `<tr>
+                    <td><strong>${po.poNo}</strong></td>
+                    <td>${po.date || po.createdAt?.toDate?.().toLocaleDateString() || '-'}</td>
+                    <td>${po.supplierName || '-'}</td>
+                    <td>${po.items?.length || 0}</td>
+                    <td>${formatCurrency(po.total)}</td>
+                    <td><span class="badge ${statusClass}">${statusText}</span></td>
+                    <td>
+                        ${po.status === 'pending' ? `<button class="btn-primary" onclick="receiveStock('${po.id}')" style="padding:5px 10px;"><i class="fas fa-boxes"></i> Receive</button>` : ''}
+                        <button class="btn-outline" onclick="viewPO('${po.id}')" style="padding:5px 10px;"><i class="fas fa-eye"></i></button>
+                     </td>
+                 </tr>`;
+            }).join('');
+            document.getElementById('poCount').innerHTML = `${purchaseOrders.length} records`;
+        }
+        
+        function updateStats(){
+            const total = purchaseOrders.reduce((sum, po) => sum + (po.total || 0), 0);
+            const monthTotal = purchaseOrders.filter(po => {
+                const date = po.createdAt?.toDate?.() || new Date(po.date);
+                const now = new Date();
+                return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+            }).reduce((sum, po) => sum + (po.total || 0), 0);
+            const pending = purchaseOrders.filter(po => po.status === 'pending').length;
+            document.getElementById('totalPurchases').innerHTML = formatCurrency(total);
+            document.getElementById('monthPurchases').innerHTML = formatCurrency(monthTotal);
+            document.getElementById('pendingOrders').innerHTML = pending;
+        }
+        
+        // Purchase Order items management
+        function updatePOTotal(){
+            let total = 0;
+            document.querySelectorAll('.purchase-item').forEach(item => {
+                const qty = parseFloat(item.querySelector('.po-qty').value) || 0;
+                const price = parseFloat(item.querySelector('.po-price').value) || 0;
+                total += qty * price;
+            });
+            document.getElementById('poTotal').innerHTML = formatCurrency(total);
+        }
+        
+        function addPurchaseItem(){
+            const container = document.getElementById('poItemsList');
+            const newItem = document.createElement('div');
+            newItem.className = 'purchase-item';
+            newItem.innerHTML = `
+                <select class="po-product-select"><option value="">Select Product</option>${products.map(p => `<option value="${p.id}" data-price="${p.cost || p.price}">${p.name} (${p.code})</option>`).join('')}</select>
+                <input type="number" class="po-qty" placeholder="Qty" value="1">
+                <input type="number" class="po-price" placeholder="Unit Price">
+                <button class="remove-item-btn">✕</button>
+            `;
+            container.appendChild(newItem);
+            attachItemEvents(newItem);
+            updatePOTotal();
+        }
+        
+        function attachItemEvents(item){
+            const select = item.querySelector('.po-product-select');
+            const qtyInput = item.querySelector('.po-qty');
+            const priceInput = item.querySelector('.po-price');
+            const removeBtn = item.querySelector('.remove-item-btn');
+            
+            select.onchange = () => {
+                const selected = select.options[select.selectedIndex];
+                const price = selected.dataset.price;
+                if(price) priceInput.value = price;
+                updatePOTotal();
+            };
+            qtyInput.oninput = () => updatePOTotal();
+            priceInput.oninput = () => updatePOTotal();
+            removeBtn.onclick = () => { item.remove(); updatePOTotal(); };
+        }
+        
+        // Create purchase order
+        async function createPurchaseOrder(){
+            const supplierId = document.getElementById('poSupplier').value;
+            const supplier = suppliers.find(s => s.id === supplierId);
+            if(!supplier){ showToast('Please select a supplier', true); return; }
+            
+            const items = [];
+            document.querySelectorAll('.purchase-item').forEach(item => {
+                const productId = item.querySelector('.po-product-select').value;
+                const product = products.find(p => p.id === productId);
+                const qty = parseFloat(item.querySelector('.po-qty').value) || 0;
+                const price = parseFloat(item.querySelector('.po-price').value) || 0;
+                if(productId && qty > 0){
+                    items.push({ productId, productName: product.name, quantity: qty, unitPrice: price, total: qty * price });
+                }
+            });
+            if(items.length === 0){ showToast('Add at least one item', true); return; }
+            
+            const total = items.reduce((sum, i) => sum + i.total, 0);
+            const poNo = 'PO-' + Date.now();
+            const notes = document.getElementById('poNotes').value;
+            
+            const poData = {
+                poNo: poNo,
+                supplierId: supplierId,
+                supplierName: supplier.name,
+                items: items,
+                total: total,
+                notes: notes,
+                status: 'pending',
+                createdAt: new Date()
+            };
+            
+            await db.collection('purchases').doc(currentBusinessId).collection('orders').doc(poNo).set(poData);
+            showToast(`Purchase Order ${poNo} created!`);
+            document.getElementById('purchaseModal').style.display = 'none';
+            loadPurchaseOrders();
+        }
+        
+        // Receive stock
+        window.receiveStock = async (poId) => {
+            const po = purchaseOrders.find(p => p.id === poId);
+            if(!po) return;
+            document.getElementById('receivePONo').innerHTML = `<strong>PO: ${po.poNo}</strong><br>Supplier: ${po.supplierName}`;
+            let itemsHtml = '';
+            po.items.forEach(item => {
+                itemsHtml += `<div class="purchase-item"><span style="flex:2;">${item.productName}</span><input type="number" class="receive-qty" data-product="${item.productId}" value="${item.quantity}" style="width:100px;"></div>`;
+            });
+            document.getElementById('receiveItems').innerHTML = itemsHtml;
+            document.getElementById('receiveModal').style.display = 'flex';
+            window.currentReceivingPO = po;
+        };
+        
+        document.getElementById('confirmReceiveBtn').onclick = async () => {
+            const po = window.currentReceivingPO;
+            if(!po) return;
+            
+            // Update stock for each product
+            const receiveQtys = document.querySelectorAll('.receive-qty');
+            for(let i = 0; i < po.items.length; i++){
+                const item = po.items[i];
+                const receivedQty = parseInt(receiveQtys[i]?.value) || 0;
+                if(receivedQty > 0){
+                    const productRef = db.collection('products').doc(currentBusinessId).collection('list').doc(item.productId);
+                    const productDoc = await productRef.get();
+                    if(productDoc.exists){
+                        const currentStock = productDoc.data().stock || 0;
+                        await productRef.update({ stock: currentStock + receivedQty });
+                    }
+                }
+            }
+            
+            // Update PO status
+            await db.collection('purchases').doc(currentBusinessId).collection('orders').doc(po.id).update({ status: 'received', receivedAt: new Date() });
+            
+            // Publish event for accounting
+            window.eventBus.publish('PURCHASE_MADE', {
+                orderNo: po.poNo,
+                amount: po.total,
+                supplierName: po.supplierName,
+                items: po.items
+            });
+            
+            showToast(`Stock received for PO: ${po.poNo}`);
+            document.getElementById('receiveModal').style.display = 'none';
+            loadPurchaseOrders();
+            loadProducts();
+        };
+        
+        // Supplier management
+        window.editSupplier = async (id) => {
+            const supplier = suppliers.find(s => s.id === id);
+            if(supplier){
+                editingSupplierId = id;
+                document.getElementById('supplierModalTitle').innerHTML = 'Edit Supplier';
+                document.getElementById('supplierCode').value = supplier.code || '';
+                document.getElementById('supplierName').value = supplier.name;
+                document.getElementById('supplierContact').value = supplier.contact || '';
+                document.getElementById('supplierEmail').value = supplier.email || '';
+                document.getElementById('supplierPhone').value = supplier.phone || '';
+                document.getElementById('supplierAddress').value = supplier.address || '';
+                document.getElementById('supplierModal').style.display = 'flex';
+            }
+        };
+        
+        window.deleteSupplier = async (id) => {
+            if(confirm('Delete this supplier?')){
+                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(id).delete();
+                showToast('Supplier deleted');
+                loadSuppliers();
+            }
+        };
+        
+        async function saveSupplier(){
+            const code = document.getElementById('supplierCode').value;
+            const name = document.getElementById('supplierName').value;
+            const contact = document.getElementById('supplierContact').value;
+            const email = document.getElementById('supplierEmail').value;
+            const phone = document.getElementById('supplierPhone').value;
+            const address = document.getElementById('supplierAddress').value;
+            
+            if(!name){ showToast('Supplier name required', true); return; }
+            
+            const supplierId = code || 'SUP-' + Date.now();
+            const supplierData = { id: supplierId, code: supplierId, name, contact, email, phone, address, updatedAt: new Date() };
+            
+            if(editingSupplierId){
+                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(editingSupplierId).update(supplierData);
+                showToast('Supplier updated');
+            } else {
+                supplierData.createdAt = new Date();
+                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(supplierId).set(supplierData);
+                showToast('Supplier added');
+            }
+            document.getElementById('supplierModal').style.display = 'none';
+            loadSuppliers();
+        }
+        
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+                if(btn.dataset.tab === 'suppliers') loadSuppliers();
+            };
+        });
+        
+        // Event listeners
+        document.getElementById('newPurchaseBtn').onclick = () => {
+            document.getElementById('poItemsList').innerHTML = '';
+            addPurchaseItem();
+            document.getElementById('poSupplier').value = '';
+            document.getElementById('poNotes').value = '';
+            document.getElementById('purchaseModal').style.display = 'flex';
+        };
+        document.getElementById('addItemBtn').onclick = addPurchaseItem;
+        document.getElementById('closePOModal').onclick = () => document.getElementById('purchaseModal').style.display = 'none';
+        document.getElementById('savePOBtn').onclick = createPurchaseOrder;
+        document.getElementById('closeReceiveModal').onclick = () => document.getElementById('receiveModal').style.display = 'none';
+        document.getElementById('addSupplierBtn').onclick = () => { editingSupplierId = null; document.getElementById('supplierModalTitle').innerHTML = 'Add Supplier'; document.getElementById('supplierCode').value = ''; document.getElementById('supplierName').value = ''; document.getElementById('supplierContact').value = ''; document.getElementById('supplierEmail').value = ''; document.getElementById('supplierPhone').value = ''; document.getElementById('supplierAddress').value = ''; document.getElementById('supplierModal').style.display = 'flex'; };
+        document.getElementById('closeSupplierModal').onclick = () => document.getElementById('supplierModal').style.display = 'none';
+        document.getElementById('saveSupplierBtn').onclick = saveSupplier;
+        document.getElementById('filterPOBtn').onclick = () => loadPurchaseOrders();
+        document.getElementById('exportPOBtn').onclick = () => showToast('Export feature coming soon');
+        
+        window.viewPO = (id) => { showToast(`View PO: ${id}`); };
+        
+        auth.onAuthStateChanged(async(user)=>{
+            if(!user){ window.location.href='../../auth/login.html'; return; }
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            currentBusinessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+            await loadProducts();
+            await loadSuppliers();
+            await loadPurchaseOrders();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - DIGIBIZ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap&v=4" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css?v=4">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="../core/firebase-init.js?v=30"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#10b981 0%,#059669 100%);min-height:100vh;display:flex;justify-content:center;align-items:center;}
+        .login-card{background:white;border-radius:24px;padding:40px;width:100%;max-width:400px;box-shadow:0 20px 40px rgba(0,0,0,0.2);text-align:center;}
+        h1{color:#1a1a2e;margin-bottom:8px;}
+        .sub{color:#64748b;margin-bottom:24px;}
+        input{width:100%;padding:12px;margin-bottom:16px;border:1px solid #e9ecef;border-radius:10px;font-size:14px;}
+        button{width:100%;padding:14px;background:#10b981;color:white;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:12px;}
+        button:hover{background:#059669;}
+        .google-btn{background:#fff;color:#1a1a2e;border:1px solid #e9ecef;display:flex;align-items:center;justify-content:center;gap:10px;}
+        .google-btn:hover{background:#f8f9fa;}
+        .error{color:#ef4444;margin-bottom:16px;font-size:14px;}
+        .register-link{text-align:center;margin-top:20px;}
+        a{color:#10b981;text-decoration:none;}
+        hr{margin:20px 0;border:1px solid #e9ecef;}
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1>🔐 Welcome Back</h1>
+        <p class="sub">Login to your account</p>
+        <div id="error" class="error"></div>
+        <input type="email" id="email" placeholder="Email Address">
+        <input type="password" id="password" placeholder="Password">
+        <button id="loginBtn">Login</button>
+        <hr>
+        <button id="googleBtn" class="google-btn"><i class="fab fa-google"></i> Continue with Google</button>
+        <div class="register-link">Don't have an account? <a href="register.html">Sign up</a></div>
+    </div>
+
+    <script>
+        const loginBtn = document.getElementById('loginBtn');
+        const googleBtn = document.getElementById('googleBtn');
+        const errorDiv = document.getElementById('error');
+
+        async function routeToUniversalDashboard(user) {
+            try {
+                if (typeof window.ensureMwTradingOwnerBizMembership === 'function' && user) {
+                    await window.ensureMwTradingOwnerBizMembership(user);
+                }
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+                let businessType = 'retail';
+                const businessDoc = await db.collection('businesses').doc(businessId).get();
+                if (businessDoc.exists) businessType = businessDoc.data().businessType || businessType;
+                localStorage.setItem('currentBusinessId', businessId);
+                sessionStorage.setItem('currentBusinessId', businessId);
+                localStorage.setItem('currentBusinessType', businessType);
+                sessionStorage.setItem('currentBusinessType', businessType);
+            } catch (error) {
+                console.warn('Login context resolution failed:', error);
+            }
+            window.location.href = '../modules/core/dashboard.html';
+        }
+
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                routeToUniversalDashboard(user);
+            }
+        });
+        
+        loginBtn.addEventListener('click', async () => {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                errorDiv.textContent = 'Please enter email and password';
+                return;
+            }
+            
+            try {
+                await auth.signInWithEmailAndPassword(email, password);
+                await routeToUniversalDashboard(auth.currentUser);
+            } catch (error) {
+                if (error.code === 'auth/user-not-found') {
+                    errorDiv.textContent = 'No account found. Please register first.';
+                } else if (error.code === 'auth/wrong-password') {
+                    errorDiv.textContent = 'Incorrect password';
+                } else {
+                    errorDiv.textContent = error.message;
+                }
+            }
+        });
+        
+        googleBtn.addEventListener('click', async () => {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            try {
+                const result = await auth.signInWithPopup(provider);
+                const user = result.user;
+                
+                // Check if user exists in Firestore
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                if (!userDoc.exists) {
+                    // New Google user - redirect to complete registration
+                    window.location.href = 'register.html?google=true';
+                } else {
+                    // Existing user - redirect to Universal Dashboard
+                    await routeToUniversalDashboard(user);
+                }
+            } catch (error) {
+                errorDiv.textContent = error.message;
+            }
+        });
+    </script>
+</body>
+</html>

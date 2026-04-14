@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Universal Dashboard</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="../../core/firebase-init.js?v=31"></script>
+    <script src="../../core/event-validation.js?v=4"></script>
+    <script src="../../core/event-bus.js?v=4"></script>
+    <script src="../../core/accounts-core.js?v=4"></script>
+    <script src="../../core/auth-roles.js?v=31"></script>
+    <script src="../../core/business-types.js?v=31"></script>
+    <script src="../../core/dashboard-core.js?v=31"></script>
+    <script src="../../core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=31"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css?v=4">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter','Segoe UI',sans-serif;background:linear-gradient(135deg,#0f3b2c 0%,#114d39 100%);min-height:100vh;overflow-x:hidden;}
+        .main-content{min-height:100vh;}
+        .top-bar{background:#fff;padding:10px 24px;display:flex;justify-content:center;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.1);position:sticky;top:0;z-index:99;gap:20px;}
+        .dashboard-headline{font-size:15px;font-weight:800;color:#0f3b2c;letter-spacing:.6px;text-transform:uppercase;text-align:center;width:100%;}
+        .container{padding:15px;}
+        .business-type-selector,.filter-bar,.due-payments-widget,.data-table,.chart-card,.kpi-card{background:#fff;border-radius:12px;}
+        .business-type-selector{padding:10px 20px;margin-bottom:15px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+        .business-type-btn{padding:6px 16px;border:1px solid #e2e8f0;background:#fff;border-radius:20px;font-size:12px;cursor:pointer;}
+        .business-type-btn.active{background:#0a5c2e;color:#fff;}
+        .filter-bar{padding:12px 20px;margin-bottom:15px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
+        .filter-group{display:flex;flex-direction:column;gap:4px;min-width:120px;}
+        .filter-group label{font-size:10px;color:#64748b;font-weight:600;}
+        .filter-group select{padding:8px 10px;border:1px solid #e2e8f0;border-radius:10px;font-size:12px;}
+        .apply-btn{background:#0f3b2c;color:#fff;border:none;padding:8px 20px;border-radius:10px;font-size:12px;cursor:pointer;}
+        .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:15px;}
+        .kpi-card{padding:8px 6px;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.05);}
+        .kpi-card h4{color:#666;font-size:9px;margin-bottom:4px;text-transform:uppercase;}
+        .kpi-card .value{font-size:14px;font-weight:700;color:#2a5298;}
+        .due-payments-widget{padding:8px 15px;margin-bottom:15px;border-left:4px solid #ff6b6b;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+        .due-stats{display:flex;gap:12px;flex-wrap:wrap;}
+        .due-stat-card{text-align:center;padding:5px 10px;border-radius:8px;background:#f8fafc;min-width:80px;}
+        .due-value{font-size:13px;font-weight:700;}
+        .chart-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px;}
+        .chart-card{padding:10px;}
+        .chart-card h3{font-size:11px;margin-bottom:8px;border-left:3px solid #00d2ff;padding-left:8px;}
+        .chart-container{position:relative;height:140px;}
+        .data-table{padding:10px;margin-bottom:12px;overflow:auto;}
+        .data-table h3{margin-bottom:8px;font-size:12px;border-left:3px solid #ff6b6b;padding-left:8px;}
+        table{width:100%;border-collapse:collapse;font-size:11px;}
+        th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;}
+        th{background:#f8f9fa;}
+        .text-right{text-align:right;}
+        .footer{background:#0a2a44;color:#fff;text-align:center;padding:10px;margin-top:15px;border-radius:8px;font-size:10px;}
+        .dynamic-widgets{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px;}
+        .domain-widget{background:#fff;border-radius:12px;padding:12px;border-left:4px solid #0f3b2c;}
+        .domain-widget h4{font-size:11px;color:#0f3b2c;margin-bottom:8px;}
+        .domain-widget .v{font-size:18px;font-weight:700;color:#1e293b;}
+        .domain-widget .sub{font-size:11px;color:#64748b;margin-top:4px;}
+        .rep-summary-card{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px;display:none;}
+        .rep-summary-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+        .rep-summary-title{font-size:13px;font-weight:700;color:#0f3b2c;}
+        .rep-summary-filter{padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;}
+        .rep-summary-table{width:100%;border-collapse:collapse;font-size:12px;}
+        .rep-summary-table th,.rep-summary-table td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left;}
+        .rep-summary-table th{background:#f8fafc;}
+        .install-prompt{position:fixed;bottom:20px;left:20px;right:20px;background:#fff;border-radius:14px;padding:12px 16px;box-shadow:0 12px 28px rgba(0,0,0,.15);z-index:2000;display:none;align-items:center;justify-content:space-between;gap:10px;border:1px solid #e2e8f0;}
+        .install-prompt.show{display:flex;}
+        .install-text{font-size:13px;color:#0f3b2c;font-weight:600;}
+        .install-actions{display:flex;gap:8px;}
+        .install-btn{background:#0f3b2c;color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;}
+        .close-btn{background:#f1f5f9;color:#475569;border:none;padding:8px 10px;border-radius:8px;cursor:pointer;}
+        @media (max-width:1200px){.chart-row{grid-template-columns:repeat(2,1fr);}}
+        @media (max-width:768px){.chart-row,.dynamic-widgets{grid-template-columns:1fr;}}
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="dashboard-headline" id="dashboardHeadline">REAL-TIME BUSINESS DASHBOARD</div>
+        </div>
+        <div class="container">
+            <div class="business-type-selector">
+                <label>View Mode:</label>
+                <button class="business-type-btn active" data-view="shop">Shop</button>
+                <button class="business-type-btn" data-view="vehicle">Distributor</button>
+                <button class="business-type-btn" data-view="combined">Combined</button>
+            </div>
+            <div class="filter-bar">
+                <div class="filter-group"><label>PERIOD</label><select id="periodSelect"><option value="today">Today</option><option value="month" selected>This Month</option></select></div>
+                <button class="apply-btn" id="refreshDashboardBtn">REFRESH</button>
+            </div>
+            <div class="kpi-grid" id="kpiGrid"></div>
+            <div class="dynamic-widgets" id="dynamicWidgets"></div>
+            <div class="rep-summary-card" id="repSummaryCard">
+                <div class="rep-summary-head">
+                    <div class="rep-summary-title">Rep Summary</div>
+                    <select id="repSummaryFilter" class="rep-summary-filter">
+                        <option value="ALL">All Reps</option>
+                    </select>
+                </div>
+                <table class="rep-summary-table">
+                    <thead>
+                        <tr>
+                            <th>Rep</th>
+                            <th>Total Orders</th>
+                            <th>Free Issues</th>
+                            <th>Collections</th>
+                        </tr>
+                    </thead>
+                    <tbody id="repSummaryBody"></tbody>
+                </table>
+            </div>
+            <div class="due-payments-widget">
+                <div><i class="fas fa-clock" style="color:#ff6b6b;"></i> Payment Reminders</div>
+                <div class="due-stats">
+                    <div class="due-stat-card"><div>Overdue</div><div class="due-value" id="overdueCount">0</div></div>
+                    <div class="due-stat-card"><div>Due Today</div><div class="due-value" id="todayDueCount">0</div></div>
+                    <div class="due-stat-card"><div>Pending Orders</div><div class="due-value" id="pendingOrdersCount">0</div></div>
+                    <div class="due-stat-card"><div>Cash Flow</div><div class="due-value" id="cashFlowCount">LKR 0</div></div>
+                </div>
+            </div>
+            <div id="chartRows">
+                <div class="chart-row">
+                    <div class="chart-card"><h3 id="revenueChartTitle">Revenue Comparison</h3><div class="chart-container"><canvas id="revenueChart"></canvas></div></div>
+                    <div class="chart-card"><h3 id="ordersChartTitle">Orders vs Pending</h3><div class="chart-container"><canvas id="ordersChart"></canvas></div></div>
+                    <div class="chart-card"><h3 id="cashFlowChartTitle">Cash Flow</h3><div class="chart-container"><canvas id="cashFlowChart"></canvas></div></div>
+                </div>
+                <div class="chart-row" id="distributorExtraCharts" style="display:none;">
+                    <div class="chart-card"><h3>Sales trend (7 days)</h3><div class="chart-container"><canvas id="distTrendChart"></canvas></div></div>
+                    <div class="chart-card"><h3>Brand mix (month est.)</h3><div class="chart-container"><canvas id="distBrandChart"></canvas></div></div>
+                    <div class="chart-card"><h3>Rep collections (top)</h3><div class="chart-container"><canvas id="distRepChart"></canvas></div></div>
+                </div>
+                <div class="chart-row" id="distributorExtraCharts2" style="display:none;">
+                    <div class="chart-card"><h3>Returns vs free (units, MTD)</h3><div class="chart-container"><canvas id="distReturnsChart"></canvas></div></div>
+                    <div class="chart-card"><h3>Order status mix</h3><div class="chart-container"><canvas id="distStatusChart"></canvas></div></div>
+                    <div class="chart-card"><h3>Category proxy (top brands)</h3><div class="chart-container"><canvas id="distCategoryChart"></canvas></div></div>
+                </div>
+            </div>
+            <div class="data-table" id="distributorQuickSection" style="display:none;">
+                <h3>Low stock SKUs</h3>
+                <table><thead><tr><th>Product</th><th>Brand</th><th class="text-right">Qty</th></tr></thead><tbody id="lowStockBody"></tbody></table>
+            </div>
+            <div class="data-table" id="distributorTopProducts" style="display:none;">
+                <h3>Top lines this month (by value)</h3>
+                <table><thead><tr><th>Product</th><th>Brand</th><th class="text-right">Est. value</th></tr></thead><tbody id="topProductsBody"></tbody></table>
+            </div>
+            <div class="data-table" id="distributorRecentOrders" style="display:none;">
+                <h3>Recent orders</h3>
+                <table><thead><tr><th>Order</th><th>Date</th><th>Shop</th><th>Status</th><th class="text-right">Amount</th></tr></thead><tbody id="recentOrdersBody"></tbody></table>
+            </div>
+            <div class="data-table">
+                <h3>Recent Journal Activity</h3>
+                <table><thead><tr><th>Reference</th><th>Description</th><th>Date</th><th class="text-right">Amount</th></tr></thead><tbody id="recentTableBody"></tbody></table>
+            </div>
+            <div class="footer">DIGIBIZ Universal Dashboard</div>
+        </div>
+    </div>
+    <div class="install-prompt" id="installPrompt">
+        <div class="install-text">Install DigiBiz Master OS app for faster access</div>
+        <div class="install-actions">
+            <button class="install-btn" id="installBtn">Install</button>
+            <button class="close-btn" id="closeInstallBtn">Later</button>
+        </div>
+    </div>
+    <script>
+        const metricMeta = {
+            todaySales: { label: 'Today Sales', currency: true },
+            monthSales: { label: 'Month Sales', currency: true },
+            pendingOrders: { label: 'Pending Orders' },
+            cashFlow: { label: 'Cash Flow', currency: true },
+            lowStock: { label: 'Low Stock' },
+            expiringSoon: { label: 'Expiring Soon' },
+            expiredCount: { label: 'Expired Items' },
+            drugCategories: { label: 'Drug Categories' },
+            prescriptionUploads: { label: 'Prescription Uploads' },
+            unitConvertibleItems: { label: 'Unit Convertibles' },
+            bulkWeightPricedItems: { label: 'Weight Priced Items' },
+            bulkItems: { label: 'Bulk Items' },
+            inventoryUnitsTracked: { label: 'Tracked Units' },
+            quotationCount: { label: 'Quotation Count' },
+            quoteConversionRate: { label: 'Quote Conversion', suffix: '%' },
+            todayAppointments: { label: 'Today Appointments' },
+            upcomingAppointments: { label: 'Upcoming Appointments' },
+            serviceBills: { label: 'Service Bills' },
+            clients: { label: 'Clients' },
+            utilization: { label: 'Utilization', suffix: '%' },
+            pendingQueueCount: { label: 'Pending queue' },
+            approvedCount: { label: 'Approved orders' },
+            rejectedCount: { label: 'Rejected' },
+            dispatchedCount: { label: 'Dispatched' },
+            deliveredCount: { label: 'Delivered' },
+            totalStockValue: { label: 'Stock value (est.)', currency: true },
+            outOfStockCount: { label: 'Out of stock SKUs' },
+            lowStockAlertCount: { label: 'Low stock SKUs' },
+            returnsCat1Units: { label: 'Returns Cat 1 (units)' },
+            returnsCat2Units: { label: 'Returns Cat 2 (units)' },
+            freeIssueUnits: { label: 'Free issue units' },
+            freeIssueValueEst: { label: 'Free issue value (est.)', currency: true },
+            outstandingBalance: { label: 'Outstanding balance', currency: true },
+            activeReps: { label: 'Active reps' },
+            newCustomers: { label: 'New shops (MTD)' },
+            monthOrderCount: { label: 'Orders w/ lines (MTD)' }
+        };
+        let dashboardContext = null;
+        let charts = {};
+        let deferredInstallPrompt = null;
+
+        function formatLKR(value) {
+            return `LKR ${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+
+        function resolveKpiDefinitions(structure) {
+            return structure.map((id) => ({ id, ...(metricMeta[id] || { label: id }) }));
+        }
+
+        function initKPIGrid(structure) {
+            const defs = resolveKpiDefinitions(structure);
+            document.getElementById('kpiGrid').innerHTML = defs
+                .map((kpi) => `<div class="kpi-card"><h4>${kpi.label}</h4><div class="value" id="kpi-${kpi.id}">0</div></div>`)
+                .join('');
+        }
+
+        function setKpiValue(id, value, currency = false, suffix = '') {
+            const target = document.getElementById(`kpi-${id}`);
+            if (!target) return;
+            target.textContent = currency ? formatLKR(value) : `${value || 0}${suffix}`;
+        }
+
+        function renderCharts(metrics) {
+            const type = dashboardContext.businessType;
+            const today = Number(metrics.todaySales) || Number(metrics.todayAppointments) || 0;
+            const month = Number(metrics.monthSales) || Number(metrics.todaySales) || 0;
+            const pending = Number(metrics.pendingOrders) || Number(metrics.upcomingAppointments) || 0;
+            const cashFlow = Number(metrics.cashFlow) || 0;
+            const quoteCount = Number(metrics.quotationCount) || 0;
+            const salesDocCount = Number(metrics.hardwareSalesVsQuotations?.sales) || 0;
+            const chartLabels = {
+                pharmacy: ['Prescription Revenue', 'Monthly Revenue'],
+                hardware: ['Sales Docs', 'Quotation Docs'],
+                service: ['Today Services', 'Service Revenue'],
+                distributor: ['Today Sales', 'Month Sales'],
+                retail: ['Today Sales', 'Month Sales']
+            };
+
+            document.getElementById('revenueChartTitle').textContent = type === 'service' ? 'Service Revenue' : (type === 'hardware' ? 'Sales vs Quotations' : 'Revenue Comparison');
+            document.getElementById('ordersChartTitle').textContent = type === 'service' ? 'Appointments Overview' : (type === 'pharmacy' ? 'Prescription Queue' : 'Orders vs Pending');
+            document.getElementById('cashFlowChartTitle').textContent = type === 'service' ? 'Service Cash Flow' : 'Cash Flow';
+
+            const chartDefs = [
+                { key: 'revenueChart', type: 'bar', labels: chartLabels[type] || ['Today', 'Month'], data: type === 'hardware' ? [salesDocCount, quoteCount] : [today, month], colors: ['#0f3b2c', '#10b981'] },
+                { key: 'ordersChart', type: 'doughnut', labels: ['Pending', 'Processed'], data: [pending, Math.max(0, month - pending)], colors: ['#f97316', '#22c55e'] },
+                { key: 'cashFlowChart', type: 'line', labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'], data: [cashFlow * 0.2, cashFlow * 0.25, cashFlow * 0.27, cashFlow * 0.28], colors: ['#00d2ff'] }
+            ];
+
+            chartDefs.forEach((def) => {
+                const ctx = document.getElementById(def.key);
+                if (!ctx) return;
+                if (charts[def.key]) charts[def.key].destroy();
+                charts[def.key] = new Chart(ctx, {
+                    type: def.type,
+                    data: {
+                        labels: def.labels,
+                        datasets: [{ data: def.data, backgroundColor: def.colors, borderColor: def.colors[0], borderWidth: 2, fill: false }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: def.type !== 'line' } } }
+                });
+            });
+
+            if (type === 'distributor' && metrics) {
+                const pend = Number(metrics.pendingQueueCount) || 0;
+                const appr = Number(metrics.approvedCount) || 0;
+                const rest = Math.max(0, (Number(metrics.dispatchedCount) || 0) + (Number(metrics.deliveredCount) || 0) + (Number(metrics.rejectedCount) || 0));
+                const oc = document.getElementById('ordersChart');
+                if (oc) {
+                    if (charts.ordersChart) charts.ordersChart.destroy();
+                    charts.ordersChart = new Chart(oc, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Pending queue', 'Approved', 'Other'],
+                            datasets: [{ data: [pend, appr, rest], backgroundColor: ['#f97316', '#22c55e', '#94a3b8'] }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } } }
+                    });
+                }
+            }
+            renderDistributorSupplementCharts(metrics);
+        }
+
+        function renderDistributorSupplementCharts(metrics) {
+            const extra = document.getElementById('distributorExtraCharts');
+            const extra2 = document.getElementById('distributorExtraCharts2');
+            if (!extra || !extra2) return;
+            ['distTrendChart', 'distBrandChart', 'distRepChart', 'distReturnsChart', 'distStatusChart', 'distCategoryChart'].forEach((k) => {
+                if (charts[k]) {
+                    charts[k].destroy();
+                    charts[k] = null;
+                }
+            });
+            if (!dashboardContext || dashboardContext.businessType !== 'distributor' || !metrics) {
+                extra.style.display = 'none';
+                extra2.style.display = 'none';
+                return;
+            }
+            extra.style.display = 'grid';
+            extra2.style.display = 'grid';
+
+            const segmentColors = (n) => Array.from({ length: n }, (_, i) => `hsl(${(i * 47) % 360} 62% 48%)`);
+            const mk = (id, type, labels, data, bgColors) => {
+                const el = document.getElementById(id);
+                if (!el || !Array.isArray(labels) || !Array.isArray(data) || labels.length === 0 || data.length === 0) return;
+                let dataset;
+                if (type === 'line') {
+                    const c = (Array.isArray(bgColors) && bgColors[0]) || '#0ea5e9';
+                    dataset = {
+                        label: 'Sales',
+                        data,
+                        borderColor: c,
+                        backgroundColor: `${c}26`,
+                        fill: true,
+                        tension: 0.25,
+                        borderWidth: 2,
+                        pointRadius: 2
+                    };
+                } else {
+                    const n = data.length;
+                    const colors = Array.isArray(bgColors) && bgColors.length === n ? bgColors : segmentColors(n);
+                    dataset = { data, backgroundColor: colors, borderWidth: 1, borderColor: '#fff' };
+                }
+                charts[id] = new Chart(el, {
+                    type,
+                    data: { labels, datasets: [dataset] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: type !== 'line' } } }
+                });
+            };
+
+            mk('distTrendChart', 'line', metrics.distributorTrendLabels || [], metrics.distributorTrendData || [], ['#0ea5e9']);
+            mk('distBrandChart', 'bar', metrics.distributorBrandLabels || [], metrics.distributorBrandData || []);
+            mk('distRepChart', 'bar', metrics.distributorRepLeaderLabels || [], metrics.distributorRepLeaderData || []);
+            const r1 = Number(metrics.returnsCat1Units) || 0;
+            const r2 = Number(metrics.returnsCat2Units) || 0;
+            const fq = Number(metrics.freeIssueUnits) || 0;
+            mk('distReturnsChart', 'bar', ['Cat 1 returns', 'Cat 2 returns', 'Free units'], [r1, r2, fq], ['#b45309', '#059669', '#f59e0b']);
+            mk('distStatusChart', 'doughnut', ['Approved', 'Rejected', 'Dispatched', 'Delivered'],
+                [metrics.approvedCount || 0, metrics.rejectedCount || 0, metrics.dispatchedCount || 0, metrics.deliveredCount || 0],
+                ['#22c55e', '#ef4444', '#3b82f6', '#0d9488']);
+            mk('distCategoryChart', 'polarArea', metrics.distributorBrandLabels || [], metrics.distributorBrandData || []);
+        }
+
+        function renderDynamicWidgets(metrics) {
+            const t = dashboardContext.businessType;
+            let blocks = [];
+            if (t === 'pharmacy') {
+                blocks = [
+                    { title: 'Expiry Counter', value: `${metrics.expiringSoon || 0}`, sub: `${metrics.expiredCount || 0} already expired` },
+                    { title: 'Prescription Uploads', value: `${metrics.prescriptionUploads || 0}`, sub: 'Uploaded prescriptions' },
+                    { title: 'Drug Categories', value: `${metrics.drugCategories || 0}`, sub: 'Active medicine groups' }
+                ];
+            } else if (t === 'hardware') {
+                blocks = [
+                    { title: 'Unit Conversions', value: `${metrics.unitConvertibleItems || 0}`, sub: 'Feet/inch convertible items' },
+                    { title: 'Weight Pricing', value: `${metrics.bulkWeightPricedItems || 0}`, sub: 'Kg/ton based price rules' },
+                    { title: 'Bulk Summary', value: `${metrics.bulkItems || 0}`, sub: `${metrics.inventoryUnitsTracked || 0} unit-tracked SKUs` },
+                    { title: 'Quotation Count', value: `${metrics.quotationCount || 0}`, sub: 'Active quotations' },
+                    { title: 'Quote Conversion', value: `${(Number(metrics.quoteConversionRate) || 0).toFixed(1)}%`, sub: 'Converted to invoice' }
+                ];
+            } else if (t === 'service') {
+                blocks = [
+                    { title: 'Appointments', value: `${metrics.todayAppointments || 0}`, sub: `${metrics.upcomingAppointments || 0} upcoming` },
+                    { title: 'Service Revenue', value: formatLKR(metrics.todaySales || 0), sub: 'Current service turnover' },
+                    { title: 'Service Utilization', value: `${(Number(metrics.utilization) || 0).toFixed(1)}%`, sub: `${metrics.serviceBills || 0} billed jobs` }
+                ];
+            } else if (t === 'distributor') {
+                blocks = [
+                    { title: 'Returns (units)', value: `${(Number(metrics.returnsCat1Units) || 0) + (Number(metrics.returnsCat2Units) || 0)}`, sub: `Cat 1: ${metrics.returnsCat1Units || 0} · Cat 2: ${metrics.returnsCat2Units || 0}` },
+                    { title: 'Free issues', value: `${metrics.freeIssueUnits || 0} u`, sub: formatLKR(metrics.freeIssueValueEst || 0) + ' est. value' },
+                    { title: 'Stock health', value: `${metrics.outOfStockCount || 0} OOS`, sub: `${metrics.lowStockAlertCount || 0} low-stock SKUs` }
+                ];
+            }
+            document.getElementById('dynamicWidgets').innerHTML = blocks.map((b) => `
+                <div class="domain-widget">
+                    <h4>${b.title}</h4>
+                    <div class="v">${b.value}</div>
+                    <div class="sub">${b.sub}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderRepSummary(metrics) {
+            const card = document.getElementById('repSummaryCard');
+            const filter = document.getElementById('repSummaryFilter');
+            const body = document.getElementById('repSummaryBody');
+            if (!card || !filter || !body) return;
+            const isDistributor = dashboardContext && dashboardContext.businessType === 'distributor';
+            if (!isDistributor) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            const reps = Array.isArray(metrics.repSummary) ? metrics.repSummary : [];
+            const currentVal = filter.value || 'ALL';
+            filter.innerHTML = '<option value="ALL">All Reps</option>' +
+                reps.map((rep) => `<option value="${rep.repId}">${rep.repName}</option>`).join('');
+            filter.value = reps.some((rep) => rep.repId === currentVal) ? currentVal : 'ALL';
+            const selected = filter.value;
+            const rows = reps.filter((rep) => selected === 'ALL' || rep.repId === selected);
+            body.innerHTML = rows.map((rep) => `
+                <tr>
+                    <td>${rep.repName}</td>
+                    <td>${rep.totalOrders || 0}</td>
+                    <td>${rep.freeIssues || 0}</td>
+                    <td>${formatLKR(rep.collections || 0)}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="4">No rep data</td></tr>';
+        }
+
+        function syncLegacyViewModeVisibility() {
+            const selector = document.querySelector('.business-type-selector');
+            if (!selector || !dashboardContext) return;
+            const allowed = ['retail', 'distributor'].includes(dashboardContext.businessType);
+            selector.style.display = allowed ? 'flex' : 'none';
+        }
+
+        async function renderDashboard() {
+            const metrics = await window.dashboardCore.getMetrics(dashboardContext);
+            if (!metrics) return;
+            const structure = window.dashboardCore.getDashboardStructure(dashboardContext.businessType);
+            initKPIGrid(structure);
+            const recentEntries = await window.dashboardCore.getRecentJournalActivities(dashboardContext.businessId, 10);
+
+            const headline = document.getElementById('dashboardHeadline');
+            if (headline) {
+                headline.textContent = dashboardContext.businessType === 'distributor'
+                    ? 'REAL-TIME DISTRIBUTOR BUSINESS DASHBOARD'
+                    : `REAL-TIME ${String(dashboardContext.businessType || 'business').toUpperCase()} BUSINESS DASHBOARD`;
+            }
+            syncLegacyViewModeVisibility();
+
+            resolveKpiDefinitions(structure).forEach((kpi) => {
+                const rawValue = metrics[kpi.id] ?? 0;
+                setKpiValue(kpi.id, rawValue, Boolean(kpi.currency), kpi.suffix || '');
+            });
+
+            document.getElementById('pendingOrdersCount').textContent = metrics.pendingOrders || 0;
+            document.getElementById('cashFlowCount').textContent = formatLKR(metrics.cashFlow || 0);
+            document.getElementById('overdueCount').textContent = recentEntries.filter((e) => e.referenceType === 'LOAN').length;
+            document.getElementById('todayDueCount').textContent = recentEntries.filter((e) => e.referenceType === 'LOAN_PAYMENT').length;
+
+            document.getElementById('recentTableBody').innerHTML = recentEntries.map((entry) => {
+                const dt = entry.date?.toDate ? entry.date.toDate().toLocaleString() : '-';
+                return `<tr><td>${entry.reference || '-'}</td><td>${entry.description || '-'}</td><td>${dt}</td><td class="text-right">${formatLKR(entry.totalDebit || 0)}</td></tr>`;
+            }).join('') || '<tr><td colspan="4">No activity</td></tr>';
+
+            renderCharts(metrics);
+            renderDynamicWidgets(metrics);
+            renderRepSummary(metrics);
+
+            const distIds = ['distributorQuickSection', 'distributorTopProducts', 'distributorRecentOrders', 'distributorExtraCharts', 'distributorExtraCharts2'];
+            if (dashboardContext.businessType === 'distributor') {
+                distIds.forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = id.startsWith('distributorExtra') ? 'grid' : 'block'; });
+                const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+                document.getElementById('lowStockBody').innerHTML = (metrics.lowStockList || []).map((r) =>
+                    `<tr><td>${esc(r.name)}</td><td>${esc(r.brand)}</td><td class="text-right">${r.q}</td></tr>`).join('') || '<tr><td colspan="3">No low stock rows</td></tr>';
+                document.getElementById('topProductsBody').innerHTML = (metrics.topProductLines || []).map((r) =>
+                    `<tr><td>${esc(r.name)}</td><td>${esc(r.brand)}</td><td class="text-right">${formatLKR(r.v)}</td></tr>`).join('') || '<tr><td colspan="3">No products</td></tr>';
+                document.getElementById('recentOrdersBody').innerHTML = (metrics.recentOrdersList || []).map((o) => {
+                    const dt = o.orderDate?.toDate ? o.orderDate.toDate().toLocaleDateString() : '-';
+                    const shop = o.shopName || o.shopId || '—';
+                    return `<tr><td>${esc(o.orderNumber || o.id.slice(-8))}</td><td>${dt}</td><td>${esc(shop)}</td><td>${esc(o.status)}</td><td class="text-right">${formatLKR(o.totalAmount || 0)}</td></tr>`;
+                }).join('') || '<tr><td colspan="5">No orders</td></tr>';
+            } else {
+                distIds.forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('refreshDashboardBtn').addEventListener('click', () => renderDashboard());
+            document.querySelectorAll('.business-type-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.business-type-btn').forEach((b) => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderDashboard();
+                });
+            });
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js?v=31').catch((error) => console.warn('SW register failed:', error));
+            }
+            window.addEventListener('beforeinstallprompt', (event) => {
+                event.preventDefault();
+                deferredInstallPrompt = event;
+                const prompt = document.getElementById('installPrompt');
+                if (prompt) prompt.classList.add('show');
+            });
+            document.getElementById('installBtn')?.addEventListener('click', async () => {
+                if (!deferredInstallPrompt) return;
+                deferredInstallPrompt.prompt();
+                await deferredInstallPrompt.userChoice;
+                deferredInstallPrompt = null;
+                document.getElementById('installPrompt')?.classList.remove('show');
+            });
+            document.getElementById('closeInstallBtn')?.addEventListener('click', () => {
+                document.getElementById('installPrompt')?.classList.remove('show');
+            });
+            document.getElementById('repSummaryFilter')?.addEventListener('change', () => {
+                if (!dashboardContext) return;
+                window.dashboardCore.getMetrics(dashboardContext).then((metrics) => renderRepSummary(metrics));
+            });
+        });
+
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) { window.location.href = '../../auth/login.html'; return; }
+            try {
+                const roleInfo = window.getUserRole ? await window.getUserRole(user.uid) : null;
+                if (roleInfo && String(roleInfo.role || '').toUpperCase() === 'REP') {
+                    window.location.href = '/modules/distributor/mobile/order.html';
+                    return;
+                }
+            } catch (error) {
+                console.warn('Role check failed:', error);
+            }
+            dashboardContext = await window.dashboardCore.getContext(user);
+            if (!dashboardContext.businessId) {
+                window.location.href = '../../index.html';
+                return;
+            }
+            await renderDashboard();
+            setInterval(() => {
+                if (document.visibilityState === 'visible') renderDashboard();
+            }, 30000);
+        });
+    </script>
+</body>
+</html>

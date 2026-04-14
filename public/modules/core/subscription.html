@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscription - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=2"></script>
+    <script src="../../core/event-validation.js?v=2"></script>
+    <script src="../../core/event-bus.js?v=2"></script>
+    <script src="../../core/accounts-core.js?v=2"></script>
+    <script src="../../core/auth-roles.js?v=2"></script>
+    <script src="../../core/business-types.js?v=2"></script>
+    <script src="../../core/dashboard-core.js?v=2"></script>
+    <script src="../../core/subscription-manager.js?v=2"></script>
+    <script src="../../core/sidebar.js?v=30"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:Inter,sans-serif;background:linear-gradient(135deg,#ecfeff 0%,#eff6ff 100%);}
+        .main-content{padding:32px;}
+        .card{background:#fff;border-radius:22px;padding:28px;max-width:760px;border:1px solid #dbeafe;box-shadow:0 20px 40px rgba(30,64,175,.08);}
+        h1{margin-bottom:6px;color:#0f172a;}
+        .sub{color:#64748b;margin-bottom:18px;}
+        .contact{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:13px;}
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+        .row{margin-bottom:10px;background:#f8fafc;border-radius:12px;padding:10px;}
+        .label{font-size:11px;color:#64748b;text-transform:uppercase;}
+        .value{font-size:17px;font-weight:700;color:#0f172a;}
+        input{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:10px;margin:10px 0 14px;}
+        button{background:#10b981;color:#fff;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;}
+        .msg{margin-top:12px;font-size:14px;}
+        @media (max-width:768px){.grid{grid-template-columns:1fr;}}
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="card">
+            <h1>Subscription</h1>
+            <p class="sub">Manual activation only. Enter the code shared by DigiBiz support.</p>
+            <div class="contact">For activations, contact: <strong>0713446500</strong></div>
+            <div class="grid">
+                <div class="row"><div class="label">Current Plan</div><div class="value" id="planValue">-</div></div>
+                <div class="row"><div class="label">Expires On</div><div class="value" id="expiryValue">-</div></div>
+                <div class="row"><div class="label">Device ID</div><div class="value" id="deviceValue">-</div></div>
+                <div class="row"><div class="label">Status</div><div class="value" id="statusValue">-</div></div>
+            </div>
+            <hr style="margin:16px 0;border:0;border-top:1px solid #e2e8f0;">
+            <label for="codeInput" class="label">Activation Code</label>
+            <input id="codeInput" placeholder="DIGIBIZ-XXXX..." />
+            <button id="activateBtn">Activate</button>
+            <div class="msg" id="msgBox"></div>
+        </div>
+    </div>
+    <script>
+        let context = null;
+
+        function setMessage(text, ok) {
+            const box = document.getElementById('msgBox');
+            box.textContent = text;
+            box.style.color = ok ? '#059669' : '#dc2626';
+        }
+
+        function renderState(state) {
+            document.getElementById('planValue').textContent = state && state.plan ? state.plan : 'TRIAL';
+            const exp = state && state.expireDate ? new Date(state.expireDate).toLocaleDateString() : '-';
+            document.getElementById('expiryValue').textContent = exp;
+            document.getElementById('deviceValue').textContent = window.subscriptionManager.getDeviceId();
+            document.getElementById('statusValue').textContent = state && state.statusText ? state.statusText : 'Unknown';
+        }
+
+        async function refreshSubscription() {
+            const user = firebase.auth().currentUser;
+            if (!user || !context) return;
+            const state = await window.subscriptionManager.initializeForUser(user, context.role, context.businessId);
+            renderState(state);
+        }
+
+        document.getElementById('activateBtn').addEventListener('click', async () => {
+            const code = document.getElementById('codeInput').value;
+            if (!code) {
+                setMessage('Please enter an activation code', false);
+                return;
+            }
+            try {
+                const result = await window.subscriptionManager.activateCode(code, context.businessId);
+                if (!result.success) {
+                    setMessage(result.message || 'Activation failed', false);
+                    return;
+                }
+                setMessage('Activation successful', true);
+                await refreshSubscription();
+            } catch (err) {
+                setMessage(err.message || 'Activation failed', false);
+            }
+        });
+
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = '../../auth/login.html';
+                return;
+            }
+            const dashContext = await window.dashboardCore.getContext(user);
+            const roleInfo = await window.getUserRole(user.uid, dashContext.businessId);
+            context = { ...dashContext, role: roleInfo && roleInfo.role ? roleInfo.role : 'VIEWER' };
+            await refreshSubscription();
+        });
+    </script>
+</body>
+</html>

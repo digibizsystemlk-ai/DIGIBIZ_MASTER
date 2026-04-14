@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Products - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=31"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/auth-roles.js?v=31"></script>
+    <script src="/core/business-types.js?v=31"></script>
+    <script src="/core/dashboard-core.js?v=31"></script>
+    <script src="/core/subscription-manager.js?v=2"></script>
+    <script src="/core/distributor-inventory.js?v=31"></script>
+    <script src="/core/mw-trading-dsl-config.js?v=31"></script>
+    <script src="/core/sidebar.js?v=31"></script>
+    <style>
+        /* No extra margin here - sidebar.js will add it */
+        .products-container { padding: 24px; }
+        .page-header { margin-bottom: 24px; }
+        .page-header h1 { font-size: 24px; color: #111827; }
+        .page-header p { color: #6b7280; margin-top: 5px; }
+        
+        .card { background: white; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+        .card-header { padding: 16px 20px; border-bottom: 1px solid #e5e7eb; background: #f9fafb; }
+        .card-header h3 { font-size: 16px; font-weight: 600; }
+        .card-body { padding: 20px; }
+        .form-grid-products { display: flex; flex-direction: column; gap: 16px; margin-bottom: 16px; }
+        .form-row-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+        .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; align-items: start; }
+        .form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #374151; }
+        .form-group input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; }
+        
+        .btn-primary { background: #10b981; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; }
+        .btn-primary:hover { background: #059669; }
+        .btn-danger { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+        .btn-warning { background: #f59e0b; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+        .btn-outline { background: transparent; border: 1px solid #10b981; color: #10b981; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+        .btn-danger-large { background: #dc2626; color: white; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+        
+        .search-box { margin-bottom: 16px; }
+        .search-box input { width: 300px; padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .products-table { width: 100%; border-collapse: collapse; }
+        .products-table th, .products-table td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        .products-table th { background: #f9fafb; font-weight: 600; }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .bulk-area textarea { width: 100%; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-family: monospace; }
+        .alert { padding: 12px; border-radius: 8px; margin-bottom: 16px; }
+        .alert-success { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
+        .alert-error { background: #fee2e2; color: #991b1b; border-left: 4px solid #ef4444; }
+        .loading { text-align: center; padding: 40px; color: #9ca3af; }
+        .status-low { color: #ef4444; }
+        .status-ok { color: #10b981; }
+    </style>
+</head>
+<body>
+    <div class="products-container">
+        <div class="page-header">
+            <h1>📦 Product Management</h1>
+            <p>Add, edit, and manage your products</p>
+            <p id="mwStockFormulaNote" style="display:none; margin-top:8px; font-size:13px; color:#6b7280;">Stock level is kept in sync with warehouse movements and orders. Returns on rep orders split into <strong>to company</strong> vs <strong>to resell</strong>; only resell returns add stock back when the order is approved.</p>
+        </div>
+
+        <div id="alertMessage"></div>
+
+        <!-- Add Single Product -->
+        <div class="card">
+            <div class="card-header"><h3>➕ Add New Product</h3></div>
+            <div class="card-body">
+                <div class="form-grid-products">
+                    <div class="form-row-top">
+                        <div class="form-group"><label>Product Name *</label><input type="text" id="productName" placeholder="Product name"></div>
+                        <div class="form-group"><label>Category</label><input type="text" id="productCategory" placeholder="Category"></div>
+                        <div class="form-group"><label>Brand</label><input type="text" id="productBrand" placeholder="e.g. Unilever"></div>
+                    </div>
+                    <div class="pricing-grid">
+                        <div class="form-group" id="mwBuyingPriceGroup" style="display:none;">
+                            <label>Buying price (cost) Rs</label>
+                            <input type="number" id="productBuyingPrice" min="0" step="0.01" placeholder="Cost → +7% selling">
+                            <span style="font-size:11px;color:#64748b;display:block;margin-top:4px;">Selling defaults to cost × 1.07; you can override unit price anytime.</span>
+                        </div>
+                        <div class="form-group"><label>Unit Price (Rs) *</label><input type="number" id="productPrice" placeholder="0.00"></div>
+                        <div class="form-group"><label>Current Stock</label><input type="number" id="productStock" placeholder="0"></div>
+                        <div class="form-group"><label>Min Stock Level</label><input type="number" id="productMinStock" placeholder="10"></div>
+                    </div>
+                </div>
+                <button class="btn-primary" id="addBtn">➕ Add Product</button>
+            </div>
+        </div>
+
+        <!-- Bulk Import Products -->
+        <div class="card">
+            <div class="card-header"><h3>📤 Bulk Import Products</h3></div>
+            <div class="card-body">
+                <p style="margin-bottom:12px; font-size:13px; color:#6b7280;">Format: <strong>Name, Category, Price, Stock</strong> or <strong>Name, Category, Brand, Price, Stock</strong> (one per line). MW: optional last column <strong>Buying (cost)</strong> when using 5-column (no brand) or 6-column (with brand) rows.</p>
+                <div class="bulk-area">
+                    <textarea id="bulkData" rows="6" placeholder="Example:&#10;Sunlight Soap, Detergent, Unilever, 250, 100&#10;Dove Shampoo, Hair Care, 450, 50"></textarea>
+                    <input type="file" id="bulkFile" accept=".csv,text/csv" style="margin-top:10px;">
+                    <div style="display:flex; gap:10px; margin-top:15px;">
+                        <button class="btn-primary" id="bulkBtn">📤 Import Products</button>
+                        <button class="btn-outline" id="templateBtn">📥 Download Template CSV</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Products List -->
+        <div class="card">
+            <div class="card-header">
+                <div class="flex-between">
+                    <h3>📋 Products List</h3>
+                    <div>
+                        <span id="productsCount" style="margin-right:15px;"></span>
+                        <button class="btn-danger-large" id="deleteAllBtn">🗑️ Delete All Products</button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="search-box"><input type="text" id="searchProduct" placeholder="🔍 Search products..."></div>
+                <div id="productsList" class="loading">Loading products...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Use existing global 'db' from firebase-init.js
+        var currentBusinessId = null;
+        var allProducts = [];
+        var currentBusinessData = null;
+
+        function isMwTradingBusiness() {
+            return !!(window.DigibizMwDslConfig && currentBusinessId
+                && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
+        }
+
+        function applyMwSellingFromBuying(buying) {
+            if (!window.DigibizMwDslConfig) return null;
+            return window.DigibizMwDslConfig.applyCostToSellingPrice(buying);
+        }
+
+        function updateMwBuyingPriceUi() {
+            var row = document.getElementById('mwBuyingPriceGroup');
+            if (!row) return;
+            row.style.display = isMwTradingBusiness() ? 'block' : 'none';
+            var hint = document.getElementById('mwStockFormulaNote');
+            if (hint) hint.style.display = isMwTradingBusiness() ? 'block' : 'none';
+        }
+
+        function stockFieldsFromQty(qty) {
+            var n = parseInt(qty, 10) || 0;
+            if (window.DigiBizDistributorInventory && window.DigiBizDistributorInventory.syncStockPayload) {
+                return window.DigiBizDistributorInventory.syncStockPayload(n);
+            }
+            return { currentStock: n, stock: n };
+        }
+
+        function displayStockUnits(p) {
+            if (window.DigiBizDistributorInventory && window.DigiBizDistributorInventory.numericStock) {
+                return window.DigiBizDistributorInventory.numericStock(p);
+            }
+            var v = p.currentStock != null ? p.currentStock : p.stock;
+            return (parseInt(v, 10) || 0);
+        }
+
+        function showMessage(msg, type) {
+            var div = document.getElementById('alertMessage');
+            div.innerHTML = '<div class="alert alert-' + type + '">' + msg + '</div>';
+            setTimeout(function() { div.innerHTML = ''; }, 5000);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            var div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function loadProducts() {
+            var container = document.getElementById('productsList');
+            container.innerHTML = '<div class="loading">Loading...</div>';
+            if (!currentBusinessId) return;
+            
+            try {
+                var snap = await db.collection('products').where('businessId', '==', currentBusinessId).get();
+                var nestedSnap = await db.collection('products').doc(currentBusinessId).collection('list').get();
+                allProducts = [];
+                snap.forEach(function(doc) {
+                    allProducts.push({ id: doc.id, source: 'flat', ...doc.data() });
+                });
+                nestedSnap.forEach(function(doc) {
+                    allProducts.push({ id: doc.id, source: 'nested', ...doc.data() });
+                });
+                
+                allProducts.sort(function(a, b) {
+                    return (a.name || '').localeCompare(b.name || '');
+                });
+                
+                if (allProducts.length === 0) {
+                    container.innerHTML = '<div class="loading">No products. Add one above.</div>';
+                    document.getElementById('productsCount').innerText = '0 products';
+                    return;
+                }
+                document.getElementById('productsCount').innerText = allProducts.length + ' products';
+                
+                var html = '<div class="table-responsive"><table class="products-table"><thead><tr><th>Name</th><th>Category</th><th>Brand</th><th>Price (Rs)</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+                for (var i = 0; i < allProducts.length; i++) {
+                    var p = allProducts[i];
+                    var units = displayStockUnits(p);
+                    var isLow = units <= (p.minStockLevel || 10);
+                    html += '<tr>' +
+                        '<td><strong>' + escapeHtml(p.name) + '</strong></td>' +
+                        '<td>' + escapeHtml(p.category || '-') + '</td>' +
+                        '<td>' + escapeHtml(p.brand || '—') + '</td>' +
+                        '<td>Rs ' + (p.unitPrice || 0).toLocaleString() + '</td>' +
+                        '<td>' + units + ' units</td>' +
+                        '<td>' + (isLow ? '<span class="status-low">⚠️ Low Stock</span>' : '<span class="status-ok">✅ OK</span>') + '</td>' +
+                        '<td><button class="btn-warning" onclick="editProduct(\'' + p.id + '\')">✏️ Edit</button> <button class="btn-danger" onclick="deleteProduct(\'' + p.id + '\')">🗑️ Delete</button></td>' +
+                    '</tr>';
+                }
+                html += '</tbody></table></div>';
+                container.innerHTML = html;
+            } catch(e) {
+                console.error('Load error:', e);
+                container.innerHTML = '<div class="loading">Error: ' + e.message + '</div>';
+            }
+        }
+
+        window.addProduct = async function() {
+            var name = document.getElementById('productName').value.trim();
+            var price = parseFloat(document.getElementById('productPrice').value);
+            var buyingEl = document.getElementById('productBuyingPrice');
+            var buyingRaw = buyingEl ? parseFloat(buyingEl.value) : NaN;
+            if (isMwTradingBusiness() && !isNaN(buyingRaw) && buyingRaw >= 0) {
+                var auto = applyMwSellingFromBuying(buyingRaw);
+                if (auto != null) {
+                    price = auto;
+                    document.getElementById('productPrice').value = String(auto);
+                }
+            }
+            if (!name || isNaN(price) || price <= 0) {
+                showMessage('Product Name and valid Price required', 'error');
+                return;
+            }
+            try {
+                var payload = {
+                    businessId: currentBusinessId,
+                    name: name,
+                    category: document.getElementById('productCategory').value.trim(),
+                    brand: (document.getElementById('productBrand') && document.getElementById('productBrand').value.trim()) || '',
+                    unitPrice: price,
+                    minStockLevel: parseInt(document.getElementById('productMinStock').value) || 10,
+                    isActive: true,
+                    createdAt: new Date()
+                };
+                Object.assign(payload, stockFieldsFromQty(document.getElementById('productStock').value));
+                if (isMwTradingBusiness() && !isNaN(buyingRaw) && buyingRaw >= 0) {
+                    payload.buyingPrice = buyingRaw;
+                }
+                await db.collection('products').add(payload);
+                showMessage('Product added!', 'success');
+                document.getElementById('productName').value = '';
+                document.getElementById('productPrice').value = '';
+                if (buyingEl) buyingEl.value = '';
+                document.getElementById('productCategory').value = '';
+                if (document.getElementById('productBrand')) document.getElementById('productBrand').value = '';
+                document.getElementById('productStock').value = '';
+                await loadProducts();
+            } catch(e) {
+                showMessage('Error: ' + e.message, 'error');
+            }
+        };
+
+        window.bulkImport = async function() {
+            var rawData = document.getElementById('bulkData').value;
+            var file = document.getElementById('bulkFile').files[0];
+            if (file) {
+                rawData = await file.text();
+            }
+            if (!rawData.trim()) {
+                showMessage('Please paste data', 'error');
+                return;
+            }
+            var lines = rawData.split('\n');
+            var added = 0, errors = 0;
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i].trim();
+                if (!line) continue;
+                var parts = line.split(',').map(function(p) { return p.trim(); });
+                if (parts.length < 3) { errors++; continue; }
+                var name = parts[0];
+                var category = parts[1] || '';
+                var brand = '';
+                var price;
+                var stock;
+                var buyingCsv = NaN;
+                var col2Num = parseFloat(parts[2]);
+                if (parts.length >= 6 || (parts.length === 5 && isNaN(col2Num))) {
+                    brand = parts[2] || '';
+                    price = parseFloat(parts[3]);
+                    stock = parseInt(parts[4], 10) || 0;
+                    if (parts.length >= 6) buyingCsv = parseFloat(parts[5]);
+                } else {
+                    price = col2Num;
+                    stock = parseInt(parts[3], 10) || 0;
+                    if (parts.length >= 5) buyingCsv = parseFloat(parts[4]);
+                }
+                if (isMwTradingBusiness() && !isNaN(buyingCsv) && buyingCsv >= 0) {
+                    var autoP = applyMwSellingFromBuying(buyingCsv);
+                    if (autoP != null) price = autoP;
+                }
+                if (!name || isNaN(price)) { errors++; continue; }
+                try {
+                    var record = {
+                        businessId: currentBusinessId,
+                        name: name, category: category, brand: brand, unitPrice: price,
+                        minStockLevel: 10, isActive: true, createdAt: new Date()
+                    };
+                    Object.assign(record, stockFieldsFromQty(stock));
+                    if (isMwTradingBusiness() && !isNaN(buyingCsv) && buyingCsv >= 0) {
+                        record.buyingPrice = buyingCsv;
+                    }
+                    await db.collection('products').add(record);
+                    await db.collection('products').doc(currentBusinessId).collection('list').add(record);
+                    added++;
+                } catch(e) { errors++; }
+            }
+            showMessage('✅ Imported ' + added + ' products. Errors: ' + errors, added > 0 ? 'success' : 'error');
+            document.getElementById('bulkData').value = '';
+            document.getElementById('bulkFile').value = '';
+            await loadProducts();
+        };
+
+        window.downloadTemplate = function() {
+            var csv = "Name,Category,Brand,Price,Stock,BuyingCost\nSunlight Soap,Detergent,Unilever,250,100,200\nDove Shampoo,Hair Care,,450,50,";
+            var blob = new Blob([csv], { type: 'text/csv' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'product_template.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+
+        window.editProduct = async function(id) {
+            var product = allProducts.find(function(p) { return p.id === id; });
+            if (!product) return;
+            var newName = prompt('Edit Product Name:', product.name);
+            if (!newName) return;
+            var newPrice = prompt('Edit Unit Price:', product.unitPrice);
+            if (!newPrice) return;
+            var newBrand = prompt('Brand (optional, leave blank to clear):', product.brand || '');
+            if (newBrand === null) return;
+            var brandVal = String(newBrand).trim();
+            if (product.source === 'nested') {
+                await db.collection('products').doc(currentBusinessId).collection('list').doc(id).update({ name: newName, unitPrice: parseFloat(newPrice), brand: brandVal });
+            } else {
+                await db.collection('products').doc(id).update({ name: newName, unitPrice: parseFloat(newPrice), brand: brandVal });
+            }
+            showMessage('Product updated!', 'success');
+            await loadProducts();
+        };
+
+        window.deleteProduct = async function(id) {
+            if (!confirm('Delete this product?')) return;
+            var product = allProducts.find(function(p) { return p.id === id; });
+            if (product && product.source === 'nested') {
+                await db.collection('products').doc(currentBusinessId).collection('list').doc(id).delete();
+            } else {
+                await db.collection('products').doc(id).delete();
+            }
+            showMessage('Product deleted', 'success');
+            await loadProducts();
+        };
+
+        window.deleteAllProducts = async function() {
+            if (allProducts.length === 0) {
+                showMessage('No products to delete', 'warning');
+                return;
+            }
+            if (!confirm('⚠️ Delete ALL ' + allProducts.length + ' products? This cannot be undone!')) return;
+            if (!confirm('LAST CHANCE: Are you absolutely sure?')) return;
+            
+            showMessage('Deleting ' + allProducts.length + ' products...', 'success');
+            var deleted = 0, errors = 0;
+            var flatSnap = await db.collection('products').where('businessId', '==', currentBusinessId).get();
+            var nestedSnap = await db.collection('products').doc(currentBusinessId).collection('list').get();
+
+            async function deleteSnapshot(snapshot, deleteFn) {
+                var docs = snapshot.docs;
+                for (var i = 0; i < docs.length; i++) {
+                    try {
+                        await deleteFn(docs[i]);
+                        deleted++;
+                    } catch (e) {
+                        errors++;
+                    }
+                }
+            }
+            await deleteSnapshot(flatSnap, function(doc) { return db.collection('products').doc(doc.id).delete(); });
+            await deleteSnapshot(nestedSnap, function(doc) { return db.collection('products').doc(currentBusinessId).collection('list').doc(doc.id).delete(); });
+
+            showMessage('✅ Deleted ' + deleted + ' products. Errors: ' + errors, deleted > 0 ? 'success' : 'error');
+            await loadProducts();
+        };
+
+        window.filterProducts = function() {
+            var term = document.getElementById('searchProduct').value.toLowerCase();
+            if (!term.trim()) {
+                loadProducts();
+                return;
+            }
+            var filtered = allProducts.filter(function(p) {
+                var n = (p.name || '').toLowerCase();
+                var b = (p.brand || '').toLowerCase();
+                var c = (p.category || '').toLowerCase();
+                return n.indexOf(term) !== -1 || b.indexOf(term) !== -1 || c.indexOf(term) !== -1;
+            });
+            // Display filtered products directly without reloading
+            var container = document.getElementById('productsList');
+            var html = '<div class="table-responsive"><table class="products-table"><thead><tr><th>Name</th><th>Category</th><th>Brand</th><th>Price (Rs)</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
+            for (var i = 0; i < filtered.length; i++) {
+                var p = filtered[i];
+                var units = displayStockUnits(p);
+                var isLow = units <= (p.minStockLevel || 10);
+                html += '<tr>' +
+                    '<td><strong>' + escapeHtml(p.name) + '</strong></td>' +
+                    '<td>' + escapeHtml(p.category || '-') + '</td>' +
+                    '<td>' + escapeHtml(p.brand || '—') + '</td>' +
+                    '<td>Rs ' + (p.unitPrice || 0).toLocaleString() + '</td>' +
+                    '<td>' + units + ' units</td>' +
+                    '<td>' + (isLow ? '<span class="status-low">⚠️ Low Stock</span>' : '<span class="status-ok">✅ OK</span>') + '</td>' +
+                    '<td><button class="btn-warning" onclick="editProduct(\'' + p.id + '\')">✏️ Edit</button> <button class="btn-danger" onclick="deleteProduct(\'' + p.id + '\')">🗑️ Delete</button></td>' +
+                '</tr>';
+            }
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        };
+
+        // Initialize
+        firebase.auth().onAuthStateChanged(async function(user) {
+            if (!user) {
+                window.location.href = '/auth/login.html';
+                return;
+            }
+            
+            try {
+                var userDoc = await db.collection('users').doc(user.uid).get();
+                currentBusinessId = userDoc.data()?.businessId || localStorage.getItem('currentBusinessId');
+                if (!currentBusinessId) {
+                    var bizQuery = await db.collection('businesses').where('ownerId', '==', user.uid).limit(1).get();
+                    if (!bizQuery.empty) {
+                        currentBusinessId = bizQuery.docs[0].id;
+                        localStorage.setItem('currentBusinessId', currentBusinessId);
+                    }
+                }
+                if (currentBusinessId) {
+                    var bizDoc = await db.collection('businesses').doc(currentBusinessId).get();
+                    currentBusinessData = bizDoc.exists ? bizDoc.data() : null;
+                    if (window.DigibizMwDslConfig) {
+                        await window.DigibizMwDslConfig.ensureMwTradingTenantProvisioned(db, currentBusinessId);
+                        var bizDocAfter = await db.collection('businesses').doc(currentBusinessId).get();
+                        if (bizDocAfter.exists) currentBusinessData = bizDocAfter.data();
+                        await window.DigibizMwDslConfig.resolveMwTradingBusinessId(db);
+                    }
+                    updateMwBuyingPriceUi();
+                    var bpInput = document.getElementById('productBuyingPrice');
+                    if (bpInput) {
+                        bpInput.oninput = function () {
+                            if (!isMwTradingBusiness()) return;
+                            var bp = parseFloat(this.value);
+                            var auto = applyMwSellingFromBuying(bp);
+                            if (auto != null) {
+                                document.getElementById('productPrice').value = auto.toFixed(2);
+                            }
+                        };
+                    }
+                    await loadProducts();
+                } else {
+                    document.getElementById('productsList').innerHTML = '<div class="loading">No business found.</div>';
+                }
+            } catch(e) {
+                console.error('Init error:', e);
+                document.getElementById('productsList').innerHTML = '<div class="loading">Error: ' + e.message + '</div>';
+            }
+        });
+
+        // Attach button listeners
+        document.getElementById('addBtn').onclick = window.addProduct;
+        document.getElementById('bulkBtn').onclick = window.bulkImport;
+        document.getElementById('templateBtn').onclick = window.downloadTemplate;
+        document.getElementById('deleteAllBtn').onclick = window.deleteAllProducts;
+        document.getElementById('searchProduct').onkeyup = window.filterProducts;
+    </script>
+</body>
+</html>

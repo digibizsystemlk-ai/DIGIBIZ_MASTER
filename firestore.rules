@@ -1,0 +1,544 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function userPath() {
+      return /databases/$(database)/documents/users/$(uid());
+    }
+
+    function userExists() {
+      return signedIn() && exists(userPath());
+    }
+
+    function userData() {
+      return userExists() ? get(userPath()).data : null;
+    }
+
+    function isSuperAdmin() {
+      return userExists() && userData().role == 'SUPER_ADMIN';
+    }
+
+    function myPrimaryBusinessId() {
+      return userExists() && 'businessId' in userData() && userData().businessId != null
+        ? userData().businessId
+        : null;
+    }
+
+    function bizUserPath(bid) {
+      return /databases/$(database)/documents/businesses/$(bid)/users/$(uid());
+    }
+
+    function hasBizUserDoc(bid) {
+      return signedIn() && exists(bizUserPath(bid));
+    }
+
+    function bizUserRole(bid) {
+      return hasBizUserDoc(bid) ? get(bizUserPath(bid)).data.role : null;
+    }
+
+    function roleForBusiness(bid) {
+      return hasBizUserDoc(bid)
+        ? bizUserRole(bid)
+        : (userExists() ? userData().role : null);
+    }
+
+    function isBusinessMember(bid) {
+      return signedIn() && bid != null && (
+        isSuperAdmin() ||
+        myPrimaryBusinessId() == bid ||
+        hasBizUserDoc(bid)
+      );
+    }
+
+    function isRepInBusiness(bid) {
+      return isBusinessMember(bid) && roleForBusiness(bid) == 'REP';
+    }
+
+    function isAccountantInBusiness(bid) {
+      return isBusinessMember(bid) && roleForBusiness(bid) == 'ACCOUNTANT';
+    }
+
+    function isOwnerClassInBusiness(bid) {
+      return isSuperAdmin() || (
+        isBusinessMember(bid) &&
+        roleForBusiness(bid) in [
+          'BUSINESS_OWNER',
+          'DISTRIBUTOR_OWNER',
+          'ADMIN'
+        ]
+      );
+    }
+
+    function isDistributorOpsInBusiness(bid) {
+      return isOwnerClassInBusiness(bid) || (
+        isBusinessMember(bid) &&
+        roleForBusiness(bid) in ['WAREHOUSE_MANAGER', 'DELIVERY_MANAGER']
+      );
+    }
+
+    function repDocPath(rid) {
+      return /databases/$(database)/documents/reps/$(rid);
+    }
+
+    function repDocValidForCaller(rid) {
+      return rid is string &&
+        exists(repDocPath(rid)) &&
+        get(repDocPath(rid)).data.businessId == myPrimaryBusinessId() &&
+        (
+          get(repDocPath(rid)).data.userId == uid() ||
+          ('email' in get(repDocPath(rid)).data &&
+            get(repDocPath(rid)).data.email == request.auth.token.email)
+        );
+    }
+
+    function shopPath(sid) {
+      return /databases/$(database)/documents/shops/$(sid);
+    }
+
+    function shopValidForRepOrder(bid, rid, sid) {
+      return sid is string &&
+        exists(shopPath(sid)) &&
+        get(shopPath(sid)).data.businessId == bid &&
+        get(shopPath(sid)).data.assignedRepId == rid;
+    }
+
+    function canReadDistributorOrder(bid) {
+      return isSuperAdmin() || (
+        isBusinessMember(bid) &&
+        roleForBusiness(bid) != 'REP' &&
+        (isOwnerClassInBusiness(bid) ||
+          isAccountantInBusiness(bid) ||
+          roleForBusiness(bid) in ['WAREHOUSE_MANAGER', 'DELIVERY_MANAGER', 'REP_SUPERVISOR'])
+      );
+    }
+
+    function mwTradingSolutionsCanonicalBusinessId() {
+      return 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+    }
+
+    // mwTradingSolutionsTenant may only be true on the MW Trading Solutions business document
+    function mwTradingSolutionsTenantWriteOk(businessId) {
+      return !('mwTradingSolutionsTenant' in request.resource.data) ||
+        request.resource.data.mwTradingSolutionsTenant != true ||
+        businessId == mwTradingSolutionsCanonicalBusinessId();
+    }
+
+    function mwTradingOwnerBootstrapEmail() {
+      return 'mwtradingsolutions@gmail.com';
+    }
+
+    function isMwTradingMasterCaller() {
+      return signedIn() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() == mwTradingOwnerBootstrapEmail();
+    }
+
+    function mwTradingStaffLinkRoles() {
+      return ['REP', 'ACCOUNTANT', 'BUSINESS_OWNER'];
+    }
+
+    function mwMasterStaffUserProfileCreateOk(createUid) {
+      return isMwTradingMasterCaller() &&
+        createUid is string &&
+        createUid != uid() &&
+        request.resource.data.keys().hasAll(['email', 'businessId', 'role']) &&
+        request.resource.data.email is string &&
+        request.resource.data.businessId == mwTradingSolutionsCanonicalBusinessId() &&
+        request.resource.data.role in mwTradingStaffLinkRoles();
+    }
+
+    function mwMasterStaffBizUserWriteOk(businessId, staffUid) {
+      return isMwTradingMasterCaller() &&
+        businessId == mwTradingSolutionsCanonicalBusinessId() &&
+        staffUid is string &&
+        staffUid != uid() &&
+        request.resource.data.keys().hasAll([
+          'name',
+          'email',
+          'role',
+          'businessId',
+          'linkedAt',
+          'linkedBy'
+        ]) &&
+        request.resource.data.businessId == businessId &&
+        request.resource.data.linkedBy == uid() &&
+        request.resource.data.role in mwTradingStaffLinkRoles();
+    }
+
+    function mwTradingOwnerSelfBizUser(businessId, staffUid) {
+      return signedIn() &&
+        businessId == mwTradingSolutionsCanonicalBusinessId() &&
+        staffUid == uid() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() == mwTradingOwnerBootstrapEmail();
+    }
+
+    // ----- Registration & identity -----
+    match /users/{userId} {
+      allow read: if signedIn() && (
+        uid() == userId ||
+        isSuperAdmin() ||
+        (
+          isMwTradingMasterCaller() &&
+          'email' in resource.data
+        )
+      );
+      allow create: if signedIn() && (
+        uid() == userId ||
+        isSuperAdmin() ||
+        mwMasterStaffUserProfileCreateOk(userId) ||
+        (isOwnerClassInBusiness(request.resource.data.businessId) &&
+          request.resource.data.role == 'REP')
+      );
+      allow update: if signedIn() && (
+        uid() == userId ||
+        isSuperAdmin() ||
+        (
+          isOwnerClassInBusiness(request.resource.data.businessId) &&
+          request.resource.data.businessId == myPrimaryBusinessId()
+        ) ||
+        (
+          isMwTradingMasterCaller() &&
+          userId != uid() &&
+          request.resource.data.businessId == mwTradingSolutionsCanonicalBusinessId() &&
+          request.resource.data.role in mwTradingStaffLinkRoles()
+        )
+      );
+      allow delete: if signedIn() && (uid() == userId || isSuperAdmin());
+    }
+
+    match /businesses/{businessId} {
+      allow read: if signedIn() && (isSuperAdmin() || isBusinessMember(businessId));
+      allow create: if signedIn() && (
+        isSuperAdmin() ||
+        (businessId == uid() && request.resource.data.ownerName is string)
+      ) && mwTradingSolutionsTenantWriteOk(businessId);
+      allow update: if signedIn() && (
+        isSuperAdmin() ||
+        isOwnerClassInBusiness(businessId)
+      ) && mwTradingSolutionsTenantWriteOk(businessId);
+      allow delete: if signedIn() && (
+        isSuperAdmin() ||
+        isOwnerClassInBusiness(businessId)
+      );
+
+      match /users/{staffUid} {
+        allow read: if signedIn() && (
+          isSuperAdmin() ||
+          isBusinessMember(businessId) ||
+          (
+            isMwTradingMasterCaller() &&
+            businessId == mwTradingSolutionsCanonicalBusinessId()
+          )
+        );
+        allow create: if signedIn() && (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(businessId) ||
+          mwMasterStaffBizUserWriteOk(businessId, staffUid) ||
+          (
+            mwTradingOwnerSelfBizUser(businessId, staffUid) &&
+            request.resource.data.keys().hasAll(['role', 'email', 'businessId']) &&
+            request.resource.data.role == 'BUSINESS_OWNER' &&
+            request.resource.data.email == mwTradingOwnerBootstrapEmail() &&
+            request.resource.data.businessId == businessId
+          )
+        );
+        allow update: if signedIn() && (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(businessId) ||
+          mwMasterStaffBizUserWriteOk(businessId, staffUid) ||
+          (
+            mwTradingOwnerSelfBizUser(businessId, staffUid) &&
+            request.resource.data.role == 'BUSINESS_OWNER' &&
+            request.resource.data.email == mwTradingOwnerBootstrapEmail() &&
+            request.resource.data.businessId == businessId
+          )
+        );
+        allow delete: if signedIn() && (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(businessId)
+        );
+      }
+    }
+
+    // ----- Distributor: pending queue (reps create only) -----
+    match /pendingOrders/{orderId} {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        (
+          resource.data.businessId is string &&
+          isBusinessMember(resource.data.businessId) &&
+          roleForBusiness(resource.data.businessId) != 'REP'
+        )
+      );
+      allow create: if signedIn() &&
+        request.resource.data.businessId is string &&
+        isRepInBusiness(request.resource.data.businessId) &&
+        request.resource.data.businessId == myPrimaryBusinessId() &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.repId is string &&
+        repDocValidForCaller(request.resource.data.repId) &&
+        request.resource.data.shopId is string &&
+        shopValidForRepOrder(
+          request.resource.data.businessId,
+          request.resource.data.repId,
+          request.resource.data.shopId
+        );
+      allow update, delete: if signedIn() &&
+        resource.data.businessId is string &&
+        isOwnerClassInBusiness(resource.data.businessId);
+    }
+
+    // ----- Distributor: approved / operational orders (flat docs) -----
+    match /orders/{orderId} {
+      allow read: if signedIn() &&
+        resource.data.keys().hasAll(['businessId']) &&
+        canReadDistributorOrder(resource.data.businessId);
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasAll(['businessId']) &&
+        isOwnerClassInBusiness(request.resource.data.businessId);
+      allow update: if signedIn() &&
+        resource.data.keys().hasAll(['businessId']) &&
+        request.resource.data.businessId == resource.data.businessId &&
+        isDistributorOpsInBusiness(resource.data.businessId);
+      allow delete: if signedIn() &&
+        resource.data.keys().hasAll(['businessId']) &&
+        isOwnerClassInBusiness(resource.data.businessId);
+    }
+
+    // ----- Retail / POS nested orders -----
+    match /orders/{businessId}/list/{orderDocId} {
+      allow read, write: if signedIn() && isBusinessMember(businessId);
+    }
+
+    // ----- Reps directory -----
+    match /reps/{repId} {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && isOwnerClassInBusiness(resource.data.businessId)) ||
+        repDocValidForCaller(repId)
+      );
+      allow create: if signedIn() &&
+        request.resource.data.businessId is string &&
+        (
+          isOwnerClassInBusiness(request.resource.data.businessId) ||
+          (
+            request.resource.data.keys().hasAll(['userId', 'email', 'businessId']) &&
+            request.resource.data.userId == uid() &&
+            request.auth.token.email == request.resource.data.email
+          )
+        );
+      allow update, delete: if signedIn() &&
+        resource.data.businessId is string &&
+        isOwnerClassInBusiness(resource.data.businessId);
+    }
+
+    // ----- Shops -----
+    match /shops/{shopId} {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        (resource.data.businessId is string && isOwnerClassInBusiness(resource.data.businessId)) ||
+        (
+          resource.data.businessId is string &&
+          isRepInBusiness(resource.data.businessId) &&
+          'assignedRepId' in resource.data &&
+          repDocValidForCaller(resource.data.assignedRepId)
+        )
+      );
+      allow create: if signedIn() && (
+        (request.resource.data.businessId is string &&
+          isOwnerClassInBusiness(request.resource.data.businessId)) ||
+        (
+          request.resource.data.businessId is string &&
+          isRepInBusiness(request.resource.data.businessId) &&
+          request.resource.data.businessId == myPrimaryBusinessId() &&
+          request.resource.data.assignedRepId is string &&
+          repDocValidForCaller(request.resource.data.assignedRepId)
+        )
+      );
+      allow update, delete: if signedIn() &&
+        resource.data.businessId is string &&
+        isOwnerClassInBusiness(resource.data.businessId);
+    }
+
+    // ----- Products (flat distributor rows + nested retail lists) -----
+    match /products/{productDocId} {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        isBusinessMember(productDocId) ||
+        (resource.data.keys().hasAll(['businessId']) &&
+          isBusinessMember(resource.data.businessId))
+      );
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasAll(['businessId']) &&
+        isOwnerClassInBusiness(request.resource.data.businessId);
+      allow update, delete: if signedIn() &&
+        resource.data.keys().hasAll(['businessId']) &&
+        request.resource.data.businessId == resource.data.businessId &&
+        isOwnerClassInBusiness(resource.data.businessId);
+
+      match /list/{itemId} {
+        allow read: if signedIn() && isBusinessMember(productDocId);
+        allow create, update, delete: if signedIn() &&
+          isBusinessMember(productDocId) &&
+          roleForBusiness(productDocId) != 'REP';
+      }
+    }
+
+    // ----- Deliveries & picking batches -----
+    match /deliveries/{deliveryId} {
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isDistributorOpsInBusiness(resource.data.businessId);
+      allow create: if signedIn() &&
+        request.resource.data.businessId is string &&
+        isDistributorOpsInBusiness(request.resource.data.businessId);
+      allow update, delete: if signedIn() &&
+        resource.data.businessId is string &&
+        isDistributorOpsInBusiness(resource.data.businessId);
+    }
+
+    match /stockBatches/{batchId} {
+      allow read: if signedIn() &&
+        resource.data.keys().hasAll(['orderId']) &&
+        exists(/databases/$(database)/documents/orders/$(resource.data.orderId)) &&
+        isDistributorOpsInBusiness(
+          get(/databases/$(database)/documents/orders/$(resource.data.orderId)).data.businessId
+        );
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasAll(['orderId']) &&
+        exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId)) &&
+        isDistributorOpsInBusiness(
+          get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.businessId
+        );
+      allow update, delete: if signedIn() &&
+        resource.data.keys().hasAll(['orderId']) &&
+        exists(/databases/$(database)/documents/orders/$(resource.data.orderId)) &&
+        isDistributorOpsInBusiness(
+          get(/databases/$(database)/documents/orders/$(resource.data.orderId)).data.businessId
+        );
+    }
+
+    match /events/{eventId} {
+      allow create: if signedIn();
+      allow read, update, delete: if isSuperAdmin();
+    }
+
+    match /prescriptions/{docId} {
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+      allow create: if signedIn() &&
+        request.resource.data.businessId is string &&
+        isBusinessMember(request.resource.data.businessId);
+      allow update, delete: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+    }
+
+    match /appointments/{docId} {
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+      allow create: if signedIn() &&
+        request.resource.data.businessId is string &&
+        isBusinessMember(request.resource.data.businessId);
+      allow update, delete: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+    }
+
+    match /serviceBills/{docId} {
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+      allow create: if signedIn() &&
+        request.resource.data.businessId is string &&
+        isBusinessMember(request.resource.data.businessId);
+      allow update, delete: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+    }
+
+    match /clients/{docId} {
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+      allow create: if signedIn() &&
+        request.resource.data.businessId is string &&
+        isBusinessMember(request.resource.data.businessId);
+      allow update, delete: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+    }
+
+    // ----- Accounting & retail data keyed by business -----
+    match /accounts/{bid}/list/{code} {
+      allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+    }
+
+    match /journal/{bid}/entries/{entryId} {
+      allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+    }
+
+    match /settings/{bid} {
+      allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+    }
+
+    match /customers/{bid}/list/{cid} {
+      allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+    }
+
+    match /suppliers/{bid}/list/{sid} {
+      allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+    }
+
+    match /purchases/{bid}/orders/{oid} {
+      allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+    }
+
+    match /customerTransactions/{bid}/list/{tid} {
+      allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+    }
+
+    match /stockMovements/{movementId} {
+      allow read: if signedIn() &&
+        resource.data.productId is string &&
+        exists(/databases/$(database)/documents/products/$(resource.data.productId)) &&
+        get(/databases/$(database)/documents/products/$(resource.data.productId)).data.keys().hasAll(['businessId']) &&
+        isDistributorOpsInBusiness(
+          get(/databases/$(database)/documents/products/$(resource.data.productId)).data.businessId
+        );
+      allow create: if signedIn() &&
+        request.resource.data.productId is string &&
+        exists(/databases/$(database)/documents/products/$(request.resource.data.productId)) &&
+        get(/databases/$(database)/documents/products/$(request.resource.data.productId)).data.keys().hasAll(['businessId']) &&
+        isDistributorOpsInBusiness(
+          get(/databases/$(database)/documents/products/$(request.resource.data.productId)).data.businessId
+        );
+      allow update, delete: if false;
+    }
+
+    match /vehicles/{vehicleId} {
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isDistributorOpsInBusiness(resource.data.businessId);
+      allow create, update, delete: if signedIn() &&
+        request.resource.data.businessId is string &&
+        isOwnerClassInBusiness(request.resource.data.businessId);
+    }
+
+    // ----- Safe default: deny anything not declared above -----
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
