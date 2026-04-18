@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoices - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=46"></script>
+    <script src="/core/auth-roles.js?v=46"></script>
+    <script src="/core/dashboard-core.js?v=46"></script>
+    <script src="/core/sidebar.js?v=46"></script>
+    <style>
+        body{font-family:Inter,system-ui,sans-serif;background:#f3f4f6;margin:0;}
+        .wrap{padding:24px;max-width:1200px;}
+        table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;}
+        th,td{padding:10px;border-bottom:1px solid #e5e7eb;font-size:13px;text-align:left;}
+        th{background:#f8fafc;}
+        button{padding:6px 10px;border:none;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer;}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h2>Approved Invoices</h2>
+    <table>
+        <thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Rep</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="7">Loading...</td></tr></tbody>
+    </table>
+</div>
+<script>
+const MW_BID='YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+let invoiceRows=[];
+function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+function money(n){return 'Rs '+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+function render(){rows.innerHTML=invoiceRows.map((o,i)=>`<tr><td>${esc(o.orderNumber||o.id)}</td><td>${esc(o.date)}</td><td>${esc(o.shopName||o.shopId||'-')}</td><td>${esc(o.repName||o.repId||'-')}</td><td>${money(o.totalAmount)}</td><td>${esc(o.status)}</td><td><button onclick="viewPdf(${i})">View PDF</button></td></tr>`).join('')||'<tr><td colspan="7">No approved invoices.</td></tr>';}
+window.viewPdf=function(idx){
+    const o=invoiceRows[idx]; if(!o)return;
+    const html=`<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${esc(o.orderNumber||o.id)}</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{padding:8px;border:1px solid #ddd;font-size:12px;}h2{margin:0 0 8px;} .r{text-align:right;}</style></head><body><h2>Invoice ${esc(o.orderNumber||o.id)}</h2><p>Date: ${esc(o.date)}<br>Customer: ${esc(o.shopName||o.shopId||'-')}<br>Rep: ${esc(o.repName||o.repId||'-')}</p><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Total</th></tr></thead><tbody>${(o.items||[]).map(it=>`<tr><td>${esc(it.productName||'-')}</td><td class="r">${Number(it.orderedQty||0)+Number(it.freeQty||0)}</td><td class="r">${money(it.unitPrice||0)}</td><td class="r">${money(it.totalPrice||0)}</td></tr>`).join('')}</tbody></table><h3>Total: ${money(o.totalAmount||0)}</h3></body></html>`;
+    const w=window.open('','_blank'); if(!w)return; w.document.write(html); w.document.close();
+};
+firebase.auth().onAuthStateChanged(async(u)=>{
+    if(!u){location.href='/auth/login.html';return;}
+    localStorage.setItem('currentBusinessId',MW_BID);sessionStorage.setItem('currentBusinessId',MW_BID);
+    const snap=await db.collection('orders').where('businessId','==',MW_BID).where('status','==','approved').get();
+    invoiceRows=snap.docs.map(d=>{const o=d.data();const dt=o.approvedAt?.toDate?o.approvedAt.toDate():(o.orderDate?.toDate?o.orderDate.toDate():new Date());return{id:d.id,...o,date:dt.toLocaleString()};}).sort((a,b)=>new Date(b.date)-new Date(a.date));
+    render();
+});
+</script>
+</body>
+</html>

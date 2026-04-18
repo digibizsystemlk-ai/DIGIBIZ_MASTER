@@ -2,6 +2,7 @@
 <html lang="si">
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Warehouse - DIGIBIZ</title>
     <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
@@ -14,11 +15,11 @@
     <script src="/core/event-validation.js?v=2"></script>
     <script src="/core/event-bus.js?v=2"></script>
     <script src="/core/accounts-core.js?v=2"></script>
-    <script src="/core/auth-roles.js?v=2"></script>
+    <script src="/core/auth-roles.js?v=47"></script>
     <script src="/core/business-types.js?v=2"></script>
     <script src="/core/dashboard-core.js?v=2"></script>
     <script src="/core/subscription-manager.js?v=2"></script>
-    <script src="/core/sidebar.js?v=30"></script>
+    <script src="/core/sidebar.js?v=48"></script>
     <style>
         * {
             margin: 0;
@@ -255,6 +256,23 @@
         let currentTab = 'ready';
         let currentPickingOrder = null;
         let pickedItems = [];
+        let __WAREHOUSE_MW_ROLE__=''; // SALES_COORDINATOR / AREA_MANAGER / etc.
+
+        function normalizeRole(r){
+            return String(r || '')
+                .toUpperCase()
+                .replace(/\s+/g,'_')
+                .replace(/[^A-Z0-9_]/g,'')
+                .trim();
+        }
+
+        function canFinalizeStockAdjustments(){
+            if (window.DigibizDistributorPermissions) {
+                return !!window.DigibizDistributorPermissions.permissionsForRole(__WAREHOUSE_MW_ROLE__).canStockEdit;
+            }
+            const r = normalizeRole(__WAREHOUSE_MW_ROLE__);
+            return ['AREA_MANAGER','DISTRIBUTOR_OWNER','BUSINESS_OWNER','SUPER_ADMIN','ADMIN'].includes(r);
+        }
 
         async function loadStats() {
             try {
@@ -459,6 +477,10 @@
         }
 
         async function submitInventoryMovement() {
+            if(!canFinalizeStockAdjustments()){
+                alert('Stock movement save is restricted to Area Manager / Account Owner.');
+                return;
+            }
             const inv = window.DigiBizDistributorInventory;
             const T = inv.MOVEMENT_TYPES;
             const type = document.getElementById('movType').value;
@@ -606,6 +628,10 @@
         }
 
         async function updateStock() {
+            if(!canFinalizeStockAdjustments()){
+                alert('Stock updates are restricted to Area Manager / Account Owner.');
+                return;
+            }
             const newQty = parseInt(document.getElementById('newStockQty').value);
             const note = document.getElementById('stockNote').value;
             
@@ -674,6 +700,17 @@
                 }
                 localStorage.setItem('currentBusinessId', currentBusinessId);
                 sessionStorage.setItem('currentBusinessId', currentBusinessId);
+
+                // Resolve MW role for this business to restrict finalization actions.
+                try{
+                    const ri = (typeof window.getUserRole === 'function' && currentBusinessId)
+                        ? await window.getUserRole(user.uid, currentBusinessId)
+                        : null;
+                    __WAREHOUSE_MW_ROLE__ = normalizeRole(ri && ri.role ? ri.role : '');
+                }catch(e){
+                    __WAREHOUSE_MW_ROLE__ = '';
+                }
+
                 await loadStats();
                 await loadOrders();
             } else {

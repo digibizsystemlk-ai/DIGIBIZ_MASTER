@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>රෙවනියු / Daily margin — Scrap</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=58"></script>
+    <script src="../../core/auth-roles.js?v=58"></script>
+    <script src="../../core/sidebar.js?v=63"></script>
+    <script src="../../core/scrap-vba-core.js?v=70"></script>
+    <style>
+        body{font-family:Inter,Segoe UI,sans-serif;background:#f0fdf4;color:#0f172a;margin:0;}
+        .page{padding:20px;max-width:1100px;margin:0 auto;}
+        .card{background:#fff;border:1px solid #bbf7d0;border-radius:14px;padding:18px;margin-bottom:14px;}
+        h1{font-size:22px;color:#14532d;margin:0 0 8px;}
+        .small{font-size:13px;color:#475569;}
+        .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:14px 0;}
+        .kpi{background:#ecfdf5;border:1px solid #86efac;border-radius:12px;padding:14px;}
+        .kpi .l{font-size:11px;color:#166534;text-transform:uppercase;font-weight:700;}
+        .kpi .v{font-size:22px;font-weight:900;color:#14532d;margin-top:6px;}
+        table{width:100%;border-collapse:collapse;font-size:13px;}
+        th,td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:left;}
+        th{background:#f0fdf4;color:#14532d;}
+        .num{text-align:right;}
+        button{background:#14532d;color:#fff;border:none;padding:10px 18px;border-radius:10px;cursor:pointer;font-weight:600;}
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="card">
+        <h1>අද දින රෙවනියු (මිලදී + විකුණුම් මිල)</h1>
+        <p class="small">අද දින <strong>buying_history</strong> පේළි වල ඒ මොහොතේ ගෙවූ <strong>buyingPrice</strong> සහ දැනට <strong>scrap_items</strong> වල ඇති <strong>sellingPrice</strong> එකතුවෙන් පේළියකට පේළිය estimated margin ගණනය කරනවා. (විකුණුම් මිල 0 නම් margin 0 ලෙස ගනියි.)</p>
+        <button type="button" id="refreshBtn">යාවත්කාලීන කරන්න</button>
+    </div>
+    <div class="kpis" id="kpis">
+        <div class="kpi"><div class="l">අද මිලදී ගැනීම් (Rs)</div><div class="v" id="kBuy">—</div></div>
+        <div class="kpi"><div class="l">අද estimated margin (Rs)</div><div class="v" id="kMargin">—</div></div>
+        <div class="kpi"><div class="l">අද වියදම් (Rs)</div><div class="v" id="kExp">—</div></div>
+        <div class="kpi"><div class="l">අද net (margin − expenses)</div><div class="v" id="kNet">—</div></div>
+    </div>
+    <div class="card">
+        <h2 style="font-size:16px;color:#14532d;margin:0 0 10px;">අද buying sessions (margin breakdown)</h2>
+        <div style="overflow:auto;">
+            <table><thead><tr><th>වේලාව</th><th>Supplier</th><th class="num">Bill total</th><th class="num">Est. margin</th></tr></thead><tbody id="buyBody"><tr><td colspan="4" class="small">Loading…</td></tr></tbody></table>
+        </div>
+    </div>
+    <div class="card">
+        <h2 style="font-size:16px;color:#14532d;margin:0 0 10px;">අද වියදම්</h2>
+        <div style="overflow:auto;">
+            <table><thead><tr><th>වේලාව</th><th>Category</th><th class="num">Amount</th><th>Note</th></tr></thead><tbody id="expBody"><tr><td colspan="4" class="small">—</td></tr></tbody></table>
+        </div>
+    </div>
+</div>
+<script>
+const OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function localDateKey(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function rowLocalDateKey(row) {
+    const raw = row.billDateTime || row.date || row.createdAt;
+    let dt = null;
+    if (raw && typeof raw.toDate === 'function') dt = raw.toDate();
+    else if (typeof raw === 'string' || raw instanceof Date) dt = new Date(raw);
+    if (!dt || Number.isNaN(dt.getTime())) return '';
+    return localDateKey(dt);
+}
+function isTodayRow(row) {
+    return rowLocalDateKey(row) === localDateKey();
+}
+async function refresh() {
+    const todayK = localDateKey();
+    const [itemsSnap, buySnap, expSnap] = await Promise.all([
+        db.collection('scrap_items').where('businessId', '==', OWNER_UID).get().catch(() => ({ docs: [] })),
+        db.collection('buying_history').where('businessId', '==', OWNER_UID).limit(200).get().catch(() => ({ docs: [] })),
+        db.collection('scrap_expenses').where('businessId', '==', OWNER_UID).limit(200).get().catch(() => ({ docs: [] }))
+    ]);
+    const sellById = {};
+    itemsSnap.docs.forEach((d) => {
+        const r = d.data() || {};
+        sellById[d.id] = Number(r.sellingPrice) || 0;
+    });
+    const buys = buySnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter(isTodayRow);
+    let buyTotal = 0;
+    let marginTotal = 0;
+    const buyRows = [];
+    buys.forEach((b) => {
+        const items = Array.isArray(b.items) ? b.items : [];
+        let m = 0;
+        items.forEach((line) => {
+            const w = Number(line.weight) || 0;
+            const bp = Number(line.buyingPrice) || 0;
+            const sp = sellById[line.itemId] || 0;
+            m += w * Math.max(0, sp - bp);
+        });
+        const bt = Number(b.totalAmount) || 0;
+        buyTotal += bt;
+        marginTotal += m;
+        const rawBt = b.billDateTime || b.date;
+        const btDt = rawBt && rawBt.toDate ? rawBt.toDate() : (rawBt ? new Date(rawBt) : null);
+        const tlabel = btDt && !Number.isNaN(btDt.getTime()) ? btDt.toLocaleString() : (rowLocalDateKey(b) || '-');
+        buyRows.push({ t: tlabel || '-', sup: b.supplierName || '-', bt, m });
+    });
+    document.getElementById('kBuy').textContent = fmt(buyTotal);
+    document.getElementById('kMargin').textContent = fmt(marginTotal);
+    let expTotal = 0;
+    const expRows = [];
+    expSnap.docs.forEach((d) => {
+        const r = d.data() || {};
+        if (String(r.expenseDate || '') !== todayK) return;
+        const a = Number(r.amount) || 0;
+        expTotal += a;
+        expRows.push({ t: r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleString() : '-', cat: r.category || '-', a, note: r.note || '' });
+    });
+    document.getElementById('kExp').textContent = fmt(expTotal);
+    document.getElementById('kNet').textContent = fmt(marginTotal - expTotal);
+    document.getElementById('buyBody').innerHTML = buyRows.length
+        ? buyRows.map((r) => `<tr><td>${r.t}</td><td>${String(r.sup).replace(/</g,'&lt;')}</td><td class="num">${fmt(r.bt)}</td><td class="num">${fmt(r.m)}</td></tr>`).join('')
+        : '<tr><td colspan="4" class="small">අද buying sessions නැහැ.</td></tr>';
+    document.getElementById('expBody').innerHTML = expRows.length
+        ? expRows.map((r) => `<tr><td>${r.t}</td><td>${String(r.cat).replace(/</g,'&lt;')}</td><td class="num">${fmt(r.a)}</td><td>${String(r.note).replace(/</g,'&lt;')}</td></tr>`).join('')
+        : '<tr><td colspan="4" class="small">අද වියදම් නැහැ — <a href="/modules/admin/scrap-expenses.html">Expenses</a> පිටුවෙන් එකතු කරන්න.</td></tr>';
+}
+document.getElementById('refreshBtn').addEventListener('click', () => refresh().catch((e) => alert(String(e && e.message || e))));
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '../../auth/login.html'; return; }
+    const userDoc = await db.collection('users').doc(user.uid).get();
+    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    const bizDoc = await db.collection('businesses').doc(businessId).get();
+    const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
+    if (user.uid !== OWNER_UID || businessType !== 'scrap_collection_center') {
+        window.location.href = '/modules/core/dashboard.html';
+        return;
+    }
+    await refresh();
+});
+</script>
+</body>
+</html>

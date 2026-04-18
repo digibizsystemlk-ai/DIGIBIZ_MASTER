@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Staff Management - DIGIBIZ</title>
     <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
@@ -9,10 +10,10 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
-    <script src="../../core/firebase-init.js?v=31"></script>
-    <script src="../../core/auth-roles.js?v=31"></script>
-    <script src="../../core/dashboard-core.js?v=31"></script>
-    <script src="../../core/sidebar.js?v=31"></script>
+    <script src="../../core/firebase-init.js?v=34"></script>
+    <script src="../../core/auth-roles.js?v=34"></script>
+    <script src="../../core/dashboard-core.js?v=34"></script>
+    <script src="../../core/sidebar.js?v=34"></script>
     <style>
         body{font-family:Inter,Arial,sans-serif;background:#f1f5f9;margin:0;}
         .main{padding:24px;}
@@ -32,10 +33,19 @@
         .modal-panel input,.modal-panel select{width:100%;box-sizing:border-box;}
         .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;}
         .btn-outline{background:#fff;color:#0f766e;border:1px solid #0f766e;}
+        .btn-sm{padding:6px 10px;font-size:12px;margin-right:6px;}
+        .access-code-box{background:#ecfdf5;border:2px solid #0f766e;border-radius:12px;padding:16px;margin-bottom:18px;}
+        .access-code-box .big{font-size:28px;font-weight:800;letter-spacing:4px;font-family:monospace;color:#0f172a;}
     </style>
 </head>
 <body>
     <div class="main">
+        <div id="ownerAccessCodeCard" class="access-code-box" style="display:none;">
+            <h3 style="margin:0 0 8px;font-size:16px;">Rep mobile app — Business access code</h3>
+            <p style="font-size:12px;color:#475569;margin:0 0 10px;">Share this code with reps to sign in on the mobile app (with their DIGIBIZ email).</p>
+            <div class="big" id="ownerRepLoginCode">—</div>
+            <button type="button" class="btn-outline btn-sm" style="margin-top:12px;" id="copyAccessCodeBtn">Copy code</button>
+        </div>
         <div class="card">
             <h2>Create Staff Account Link</h2>
             <div class="grid">
@@ -45,6 +55,8 @@
                     <option value="REP">Rep</option>
                     <option value="ACCOUNTANT">Accountant</option>
                     <option value="BUSINESS_OWNER">Owner</option>
+                    <option value="SALES_COORDINATOR">Sales Coordinator</option>
+                    <option value="AREA_MANAGER">Area Manager</option>
                 </select>
                 <button type="button" id="addStaffBtn">Add Staff</button>
             </div>
@@ -53,9 +65,38 @@
         <div class="card">
             <h3>Linked Staff</h3>
             <table>
-                <thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead>
-                <tbody id="staffRows"><tr><td colspan="3">Loading...</td></tr></tbody>
+                <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
+                <tbody id="staffRows"><tr><td colspan="4">Loading...</td></tr></tbody>
             </table>
+        </div>
+    </div>
+
+    <div id="staffEditModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="staffEditModalTitle">
+        <div class="modal-panel">
+            <h3 id="staffEditModalTitle">Edit staff</h3>
+            <input type="hidden" id="editStaffUid">
+            <div class="form-group">
+                <label for="editStaffName">Name</label>
+                <input id="editStaffName" type="text" placeholder="Staff name">
+            </div>
+            <div class="form-group">
+                <label for="editStaffEmail">Email</label>
+                <input id="editStaffEmail" type="email" readonly style="background:#f1f5f9;">
+            </div>
+            <div class="form-group">
+                <label for="editStaffRole">Role</label>
+                <select id="editStaffRole">
+                    <option value="REP">Rep</option>
+                    <option value="ACCOUNTANT">Accountant</option>
+                    <option value="BUSINESS_OWNER">Owner</option>
+                    <option value="SALES_COORDINATOR">Sales Coordinator</option>
+                    <option value="AREA_MANAGER">Area Manager</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-outline" id="staffEditModalCancel">Cancel</button>
+                <button type="button" id="staffEditModalSave">Save</button>
+            </div>
         </div>
     </div>
 
@@ -76,6 +117,8 @@
                     <option value="REP">Rep</option>
                     <option value="ACCOUNTANT">Accountant</option>
                     <option value="BUSINESS_OWNER">Owner</option>
+                    <option value="SALES_COORDINATOR">Sales Coordinator</option>
+                    <option value="AREA_MANAGER">Area Manager</option>
                 </select>
             </div>
             <div class="modal-actions">
@@ -148,6 +191,109 @@
             if (modal) modal.style.display = 'none';
         }
 
+        async function syncRepsForStaff(staffUid, name, email, role, targetBusinessId) {
+            const isRep = String(role || '').toUpperCase() === 'REP';
+            if (isRep) {
+                var repLoginCode = '';
+                try {
+                    var biz = await window.db.collection('businesses').doc(targetBusinessId).get();
+                    repLoginCode = (biz.exists && biz.data().repLoginCode) ? String(biz.data().repLoginCode) : '';
+                } catch (e) { console.warn('[Staff] repLoginCode read', e); }
+                await window.db.collection('reps').doc(staffUid).set({
+                    userId: staffUid,
+                    businessId: targetBusinessId,
+                    businessCode: repLoginCode || null,
+                    name: name,
+                    email: email,
+                    phone: '',
+                    route: '',
+                    isActive: true,
+                    provisionedFromStaff: true,
+                    updatedAt: new Date()
+                }, { merge: true });
+            } else {
+                try {
+                    await window.db.collection('reps').doc(staffUid).set({ isActive: false, updatedAt: new Date() }, { merge: true });
+                } catch (e2) { /* ignore */ }
+            }
+        }
+
+        async function loadOwnerAccessCode() {
+            var card = document.getElementById('ownerAccessCodeCard');
+            if (!card || !context || !context.businessId) return;
+            var bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : context.businessId;
+            var role = String(window.__DIGIBIZ_LOCAL_ROLE__ || '').toUpperCase();
+            var show = isMwMasterEmail(currentUser) || role === 'BUSINESS_OWNER' || role === 'DISTRIBUTOR_OWNER' || role === 'SUPER_ADMIN';
+            if (!show) {
+                card.style.display = 'none';
+                return;
+            }
+            try {
+                var bd = await window.db.collection('businesses').doc(bid).get();
+                var code = (bd.exists && bd.data().repLoginCode) ? String(bd.data().repLoginCode) : '';
+                if (!code) {
+                    code = String(Math.floor(100000 + Math.random() * 900000));
+                    await window.db.collection('businesses').doc(bid).update({ repLoginCode: code });
+                }
+                document.getElementById('ownerRepLoginCode').textContent = code;
+                card.style.display = 'block';
+            } catch (e) {
+                console.warn('[Staff] access code', e);
+                card.style.display = 'none';
+            }
+        }
+
+        function openEditStaff(uid) {
+            var modal = document.getElementById('staffEditModal');
+            if (!modal) return;
+            var bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : (context && context.businessId);
+            window.db.collection('businesses').doc(bid).collection('users').doc(uid).get().then(function (snap) {
+                if (!snap.exists) { alert('Staff not found'); return; }
+                var d = snap.data();
+                document.getElementById('editStaffUid').value = uid;
+                document.getElementById('editStaffName').value = d.name || '';
+                document.getElementById('editStaffEmail').value = d.email || '';
+                document.getElementById('editStaffRole').value = d.role || 'REP';
+                modal.style.display = 'flex';
+            });
+        }
+
+        function closeStaffEditModal() {
+            var m = document.getElementById('staffEditModal');
+            if (m) m.style.display = 'none';
+        }
+
+        async function saveStaffEdit() {
+            var uid = document.getElementById('editStaffUid').value;
+            var name = String(document.getElementById('editStaffName').value || '').trim();
+            var email = String(document.getElementById('editStaffEmail').value || '').trim().toLowerCase();
+            var role = document.getElementById('editStaffRole').value;
+            var bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : (context && context.businessId);
+            if (!uid || !name || !bid) { alert('Invalid'); return; }
+            await window.db.collection('businesses').doc(bid).collection('users').doc(uid).set({
+                name: name, email: email, role: role, businessId: bid, updatedAt: new Date()
+            }, { merge: true });
+            await window.db.collection('users').doc(uid).set({
+                role: role, businessId: bid, ownerName: name, updatedAt: new Date()
+            }, { merge: true });
+            await syncRepsForStaff(uid, name, email, role, bid);
+            closeStaffEditModal();
+            await loadStaff();
+            alert('Staff updated');
+        }
+
+        async function deleteStaffMember(uid) {
+            var curUid = currentUser && currentUser.uid;
+            if (uid === curUid) { alert('You cannot remove your own account here.'); return; }
+            if (!confirm('Remove this staff member from this business? Their login remains; they lose access to this business.')) return;
+            var bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : (context && context.businessId);
+            await window.db.collection('businesses').doc(bid).collection('users').doc(uid).delete();
+            try {
+                await window.db.collection('reps').doc(uid).set({ isActive: false, updatedAt: new Date() }, { merge: true });
+            } catch (e) { /* ignore */ }
+            await loadStaff();
+        }
+
         async function loadStaff() {
             const body = document.getElementById('staffRows');
             const bid = context.businessId;
@@ -158,14 +304,17 @@
             const rows = [];
             if (mw && uid) {
                 const ownerName = await resolveOwnerDisplayNameFromFirestore(uid);
-                rows.push('<tr class="mw-owner-row"><td>' + escapeHtml(ownerName) + '</td><td>' + escapeHtml(MW_MASTER_EMAIL) + '</td><td>Owner</td></tr>');
+                rows.push('<tr class="mw-owner-row"><td>' + escapeHtml(ownerName) + '</td><td>' + escapeHtml(MW_MASTER_EMAIL) + '</td><td>Owner</td><td>—</td></tr>');
             }
             snap.docs.forEach(function (doc) {
                 if (mw && uid && doc.id === uid) return;
                 const row = doc.data();
-                rows.push('<tr><td>' + escapeHtml(row.name || '-') + '</td><td>' + escapeHtml(row.email || '-') + '</td><td>' + escapeHtml(row.role || '-') + '</td></tr>');
+                var id = doc.id;
+                rows.push('<tr><td>' + escapeHtml(row.name || '-') + '</td><td>' + escapeHtml(row.email || '-') + '</td><td>' + escapeHtml(row.role || '-') + '</td><td>' +
+                    '<button type="button" class="btn-outline btn-sm" onclick="openEditStaff(\'' + id + '\')">Edit</button>' +
+                    '<button type="button" class="btn-outline btn-sm" style="color:#b91c1c;border-color:#fecaca;" onclick="deleteStaffMember(\'' + id + '\')">Delete</button></td></tr>');
             });
-            body.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="3">No staff yet</td></tr>';
+            body.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="4">No staff yet</td></tr>';
         }
 
         async function linkStaffFromInputs(name, email, role) {
@@ -214,25 +363,7 @@
             await window.db.collection('users').doc(staffUid).set({
                 role: role, businessId: targetBusinessId, ownerName: name, updatedAt: new Date()
             }, { merge: true });
-            if (String(role || '').toUpperCase() === 'REP') {
-                let repLoginCode = '';
-                try {
-                    const biz = await window.db.collection('businesses').doc(targetBusinessId).get();
-                    repLoginCode = (biz.exists && biz.data().repLoginCode) ? String(biz.data().repLoginCode) : '';
-                } catch (e) { console.warn('[Staff] repLoginCode read', e); }
-                await window.db.collection('reps').doc(staffUid).set({
-                    userId: staffUid,
-                    businessId: targetBusinessId,
-                    businessCode: repLoginCode || null,
-                    name: name,
-                    email: email,
-                    phone: '',
-                    route: '',
-                    isActive: true,
-                    provisionedFromStaff: true,
-                    updatedAt: new Date()
-                }, { merge: true });
-            }
+            await syncRepsForStaff(staffUid, name, email, role, targetBusinessId);
             await loadStaff();
             alert(userSnap.empty ? 'Staff created and linked. Default password: ' + DEFAULT_STAFF_PASSWORD + ' (ask them to change it after first login).' : 'Staff linked successfully');
             closeStaffModal();
@@ -293,6 +424,20 @@
         document.getElementById('staffModal').addEventListener('click', function (e) {
             if (e.target && e.target.id === 'staffModal') closeStaffModal();
         });
+        document.getElementById('staffEditModalCancel').addEventListener('click', closeStaffEditModal);
+        document.getElementById('staffEditModalSave').addEventListener('click', function () { void saveStaffEdit(); });
+        document.getElementById('staffEditModal').addEventListener('click', function (e) {
+            if (e.target && e.target.id === 'staffEditModal') closeStaffEditModal();
+        });
+        document.getElementById('copyAccessCodeBtn').addEventListener('click', function () {
+            var t = document.getElementById('ownerRepLoginCode');
+            if (!t) return;
+            var v = t.textContent || '';
+            navigator.clipboard.writeText(v).then(function () { alert('Copied: ' + v); }).catch(function () { alert(v); });
+        });
+
+        window.openEditStaff = openEditStaff;
+        window.deleteStaffMember = deleteStaffMember;
 
         wireAddStaffButton();
 
@@ -330,6 +475,7 @@
                 }
 
                 setAddStaffEnabledByEmail();
+                await loadOwnerAccessCode();
                 await loadStaff();
             } catch (err) {
                 console.error('[Staff] init failed', err);

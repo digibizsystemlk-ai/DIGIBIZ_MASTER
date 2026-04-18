@@ -2,6 +2,7 @@
 <html lang="si">
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reports - DIGIBIZ</title>
     <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
@@ -9,16 +10,16 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/core/firebase-init.js?v=31"></script>
+    <script src="/core/firebase-init.js?v=34"></script>
     <script src="/core/event-validation.js?v=2"></script>
     <script src="/core/event-bus.js?v=2"></script>
     <script src="/core/accounts-core.js?v=2"></script>
-    <script src="/core/auth-roles.js?v=31"></script>
-    <script src="/core/business-types.js?v=31"></script>
-    <script src="/core/dashboard-core.js?v=31"></script>
+    <script src="/core/auth-roles.js?v=47"></script>
+    <script src="/core/business-types.js?v=34"></script>
+    <script src="/core/dashboard-core.js?v=34"></script>
     <script src="/core/subscription-manager.js?v=2"></script>
-    <script src="/core/distributor-inventory.js?v=31"></script>
-    <script src="/core/sidebar.js?v=31"></script>
+    <script src="/core/distributor-inventory.js?v=34"></script>
+    <script src="/core/sidebar.js?v=48"></script>
     <style>
         * {
             margin: 0;
@@ -785,6 +786,25 @@
                 }
                 localStorage.setItem('currentBusinessId', currentBusinessId);
                 sessionStorage.setItem('currentBusinessId', currentBusinessId);
+
+                try {
+                    const bizSnap = await db.collection('businesses').doc(currentBusinessId).get();
+                    const btype = bizSnap.exists ? String(bizSnap.data().businessType || '').toLowerCase() : '';
+                    if (btype === 'distributor' && window.DigibizDistributorPermissions) {
+                        const roleInfo = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
+                        let roleStr = String(roleInfo && roleInfo.role || '');
+                        const bu = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(user.uid).get();
+                        if (bu.exists && bu.data().role) roleStr = String(bu.data().role);
+                        const p = window.DigibizDistributorPermissions.permissionsForRole(roleStr);
+                        if (!p.canViewReportsFull) {
+                            alert('Reports are not available for your role.');
+                            window.location.href = '/modules/core/dashboard.html';
+                            return;
+                        }
+                    }
+                } catch (gateErr) {
+                    console.warn('Distributor reports gate:', gateErr);
+                }
                 
                 const today = new Date();
                 const lastMonth = new Date();

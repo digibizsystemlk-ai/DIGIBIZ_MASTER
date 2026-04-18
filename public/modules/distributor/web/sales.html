@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales — DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=46"></script>
+    <script src="/core/auth-roles.js?v=46"></script>
+    <script src="/core/dashboard-core.js?v=46"></script>
+    <script src="/core/sidebar.js?v=46"></script>
+    <style>
+        body{font-family:Inter,system-ui,sans-serif;background:#f3f4f6;margin:0;}
+        .wrap{padding:24px;max-width:1200px;}
+        h1{font-size:22px;color:#111827;}
+        .sub{color:#64748b;font-size:13px;margin-bottom:16px;}
+        .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;}
+        .filters input,.filters select{padding:8px;border:1px solid #e5e7eb;border-radius:8px;}
+        table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+        th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #e5e7eb;font-size:13px;}
+        th{background:#f9fafb;font-weight:600;}
+        .num{text-align:right;}
+        .mode-grid{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:10px;margin-bottom:12px;}
+        .mode-card{background:#fff;border-radius:10px;padding:10px;border:1px solid #e5e7eb;}
+        .mode-card h3{font-size:12px;color:#6b7280;margin-bottom:6px;}
+        .mode-card p{font-size:15px;font-weight:700;margin:0;}
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <h1>Sales (successful orders)</h1>
+        <p class="sub">Payment categories: Cash, Credit, Cheque (legacy “Bank” orders are shown as Credit).</p>
+        <div class="filters">
+            <input type="date" id="fromDate">
+            <input type="date" id="toDate">
+            <input type="text" id="repFilter" placeholder="Rep name">
+            <input type="text" id="customerFilter" placeholder="Customer">
+            <select id="paymentFilter">
+                <option value="">Payment: All</option>
+                <option value="CASH">Cash</option>
+                <option value="CREDIT">Credit</option>
+                <option value="CHEQUE">Cheque</option>
+            </select>
+            <select id="statusFilter">
+                <option value="">Status: All</option>
+                <option value="approved">approved</option>
+                <option value="dispatched">dispatched</option>
+                <option value="delivered">delivered</option>
+            </select>
+        </div>
+        <div class="mode-grid" id="modeSummary"></div>
+        <div id="out">Loading…</div>
+    </div>
+    <script>
+        const MW_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        const allRows = [];
+        function esc(s){return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+        function money(n){return 'Rs ' + (Number(n) || 0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+        function normalizePaymentMode(o){
+            const raw = String(o.paymentMethod || o.paymentMode || '').trim().toUpperCase();
+            if (raw.includes('CHEQUE') || raw.includes('CHECK')) return 'CHEQUE';
+            if (raw.includes('CREDIT')) return 'CREDIT';
+            if (raw === 'BANK' || raw === 'BANK_TRANSFER' || raw.includes('BANK')) return 'CREDIT';
+            return 'CASH';
+        }
+        function renderRows(){
+            const from = document.getElementById('fromDate').value;
+            const to = document.getElementById('toDate').value;
+            const repQ = String(document.getElementById('repFilter').value || '').trim().toLowerCase();
+            const cusQ = String(document.getElementById('customerFilter').value || '').trim().toLowerCase();
+            const payQ = document.getElementById('paymentFilter').value;
+            const stQ = document.getElementById('statusFilter').value;
+            const fromD = from ? new Date(from + 'T00:00:00') : null;
+            const toD = to ? new Date(to + 'T23:59:59') : null;
+            const rows = allRows.filter((r) => {
+                if (fromD && (!r.dateObj || r.dateObj < fromD)) return false;
+                if (toD && (!r.dateObj || r.dateObj > toD)) return false;
+                if (repQ && !String(r.rep || '').toLowerCase().includes(repQ)) return false;
+                if (cusQ && !String(r.customer || '').toLowerCase().includes(cusQ)) return false;
+                if (payQ && r.pay !== payQ) return false;
+                if (stQ && r.st !== stQ) return false;
+                return true;
+            });
+            const modeTotals = rows.reduce((acc, row) => {
+                acc[row.pay] = (acc[row.pay] || 0) + Number(row.total || 0);
+                return acc;
+            }, { CASH: 0, CREDIT: 0, CHEQUE: 0 });
+            document.getElementById('modeSummary').innerHTML = ['CASH', 'CREDIT', 'CHEQUE']
+                .map((mode) => `<div class="mode-card"><h3>${mode}</h3><p>${money(modeTotals[mode] || 0)}</p></div>`)
+                .join('');
+            document.getElementById('out').innerHTML = `
+                <table>
+                    <thead><tr><th>Invoice / Order</th><th>Customer</th><th class="num">Total</th><th>Rep</th><th>Payment</th><th>Status</th><th>Date</th></tr></thead>
+                    <tbody>
+                        ${rows.length ? rows.map((r) => `<tr><td>${esc(r.inv)}</td><td>${esc(r.customer)}</td><td class="num">${money(r.total)}</td><td>${esc(r.rep)}</td><td>${esc(r.pay)}</td><td>${esc(r.st)}</td><td>${esc(r.dt)}</td></tr>`).join('') : '<tr><td colspan="7">No matching successful orders.</td></tr>'}
+                    </tbody>
+                </table>`;
+        }
+        ['fromDate','toDate','repFilter','customerFilter','paymentFilter','statusFilter'].forEach((id)=>{
+            document.getElementById(id).addEventListener('input', renderRows);
+            document.getElementById(id).addEventListener('change', renderRows);
+        });
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (!user) { window.location.href = '/auth/login.html'; return; }
+            let bid = MW_BUSINESS_ID;
+            if (!bid) { document.getElementById('out').textContent = 'No business selected.'; return; }
+            localStorage.setItem('currentBusinessId', bid);
+            sessionStorage.setItem('currentBusinessId', bid);
+            localStorage.setItem('currentBusinessType', 'distributor');
+            sessionStorage.setItem('currentBusinessType', 'distributor');
+            const ri = await window.getUserRole(user.uid, bid);
+            if (String(ri && ri.role || '').toUpperCase() === 'REP') {
+                window.location.href = '/modules/distributor/mobile/order.html';
+                return;
+            }
+            const snap = await db.collection('orders').where('businessId', '==', bid).get();
+            allRows.length = 0;
+            for (const doc of snap.docs) {
+                const o = doc.data();
+                const st = String(o.status || '').toLowerCase();
+                if (!['approved', 'dispatched', 'delivered'].includes(st)) continue;
+                let repName = o.repName || o.repId;
+                try { const r = await db.collection('reps').doc(o.repId).get(); if (r.exists) repName = r.data().name || repName; } catch (e) {}
+                let customer = o.shopName || o.shopId;
+                try { const s = await db.collection('shops').doc(o.shopId).get(); if (s.exists) customer = s.data().name || customer; } catch (e2) {}
+                const dateObj = o.orderDate && o.orderDate.toDate ? o.orderDate.toDate() : null;
+                allRows.push({
+                    inv: o.orderNumber || doc.id,
+                    customer,
+                    total: o.totalAmount || 0,
+                    rep: repName,
+                    dt: dateObj ? dateObj.toLocaleString() : '—',
+                    st,
+                    pay: normalizePaymentMode(o),
+                    dateObj
+                });
+            }
+            allRows.sort((a,b)=>(b.dateObj ? b.dateObj.getTime() : 0) - (a.dateObj ? a.dateObj.getTime() : 0));
+            renderRows();
+        });
+    </script>
+</body>
+</html>

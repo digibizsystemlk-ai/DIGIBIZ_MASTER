@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manufacturer Stock 360 - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/sidebar.js?v=64"></script>
+    <script src="/core/sms-wallet-core.js?v=4"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=7"></script>
+    <style id="mfgStyle"></style>
+</head>
+<body>
+<div class="mfg-wrap">
+    <div class="mfg-head">
+        <h2>Stock 360 View</h2>
+        <p id="mfgBusinessCtx"></p>
+    </div>
+    <div class="mfg-grid">
+        <div class="mfg-card">
+            <h3>Transformation Mapping</h3>
+            <div><label>Raw Material</label><input id="rawMaterial"></div>
+            <div><label>Finished Products (comma-separated)</label><textarea id="finishedProducts" rows="2"></textarea></div>
+            <div class="mfg-row3">
+                <div><label>Input Qty</label><input type="number" id="inputQty" min="0" step="0.01"></div>
+                <div><label>Output Qty</label><input type="number" id="outputQty" min="0" step="0.01"></div>
+                <div><label>Wastage %</label><input type="number" id="wastagePct" min="0" step="0.01"></div>
+            </div>
+            <button id="saveMapBtn" style="margin-top:8px;">Save Map</button>
+            <div class="mfg-msg" id="mapMsg"></div>
+        </div>
+        <div class="mfg-card">
+            <h3>Raw Materials</h3>
+            <table><thead><tr><th>Name</th><th>Stock</th><th>Unit Cost</th><th>Value</th></tr></thead><tbody id="rmRows"></tbody></table>
+        </div>
+        <div class="mfg-card">
+            <h3>Finished Goods</h3>
+            <table><thead><tr><th>Name</th><th>Stock</th><th>Unit Price</th><th>Value</th></tr></thead><tbody id="fgRows"></tbody></table>
+        </div>
+        <div class="mfg-card">
+            <h3>Transformation Maps</h3>
+            <table><thead><tr><th>Raw</th><th>Finished</th><th>Ratio</th></tr></thead><tbody id="mapRows"></tbody></table>
+        </div>
+    </div>
+</div>
+<script>
+document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
+function v(id){ return document.getElementById(id).value; }
+function n(id){ return Number(v(id)) || 0; }
+async function refresh(){
+    const bid = ManufacturerModule.businessId;
+    const [rm, fg, maps] = await Promise.all([
+        db.collection('manufacturer_raw_materials').where('businessId','==',bid).get().catch(()=>({docs:[]})),
+        db.collection('manufacturer_finished_products').where('businessId','==',bid).get().catch(()=>({docs:[]})),
+        db.collection('manufacturer_transformations').where('businessId','==',bid).limit(100).get().catch(()=>({docs:[]}))
+    ]);
+    const mapRows = maps.docs
+        .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+        .sort((a, b) => {
+            const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+            const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+            return tb - ta;
+        })
+        .slice(0, 50);
+    document.getElementById('rmRows').innerHTML = rm.docs.map((d)=>{
+        const x=d.data()||{}; const v=(Number(x.stockQty)||0)*(Number(x.lastUnitCost)||0);
+        return `<tr><td class="wrap-name">${x.name||'-'}</td><td>${Number(x.stockQty)||0}</td><td>Rs ${ManufacturerModule.money(x.lastUnitCost)}</td><td>Rs ${ManufacturerModule.money(v)}</td></tr>`;
+    }).join('');
+    document.getElementById('fgRows').innerHTML = fg.docs.map((d)=>{
+        const x=d.data()||{}; const v=(Number(x.stockQty)||0)*(Number(x.unitPrice)||0);
+        return `<tr><td class="wrap-name">${x.name||'-'}</td><td>${Number(x.stockQty)||0}</td><td>Rs ${ManufacturerModule.money(x.unitPrice)}</td><td>Rs ${ManufacturerModule.money(v)}</td></tr>`;
+    }).join('');
+    document.getElementById('mapRows').innerHTML = mapRows.map((x)=>{
+        return `<tr><td class="wrap-name">${x.rawMaterial||'-'}</td><td class="wrap-name">${(x.finishedProducts||[]).join(', ')}</td><td>${Number(x.inputQty)||0} → ${Number(x.outputQty)||0} (${Number(x.wastagePct)||0}% waste)</td></tr>`;
+    }).join('');
+}
+async function saveMap(){
+    const bid = ManufacturerModule.businessId;
+    const id = ManufacturerModule.uuid('MAP');
+    await db.collection('manufacturer_transformations').doc(id).set({
+        businessId: bid,
+        mapId: id,
+        rawMaterial: v('rawMaterial').trim(),
+        finishedProducts: v('finishedProducts').split(',').map((s)=>s.trim()).filter(Boolean),
+        inputQty: n('inputQty'),
+        outputQty: n('outputQty'),
+        wastagePct: n('wastagePct'),
+        createdAt: new Date()
+    });
+    await ManufacturerModule.enqueueSms('TRANSFORMATION_UPDATED', `Transformation updated: ${v('rawMaterial')} -> ${v('finishedProducts')}`);
+    document.getElementById('mapMsg').textContent = 'Transformation map saved.';
+    refresh();
+}
+(async function(){
+    await ManufacturerModule.init('stock');
+    document.getElementById('saveMapBtn').onclick = saveMap;
+    refresh();
+})();
+</script>
+</body>
+</html>

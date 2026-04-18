@@ -2,6 +2,7 @@
 <html lang="si">
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DIGIBIZ - Accounting / General Ledger</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -11,15 +12,15 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
-    <script src="../../core/firebase-init.js?v=3"></script>
-    <script src="../../core/event-validation.js?v=3"></script>
-    <script src="../../core/event-bus.js?v=3"></script>
-    <script src="../../core/accounts-core.js?v=3"></script>
-    <script src="../../core/auth-roles.js?v=3"></script>
-    <script src="../../core/business-types.js?v=3"></script>
-    <script src="../../core/dashboard-core.js?v=3"></script>
-    <script src="../../core/subscription-manager.js?v=3"></script>
-    <script src="../../core/sidebar.js?v=31"></script>
+    <script src="../../core/firebase-init.js?v=58"></script>
+    <script src="../../core/event-validation.js?v=58"></script>
+    <script src="../../core/event-bus.js?v=58"></script>
+    <script src="../../core/accounts-core.js?v=58"></script>
+    <script src="../../core/auth-roles.js?v=58"></script>
+    <script src="../../core/business-types.js?v=58"></script>
+    <script src="../../core/dashboard-core.js?v=66"></script>
+    <script src="../../core/subscription-manager.js?v=58"></script>
+    <script src="../../core/sidebar.js?v=62"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
         body{font-family:'Inter',sans-serif;background:#f4f6fa;color:#1e293b;}
@@ -97,17 +98,20 @@
         </div>
         
             <div class="finance-tabs">
-                <button class="tab-btn active" onclick="showTab('journal', event)">General Entries</button>
+                <button class="tab-btn active" onclick="showTab('journal', event)">Account lines</button>
                 <button class="tab-btn" onclick="showTab('ledger', event)">Ledger</button>
                 <button class="tab-btn" onclick="showTab('trial', event)">Trial Balance</button>
                 <button class="tab-btn" onclick="showTab('income', event)">Income Statement</button>
                 <button class="tab-btn" onclick="showTab('balance', event)">Balance Sheet</button>
         </div>
-        
+            <div id="scrapOpeningToolbar" style="display:none;margin-bottom:14px;padding:14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;">
+                <button type="button" id="openScrapOpeningBtn" style="background:#1d4ed8;color:#fff;border:none;padding:10px 18px;border-radius:10px;cursor:pointer;font-weight:600;">Edit opening balances (Scrap)</button>
+                <p class="small" style="margin:8px 0 0;color:#334155;">Record your true starting stock value, total advances already given, and cash/bank position. After you save, the table shows <strong>opening + new activity</strong> only (old “General entries” are not added again, so stock will not double).</p>
+            </div>
             <div id="tab-journal">
                 <div class="ledger-table">
                     <table>
-                        <thead><tr><th>Date</th><th>Description</th><th>Account</th><th class="text-right">Debit</th><th class="text-right">Credit</th></tr></thead>
+                        <thead><tr><th>Date</th><th>Description</th><th>Account</th><th class="text-right">Debit</th><th class="text-right">Credit</th><th style="min-width:200px;">Actions</th></tr></thead>
                         <tbody id="entriesBody"></tbody>
                     </table>
                 </div>
@@ -166,14 +170,70 @@
         </div>
     </div>
 
+    <div id="editJournalLineModal" class="modal">
+        <div class="modal-content" style="max-width:480px;text-align:left;">
+            <h3 style="margin:0 0 12px;">Edit journal line</h3>
+            <p class="small" style="color:#64748b;margin-bottom:12px;">Changes apply to this line in the journal voucher. Total debits must equal total credits for the whole voucher.</p>
+            <label class="small" for="ejlDescription">Description (whole entry)</label>
+            <input type="text" id="ejlDescription" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:10px;margin:4px 0 10px;">
+            <label class="small" for="ejlDate">Entry date</label>
+            <input type="date" id="ejlDate" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:10px;margin:4px 0 10px;">
+            <label class="small" for="ejlCode">Account code</label>
+            <input type="text" id="ejlCode" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:10px;margin:4px 0 10px;">
+            <label class="small" for="ejlName">Account name</label>
+            <input type="text" id="ejlName" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:10px;margin:4px 0 10px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div>
+                    <label class="small" for="ejlDebit">Debit</label>
+                    <input type="number" step="0.01" id="ejlDebit" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:10px;margin-top:4px;">
+                </div>
+                <div>
+                    <label class="small" for="ejlCredit">Credit</label>
+                    <input type="number" step="0.01" id="ejlCredit" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:10px;margin-top:4px;">
+                </div>
+            </div>
+            <input type="hidden" id="ejlEntryDocId" value="">
+            <input type="hidden" id="ejlLineIndex" value="">
+            <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;">
+                <button type="button" class="btn-confirm" id="ejlSaveBtn" style="flex:1;">Save</button>
+                <button type="button" onclick="closeEditJournalLineModal()" style="flex:1;background:#f1f5f9;border:1px solid #e2e8f0;padding:12px;border-radius:12px;cursor:pointer;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="scrapOpeningModal" class="modal">
+        <div class="modal-content" style="max-width:640px;text-align:left;">
+            <h3 style="margin:0 0 8px;">Scrap opening balances</h3>
+            <p class="small" style="color:#64748b;margin-bottom:10px;">Use debit OR credit per line (double-entry). Typical: Scrap inventory = debit; supplier advances = debit; cash out = credit on cash.</p>
+            <label class="small" for="scrapOpeningNote">Opening note / විස්තරය</label>
+            <textarea id="scrapOpeningNote" rows="3" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:10px;margin:6px 0 12px;resize:vertical;" placeholder="e.g. Balances as at 2026-04-17 before switching to this ledger…"></textarea>
+            <div class="ledger-table" style="max-height:280px;overflow:auto;">
+                <table style="font-size:13px;">
+                    <thead><tr><th>Code</th><th>Account name</th><th class="text-right">Debit</th><th class="text-right">Credit</th><th></th></tr></thead>
+                    <tbody id="scrapOpeningRowsBody"></tbody>
+                </table>
+            </div>
+            <button type="button" id="scrapOpeningAddRowBtn" style="margin-top:10px;background:#64748b;color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;">Add row</button>
+            <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">
+                <button type="button" class="btn-confirm" id="scrapOpeningSaveBtn">Save opening</button>
+                <button type="button" onclick="closeScrapOpeningModal()" style="background:none;border:1px solid #cbd5e1;padding:8px 16px;border-radius:8px;cursor:pointer;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let state = {
             context: null,
             role: 'VIEWER',
             isAdmin: false,
+            /** Journal subcollection path (may differ from context.businessId for scrap fallback). */
+            journalCollectionBusinessId: null,
             expandedEntries: [],
-            ledger: {}
+            ledger: {},
+            journalUnsub: null,
+            scrapOpeningNote: ''
         };
+        const SCRAP_OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
 
         function formatLKR(amount) {
             const val = Number(amount) || 0;
@@ -197,9 +257,15 @@
             if (evt && evt.target) evt.target.classList.add('active');
         }
 
-        function normalizeAccountType(accountName = '') {
-            const n = accountName.toLowerCase();
-            if (n.includes('cash') || n.includes('bank') || n.includes('inventory') || n.includes('receivable')) return 'ASSET';
+        function normalizeAccountType(accountCode = '', accountName = '') {
+            const code = String(accountCode || '').trim();
+            if (code.startsWith('1-')) return 'ASSET';
+            if (code.startsWith('2-')) return 'LIABILITY';
+            if (code.startsWith('3-')) return 'EQUITY';
+            if (code.startsWith('4-')) return 'INCOME';
+            if (code.startsWith('5-')) return 'EXPENSE';
+            const n = String(accountName || '').toLowerCase();
+            if (n.includes('asset') || n.includes('cash') || n.includes('bank') || n.includes('inventory') || n.includes('receivable') || n.includes('advance')) return 'ASSET';
             if (n.includes('payable') || n.includes('loan') || n.includes('liability')) return 'LIABILITY';
             if (n.includes('capital') || n.includes('equity') || n.includes('retained')) return 'EQUITY';
             if (n.includes('sales') || n.includes('revenue') || n.includes('income')) return 'INCOME';
@@ -209,9 +275,12 @@
         function buildDerivedState(entries) {
             const ledger = {};
             entries.forEach((e) => {
-                if (!ledger[e.account]) ledger[e.account] = { debit: 0, credit: 0, type: normalizeAccountType(e.account) };
-                ledger[e.account].debit += e.debit || 0;
-                ledger[e.account].credit += e.credit || 0;
+                const code = String(e.accountCode || '').trim() || 'UNKNOWN';
+                const name = String(e.accountName || e.account || 'Unknown');
+                const key = `${code} | ${name}`;
+                if (!ledger[key]) ledger[key] = { debit: 0, credit: 0, type: normalizeAccountType(code, name), code, name };
+                ledger[key].debit += e.debit || 0;
+                ledger[key].credit += e.credit || 0;
             });
             state.ledger = ledger;
         }
@@ -220,36 +289,205 @@
             const revenue = Object.entries(state.ledger).filter(([, v]) => v.type === 'INCOME').reduce((s, [, v]) => s + v.credit - v.debit, 0);
             const expense = Object.entries(state.ledger).filter(([, v]) => v.type === 'EXPENSE').reduce((s, [, v]) => s + v.debit - v.credit, 0);
             const net = revenue - expense;
-            const cash = Object.entries(state.ledger).filter(([k]) => k.toLowerCase().includes('cash')).reduce((s, [, v]) => s + v.debit - v.credit, 0);
+            const cash = Object.entries(state.ledger).filter(([, v]) => {
+                const c = String(v.code || '');
+                return c.startsWith('1-1010') || c.startsWith('1-1020');
+            }).reduce((s, [, v]) => s + v.debit - v.credit, 0);
             document.getElementById('totalRevenue').textContent = formatLKR(revenue);
             document.getElementById('totalExpenses').textContent = formatLKR(expense);
             document.getElementById('netProfit').textContent = formatLKR(net);
             document.getElementById('cashBalance').textContent = formatLKR(cash);
         }
 
+        function escapeHtml(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
         function renderJournal() {
             const body = document.getElementById('entriesBody');
+            const noteRow = state.scrapOpeningNote
+                ? `<tr style="background:#fefce8;"><td colspan="6" style="padding:12px;font-size:13px;line-height:1.4;"><strong>Opening note:</strong> ${escapeHtml(state.scrapOpeningNote)}</td></tr>`
+                : '';
             if (!state.expandedEntries.length) {
-                body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;">No journal entries found</td></tr>';
+                body.innerHTML = noteRow + '<tr><td colspan="6" style="text-align:center;padding:40px;">No combined lines yet. For scrap: use <strong>Edit opening balances</strong> above, then new buys/advances update automatically.</td></tr>';
                 return;
             }
-            body.innerHTML = state.expandedEntries.map((e) => `
-                <tr>
-                    <td>${e.date}</td>
-                    <td>${e.description}</td>
-                    <td>${e.account}</td>
+            body.innerHTML = noteRow + state.expandedEntries.map((e) => {
+                const editCell = e.editable && e.entryDocId != null
+                    ? `<td style="white-space:nowrap;"><button type="button" class="btn-edit-journal-line" data-eid="${escapeHtml(String(e.entryDocId))}" data-lidx="${e.lineIndex}" style="background:#0f3b2c;color:#fff;border:none;padding:6px 12px;border-radius:8px;font-size:12px;cursor:pointer;margin-right:6px;">Edit</button><button type="button" class="btn-del-journal-line" data-eid="${escapeHtml(String(e.entryDocId))}" data-lidx="${e.lineIndex}" style="background:#b91c1c;color:#fff;border:none;padding:6px 12px;border-radius:8px;font-size:12px;cursor:pointer;">Delete</button></td>`
+                    : `<td style="color:#94a3b8;font-size:12px;">${e.editable === false ? '—' : ''}</td>`;
+                return `<tr>
+                    <td>${escapeHtml(String(e.date))}</td>
+                    <td>${escapeHtml(String(e.description))}</td>
+                    <td>${escapeHtml(String(e.account))}</td>
                     <td class="text-right">${formatLKR(e.debit)}</td>
                     <td class="text-right">${formatLKR(e.credit)}</td>
-                </tr>
-            `).join('');
+                    ${editCell}
+                </tr>`;
+            }).join('');
+            body.querySelectorAll('.btn-edit-journal-line').forEach((btn) => {
+                btn.onclick = () => openEditJournalLine(btn.getAttribute('data-eid'), Number(btn.getAttribute('data-lidx')));
+            });
+            body.querySelectorAll('.btn-del-journal-line').forEach((btn) => {
+                btn.onclick = () => deleteJournalLine(btn.getAttribute('data-eid'), Number(btn.getAttribute('data-lidx')));
+            });
+        }
+
+        function closeEditJournalLineModal() {
+            const m = document.getElementById('editJournalLineModal');
+            if (m) m.style.display = 'none';
+        }
+
+        async function openEditJournalLine(entryDocId, lineIndex) {
+            const bid = state.journalCollectionBusinessId || (state.context && state.context.businessId);
+            if (!bid || !entryDocId || lineIndex == null || Number.isNaN(lineIndex)) return;
+            try {
+                const ref = db.collection('journal').doc(bid).collection('entries').doc(entryDocId);
+                const snap = await ref.get();
+                if (!snap.exists) {
+                    showToast('Journal entry not found');
+                    return;
+                }
+                const data = snap.data();
+                const lines = data.entries || [];
+                const line = lines[lineIndex];
+                if (!line) {
+                    showToast('Line not found');
+                    return;
+                }
+                document.getElementById('ejlDescription').value = data.description || '';
+                document.getElementById('ejlDate').value = journalDateToInputValue(data);
+                document.getElementById('ejlCode').value = line.accountCode || '';
+                document.getElementById('ejlName').value = line.accountName || '';
+                document.getElementById('ejlDebit').value = line.debit != null && line.debit !== '' ? line.debit : '';
+                document.getElementById('ejlCredit').value = line.credit != null && line.credit !== '' ? line.credit : '';
+                document.getElementById('ejlEntryDocId').value = entryDocId;
+                document.getElementById('ejlLineIndex').value = String(lineIndex);
+                document.getElementById('editJournalLineModal').style.display = 'flex';
+            } catch (err) {
+                showToast(err && err.message ? err.message : 'Could not load entry');
+            }
+        }
+
+        async function deleteJournalLine(entryDocId, lineIndex) {
+            const bid = state.journalCollectionBusinessId || (state.context && state.context.businessId);
+            if (!bid || !entryDocId || lineIndex == null || Number.isNaN(lineIndex)) return;
+            if (!window.confirm('මෙම පේලිය මකන්නද? / Delete this journal line?')) return;
+            try {
+                const ref = db.collection('journal').doc(bid).collection('entries').doc(entryDocId);
+                const snap = await ref.get();
+                if (!snap.exists) {
+                    showToast('Journal entry not found');
+                    return;
+                }
+                const data = snap.data();
+                const entries = (data.entries || []).map((x) => ({ ...x }));
+                if (lineIndex < 0 || lineIndex >= entries.length) {
+                    showToast('Line not found');
+                    return;
+                }
+                entries.splice(lineIndex, 1);
+                if (entries.length === 0) {
+                    await ref.delete();
+                    showToast('වවුචරය මකන ලදී (පේලි නැත) / Voucher removed');
+                    return;
+                }
+                const totalDebit = entries.reduce((s, x) => s + (Number(x.debit) || 0), 0);
+                const totalCredit = entries.reduce((s, x) => s + (Number(x.credit) || 0), 0);
+                if (Math.abs(totalDebit - totalCredit) > 0.02) {
+                    const ok = window.confirm(
+                        'මෙම පේලිය ඉවත් කිරීමෙන් වවුචරය අසමතුලිත වේ (Dr ' +
+                            totalDebit.toFixed(2) +
+                            ' vs Cr ' +
+                            totalCredit.toFixed(2) +
+                            '). සම්පූර්ණ වවුචරය මකන්නද? / This leaves the voucher unbalanced. Delete the entire voucher instead?'
+                    );
+                    if (!ok) {
+                        showToast('Cancelled');
+                        return;
+                    }
+                    await ref.delete();
+                    showToast('සම්පූර්ණ වවුචරය මකන ලදී / Entire voucher deleted');
+                    return;
+                }
+                await ref.update({
+                    entries: entries,
+                    totalDebit: totalDebit,
+                    totalCredit: totalCredit
+                });
+                showToast('පේලිය මකන ලදී / Line deleted');
+            } catch (err) {
+                showToast(err && err.message ? err.message : 'Delete failed');
+            }
+        }
+
+        async function saveEditedJournalLine() {
+            const bid = state.journalCollectionBusinessId || (state.context && state.context.businessId);
+            const entryDocId = document.getElementById('ejlEntryDocId').value;
+            const lineIndex = Number(document.getElementById('ejlLineIndex').value);
+            const desc = document.getElementById('ejlDescription').value.trim();
+            const dateStr = document.getElementById('ejlDate').value;
+            const code = document.getElementById('ejlCode').value.trim();
+            const name = document.getElementById('ejlName').value.trim();
+            const debit = Number(document.getElementById('ejlDebit').value) || 0;
+            const credit = Number(document.getElementById('ejlCredit').value) || 0;
+            if (!bid || !entryDocId) return;
+            if (!code) {
+                showToast('Account code is required');
+                return;
+            }
+            try {
+                const ref = db.collection('journal').doc(bid).collection('entries').doc(entryDocId);
+                const snap = await ref.get();
+                if (!snap.exists) {
+                    showToast('Entry no longer exists');
+                    return;
+                }
+                const data = snap.data();
+                const entries = (data.entries || []).map((x) => ({ ...x }));
+                if (lineIndex < 0 || lineIndex >= entries.length) {
+                    showToast('Invalid line');
+                    return;
+                }
+                entries[lineIndex] = {
+                    accountCode: code,
+                    accountName: name || code,
+                    debit: debit,
+                    credit: credit
+                };
+                const totalDebit = entries.reduce((s, x) => s + (Number(x.debit) || 0), 0);
+                const totalCredit = entries.reduce((s, x) => s + (Number(x.credit) || 0), 0);
+                if (Math.abs(totalDebit - totalCredit) > 0.02) {
+                    showToast('Total debit must equal total credit (Dr ' + totalDebit.toFixed(2) + ' vs Cr ' + totalCredit.toFixed(2) + ')');
+                    return;
+                }
+                const update = {
+                    entries: entries,
+                    totalDebit: totalDebit,
+                    totalCredit: totalCredit,
+                    description: desc
+                };
+                if (dateStr) {
+                    update.date = firebase.firestore.Timestamp.fromDate(new Date(dateStr + 'T12:00:00'));
+                }
+                await ref.update(update);
+                closeEditJournalLineModal();
+                showToast('Saved');
+            } catch (err) {
+                showToast(err && err.message ? err.message : 'Save failed');
+            }
         }
 
         function renderLedger() {
             const filter = document.getElementById('ledgerFilter').value.toLowerCase();
             const body = document.getElementById('ledgerBody');
-            const rows = Object.entries(state.ledger).filter(([acc]) => acc.toLowerCase().includes(filter));
+            const rows = Object.entries(state.ledger).filter(([, vals]) => `${vals.code} ${vals.name}`.toLowerCase().includes(filter));
             body.innerHTML = rows.map(([acc, vals]) => `
-                <tr><td>${acc}</td><td class="text-right">${formatLKR(vals.debit)}</td><td class="text-right">${formatLKR(vals.credit)}</td><td class="text-right">${formatLKR(vals.debit - vals.credit)}</td></tr>
+                <tr><td>${vals.code} - ${vals.name}</td><td class="text-right">${formatLKR(vals.debit)}</td><td class="text-right">${formatLKR(vals.credit)}</td><td class="text-right">${formatLKR(vals.debit - vals.credit)}</td></tr>
             `).join('') || '<tr><td colspan="4" style="text-align:center;padding:30px;">No matching accounts</td></tr>';
         }
 
@@ -259,7 +497,7 @@
             const rows = Object.entries(state.ledger).map(([acc, vals]) => {
                 td += vals.debit;
                 tc += vals.credit;
-                return `<tr><td>${acc}</td><td class="text-right">${formatLKR(vals.debit)}</td><td class="text-right">${formatLKR(vals.credit)}</td></tr>`;
+                return `<tr><td>${vals.code} - ${vals.name}</td><td class="text-right">${formatLKR(vals.debit)}</td><td class="text-right">${formatLKR(vals.credit)}</td></tr>`;
             }).join('');
             document.getElementById('trialBody').innerHTML = rows + `<tr style="font-weight:700;"><td>TOTAL</td><td class="text-right">${formatLKR(td)}</td><td class="text-right">${formatLKR(tc)}</td></tr>`;
             const ok = Math.abs(td - tc) < 0.01;
@@ -280,45 +518,166 @@
         }
 
         function renderBalance() {
-            const assets = Object.entries(state.ledger).filter(([, v]) => v.type === 'ASSET').reduce((s, [, v]) => s + v.debit - v.credit, 0);
+            const assetLines = Object.entries(state.ledger).filter(([, v]) => v.type === 'ASSET');
+            const assets = assetLines.reduce((s, [, v]) => s + v.debit - v.credit, 0);
             const liabilities = Object.entries(state.ledger).filter(([, v]) => v.type === 'LIABILITY').reduce((s, [, v]) => s + v.credit - v.debit, 0);
-            const equity = Object.entries(state.ledger).filter(([, v]) => v.type === 'EQUITY').reduce((s, [, v]) => s + v.credit - v.debit, 0);
+            const equityBase = Object.entries(state.ledger).filter(([, v]) => v.type === 'EQUITY').reduce((s, [, v]) => s + v.credit - v.debit, 0);
+            // Accounting close logic: current period P/L flows into equity for balance sheet presentation.
+            const revenue = Object.entries(state.ledger).filter(([, v]) => v.type === 'INCOME').reduce((s, [, v]) => s + v.credit - v.debit, 0);
+            const expense = Object.entries(state.ledger).filter(([, v]) => v.type === 'EXPENSE').reduce((s, [, v]) => s + v.debit - v.credit, 0);
+            const currentProfit = revenue - expense;
+            const equity = equityBase + currentProfit;
             const balanced = Math.abs(assets - (liabilities + equity)) < 0.01;
+            const assetDetailRows = assetLines
+                .map(([, v]) => ({ ...v, bal: v.debit - v.credit }))
+                .filter((v) => Math.abs(v.bal) > 0.005)
+                .sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')));
+            const assetDetailHtml = assetDetailRows.length
+                ? `<div style="margin:12px 0 8px;font-size:12px;color:#64748b;font-weight:600;">Current assets & other (from journal)</div>
+                ${assetDetailRows.map((v) => `<div class="statement-row"><span>${v.code} — ${v.name}</span><span>${formatLKR(v.bal)}</span></div>`).join('')}`
+                : '<div class="statement-row" style="color:#64748b;font-size:13px;"><span>No asset account activity yet</span><span>—</span></div>';
             document.getElementById('balanceContent').innerHTML = `
-                <div class="statement-row"><span>Total Assets</span><span>${formatLKR(assets)}</span></div>
+                ${assetDetailHtml}
+                <div class="statement-total" style="margin-top:10px;"><span>Total Assets</span><span>${formatLKR(assets)}</span></div>
                 <div class="statement-row"><span>Total Liabilities</span><span>${formatLKR(liabilities)}</span></div>
+                <div class="statement-row"><span>Equity (Capital + Retained)</span><span>${formatLKR(equityBase)}</span></div>
+                <div class="statement-row"><span>Current Profit / (Loss)</span><span>${formatLKR(currentProfit)}</span></div>
                 <div class="statement-row"><span>Total Equity</span><span>${formatLKR(equity)}</span></div>
                 <div class="statement-total"><span>Liabilities + Equity</span><span>${formatLKR(liabilities + equity)}</span></div>
                 <div class="balance-status ${balanced ? 'balanced' : 'not-balanced'}" style="margin-top:16px;">${balanced ? 'Balanced' : 'Not balanced'}</div>
             `;
         }
 
-        async function loadBusinessJournal() {
-            const snap = await db.collection('journal').doc(state.context.businessId).collection('entries').orderBy('date', 'desc').limit(500).get();
-            const expanded = [];
-            snap.forEach((doc) => {
+        function journalDateToInputValue(e) {
+            if (!e || !e.date) return '';
+            const d = e.date.toDate ? e.date.toDate() : new Date(e.date);
+            if (Number.isNaN(d.getTime())) return '';
+            return d.toISOString().slice(0, 10);
+        }
+
+        /** Flatten journal/entries docs into table rows (editable voucher lines). */
+        function buildRawJournalTableRows(entriesSnap) {
+            const rows = [];
+            if (!entriesSnap || !entriesSnap.forEach) return rows;
+            entriesSnap.forEach((doc) => {
                 const e = doc.data();
                 const date = e.date?.toDate ? e.date.toDate().toLocaleDateString() : '-';
                 const description = e.description || '-';
-                (e.entries || []).forEach((line) => {
-                    expanded.push({
-                        id: doc.id,
+                (e.entries || []).forEach((line, lineIndex) => {
+                    rows.push({
+                        id: doc.id + '-' + lineIndex,
+                        entryDocId: doc.id,
+                        lineIndex: lineIndex,
+                        editable: true,
                         date,
                         description,
+                        accountCode: line.accountCode || '',
+                        accountName: line.accountName || line.accountCode || 'Unknown',
                         account: line.accountName || line.accountCode || 'Unknown',
                         debit: Number(line.debit) || 0,
                         credit: Number(line.credit) || 0
                     });
                 });
             });
-            state.expandedEntries = expanded;
-            buildDerivedState(expanded);
+            return rows;
+        }
+
+        /** Merged running balances (opening + account_ledger + loan journals for scrap) — drives Trial / Ledger / BS. */
+        function buildMergedLedgerRows(entriesSnap, ledgerSnap, openingSnap, isScrap) {
+            const dc = window.dashboardCore;
+            if (!dc || typeof dc.syntheticJournalFromMerged !== 'function') return [];
+            const merged = isScrap
+                ? dc.syntheticJournalFromMerged(entriesSnap, ledgerSnap, openingSnap, { scrapOpeningLedgerOnly: true })
+                : dc.syntheticJournalFromMerged(entriesSnap, ledgerSnap, openingSnap, {});
+            if (!merged || !merged.length || !(merged[0].entries || []).length) return [];
+            const desc = merged[0].description || 'Running balances (merged)';
+            return (merged[0].entries || []).map((line, idx) => ({
+                id: 'merged-' + (line.accountCode || idx),
+                entryDocId: null,
+                lineIndex: null,
+                editable: false,
+                date: '—',
+                description: desc,
+                accountCode: line.accountCode || '',
+                accountName: line.accountName || line.accountCode || 'Unknown',
+                account: `${line.accountName || line.accountCode} (running)`,
+                debit: Number(line.debit) || 0,
+                credit: Number(line.credit) || 0
+            }));
+        }
+
+        function applyJournalSnapshot(snap) {
+            const raw = buildRawJournalTableRows(snap);
+            state.expandedEntries = raw;
+            buildDerivedState(raw);
             updateStats();
             renderJournal();
             renderLedger();
             renderTrial();
             renderIncome();
             renderBalance();
+        }
+
+        /** Ledger/trial/BS from merged totals when available (includes stock from opening + ledger). Account lines table prefers raw vouchers for Edit/Delete. */
+        function applyMergedJournalSnapshot(entriesSnap, ledgerSnap, openingSnap) {
+            const isScrap = String(state.context.businessType || '').toLowerCase() === 'scrap_collection_center';
+            state.scrapOpeningNote = '';
+            if (openingSnap && openingSnap.exists) {
+                state.scrapOpeningNote = String(openingSnap.data().note || '').trim();
+            }
+            const rawTableRows = buildRawJournalTableRows(entriesSnap);
+            const mergedRows = buildMergedLedgerRows(entriesSnap, ledgerSnap, openingSnap, isScrap);
+            const forLedger = mergedRows.length ? mergedRows : rawTableRows;
+            buildDerivedState(forLedger);
+            updateStats();
+            renderLedger();
+            renderTrial();
+            renderIncome();
+            renderBalance();
+            state.expandedEntries = rawTableRows.length ? rawTableRows : mergedRows;
+            renderJournal();
+        }
+
+        async function loadBusinessJournal() {
+            let effectiveBusinessId = state.context.businessId;
+            const fetchTriple = async (bid) => {
+                const [es, ls, os] = await Promise.all([
+                    db.collection('journal').doc(bid).collection('entries').orderBy('date', 'desc').limit(500).get(),
+                    db.collection('journal').doc(bid).collection('account_ledger').get(),
+                    db.collection('journal').doc(bid).collection('ledger_opening').doc('current').get()
+                ]);
+                return { es, ls, os };
+            };
+            let { es: entriesSnap, ls: ledgerSnap, os: openingSnap } = await fetchTriple(effectiveBusinessId);
+            if (entriesSnap.empty && state.context.businessType === 'scrap_collection_center' && effectiveBusinessId !== SCRAP_OWNER_UID) {
+                effectiveBusinessId = SCRAP_OWNER_UID;
+                const r = await fetchTriple(effectiveBusinessId);
+                entriesSnap = r.es;
+                ledgerSnap = r.ls;
+                openingSnap = r.os;
+            }
+            state.journalCollectionBusinessId = effectiveBusinessId;
+            applyMergedJournalSnapshot(entriesSnap, ledgerSnap, openingSnap);
+            if (state.journalUnsub) {
+                state.journalUnsub();
+                state.journalUnsub = null;
+            }
+            const jref = db.collection('journal').doc(effectiveBusinessId);
+            const refresh = () => {
+                Promise.all([
+                    jref.collection('entries').orderBy('date', 'desc').limit(500).get(),
+                    jref.collection('account_ledger').get(),
+                    jref.collection('ledger_opening').doc('current').get()
+                ]).then(([e2, l2, o2]) => applyMergedJournalSnapshot(e2, l2, o2)).catch(() => {});
+            };
+            const u1 = jref.collection('entries').orderBy('date', 'desc').limit(500).onSnapshot(refresh);
+            const u2 = jref.collection('account_ledger').onSnapshot(refresh);
+            const u3 = jref.collection('ledger_opening').doc('current').onSnapshot(refresh);
+            state.journalUnsub = () => {
+                try { u1(); } catch (e) { /* ignore */ }
+                try { u2(); } catch (e2) { /* ignore */ }
+                try { u3(); } catch (e3) { /* ignore */ }
+            };
         }
 
         function showResetModal() {
@@ -341,23 +700,151 @@
                 showToast('Type RESET to confirm');
                 return;
             }
-            const col = db.collection('journal').doc(state.context.businessId).collection('entries');
-            const snap = await col.get();
+            const bid = state.context.businessId;
+            const col = db.collection('journal').doc(bid).collection('entries');
+            const colLedger = db.collection('journal').doc(bid).collection('account_ledger');
+            const colOpening = db.collection('journal').doc(bid).collection('ledger_opening');
+            const [snap, snapLedger, snapOpening] = await Promise.all([col.get(), colLedger.get(), colOpening.get()]);
             for (let i = 0; i < snap.docs.length; i += 300) {
                 const batch = db.batch();
                 snap.docs.slice(i, i + 300).forEach((doc) => batch.delete(doc.ref));
                 await batch.commit();
             }
+            for (let i = 0; i < snapLedger.docs.length; i += 300) {
+                const batch = db.batch();
+                snapLedger.docs.slice(i, i + 300).forEach((doc) => batch.delete(doc.ref));
+                await batch.commit();
+            }
+            for (let i = 0; i < snapOpening.docs.length; i += 300) {
+                const batch = db.batch();
+                snapOpening.docs.slice(i, i + 300).forEach((doc) => batch.delete(doc.ref));
+                await batch.commit();
+            }
             closeResetModal();
-            showToast('Business ledger reset complete');
+            showToast('Ledger reset: entries, consolidated accounts, and opening balances cleared.');
             await loadBusinessJournal();
         }
 
+        const DEFAULT_SCRAP_OPENING_ROWS = [
+            { accountCode: '1-1030-01', accountName: 'Scrap Inventory', debit: '', credit: '' },
+            { accountCode: '1-1060-01', accountName: 'Supplier Advances (Scrap)', debit: '', credit: '' },
+            { accountCode: '1-1010-01', accountName: 'Cash - Main', debit: '', credit: '' },
+            { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: '', credit: '' }
+        ];
+
+        function closeScrapOpeningModal() {
+            const m = document.getElementById('scrapOpeningModal');
+            if (m) m.style.display = 'none';
+        }
+
+        function openingRowHtml(row) {
+            const code = escapeHtml(row.accountCode);
+            const name = escapeHtml(row.accountName);
+            const dr = row.debit === '' || row.debit === undefined || row.debit === null ? '' : String(row.debit);
+            const cr = row.credit === '' || row.credit === undefined || row.credit === null ? '' : String(row.credit);
+            return `<tr>
+                <td><input type="text" class="o-code" value="${code}" style="width:92px;padding:6px;border:1px solid #e2e8f0;border-radius:6px;"></td>
+                <td><input type="text" class="o-name" value="${name}" style="width:100%;min-width:180px;padding:6px;border:1px solid #e2e8f0;border-radius:6px;"></td>
+                <td class="text-right"><input type="number" class="o-dr" step="0.01" value="${dr}" style="width:100px;text-align:right;padding:6px;"></td>
+                <td class="text-right"><input type="number" class="o-cr" step="0.01" value="${cr}" style="width:100px;text-align:right;padding:6px;"></td>
+                <td><button type="button" class="o-del" style="background:#fecaca;border:none;padding:4px 8px;border-radius:6px;cursor:pointer;">✕</button></td>
+            </tr>`;
+        }
+
+        function readOpeningRowsFromDom() {
+            const body = document.getElementById('scrapOpeningRowsBody');
+            if (!body) return [];
+            return Array.from(body.querySelectorAll('tr')).map((tr) => ({
+                accountCode: String(tr.querySelector('.o-code')?.value || '').trim(),
+                accountName: String(tr.querySelector('.o-name')?.value || '').trim(),
+                debit: Number(tr.querySelector('.o-dr')?.value) || 0,
+                credit: Number(tr.querySelector('.o-cr')?.value) || 0
+            })).filter((r) => r.accountCode);
+        }
+
+        function wireOpeningRowDelete() {
+            document.querySelectorAll('#scrapOpeningRowsBody .o-del').forEach((btn) => {
+                btn.onclick = () => {
+                    const tr = btn.closest('tr');
+                    if (tr) tr.remove();
+                };
+            });
+        }
+
+        function renderOpeningRows(rows) {
+            const body = document.getElementById('scrapOpeningRowsBody');
+            if (!body) return;
+            body.innerHTML = rows.map((r) => openingRowHtml(r)).join('');
+            wireOpeningRowDelete();
+        }
+
+        async function openScrapOpeningEditor() {
+            if (!state.isAdmin) {
+                showToast('Admin access required');
+                return;
+            }
+            const bid = state.context.businessId;
+            const snap = await db.collection('journal').doc(bid).collection('ledger_opening').doc('current').get();
+            let rows = DEFAULT_SCRAP_OPENING_ROWS.map((r) => ({ ...r }));
+            if (snap.exists) {
+                const d = snap.data() || {};
+                document.getElementById('scrapOpeningNote').value = String(d.note || '');
+                if (Array.isArray(d.lines) && d.lines.length) {
+                    rows = d.lines.map((x) => ({
+                        accountCode: String(x.accountCode || ''),
+                        accountName: String(x.accountName || ''),
+                        debit: x.debit != null ? x.debit : '',
+                        credit: x.credit != null ? x.credit : ''
+                    }));
+                }
+            } else {
+                document.getElementById('scrapOpeningNote').value = '';
+            }
+            renderOpeningRows(rows);
+            document.getElementById('scrapOpeningModal').style.display = 'flex';
+        }
+
+        document.getElementById('openScrapOpeningBtn')?.addEventListener('click', openScrapOpeningEditor);
+        document.getElementById('scrapOpeningAddRowBtn')?.addEventListener('click', () => {
+            const body = document.getElementById('scrapOpeningRowsBody');
+            if (!body) return;
+            body.insertAdjacentHTML('beforeend', openingRowHtml({ accountCode: '', accountName: '', debit: '', credit: '' }));
+            wireOpeningRowDelete();
+        });
+        document.getElementById('scrapOpeningSaveBtn')?.addEventListener('click', async () => {
+            const bid = state.context.businessId;
+            const lines = readOpeningRowsFromDom();
+            const note = document.getElementById('scrapOpeningNote').value;
+            try {
+                await db.collection('journal').doc(bid).collection('ledger_opening').doc('current').set({
+                    businessId: bid,
+                    lines,
+                    note,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+                showToast('Opening balances saved');
+                closeScrapOpeningModal();
+                await loadBusinessJournal();
+            } catch (e) {
+                showToast(e.message || 'Save failed');
+            }
+        });
+        document.getElementById('scrapOpeningModal')?.addEventListener('click', (e) => {
+            if (e.target && e.target.id === 'scrapOpeningModal') closeScrapOpeningModal();
+        });
+        window.closeScrapOpeningModal = closeScrapOpeningModal;
+
         document.getElementById('ledgerFilter').addEventListener('input', renderLedger);
+        document.getElementById('ejlSaveBtn')?.addEventListener('click', saveEditedJournalLine);
+        document.getElementById('editJournalLineModal')?.addEventListener('click', (ev) => {
+            if (ev.target && ev.target.id === 'editJournalLineModal') closeEditJournalLineModal();
+        });
         window.showTab = showTab;
         window.showResetModal = showResetModal;
         window.closeResetModal = closeResetModal;
         window.verifyAndReset = verifyAndReset;
+        window.closeEditJournalLineModal = closeEditJournalLineModal;
+        window.openEditJournalLine = openEditJournalLine;
 
         auth.onAuthStateChanged(async (user) => {
             if (!user) { window.location.href = '../../auth/login.html'; return; }
@@ -370,9 +857,14 @@
             }
             state.isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(state.role) || String(state.role).includes('ADMIN');
             document.getElementById('adminSection').style.display = state.isAdmin ? 'flex' : 'none';
+            const scrapTb = document.getElementById('scrapOpeningToolbar');
+            if (scrapTb) {
+                scrapTb.style.display = (String(state.context.businessType || '').toLowerCase() === 'scrap_collection_center' && state.isAdmin)
+                    ? 'block'
+                    : 'none';
+            }
             document.getElementById('topUserAvatar').textContent = (user.displayName || user.email || 'U').charAt(0).toUpperCase();
             await loadBusinessJournal();
-            setInterval(loadBusinessJournal, 30000);
         });
     </script>
 </body>

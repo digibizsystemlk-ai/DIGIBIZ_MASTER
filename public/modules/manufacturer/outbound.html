@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manufacturer Outbound - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/sidebar.js?v=64"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="/core/sms-wallet-core.js?v=4"></script>
+    <script src="/core/ui-helpers.js?v=1"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=7"></script>
+    <style id="mfgStyle"></style>
+</head>
+<body>
+<div class="mfg-wrap">
+    <div class="mfg-head">
+        <h2>Outbound Sales</h2>
+        <p id="mfgBusinessCtx"></p>
+    </div>
+    <div class="mfg-grid">
+        <div class="mfg-card">
+            <h3>Finished Goods Sale</h3>
+            <div class="mfg-row">
+                <div>
+                    <label>Company / Buyer (from Customers list)</label>
+                    <select id="buyerCustomerId" class="mfg-select-customer">
+                        <option value="">Select…</option>
+                    </select>
+                    <div id="buyerCustomerBanner" class="mfg-customer-banner" role="status"></div>
+                </div>
+                <div><label>Product Name</label><input id="productName"></div>
+            </div>
+            <div class="mfg-row" style="margin-top:8px;">
+                <div>
+                    <label>Sales Category (learn-as-you-go)</label>
+                    <input id="salesCategory" list="salesCategoryList" placeholder="Type category or select">
+                    <datalist id="salesCategoryList"></datalist>
+                </div>
+                <div></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Qty</label><input type="number" id="qty" min="0" step="0.01"></div>
+                <div><label>Unit Price</label><input type="number" id="unitPrice" min="0" step="0.01"></div>
+                <div><label>Total Amount</label><input type="number" id="amount" min="0" step="0.01"></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Payment Mode</label>
+                    <select id="paymentMode">
+                        <option value="CASH">Cash</option>
+                        <option value="BANK">Bank</option>
+                        <option value="CREDIT">Credit</option>
+                        <option value="CHEQUE">Cheque</option>
+                    </select>
+                </div>
+                <div><label>Due Date (Credit)</label><input type="date" id="dueDate"></div>
+                <div><label>Cheque Clearance Date</label><input type="date" id="chequeClearanceDate"></div>
+            </div>
+            <button id="saveBtn" style="margin-top:10px;">Record Sale</button>
+            <div id="msg" class="mfg-msg"></div>
+        </div>
+        <div class="mfg-card">
+            <h3>Latest Outbound Entries</h3>
+            <table>
+                <thead><tr><th>Company</th><th>Product</th><th>Amount</th><th>Payment</th><th>Date</th></tr></thead>
+                <tbody id="historyRows"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script>
+document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
+const buyerCustomerById = {};
+function v(id){ return document.getElementById(id).value; }
+function n(id){ return Number(v(id)) || 0; }
+function payStatus(mode){ return mode === 'CREDIT' ? 'PENDING' : (mode === 'CHEQUE' ? 'PENDING_CLEARANCE' : 'PAID'); }
+function recalcAmount(){
+    const qty = Number(document.getElementById('qty').value || 0);
+    const unitPrice = Number(document.getElementById('unitPrice').value || 0);
+    const total = Number.isFinite(qty * unitPrice) ? (qty * unitPrice) : 0;
+    document.getElementById('amount').value = total.toFixed(2);
+}
+async function refresh(){
+    const bid = ManufacturerModule.businessId;
+    const snap = await db.collection('manufacturer_sales')
+        .where('businessId','==',bid).limit(100).get().catch(()=>({docs:[]}));
+    const rows = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+        .sort((a, b) => {
+            const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+            const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+            return tb - ta;
+        })
+        .slice(0, 25);
+    document.getElementById('historyRows').innerHTML = rows.map((x)=>{
+        return `<tr><td>${x.companyName||'-'}</td><td class="wrap-name">${x.productName||'-'}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td>${x.paymentMode||'-'} / ${x.paymentStatus||'-'}</td><td>${ManufacturerModule.formatDate(x.createdAt)}</td></tr>`;
+    }).join('');
+}
+async function loadCategoryOptions(){
+    const cats = await ManufacturerModule.loadCategories('OUTBOUND_SALE');
+    document.getElementById('salesCategoryList').innerHTML = cats.map((c)=>`<option value="${c}"></option>`).join('');
+}
+function buyerDigitsOk(mob){
+    const d = String(mob || '').replace(/\D/g, '');
+    return d.length >= 9;
+}
+function renderBuyerCustomerBanner(){
+    const el = document.getElementById('buyerCustomerBanner');
+    const cid = v('buyerCustomerId');
+    if (!cid) {
+        el.className = 'mfg-customer-banner';
+        el.textContent = '';
+        return;
+    }
+    const c = buyerCustomerById[cid] || {};
+    const mob = String(c.mobile || '').trim();
+    const disp = mob || '(no mobile saved)';
+    if (buyerDigitsOk(mob)) {
+        el.textContent = `SMS will go to ${disp}`;
+        el.className = 'mfg-customer-banner show ok';
+    } else {
+        el.textContent = `Mobile on file: ${disp} — SMS will not queue until a valid number is saved on this customer.`;
+        el.className = 'mfg-customer-banner show warn';
+    }
+}
+async function loadBuyerOptions(){
+    const bid = ManufacturerModule.businessId;
+    if (!bid) return;
+
+    const fetchBuyers = async () => {
+        console.log('[Outbound] Fetching buyers from Firestore...');
+        const snap = await db.collection('customers').where('businessId','==',bid).limit(300).get().catch(()=>({docs:[]}));
+        return snap.docs.map((d) => ({ id: d.id, data: d.data() || {} }));
+    };
+
+    // Use cache if available (TTL 5 mins)
+    const rows = window.DigiBizUI 
+        ? await window.DigiBizUI.withCache(`buyers_${bid}`, fetchBuyers, 300000)
+        : await fetchBuyers();
+
+    Object.keys(buyerCustomerById).forEach((k) => delete buyerCustomerById[k]);
+    const sel = document.getElementById('buyerCustomerId');
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const opt0 = document.createElement('option');
+    opt0.value = '';
+    opt0.textContent = 'Select company / buyer…';
+    sel.appendChild(opt0);
+    
+    rows.forEach(({ id, data: x }) => {
+        buyerCustomerById[id] = x;
+        const o = document.createElement('option');
+        o.value = id;
+        const name = String(x.fullName || x.mobile || id).trim();
+        const mob = String(x.mobile || '').trim();
+        o.textContent = mob ? `${name} — ${mob}` : `${name} (no mobile)`;
+        sel.appendChild(o);
+    });
+    if (prev && buyerCustomerById[prev]) sel.value = prev;
+    renderBuyerCustomerBanner();
+}
+function smsEnqueueNote(res){
+    if (!res) return '';
+    if (res.ok) {
+        if (res.fallback) return ' (sent via fallback gateway)';
+        return '';
+    }
+    if (res.skipped === 'no_mobile') return ' SMS was not queued: customer mobile missing or too short.';
+    if (res.skipped === 'sms_event_disabled') return ' SMS was not queued: Sales SMS is turned off in SMS settings.';
+    if (res.skipped === 'no_credits') return ' SMS not sent: credits finished (7-day trial ended or no paid credits). Add credits under Billing or ask Super Admin.';
+    if (res.skipped === 'permission') return ' SMS not queued: this user role is not allowed to create pending SMS in Firestore. Owner / staff (non-rep) can queue after rules deploy, or ask Business Owner.';
+    if (res.error) return ` SMS queue failed: ${res.error}`;
+    return '';
+}
+async function save(){
+    const bid = ManufacturerModule.businessId;
+    const mode = v('paymentMode');
+    const cid = v('buyerCustomerId');
+    const msgEl = document.getElementById('msg');
+    msgEl.className = 'mfg-msg';
+    if (!cid) {
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Please choose a buyer from the customer list so the name and mobile match your directory.';
+        return;
+    }
+
+    let customer = buyerCustomerById[cid] || {};
+    if (!customer || !Object.keys(customer).length) {
+        const doc = await db.collection('customers').doc(cid).get().catch(() => null);
+        customer = doc && doc.exists ? (doc.data() || {}) : {};
+        buyerCustomerById[cid] = customer;
+    }
+
+    const companyName = String(customer.fullName || '').trim();
+    if (!companyName) {
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Selected customer has no full name in Firestore; update the customer record first.';
+        return;
+    }
+
+    const productName = v('productName').trim();
+    const salesCategory = v('salesCategory').trim();
+    const amountVal = n('amount');
+    const confirmMsg = `Are you sure you want to record this sale?\n\nProduct: ${productName}\nCompany: ${companyName}\nAmount: Rs. ${ManufacturerModule.money(amountVal)}\nPayment: ${mode}`;
+    
+    if (!confirm(confirmMsg)) return;
+
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Recording...';
+
+    const id = ManufacturerModule.uuid('MFS');
+    const data = {
+        businessId: bid,
+        saleId: id,
+        companyName,
+        productName,
+        category: salesCategory,
+        qty: n('qty'),
+        unitPrice: n('unitPrice'),
+        amount: amountVal,
+        paymentMode: mode,
+        paymentStatus: payStatus(mode),
+        dueDate: v('dueDate') || null,
+        chequeClearanceDate: v('chequeClearanceDate') || null,
+        createdAt: new Date()
+    };
+    data.customerId = cid;
+    data.customerMobile = customer.mobile || '';
+    data.customerAddress = customer.address || '';
+    data.customerFirstName = customer.firstName || ManufacturerModule.firstName(customer.fullName || companyName);
+    
+    try {
+        await db.collection('manufacturer_sales').doc(id).set(data);
+        
+        // Save suggestions
+        if (typeof window.saveProductSuggestion === 'function') await window.saveProductSuggestion();
+        if (typeof window.saveCategorySuggestion === 'function') await window.saveCategorySuggestion();
+
+        const fgKey = (data.productName || 'PRODUCT').toUpperCase();
+        await db.collection('manufacturer_finished_products').doc(`${bid}_${fgKey}`).set({
+            businessId: bid,
+            name: data.productName,
+            stockQty: firebase.firestore.FieldValue.increment(-Math.abs(data.qty)),
+            unitPrice: data.unitPrice,
+            updatedAt: new Date()
+        }, { merge: true });
+        
+        ManufacturerModule.publishEvent('MANUFACTURING_FINISHED_GOOD_SALE', data);
+        
+        const smsRes = await ManufacturerModule.enqueueSms('OUTBOUND_SALE', null, {
+            name: data.customerFirstName || data.companyName,
+            mobile: data.customerMobile,
+            productName: data.productName,
+            qty: data.qty,
+            amount: data.amount,
+            paymentStatus: data.paymentStatus,
+            dueDate: data.dueDate
+        });
+        
+        msgEl.textContent = 'Sale recorded and stock adjusted.' + (smsRes && smsRes.ok ? ' SMS queued.' : '') + smsEnqueueNote(smsRes);
+        if (smsRes && !smsRes.ok) msgEl.classList.add(smsRes.skipped ? 'warn' : 'err');
+        
+        // Reset fields
+        document.getElementById('productName').value = '';
+        document.getElementById('qty').value = '';
+        document.getElementById('unitPrice').value = '';
+        document.getElementById('amount').value = '';
+        
+        // Removed redundant loadBuyerOptions() to save quota
+        refresh();
+    } catch (err) {
+        console.error(err);
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Error recording sale: ' + err.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Record Sale';
+    }
+}
+(async function(){
+    await ManufacturerModule.init('outbound');
+    document.getElementById('saveBtn').onclick = save;
+    document.getElementById('buyerCustomerId').addEventListener('change', renderBuyerCustomerBanner);
+    document.getElementById('qty').addEventListener('input', recalcAmount);
+    document.getElementById('unitPrice').addEventListener('input', recalcAmount);
+    
+    window.saveProductSuggestion = await ManufacturerModule.bindAutocomplete('productName', 'FINISHED_PRODUCT_NAME');
+    window.saveCategorySuggestion = await ManufacturerModule.bindAutocomplete('salesCategory', 'OUTBOUND_SALE_CATEGORY');
+
+    await loadBuyerOptions();
+    recalcAmount();
+    refresh();
+})();
+</script>
+</body>
+</html>

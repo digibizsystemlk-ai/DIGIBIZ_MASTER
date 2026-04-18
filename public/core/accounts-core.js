@@ -34,6 +34,38 @@ class AccountsCore {
         this.eventBus.subscribe('DISTRIBUTOR_ORDER_APPROVED', (event) => {
             this.handleDistributorOrderApproved(event.data);
         }, 'AccountsCore');
+        this.eventBus.subscribe('MANUFACTURING_RAW_MATERIAL_PURCHASED', (event) => {
+            this.handleManufacturingRawMaterialPurchase(event.data);
+        }, 'AccountsCore');
+        this.eventBus.subscribe('MANUFACTURING_OPERATIONAL_EXPENSE', (event) => {
+            this.handleManufacturingOperationalExpense(event.data);
+        }, 'AccountsCore');
+        this.eventBus.subscribe('MANUFACTURING_FINISHED_GOOD_SALE', (event) => {
+            this.handleManufacturingFinishedSale(event.data);
+        }, 'AccountsCore');
+        this.eventBus.subscribe('MANUFACTURING_SIDE_INCOME', (event) => {
+            this.handleManufacturingSideIncome(event.data);
+        }, 'AccountsCore');
+
+        this.eventBus.subscribe('HAND_LOAN_RECORDED', (event) => {
+            this.handleHandLoan(event.data);
+        }, 'AccountsCore');
+
+        this.eventBus.subscribe('DISTRIBUTOR_GRN_POSTED', (event) => {
+            this.handleDistributorGrn(event.data);
+        }, 'AccountsCore');
+
+        this.eventBus.subscribe('FREE_ISSUES_RECORDED', (event) => {
+            this.handleFreeIssues(event.data);
+        }, 'AccountsCore');
+
+        this.eventBus.subscribe('MARKET_RETURNS_RECORDED', (event) => {
+            this.handleMarketReturns(event.data);
+        }, 'AccountsCore');
+
+        this.eventBus.subscribe('FINANCE_TRANSACTION_RECORDED', (event) => {
+            this.handleFinanceTransaction(event.data);
+        }, 'AccountsCore');
     }
 
     validateEventData(eventType, data) {
@@ -191,6 +223,258 @@ class AccountsCore {
         console.log(`📝 Journal entry created for distributor order: Rs. ${amount}`);
     }
 
+    async handleManufacturingRawMaterialPurchase(data) {
+        const validData = this.validateEventData('MANUFACTURING_RAW_MATERIAL_PURCHASED', data);
+        if (!validData) return;
+        const amount = validData.amount;
+        const mode = String(validData.paymentMode || 'CASH').toUpperCase();
+        const status = String(validData.paymentStatus || 'PAID').toUpperCase();
+        let settlementLine;
+        if (status === 'PENDING' || status === 'PENDING_CLEARANCE' || mode === 'CREDIT' || mode === 'CHEQUE') {
+            settlementLine = { accountCode: '2-2010-01', accountName: 'Accounts Payable', debit: 0, credit: amount };
+        } else if (mode === 'BANK' || mode === 'BANK_TRANSFER') {
+            settlementLine = { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: 0, credit: amount };
+        } else {
+            settlementLine = { accountCode: '1-1010-01', accountName: 'Cash', debit: 0, credit: amount };
+        }
+        const journalEntry = {
+            date: new Date(),
+            description: `Raw material purchase - ${validData.materialName || 'Material'} (${validData.supplierName || 'Supplier'}) [${validData.paymentMode || 'CASH'}:${validData.paymentStatus || 'PAID'}]`,
+            businessId: validData.businessId,
+            entries: [
+                { accountCode: '1-1030-01', accountName: 'Raw Material Inventory', debit: amount, credit: 0 },
+                settlementLine
+            ],
+            totalDebit: amount,
+            totalCredit: amount,
+            reference: validData.purchaseId,
+            referenceType: 'MANUFACTURING_RAW_MATERIAL_PURCHASED',
+            paymentMode: validData.paymentMode || 'CASH',
+            paymentStatus: validData.paymentStatus || 'PAID',
+            dueDate: validData.dueDate || null,
+            chequeClearanceDate: validData.chequeClearanceDate || null
+        };
+        await this.saveJournalEntry(journalEntry);
+    }
+
+    async handleManufacturingOperationalExpense(data) {
+        const validData = this.validateEventData('MANUFACTURING_OPERATIONAL_EXPENSE', data);
+        if (!validData) return;
+        const amount = validData.amount;
+        const category = String(validData.category || 'Operational Cost');
+        const mode = String(validData.paymentMode || 'CASH').toUpperCase();
+        const status = String(validData.paymentStatus || 'PAID').toUpperCase();
+        let settlementLine;
+        if (status === 'PENDING' || status === 'PENDING_CLEARANCE' || mode === 'CREDIT' || mode === 'CHEQUE') {
+            settlementLine = { accountCode: '2-2010-01', accountName: 'Accounts Payable', debit: 0, credit: amount };
+        } else if (mode === 'BANK' || mode === 'BANK_TRANSFER') {
+            settlementLine = { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: 0, credit: amount };
+        } else {
+            settlementLine = { accountCode: '1-1010-01', accountName: 'Cash', debit: 0, credit: amount };
+        }
+        const journalEntry = {
+            date: new Date(),
+            description: `Manufacturing expense - ${category} [${validData.paymentMode || 'CASH'}:${validData.paymentStatus || 'PAID'}]`,
+            businessId: validData.businessId,
+            entries: [
+                { accountCode: '5-5020-01', accountName: `Manufacturing Expense: ${category}`, debit: amount, credit: 0 },
+                settlementLine
+            ],
+            totalDebit: amount,
+            totalCredit: amount,
+            reference: validData.expenseId,
+            referenceType: 'MANUFACTURING_OPERATIONAL_EXPENSE',
+            expenseCategory: category,
+            paymentMode: validData.paymentMode || 'CASH',
+            paymentStatus: validData.paymentStatus || 'PAID',
+            dueDate: validData.dueDate || null,
+            chequeClearanceDate: validData.chequeClearanceDate || null
+        };
+        await this.saveJournalEntry(journalEntry);
+    }
+
+    async handleManufacturingFinishedSale(data) {
+        const validData = this.validateEventData('MANUFACTURING_FINISHED_GOOD_SALE', data);
+        if (!validData) return;
+        const amount = validData.amount;
+        const mode = String(validData.paymentMode || 'CASH').toUpperCase();
+        const status = String(validData.paymentStatus || 'PAID').toUpperCase();
+        let receiptLine;
+        if (status === 'PENDING' || status === 'PENDING_CLEARANCE' || mode === 'CREDIT' || mode === 'CHEQUE') {
+            receiptLine = { accountCode: '1-1030-01', accountName: 'Accounts Receivable', debit: amount, credit: 0 };
+        } else if (mode === 'BANK' || mode === 'BANK_TRANSFER') {
+            receiptLine = { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: amount, credit: 0 };
+        } else {
+            receiptLine = { accountCode: '1-1010-01', accountName: 'Cash', debit: amount, credit: 0 };
+        }
+        const journalEntry = {
+            date: new Date(),
+            description: `Finished goods sale - ${validData.productName || 'Product'} (${validData.companyName || 'Company'}) [${validData.paymentMode || 'CASH'}:${validData.paymentStatus || 'PAID'}]`,
+            businessId: validData.businessId,
+            entries: [
+                receiptLine,
+                { accountCode: '4-4010-01', accountName: 'Sales Revenue', debit: 0, credit: amount }
+            ],
+            totalDebit: amount,
+            totalCredit: amount,
+            reference: validData.saleId,
+            referenceType: 'MANUFACTURING_FINISHED_GOOD_SALE',
+            paymentMode: validData.paymentMode || 'CASH',
+            paymentStatus: validData.paymentStatus || 'PAID',
+            dueDate: validData.dueDate || null,
+            chequeClearanceDate: validData.chequeClearanceDate || null
+        };
+        await this.saveJournalEntry(journalEntry);
+    }
+
+    async handleManufacturingSideIncome(data) {
+        const validData = this.validateEventData('MANUFACTURING_SIDE_INCOME', data);
+        if (!validData) return;
+        const amount = validData.amount;
+        const incomeType = String(validData.incomeType || 'Side Income');
+        const journalEntry = {
+            date: new Date(),
+            description: `${incomeType} income`,
+            businessId: validData.businessId,
+            entries: [
+                { accountCode: '1-1010-01', accountName: 'Cash', debit: amount, credit: 0 },
+                { accountCode: '4-4090-01', accountName: `Other Revenue: ${incomeType}`, debit: 0, credit: amount }
+            ],
+            totalDebit: amount,
+            totalCredit: amount,
+            reference: validData.incomeId,
+            referenceType: 'MANUFACTURING_SIDE_INCOME'
+        };
+        await this.saveJournalEntry(journalEntry);
+    }
+
+    async handleHandLoan(data) {
+        const validData = this.validateEventData('HAND_LOAN_RECORDED', data);
+        if (!validData) return;
+        const amount = validData.amount;
+        const isGiven = validData.type === 'GIVEN';
+
+        const journalEntry = {
+            date: new Date(validData.date || Date.now()),
+            description: `Hand Loan ${isGiven ? 'given to' : 'received from'} ${validData.personName} - ${validData.description || ''}`,
+            businessId: validData.businessId,
+            entries: isGiven ? [
+                { accountCode: '1-1050-01', accountName: 'Hand Loans Given', debit: amount, credit: 0 },
+                { accountCode: '1-1010-01', accountName: 'Cash', debit: 0, credit: amount }
+            ] : [
+                { accountCode: '1-1010-01', accountName: 'Cash', debit: amount, credit: 0 },
+                { accountCode: '2-2050-01', accountName: 'Hand Loans Received', debit: 0, credit: amount }
+            ],
+            totalDebit: amount,
+            totalCredit: amount,
+            reference: validData.loanId,
+            referenceType: 'HAND_LOAN'
+        };
+
+        await this.saveJournalEntry(journalEntry);
+        console.log(`📝 Journal entry created for hand loan: Rs. ${amount}`);
+    }
+
+    async handleDistributorGrn(data) {
+        const validData = this.validateEventData('DISTRIBUTOR_GRN_POSTED', data);
+        if (!validData) return;
+        const amount = validData.amount;
+
+        const journalEntry = {
+            date: new Date(validData.date || Date.now()),
+            description: `Distributor GRN - ${validData.grnId} from ${validData.supplier || 'Unknown Supplier'}`,
+            businessId: validData.businessId,
+            entries: [
+                { accountCode: '1-1040-01', accountName: 'Inventory', debit: amount, credit: 0 },
+                { accountCode: '2-2010-01', accountName: 'Accounts Payable', debit: 0, credit: amount }
+            ],
+            totalDebit: amount,
+            totalCredit: amount,
+            reference: validData.grnId,
+            referenceType: 'DISTRIBUTOR_GRN'
+        };
+
+        await this.saveJournalEntry(journalEntry);
+        console.log(`📝 Journal entry created for Distributor GRN: ${validData.grnId} - Rs. ${amount}`);
+    }
+
+    async handleFreeIssues(data) {
+        const validData = this.validateEventData('FREE_ISSUES_RECORDED', data);
+        if (!validData) return;
+        const amount = validData.amount;
+
+        const journalEntry = {
+            date: new Date(validData.date?.toDate ? validData.date.toDate() : (validData.date || Date.now())),
+            description: `Free Issues - Order ${validData.orderId}`,
+            businessId: validData.businessId,
+            entries: [
+                { accountCode: '5-5030-01', accountName: 'Marketing & Promotion', debit: amount, credit: 0 },
+                { accountCode: '1-1040-01', accountName: 'Inventory', debit: 0, credit: amount }
+            ],
+            totalDebit: amount,
+            totalCredit: amount,
+            reference: validData.orderId,
+            referenceType: 'FREE_ISSUES'
+        };
+
+        await this.saveJournalEntry(journalEntry);
+        console.log(`📝 Journal entry created for Free Issues: Rs. ${amount}`);
+    }
+
+    async handleMarketReturns(data) {
+        const validData = this.validateEventData('MARKET_RETURNS_RECORDED', data);
+        if (!validData) return;
+        const amount = validData.amount;
+
+        const journalEntry = {
+            date: new Date(validData.date?.toDate ? validData.date.toDate() : (validData.date || Date.now())),
+            description: `Market Returns - Order ${validData.orderId}`,
+            businessId: validData.businessId,
+            entries: [
+                { accountCode: '4-4010-02', accountName: 'Sales Returns', debit: amount, credit: 0 },
+                { accountCode: '1-1030-01', accountName: 'Accounts Receivable', debit: 0, credit: amount, customerId: validData.customerId }
+            ],
+            totalDebit: amount,
+            totalCredit: amount,
+            reference: validData.orderId,
+            referenceType: 'MARKET_RETURNS'
+        };
+
+        await this.saveJournalEntry(journalEntry);
+        console.log(`📝 Journal entry created for Market Returns: Rs. ${amount}`);
+    }
+
+    async handleFinanceTransaction(data) {
+        const validData = this.validateEventData('FINANCE_TRANSACTION_RECORDED', data);
+        if (!validData) return;
+        const amount = validData.amount;
+        const isPaymentGiven = validData.type === 'PAYMENT_GIVEN';
+        const method = String(validData.method || 'CASH').toUpperCase();
+        const cashOrBankLine = (method === 'BANK' || method === 'BANK_TRANSFER' || method === 'CHEQUE')
+            ? { accountCode: '1-1020-01', accountName: 'Bank - Current Account' }
+            : { accountCode: '1-1010-01', accountName: 'Cash' };
+
+        const journalEntry = {
+            date: new Date(validData.date || Date.now()),
+            description: `Finance Payment ${isPaymentGiven ? 'to' : 'from'} ${validData.customerName || 'Customer'} - ${validData.note || ''}`,
+            businessId: validData.businessId,
+            entries: isPaymentGiven ? [
+                { accountCode: '2-2010-01', accountName: 'Accounts Payable', debit: amount, credit: 0, supplierId: validData.customerId },
+                { ...cashOrBankLine, debit: 0, credit: amount }
+            ] : [
+                { ...cashOrBankLine, debit: amount, credit: 0 },
+                { accountCode: '1-1030-01', accountName: 'Accounts Receivable', debit: 0, credit: amount, customerId: validData.customerId }
+            ],
+            totalDebit: amount,
+            totalCredit: amount,
+            reference: validData.transactionId,
+            referenceType: 'FINANCE_PAYMENT'
+        };
+
+        await this.saveJournalEntry(journalEntry);
+        console.log(`📝 Journal entry created for Finance Payment: Rs. ${amount}`);
+    }
+
     async resolveBusinessId(entry = {}) {
         if (entry.businessId) {
             return entry.businessId;
@@ -219,6 +503,20 @@ class AccountsCore {
     async saveJournalEntry(entry) {
         if (!window.db) return;
         try {
+            const lines = Array.isArray(entry.entries) ? entry.entries : [];
+            if (!lines.length) {
+                console.error('Skipped journal entry: no lines', entry);
+                return;
+            }
+            const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
+            const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
+            if (Math.abs(totalDebit - totalCredit) > 0.01) {
+                console.error('Skipped unbalanced journal entry', { entry, totalDebit, totalCredit });
+                return;
+            }
+            entry.totalDebit = totalDebit;
+            entry.totalCredit = totalCredit;
+            if (!entry.date) entry.date = new Date();
             const businessId = await this.resolveBusinessId(entry);
             if (businessId) {
                 if (!entry.businessId) {

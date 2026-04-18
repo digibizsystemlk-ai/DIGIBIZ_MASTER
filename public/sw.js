@@ -1,22 +1,13 @@
-const CACHE_NAME = "digibiz-master-os-v31";
+const CACHE_NAME = "digibiz-master-os-v69";
 const CORE_ASSETS = [
   "/",
   "/index.html",
   "/manifest.json",
   "/icons/icon-192.svg",
   "/icons/icon-512.svg",
-  "/core/firebase-init.js?v=31",
-  "/core/event-validation.js?v=4",
-  "/core/event-bus.js?v=4",
-  "/core/accounts-core.js?v=4",
-  "/core/auth-roles.js?v=31",
-  "/core/business-types.js?v=31",
-  "/core/dashboard-core.js?v=31",
-  "/core/subscription-manager.js?v=4",
-  "/core/distributor-inventory.js?v=31",
-  "/core/mw-trading-dsl-config.js?v=31",
-  "/core/sidebar.js?v=31",
-  "/modules/core/dashboard.html"
+  "/core/pwa-init.js?v=1",
+  "/core/sms-wallet-core.js?v=4",
+  "/auth/login.html"
 ];
 
 self.addEventListener("install", (event) => {
@@ -43,6 +34,27 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  const isCriticalCoreScript =
+    url.pathname === "/core/sidebar.js" ||
+    url.pathname === "/core/dashboard-core.js";
+
+  // Always prefer network for critical boot scripts so page-to-page navigation
+  // never uses stale sidebar/dashboard logic from old SW cache.
+  if (isCriticalCoreScript) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (!response || response.status !== 200 || response.type !== "basic") return response;
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal Customers - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=1"></script>
+    <script src="/core/auth-roles.js?v=47"></script>
+    <script src="/core/mw-trading-dsl-config.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/sidebar.js?v=62"></script>
+    <style>
+        body{font-family:Inter,system-ui,sans-serif;background:#f4f6fb;margin:0;color:#0f172a}
+        .wrap{padding:24px}
+        .head h1{margin:0;font-size:24px}
+        .head p{margin:6px 0 16px;color:#64748b}
+        .grid{display:grid;grid-template-columns:380px 1fr;gap:14px}
+        .card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:16px;box-shadow:0 10px 24px rgba(15,23,42,.06)}
+        .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+        label{font-size:12px;color:#475569;display:block;margin-bottom:4px}
+        input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:9px}
+        textarea{min-height:120px;resize:vertical}
+        button{border:none;border-radius:9px;padding:10px 12px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th,td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}
+        .tag{font-size:11px;padding:3px 8px;border-radius:999px;background:#dbeafe;color:#1e40af;font-weight:700}
+        .muted{color:#64748b;font-size:12px}
+        #msg{font-size:12px;min-height:16px;margin-top:8px}
+        #bulkMsg{font-size:12px;min-height:16px;margin-top:8px}
+        @media (max-width:980px){.grid{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="head">
+        <h1>Universal Customer Directory</h1>
+        <p>Centralized customer list shared across modules under current business only.</p>
+    </div>
+    <div class="grid">
+        <div class="card">
+            <h3 style="margin:0 0 10px;">Add / Update Customer</h3>
+            <datalist id="mwCustomerNameDatalist"></datalist>
+            <div><label>Full Name</label><input id="fullName" placeholder="John Doe" autocomplete="name"></div>
+            <div class="row" style="margin-top:8px;">
+                <div><label>Mobile</label><input id="mobile" placeholder="9477XXXXXXX"></div>
+                <div><label>Type</label>
+                    <select id="context">
+                        <option value="Supplier">Supplier</option>
+                        <option value="Buyer">Buyer</option>
+                        <option value="Customer">Customer</option>
+                    </select>
+                </div>
+            </div>
+            <div style="margin-top:8px;"><label>Address</label><input id="address" placeholder="Address"></div>
+            <button id="saveBtn" style="margin-top:10px;">Save Customer</button>
+            <div id="msg"></div>
+            <p class="muted">First name is auto-extracted and stored for personalized SMS templates.</p>
+        </div>
+        <div class="card" id="bulkBox" style="display:none;">
+            <h3 style="margin:0 0 10px;">Bulk Import (Scrap)</h3>
+            <p class="muted" style="margin:0 0 10px;">Paste one customer per line. Format examples: <code>Name +9477XXXXXXX</code> or <code>Name 07XXXXXXXX</code>.</p>
+            <div class="row">
+                <div>
+                    <label>Import Type</label>
+                    <select id="bulkType">
+                        <option value="Registered Supplier">Registered Supplier</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div>
+                    <label>&nbsp;</label>
+                    <button id="bulkImportBtn" type="button">Import List</button>
+                </div>
+            </div>
+            <div style="margin-top:8px;"><label>Customer List</label><textarea id="bulkList" placeholder="Sudda +9477...\nSajith +9476..."></textarea></div>
+            <div id="bulkMsg"></div>
+        </div>
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px;">
+                <h3 style="margin:0;">Customer Directory</h3>
+                <input id="search" placeholder="Search customer..." style="max-width:220px;">
+            </div>
+            <table>
+                <thead><tr><th>Name</th><th>Mobile</th><th>Type</th><th>Address</th></tr></thead>
+                <tbody id="rows"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script>
+let businessId = null;
+let businessType = 'retail';
+let allRows = [];
+let distributorNavRole = '';
+let editingCustomerId = '';
+const SCRAP_OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+let pendingEditMobile = '';
+let pendingEditName = '';
+let mwTradingActive = false;
+let mwBizDocData = null;
+function firstName(full){
+    const clean = String(full || '').trim().replace(/\s+/g, ' ');
+    if (!clean) return '';
+    return clean.split(' ')[0];
+}
+function setMsg(t, ok){
+    const m = document.getElementById('msg');
+    m.textContent = t || '';
+    m.style.color = ok ? '#15803d' : '#dc2626';
+}
+function setBulkMsg(t, ok){
+    const m = document.getElementById('bulkMsg');
+    if (!m) return;
+    m.textContent = t || '';
+    m.style.color = ok ? '#15803d' : '#dc2626';
+}
+function syncMwCustomerDatalist(){
+    const dl = document.getElementById('mwCustomerNameDatalist');
+    const fn = document.getElementById('fullName');
+    if (!dl || !fn) return;
+    if (!mwTradingActive) {
+        fn.removeAttribute('list');
+        dl.innerHTML = '';
+        return;
+    }
+    fn.setAttribute('list', 'mwCustomerNameDatalist');
+    const seen = new Set();
+    const opts = [];
+    for (const x of allRows) {
+        const n = String(x.fullName || '').trim();
+        if (!n) continue;
+        const k = n.toLowerCase();
+        if (seen.has(k)) continue;
+        seen.add(k);
+        opts.push(n);
+        if (opts.length >= 200) break;
+    }
+    opts.sort((a, b) => a.localeCompare(b));
+    dl.textContent = '';
+    for (const n of opts) {
+        const o = document.createElement('option');
+        o.value = n;
+        dl.appendChild(o);
+    }
+}
+
+function render(){
+    const q = String(document.getElementById('search').value || '').trim().toLowerCase();
+    const list = q ? allRows.filter((x) => (`${x.fullName} ${x.mobile} ${x.type || x.context || ''}`.toLowerCase().includes(q))) : allRows;
+    document.getElementById('rows').innerHTML = list.map((x) => `
+        <tr data-id="${x.id || ''}" style="cursor:pointer;${(editingCustomerId && x.id === editingCustomerId) ? 'background:#eff6ff;' : ''}">
+            <td>${x.fullName || '-'}</td>
+            <td>${x.mobile || '-'}</td>
+            <td><span class="tag">${x.type || x.context || '-'}</span></td>
+            <td>${x.address || '-'}</td>
+        </tr>
+    `).join('');
+    syncMwCustomerDatalist();
+
+    document.querySelectorAll('#rows tr[data-id]').forEach((tr) => {
+        tr.addEventListener('click', () => {
+            const id = tr.getAttribute('data-id') || '';
+            const row = allRows.find((r) => String(r.id || '') === String(id));
+            if (!row) return;
+            editingCustomerId = String(row.id || '');
+            document.getElementById('fullName').value = row.fullName || '';
+            document.getElementById('mobile').value = row.mobile || '';
+            document.getElementById('address').value = row.address || '';
+            const ctx = String(row.type || row.context || 'Customer');
+            const sel = document.getElementById('context');
+            if (sel) sel.value = ctx;
+            setMsg(`Editing: ${row.fullName || ''}`, true);
+            render();
+        });
+    });
+}
+function tryAutoEditFromUrl(){
+    if (!pendingEditMobile && !pendingEditName) return;
+    const normMobile = (v) => String(v || '').replace(/[^0-9]/g, '');
+    const mobileKey = normMobile(pendingEditMobile);
+    const nameKey = String(pendingEditName || '').trim().toLowerCase();
+    const row = allRows.find((r) => {
+        if (mobileKey && normMobile(r.mobile) === mobileKey) return true;
+        if (nameKey && String(r.fullName || '').trim().toLowerCase() === nameKey) return true;
+        return false;
+    });
+    if (!row) return;
+    editingCustomerId = String(row.id || '');
+    document.getElementById('fullName').value = row.fullName || '';
+    document.getElementById('mobile').value = row.mobile || '';
+    document.getElementById('address').value = row.address || '';
+    const ctx = String(row.type || row.context || 'Customer');
+    const sel = document.getElementById('context');
+    if (sel) sel.value = ctx;
+    const fullNameEl = document.getElementById('fullName');
+    if (fullNameEl) fullNameEl.focus();
+    setMsg(`Editing: ${row.fullName || ''}`, true);
+    pendingEditMobile = '';
+    pendingEditName = '';
+    render();
+}
+async function refresh(){
+    const snap = await db.collection('customers').where('businessId','==',businessId).limit(300).get().catch(()=>({docs:[]}));
+    allRows = snap.docs
+        .map((d) => ({ id:d.id, ...(d.data() || {}) }))
+        .filter((x) => x.archived !== true)
+        .sort((a, b) => {
+            const ta = a.updatedAt?.toDate ? a.updatedAt.toDate().getTime() : new Date(a.updatedAt || a.createdAt || 0).getTime();
+            const tb = b.updatedAt?.toDate ? b.updatedAt.toDate().getTime() : new Date(b.updatedAt || b.createdAt || 0).getTime();
+            return tb - ta;
+        });
+    render();
+    tryAutoEditFromUrl();
+}
+async function saveCustomer(){
+    const fullName = String(document.getElementById('fullName').value || '').trim();
+    const mobile = String(document.getElementById('mobile').value || '').trim();
+    const address = String(document.getElementById('address').value || '').trim();
+    const context = String(document.getElementById('context').value || 'Customer').trim();
+    if (!fullName) { setMsg('Name is required.', false); return; }
+    const mobileKey = mobile ? mobile.replace(/[^0-9]/g,'') : '';
+    const nameKey = fullName.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+    const targetId = mobileKey ? `${businessId}_${mobileKey}` : `${businessId}_NAME_${nameKey}`;
+    const existingId = String(editingCustomerId || '').trim();
+    const customerRef = db.collection('customers').doc(existingId || targetId);
+    const existing = await customerRef.get().catch(() => null);
+    const isNew = !(existing && existing.exists);
+    const bt = String(businessType || '').toLowerCase();
+    if (bt === 'distributor' && window.DigibizDistributorPermissions) {
+        const p = window.DigibizDistributorPermissions.permissionsForRole(distributorNavRole);
+        const mwCfg = window.DigibizMwDslConfig;
+        const canCreateNew = mwCfg && typeof mwCfg.mwTradingDistributorCanCreateNewCustomer === 'function'
+            ? mwCfg.mwTradingDistributorCanCreateNewCustomer(p, mwTradingActive)
+            : !!p.canCustomerCreate;
+        if (isNew && !canCreateNew) {
+            setMsg('Your role cannot create customers.', false);
+            return;
+        }
+        if (!isNew && !p.canCustomerEditDelete) {
+            setMsg('Your role cannot edit existing customers.', false);
+            return;
+        }
+    }
+    const payload = {
+        businessId,
+        businessType,
+        fullName,
+        firstName: firstName(fullName),
+        mobile,
+        address,
+        type: context,
+        context,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (isNew) {
+        payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+    }
+    // If user is editing and changed the mobile (doc id changes), write to new doc id and archive the old one.
+    if (existingId && existingId !== targetId) {
+        const batch = db.batch();
+        batch.set(db.collection('customers').doc(targetId), {
+            ...payload,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        batch.set(db.collection('customers').doc(existingId), {
+            archived: true,
+            archivedAt: new Date().toISOString(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        await batch.commit();
+        editingCustomerId = targetId;
+        setMsg('Customer updated (mobile changed). Previous record archived.', true);
+    } else {
+        await customerRef.set(payload, { merge: true });
+        editingCustomerId = existingId || targetId;
+        setMsg(isNew ? 'Customer saved.' : 'Customer updated.', true);
+    }
+    await refresh();
+}
+
+function normalizeMobile(mobile){
+    let ph = String(mobile || '').trim().replace(/[\s\-]/g,'');
+    ph = ph.replace(/^\+/, '');
+    if (ph.length === 10 && ph.startsWith('0')) ph = `94${ph.slice(1)}`;
+    if (ph.length === 9) ph = `94${ph}`;
+    return ph;
+}
+
+function parseBulkLines(text){
+    const rawLines = String(text || '').split(/\r?\n/).map((l) => String(l || '').trim()).filter(Boolean);
+    const out = [];
+    for (const line of rawLines) {
+        const m = line.match(/(\+?94\d{9}|94\d{9}|0\d{9}|\d{9,12})/);
+        if (!m || m.index == null) continue;
+        const phoneRaw = m[0];
+        const mobile = normalizeMobile(phoneRaw);
+        if (!mobile || mobile.length < 11) continue;
+        let name = String(line.slice(0, m.index) || '').trim();
+        name = name.replace(/(රු\.?|rs\.?|lkr)\s*[:.]?\s*[0-9,]+/ig, '').trim();
+        if (!name) continue;
+        out.push({ fullName: name, mobile });
+    }
+    return out;
+}
+
+async function bulkImport(){
+    if (!businessId) return;
+    const isScrap = String(businessType || '').toLowerCase() === 'scrap_collection_center';
+    if (!isScrap) return;
+    const context = String(document.getElementById('bulkType')?.value || 'Other').trim();
+    const listText = String(document.getElementById('bulkList')?.value || '').trim();
+    const items = parseBulkLines(listText);
+    if (!items.length) { setBulkMsg('No valid rows found. Check formatting.', false); return; }
+    setBulkMsg(`Importing ${items.length}...`, true);
+    const batch = db.batch();
+    const nowTs = firebase.firestore.FieldValue.serverTimestamp();
+    for (const x of items) {
+        const id = `${businessId}_${x.mobile.replace(/[^0-9]/g,'')}`;
+        const ref = db.collection('customers').doc(id);
+        batch.set(ref, {
+            businessId,
+            businessType,
+            fullName: x.fullName,
+            firstName: firstName(x.fullName),
+            mobile: x.mobile,
+            address: '',
+            type: context,
+            context,
+            updatedAt: nowTs,
+            createdAt: nowTs
+        }, { merge: true });
+    }
+    await batch.commit();
+    setBulkMsg(`Imported/updated ${items.length} customers.`, true);
+    await refresh();
+}
+
+document.getElementById('saveBtn').addEventListener('click', saveCustomer);
+document.getElementById('bulkImportBtn')?.addEventListener('click', bulkImport);
+document.getElementById('search').addEventListener('input', render);
+function applyLabelByBusinessType(){
+    const isManufacturer = String(businessType || '').toLowerCase() === 'manufacturer';
+    const isScrap = String(businessType || '').toLowerCase() === 'scrap_collection_center';
+    const title = document.querySelector('.head p');
+    if (title) {
+        let base = isManufacturer
+            ? 'Centralized supplier/buyer directory shared across manufacturer workflows.'
+            : (isScrap
+                ? 'Centralized directory for scrap suppliers, buyers, and borrowers under current business only.'
+                : 'Centralized customer list shared across modules under current business only.');
+        if (mwTradingActive && String(businessType || '').toLowerCase() === 'distributor') {
+            base += ' MW Trading: you can add new contacts freely; saved names appear as suggestions when typing.';
+        }
+        title.textContent = base;
+    }
+    const labelContext = document.querySelector('label[for="context"]') || document.querySelectorAll('label')[2];
+    if (labelContext) labelContext.textContent = isManufacturer ? 'Supplier / Buyer Type' : 'Type';
+    const select = document.getElementById('context');
+    if (select) {
+        select.innerHTML = isScrap
+            ? (
+                '<option value="Supplier">Supplier</option>' +
+                '<option value="Buyer">Buyer</option>' +
+                '<option value="Borrower - Interest">Borrower - Interest</option>' +
+                '<option value="Borrower - No Interest">Borrower - No Interest</option>' +
+                '<option value="Registered Supplier">Registered Supplier</option>' +
+                '<option value="Unregistered Supplier">Unregistered Supplier</option>' +
+                '<option value="Other">Other</option>'
+            )
+            : (isManufacturer
+                ? '<option value="Supplier">Supplier</option><option value="Buyer">Buyer</option><option value="Customer">Customer</option>'
+                : '<option value="Supplier">Supplier</option><option value="Buyer">Buyer</option><option value="Customer">Customer</option>');
+    }
+    const bulk = document.getElementById('bulkBox');
+    if (bulk) bulk.style.display = isScrap ? '' : 'none';
+}
+firebase.auth().onAuthStateChanged(async (u) => {
+    if (!u) { window.location.href = '/auth/login.html'; return; }
+    const ctx = await window.dashboardCore.getContext(u);
+    businessId = (ctx && ctx.businessId) || u.uid;
+    businessType = (ctx && ctx.businessType) || 'retail';
+    if (String(businessType || '').toLowerCase() === 'scrap_collection_center' && String(u.uid) === SCRAP_OWNER_UID) {
+        businessId = SCRAP_OWNER_UID;
+    }
+    try {
+        const p = new URLSearchParams(window.location.search || '');
+        pendingEditMobile = String(p.get('mobile') || '').trim();
+        pendingEditName = String(p.get('name') || '').trim();
+        const searchEl = document.getElementById('search');
+        if (searchEl && !searchEl.value && (pendingEditMobile || pendingEditName)) {
+            searchEl.value = pendingEditMobile || pendingEditName;
+        }
+    } catch (e) {
+        pendingEditMobile = '';
+        pendingEditName = '';
+    }
+    distributorNavRole = '';
+    if (String(businessType || '').toLowerCase() === 'distributor' && window.getUserRole) {
+        try {
+            const ri = await window.getUserRole(u.uid, businessId);
+            distributorNavRole = String((ri && ri.role) || '');
+            const bud = await db.collection('businesses').doc(businessId).collection('users').doc(u.uid).get();
+            if (bud.exists && bud.data().role) distributorNavRole = String(bud.data().role);
+        } catch (e) {
+            console.warn('customers role', e);
+        }
+    }
+    mwTradingActive = false;
+    mwBizDocData = null;
+    try {
+        if (window.DigibizMwDslConfig && businessId) {
+            const bs = await db.collection('businesses').doc(businessId).get();
+            mwBizDocData = bs.exists ? (bs.data() || {}) : null;
+            mwTradingActive = window.DigibizMwDslConfig.isMwTradingTenantActive(businessId, mwBizDocData);
+        }
+    } catch (e) {
+        console.warn('customers mw flag', e);
+    }
+    applyLabelByBusinessType();
+    await refresh();
+});
+</script>
+</body>
+</html>

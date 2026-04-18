@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Sell</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=58"></script>
+    <script src="../../core/event-validation.js?v=58"></script>
+    <script src="../../core/event-bus.js?v=58"></script>
+    <script src="../../core/accounts-core.js?v=58"></script>
+    <script src="../../core/auth-roles.js?v=58"></script>
+    <script src="../../core/business-types.js?v=58"></script>
+    <script src="../../core/dashboard-core.js?v=58"></script>
+    <script src="../../core/subscription-manager.js?v=58"></script>
+    <script src="../../core/sidebar.js?v=62"></script>
+    <script src="../../core/sms-wallet-core.js?v=4"></script>
+    <script src="../../core/scrap-vba-core.js?v=70"></script>
+    <style>
+        body{font-family:Inter,Segoe UI,sans-serif;background:#f5f7fb;color:#0f172a;}
+        .page{padding:20px;}
+        .card{background:#fff;border:1px solid #dbe4ee;border-radius:12px;padding:16px;margin-bottom:12px;}
+        .head{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end;}
+        input,select,button{padding:9px;border:1px solid #cbd5e1;border-radius:8px;}
+        button{background:#0f3b2c;color:#fff;border:none;cursor:pointer;}
+        table{width:100%;border-collapse:collapse;font-size:13px;}
+        th,td{padding:8px;border-bottom:1px solid #eef2f7;text-align:left;}
+        th{background:#f8fafc;position:sticky;top:0;}
+        .num{text-align:right;}
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="card">
+        <h1>Sell</h1>
+        <p style="margin:4px 0 10px;color:#64748b;font-size:13px;">Buyer-focused sell sheet with live summary and debt SMS updates.</p>
+        <div class="head">
+            <div><input id="buyerName" list="buyerList" placeholder="Buyer Name"><datalist id="buyerList"></datalist></div>
+            <select id="paymentMode"><option value="CASH">Cash</option><option value="BANK">Bank</option><option value="AR">Accounts Receivable</option></select>
+            <input id="sellDateTime" type="datetime-local">
+            <button id="saveSellBtn">Save Sell</button>
+        </div>
+        <div style="margin-top:8px;color:#64748b;font-size:12px;" id="sellSummary">Total: LKR 0.00</div>
+        <div id="smsDebugBadge" style="margin-top:8px;display:none;padding:8px;border-radius:8px;font-size:12px;"></div>
+    </div>
+    <div class="card" style="max-height:70vh;overflow:auto;">
+        <table>
+            <thead><tr><th>Item</th><th class="num">Stock</th><th class="num">Sell Price</th><th class="num">Qty</th><th class="num">Subtotal</th></tr></thead>
+            <tbody id="sellBody"><tr><td colspan="5">Loading...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+<script>
+const OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+const state = { items: [], qty: {}, prices: {} };
+const buyersByName = {};
+const fmt = (v) => `LKR ${(Number(v)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+function smsSkipReasonText(code) {
+    if (code === 'event_disabled') return 'SMS skipped: sell event toggle is OFF.';
+    if (code === 'no_phone') return 'SMS skipped: buyer phone missing.';
+    if (code === 'wallet_exhausted') return 'SMS skipped: SMS wallet exhausted.';
+    if (code === 'quota_exhausted') return 'SMS skipped: Firestore quota exceeded (billing / daily limit).';
+    if (code === 'permission') return 'SMS skipped: permission denied for SMS queue.';
+    if (code === 'invalid_input') return 'SMS skipped: invalid phone/message input.';
+    if (code === 'db_unavailable') return 'SMS skipped: database unavailable.';
+    if (code === 'firestore_error') return 'SMS skipped: queue write failed (see detail below).';
+    return `SMS skipped: ${code || 'unknown reason'}`;
+}
+function showSmsDebug(result, extraReason) {
+    const el = document.getElementById('smsDebugBadge');
+    if (!el) return;
+    let ok = false;
+    let txt = '';
+    if (result && result.ok) {
+        ok = true;
+        if (result.via === 'rtdb_quota_fallback') {
+            txt = 'SMS queued via Realtime Database (Firestore write quota exceeded). Gateway app should send; cloud wallet was not debited — reconcile when Firestore is available again.';
+        } else if (result.fallback) {
+            txt = 'SMS queued via direct gateway fallback.';
+        } else {
+            txt = 'SMS queued successfully.';
+        }
+    } else {
+        txt = smsSkipReasonText(extraReason || (result && result.skipped));
+        if (result && result.error) {
+            txt += ' — ' + String(result.error);
+        }
+    }
+    el.style.display = 'block';
+    el.style.background = ok ? '#dcfce7' : '#fee2e2';
+    el.style.color = ok ? '#14532d' : '#7f1d1d';
+    el.style.border = `1px solid ${ok ? '#86efac' : '#fca5a5'}`;
+    el.textContent = txt;
+}
+function updateSellSummary() {
+    const total = state.items.reduce((s, item) => {
+        const qty = Number(state.qty[item.id]) || 0;
+        const price = state.prices[item.id] != null ? Number(state.prices[item.id]) : (Number(item.sellingPrice)||0);
+        return s + (qty * price);
+    }, 0);
+    const sum = document.getElementById('sellSummary');
+    if (sum) sum.textContent = `Total: ${fmt(total)}`;
+}
+function render() {
+    const body = document.getElementById('sellBody');
+    body.innerHTML = state.items.map((item, idx) => {
+        const qty = Number(state.qty[item.id]) || 0;
+        const price = state.prices[item.id] != null ? Number(state.prices[item.id]) : (Number(item.sellingPrice)||0);
+        return `<tr><td>${item.itemName||'-'}</td><td class="num">${Number(item.currentStock)||0}</td><td class="num"><input data-p="${item.id}" type="number" step="0.01" value="${price}" style="width:100px;text-align:right;"></td><td class="num"><input data-q="${item.id}" data-idx="${idx}" type="number" step="0.01" value="${qty||''}" style="width:100px;text-align:right;"></td><td class="num">${fmt(qty * price)}</td></tr>`;
+    }).join('') || '<tr><td colspan="5">No items</td></tr>';
+    body.querySelectorAll('input[data-p]').forEach((el) => el.addEventListener('input', ()=>{ state.prices[el.dataset.p] = Number(el.value)||0; render(); }));
+    body.querySelectorAll('input[data-q]').forEach((el) => {
+        el.addEventListener('input', ()=>{ state.qty[el.dataset.q] = Number(el.value)||0; render(); });
+        el.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); const nx = body.querySelector(`input[data-q][data-idx="${Number(el.dataset.idx)+1}"]`); if(nx) nx.focus(); }});
+    });
+    updateSellSummary();
+}
+async function loadItems() {
+    const snap = await db.collection('scrap_items').where('businessId','==',OWNER_UID).get();
+    state.items = snap.docs.map((d)=>({ id: d.id, ...d.data() })).sort((a,b)=>String(a.itemName||'').localeCompare(String(b.itemName||'')));
+    render();
+}
+async function loadBuyers() {
+    const snap = await db.collection('customers').where('businessId','==',OWNER_UID).limit(700).get().catch(()=>({docs:[]}));
+    const list = document.getElementById('buyerList');
+    if (!list) return;
+    list.innerHTML = '';
+    snap.docs.forEach((d) => {
+        const row = d.data() || {};
+        const type = String(row.type || row.context || '').toLowerCase();
+        if (!type.includes('buyer')) return;
+        const name = String(row.fullName || '').trim();
+        if (!name) return;
+        buyersByName[name.toLowerCase()] = row;
+        const opt = document.createElement('option');
+        opt.value = name;
+        list.appendChild(opt);
+    });
+}
+
+async function saveSell() {
+    const buyerName = String(document.getElementById('buyerName').value||'').trim();
+    const paymentMode = document.getElementById('paymentMode').value;
+    if (!buyerName) return alert('Buyer name required.');
+    const lines = state.items.map((item)=> {
+        const qty = Number(state.qty[item.id])||0;
+        if (!qty) return null;
+        const sellPrice = state.prices[item.id] != null ? Number(state.prices[item.id]) : (Number(item.sellingPrice)||0);
+        const cp = Number(item.costPrice);
+        const costPrice = (Number.isFinite(cp) && cp > 0) ? cp : 0;
+        return { itemId: item.id, itemName: item.itemName||'', qty, sellPrice, amount: qty*sellPrice, cogs: qty*costPrice };
+    }).filter(Boolean);
+    if (!lines.length) return alert('Enter at least one quantity.');
+    for (const line of lines) {
+        const ref = db.collection('scrap_items').doc(line.itemId);
+        const snap = await ref.get();
+        if (!snap.exists) continue;
+        const row = snap.data();
+        const nextStock = (Number(row.currentStock)||0) - line.qty;
+        const cp = Number(row.costPrice);
+        const cost = (Number.isFinite(cp) && cp > 0) ? cp : 0;
+        await ref.update({
+            currentStock: nextStock,
+            costPrice: cost,
+            totalBuyingValue: nextStock * cost,
+            totalSellingValue: nextStock * (Number(row.sellingPrice)||0),
+            potentialProfitValue: nextStock * (Number(row.profit)||0),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    }
+    const totalAmount = lines.reduce((s,r)=>s+(Number(r.amount)||0),0);
+    const totalWeight = lines.reduce((s,r)=>s+(Number(r.qty)||0),0);
+    const totalCogs = lines.reduce((s,r)=>s+(Number(r.cogs)||0),0);
+    const sellDateTime = String(document.getElementById('sellDateTime')?.value || '').trim();
+    const sellIso = sellDateTime ? new Date(sellDateTime).toISOString() : new Date().toISOString();
+    await db.collection('selling_history').add({
+        businessId: OWNER_UID, buyerName, paymentMode, date: sellIso,
+        items: lines, qty: totalWeight, totalWeight, totalAmount, cogsAmount: totalCogs,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (window.scrapVbaCore?.postJournalEntry) {
+        const receivableLine = paymentMode === 'AR'
+            ? { accountCode:'1-1030-01', accountName:'Accounts Receivable', debit: totalAmount, credit: 0 }
+            : (paymentMode === 'BANK'
+                ? { accountCode:'1-1020-01', accountName:'Bank - Current Account', debit: totalAmount, credit: 0 }
+                : { accountCode:'1-1010-01', accountName:'Cash - Main', debit: totalAmount, credit: 0 });
+        await window.scrapVbaCore.postJournalEntry(OWNER_UID, {
+            description:`Scrap Sell - ${buyerName}`, reference: buyerName, referenceType:'SCRAP_SELL',
+            date:new Date().toISOString(), entries:[receivableLine, { accountCode:'4-4010-01', accountName:'Scrap Sales Revenue', debit:0, credit:totalAmount }]
+        });
+        await window.scrapVbaCore.postJournalEntry(OWNER_UID, {
+            description:`Scrap Sell COGS - ${buyerName}`, reference: buyerName, referenceType:'SCRAP_SELL_COGS',
+            date:new Date().toISOString(),
+            entries:[{ accountCode:'5-5010-01', accountName:'Cost of Goods Sold', debit:totalCogs, credit:0 }, { accountCode:'1-1030-01', accountName:'Scrap Inventory', debit:0, credit:totalCogs }]
+        });
+        if (window.scrapVbaCore.syncInventoryAssetWithStock) await window.scrapVbaCore.syncInventoryAssetWithStock(OWNER_UID);
+    }
+    if (window.scrapVbaCore?.enqueuePendingSmsForScrap || window.scrapVbaCore?.enqueuePendingSms) {
+        const enabled = window.scrapVbaCore.isScrapSmsEventEnabled
+            ? await window.scrapVbaCore.isScrapSmsEventEnabled(OWNER_UID, 'bill')
+            : true;
+        const buyer = buyersByName[buyerName.toLowerCase()] || {};
+        const phone = String(buyer.mobile || buyer.phone || '').trim();
+        if (enabled && phone) {
+            const direction = paymentMode === 'AR'
+                ? `You have to pay us ${fmt(totalAmount)}.`
+                : `We have to pay you ${fmt(totalAmount)}.`;
+            const msg = `Dear ${buyerName},\nSell recorded.\n${direction}\nDate: ${new Date(sellIso).toLocaleString()}`;
+            let smsRes;
+            if (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function') {
+                smsRes = await window.scrapVbaCore.enqueuePendingSmsForScrap(phone, msg);
+            } else {
+                smsRes = await window.scrapVbaCore.enqueuePendingSms(OWNER_UID, phone, msg);
+            }
+            showSmsDebug(smsRes);
+        } else {
+            showSmsDebug(null, enabled ? 'no_phone' : 'event_disabled');
+        }
+    }
+    state.qty = {};
+    await loadItems();
+    alert('Sell saved.');
+}
+document.getElementById('saveSellBtn').addEventListener('click', saveSell);
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href='../../auth/login.html'; return; }
+    const userDoc = await db.collection('users').doc(user.uid).get();
+    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    const bizDoc = await db.collection('businesses').doc(businessId).get();
+    const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
+    if (user.uid !== OWNER_UID || businessType !== 'scrap_collection_center') { window.location.href = '/modules/core/dashboard.html'; return; }
+    const n = new Date();
+    n.setSeconds(0,0);
+    document.getElementById('sellDateTime').value = new Date(n.getTime() - n.getTimezoneOffset()*60000).toISOString().slice(0,16);
+    await loadBuyers();
+    await loadItems();
+});
+</script>
+</body>
+</html>

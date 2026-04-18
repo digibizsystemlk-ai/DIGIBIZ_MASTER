@@ -2,6 +2,7 @@
 <html lang="si">
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Business Profile - DIGIBIZ</title>
     
@@ -14,15 +15,15 @@
     
     <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
     <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
-    <script src="../../core/firebase-init.js?v=4"></script>
-    <script src="../../core/event-validation.js?v=4"></script>
-    <script src="../../core/event-bus.js?v=4"></script>
-    <script src="../../core/accounts-core.js?v=4"></script>
-    <script src="../../core/auth-roles.js?v=4"></script>
-    <script src="../../core/business-types.js?v=4"></script>
-    <script src="../../core/dashboard-core.js?v=4"></script>
-    <script src="../../core/subscription-manager.js?v=4"></script>
-    <script src="../../core/sidebar.js?v=30"></script>
+    <script src="../../core/firebase-init.js?v=55"></script>
+    <script src="../../core/event-validation.js?v=55"></script>
+    <script src="../../core/event-bus.js?v=55"></script>
+    <script src="../../core/accounts-core.js?v=55"></script>
+    <script src="../../core/auth-roles.js?v=56"></script>
+    <script src="../../core/business-types.js?v=55"></script>
+    <script src="../../core/dashboard-core.js?v=55"></script>
+    <script src="../../core/subscription-manager.js?v=55"></script>
+    <script src="../../core/sidebar.js?v=55"></script>
     
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
@@ -94,6 +95,28 @@
             <select id="businessSelect"></select>
             <button id="switchBusinessBtn">Switch</button>
         </div>
+
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3><i class="fas fa-tag"></i> Business Type (System Context)</h3></div>
+            <div class="card-body">
+                <div class="form-group" style="margin-bottom:10px;">
+                    <label>
+                        <i class="fas fa-sitemap"></i> Business Type
+                        <span id="businessTypeLockNotice" style="font-size:12px;color:#64748b;margin-left:6px;"></span>
+                    </label>
+                    <select id="businessType">
+                        <option value="retail">🛒 Retail / Supermarket</option>
+                        <option value="distributor">🚚 Distributor / Wholesaler</option>
+                        <option value="pharmacy">💊 Pharmacy</option>
+                        <option value="hardware">🔧 Hardware / Construction</option>
+                        <option value="service">💇 Service / Salon</option>
+                        <option value="manufacturer">🏭 Manufacturer</option>
+                        <option value="scrap_collection_center" id="scrapTypeOption" style="display:none;">♻️ Scrap Collection Center</option>
+                    </select>
+                </div>
+                <button class="btn-primary" id="saveBusinessTypeBtn"><i class="fas fa-save"></i> Save Business Type</button>
+            </div>
+        </div>
         
         <div class="two-column">
             <div>
@@ -107,13 +130,6 @@
                         <div class="form-group"><label><i class="fas fa-phone"></i> Phone Number</label><input type="tel" id="businessPhone" placeholder="+94 XX XXX XXXX"></div>
                         <div class="form-group"><label><i class="fas fa-map-marker-alt"></i> Address</label><textarea id="businessAddress" rows="3" placeholder="Full business address"></textarea></div>
                         <div class="form-group"><label><i class="fas fa-id-card"></i> Tax ID / Registration No</label><input type="text" id="businessTaxId" placeholder="VAT Registration Number"></div>
-                        <div class="form-group"><label><i class="fas fa-tag"></i> Business Type <span id="businessTypeLockNotice" style="font-size:12px;color:#64748b;margin-left:6px;"></span></label><select id="businessType">
-                            <option value="retail">🛒 Retail / Supermarket</option>
-                            <option value="distributor">🚚 Distributor / Wholesaler</option>
-                            <option value="pharmacy">💊 Pharmacy</option>
-                            <option value="hardware">🔧 Hardware / Construction</option>
-                            <option value="service">💇 Service / Salon</option>
-                        </select></div>
                         <div style="display:flex;gap:15px;margin-top:10px;" id="actionButtons">
                             <button class="btn-primary" id="saveProfileBtn"><i class="fas fa-save"></i> Save Changes</button>
                             <button class="btn-outline" id="cancelBtn">Cancel</button>
@@ -166,6 +182,7 @@
         let canChangeBusinessType = false;
         let originalBusinessType = 'retail';
         let allBusinesses = [];
+        const SUPER_ADMIN_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
         
         function showMessage(message, isSuccess, isAdminMsg = false) {
             const msgDiv = document.getElementById('alertMessage');
@@ -182,6 +199,65 @@
             return date.toLocaleDateString('en-LK');
         }
         
+        function canUseScrapBusinessType() {
+            return currentUserRole === 'SUPER_ADMIN' && currentUserId === SUPER_ADMIN_UID;
+        }
+
+        async function resolveBusinessNavRoleForDistributor() {
+            if (!currentCompanyId) return '';
+            let r = String(currentUserRole || '');
+            try {
+                const bud = await db.collection('businesses').doc(currentCompanyId).collection('users').doc(currentUserId).get();
+                if (bud.exists && bud.data().role) r = String(bud.data().role);
+            } catch (e) { /* ignore */ }
+            return r;
+        }
+
+        async function applyDistributorBusinessProfileUiLock() {
+            if (currentUserRole === 'SUPER_ADMIN') return;
+            const biz = await db.collection('businesses').doc(currentCompanyId).get();
+            const btype = biz.exists ? String(biz.data().businessType || '').toLowerCase() : '';
+            if (btype !== 'distributor' || !window.DigibizDistributorPermissions) return;
+            const r = await resolveBusinessNavRoleForDistributor();
+            const p = window.DigibizDistributorPermissions.permissionsForRole(r);
+            const ro = !p.canBusinessInfoEdit;
+            ['businessName', 'ownerNameInput', 'businessPhone', 'businessAddress', 'businessTaxId'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = ro;
+            });
+            const emailEl = document.getElementById('businessEmail');
+            if (emailEl && ro) emailEl.disabled = true;
+            const saveBtn = document.getElementById('saveProfileBtn');
+            if (saveBtn) saveBtn.disabled = ro;
+            const saveTypeBtn = document.getElementById('saveBusinessTypeBtn');
+            if (saveTypeBtn) saveTypeBtn.disabled = ro;
+            const logoArea = document.getElementById('logoUploadArea');
+            if (logoArea) {
+                logoArea.style.pointerEvents = ro ? 'none' : '';
+                logoArea.style.opacity = ro ? '0.55' : '1';
+            }
+        }
+
+        async function assertDistributorBusinessProfileEdit() {
+            if (currentUserRole === 'SUPER_ADMIN') return true;
+            const biz = await db.collection('businesses').doc(currentCompanyId).get();
+            const btype = biz.exists ? String(biz.data().businessType || '').toLowerCase() : '';
+            if (btype !== 'distributor' || !window.DigibizDistributorPermissions) return true;
+            const r = await resolveBusinessNavRoleForDistributor();
+            return !!window.DigibizDistributorPermissions.permissionsForRole(r).canBusinessInfoEdit;
+        }
+
+        function syncBusinessTypeOptionVisibility() {
+            const scrapOption = document.getElementById('scrapTypeOption');
+            const typeSelect = document.getElementById('businessType');
+            if (!scrapOption || !typeSelect) return;
+            const allowed = canUseScrapBusinessType() && currentCompanyId === SUPER_ADMIN_UID;
+            scrapOption.style.display = allowed ? '' : 'none';
+            if (!allowed && typeSelect.value === 'scrap_collection_center') {
+                typeSelect.value = originalBusinessType || 'retail';
+            }
+        }
+
         function lockBusinessTypeField() {
             if (currentUserRole === 'SUPER_ADMIN') {
                 return;
@@ -212,6 +288,10 @@
             if (!newBusinessId) return;
             
             currentCompanyId = newBusinessId;
+            try {
+                localStorage.setItem('currentBusinessId', String(currentCompanyId));
+                sessionStorage.setItem('currentBusinessId', String(currentCompanyId));
+            } catch (e) { /* ignore */ }
             await loadBusinessProfile();
             showMessage(`Switched to business: ${currentCompanyId.substring(0,12)}...`, true, true);
         }
@@ -221,16 +301,20 @@
             const doc = await db.collection('businesses').doc(currentCompanyId).get();
             if (doc.exists) {
                 const data = doc.data();
-                const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt || Date.now());
-                const daysSinceCreated = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+                const userCreated = auth.currentUser && auth.currentUser.metadata && auth.currentUser.metadata.creationTime
+                    ? new Date(auth.currentUser.metadata.creationTime)
+                    : null;
+                const createdAt = userCreated || (data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt || Date.now()));
                 const businessType = data.businessType || 'retail';
                 originalBusinessType = businessType;
-                canChangeBusinessType = daysSinceCreated < 7 && !data.businessTypeLocked;
+                canChangeBusinessType = !data.businessTypeLocked;
                 
                 // Check lock status - Super Admin bypasses lock
                 if (currentUserRole === 'SUPER_ADMIN') {
                     isProfileLocked = false;
                     document.getElementById('businessType').disabled = false;
+                    canChangeBusinessType = true;
+                    syncBusinessTypeOptionVisibility();
                     
                     // Enable logo upload
                     const uploadArea = document.getElementById('logoUploadArea');
@@ -250,6 +334,7 @@
                     lockBusinessTypeField();
                 } else {
                     isProfileLocked = false;
+                    syncBusinessTypeOptionVisibility();
                 }
 
                 if (currentUserRole !== 'SUPER_ADMIN') {
@@ -257,32 +342,27 @@
                     const lockNotice = document.getElementById('businessTypeLockNotice');
                     if (!canChangeBusinessType) {
                         businessTypeSelect.disabled = true;
-                        if (lockNotice) lockNotice.textContent = '🔒 Business type is now locked';
-                        if (!data.businessTypeLocked && businessType === 'retail' && daysSinceCreated >= 7) {
-                            await db.collection('businesses').doc(currentCompanyId).update({
-                                businessType: 'retail',
-                                businessTypeLocked: true,
-                                businessTypeLockedAt: new Date()
-                            });
-                        }
+                        if (lockNotice) lockNotice.textContent = '🔒 Locked permanently after first save';
                     } else {
                         businessTypeSelect.disabled = false;
-                        if (lockNotice) lockNotice.textContent = `You can change within ${Math.max(0, 7 - daysSinceCreated)} day(s)`;
+                        if (lockNotice) lockNotice.textContent = 'Choose carefully - this will lock after save';
                     }
                 } else {
                     const lockNotice = document.getElementById('businessTypeLockNotice');
-                    if (lockNotice) lockNotice.textContent = 'Admin override enabled';
+                    if (lockNotice) lockNotice.textContent = 'Super Admin: business type can be changed anytime';
                 }
                 
                 document.getElementById('businessName').value = data.name || '';
                 document.getElementById('ownerNameInput').value = data.ownerName || '';
                 document.getElementById('businessEmail').value = data.email || '';
+                document.getElementById('businessEmail').disabled = !!String(data.email || '').trim() || !!data.immutableFieldsLocked;
                 document.getElementById('businessPhone').value = data.phone || '';
                 document.getElementById('businessAddress').value = data.address || '';
                 document.getElementById('businessTaxId').value = data.taxId || '';
                 document.getElementById('businessType').value = businessType;
+                syncBusinessTypeOptionVisibility();
                 document.getElementById('businessId').innerHTML = currentCompanyId.substring(0, 12) + '...';
-                document.getElementById('createdDate').innerHTML = formatDate(data.createdAt);
+                document.getElementById('createdDate').innerHTML = formatDate(createdAt);
                 if (data.logoUrl) document.getElementById('logoPreview').src = data.logoUrl;
                 
                 const subStatus = data.subscriptionStatus || 'trial';
@@ -295,17 +375,21 @@
                 document.getElementById('ownerName').innerHTML = userDoc.data().name || '-';
                 document.getElementById('ownerEmail').innerHTML = userDoc.data().email || '-';
             }
+            await applyDistributorBusinessProfileUiLock();
         }
         
         async function saveBusinessProfile() {
+            if (!(await assertDistributorBusinessProfileEdit())) {
+                showMessage('Only the business owner can edit business profile details.', false);
+                return;
+            }
             const ownerName = String(document.getElementById('ownerNameInput').value || '').trim();
             const name = document.getElementById('businessName').value;
             const email = document.getElementById('businessEmail').value;
             const phone = document.getElementById('businessPhone').value;
             const address = document.getElementById('businessAddress').value;
             const taxId = document.getElementById('businessTaxId').value;
-            const businessType = document.getElementById('businessType').value;
-            
+
             const normalizedBusinessName = String(name || '').trim().toUpperCase();
 
             if (!ownerName || !normalizedBusinessName || !email) {
@@ -322,18 +406,11 @@
                 taxId: taxId,
                 updatedAt: new Date()
             };
-            if (currentUserRole === 'SUPER_ADMIN') {
-                updateData.businessType = businessType;
-            } else {
-                if (businessType !== originalBusinessType) {
-                    if (!canChangeBusinessType) {
-                        showMessage('Business type can only be changed within the first 7 days.', false);
-                        return;
-                    }
-                    updateData.businessType = businessType;
-                    updateData.businessTypeLocked = true;
-                    updateData.businessTypeLockedAt = new Date();
-                }
+            const bizDocNow = await db.collection('businesses').doc(currentCompanyId).get();
+            const bizDataNow = bizDocNow.exists ? bizDocNow.data() : {};
+            const firstSaveLock = !bizDataNow.immutableFieldsLocked;
+            if (firstSaveLock) {
+                updateData.immutableFieldsLocked = true;
             }
             
             await db.collection('businesses').doc(currentCompanyId).update(updateData);
@@ -341,15 +418,78 @@
                 ownerName: ownerName,
                 name: ownerName
             });
-            
+
             showMessage('Business profile saved successfully!', true);
             document.getElementById('ownerNameInput').value = ownerName;
             document.getElementById('businessName').value = normalizedBusinessName;
+            document.getElementById('businessEmail').disabled = true;
             window.eventBus.publish('BUSINESS_UPDATED', { businessId: currentCompanyId, name: normalizedBusinessName });
+            try {
+                window.dispatchEvent(new CustomEvent('digibiz-profile-updated', { detail: { businessId: currentCompanyId, businessName: normalizedBusinessName, ownerName: ownerName } }));
+            } catch (e) { /* ignore */ }
+        }
+
+        async function saveBusinessTypeOnly() {
+            if (!(await assertDistributorBusinessProfileEdit())) {
+                showMessage('Only the business owner can change business type for this account.', false);
+                return;
+            }
+            const businessType = document.getElementById('businessType').value;
+            const isSuperAdmin = String(currentUserRole || '').toUpperCase() === 'SUPER_ADMIN';
+            if (businessType === 'scrap_collection_center' && !canUseScrapBusinessType()) {
+                showMessage('Only owner super admin can use Scrap Collection Center business type.', false);
+                return;
+            }
+            if (businessType === 'scrap_collection_center' && currentCompanyId !== SUPER_ADMIN_UID) {
+                showMessage('Scrap Collection Center is restricted to the owner business only.', false);
+                return;
+            }
+            if (!isSuperAdmin && !canChangeBusinessType && businessType !== originalBusinessType) {
+                showMessage('Business type is permanently locked and cannot be changed.', false);
+                return;
+            }
+            const patch = isSuperAdmin
+                ? { businessType, updatedAt: new Date() }
+                : {
+                    businessType,
+                    businessTypeLocked: true,
+                    businessTypeLockedAt: new Date(),
+                    updatedAt: new Date()
+                };
+            await db.collection('businesses').doc(currentCompanyId).update(patch);
+            try {
+                localStorage.setItem('currentBusinessId', String(currentCompanyId));
+                sessionStorage.setItem('currentBusinessId', String(currentCompanyId));
+            } catch (e) { /* ignore */ }
+            localStorage.setItem('currentBusinessType', businessType);
+            sessionStorage.setItem('currentBusinessType', businessType);
+            originalBusinessType = businessType;
+            if (!isSuperAdmin) {
+                canChangeBusinessType = false;
+                document.getElementById('businessType').disabled = true;
+                const lockNotice = document.getElementById('businessTypeLockNotice');
+                if (lockNotice) lockNotice.textContent = '🔒 Locked permanently after first save';
+            } else {
+                canChangeBusinessType = true;
+                document.getElementById('businessType').disabled = false;
+                const lockNotice = document.getElementById('businessTypeLockNotice');
+                if (lockNotice) lockNotice.textContent = 'Super Admin: business type can be changed anytime';
+            }
+            showMessage('Business type saved successfully! System context updated.', true);
+            if (window.eventBus && typeof window.eventBus.publish === 'function') {
+                window.eventBus.publish('BUSINESS_UPDATED', { businessId: currentCompanyId, businessType: businessType });
+            }
+            try {
+                window.dispatchEvent(new CustomEvent('digibiz-profile-updated', { detail: { businessId: currentCompanyId, businessType: businessType } }));
+            } catch (e) {}
         }
         
         async function uploadLogo(file) {
             if (!file) return;
+            if (!(await assertDistributorBusinessProfileEdit())) {
+                showMessage('Only the business owner can change the logo.', false);
+                return;
+            }
             const storageRef = storage.ref();
             const logoRef = storageRef.child(`businesses/${currentCompanyId}/logo`);
             showMessage('Uploading logo...');
@@ -366,6 +506,7 @@
         }
         
         document.getElementById('saveProfileBtn').onclick = saveBusinessProfile;
+        document.getElementById('saveBusinessTypeBtn').onclick = saveBusinessTypeOnly;
         document.getElementById('cancelBtn').onclick = cancelEdit;
         document.getElementById('switchBusinessBtn').onclick = switchBusiness;
         
@@ -380,6 +521,7 @@
             
             const userDoc = await db.collection('users').doc(currentUserId).get();
             currentUserRole = userDoc.exists ? userDoc.data().role : 'VIEWER';
+            syncBusinessTypeOptionVisibility();
             if (String(currentUserRole || '').toUpperCase() === 'REP') {
                 window.location.href = '../distributor/mobile/order.html';
                 return;
@@ -402,9 +544,44 @@
                         trialEndDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), 
                         createdAt: new Date()
                     });
+                    await db.collection('settings').doc(currentCompanyId).set({
+                        subscription: {
+                            plan: 'TRIAL',
+                            status: 'TRIAL',
+                            trialStart: new Date().toISOString(),
+                            trialEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                            expireDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+                        },
+                        smsWallet: {
+                            smsBalance: 300,
+                            lowBalanceThreshold: 50,
+                            unitPrice: 1,
+                            monthlyFee: 1000,
+                            trialCreditsGranted: true,
+                            updatedAt: new Date().toISOString()
+                        },
+                        smsBalance: 300,
+                        smsManager: {
+                            tplSales: '[BRAND] - Hello {Name}, your bill of Rs.{Amount} is confirmed. Bal: Rs.{Balance}.',
+                            tplPayment: '[BRAND] - Hi {Name}, received payment Rs.{Amount}. Remaining: Rs.{Balance}.',
+                            tplDebt: '[BRAND] - Dear {Name}, a friendly reminder of your outstanding Rs.{Amount}. Please settle soon.',
+                            autoDebtReminders: false,
+                            events: { sales: true, payment: true, debt: true },
+                            updatedAt: new Date().toISOString()
+                        }
+                    }, { merge: true });
                     await db.collection('users').doc(currentUserId).update({ businessId: currentCompanyId });
                 }
             }
+
+            if (String(currentUserRole || '').toUpperCase() === 'SUPER_ADMIN' && currentUserId === SUPER_ADMIN_UID) {
+                currentCompanyId = SUPER_ADMIN_UID;
+            }
+
+            try {
+                localStorage.setItem('currentBusinessId', String(currentCompanyId));
+                sessionStorage.setItem('currentBusinessId', String(currentCompanyId));
+            } catch (e) { /* ignore */ }
             
             // Load businesses for Super Admin selector
             if (currentUserRole === 'SUPER_ADMIN') {

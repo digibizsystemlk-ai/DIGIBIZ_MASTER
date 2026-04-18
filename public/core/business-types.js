@@ -12,7 +12,7 @@ const BUSINESS_TYPES = {
             { icon: "🛒", name: "Point of Sale", link: "/modules/retail/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "CASHIER"] },
             { icon: "📦", name: "Inventory", link: "/modules/retail/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
             { icon: "📥", name: "Purchases", link: "/modules/retail/purchases.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
-            { icon: "👥", name: "Customers", link: "/modules/retail/customers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
+            { icon: "👥", name: "Customers", link: "/modules/core/customers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
             { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
             { icon: "📁", name: "Accounting", link: "/modules/accounts/accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
             { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
@@ -147,6 +147,8 @@ const BUSINESS_TYPES = {
             { icon: "🎁", name: "Free Items", link: "/modules/distributor/web/free-items.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR"] },
             { icon: "🔄", name: "Returns", link: "/modules/distributor/web/returns.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR"] },
             { icon: "📋", name: "Reports", link: "/modules/distributor/web/reports.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR", "ACCOUNTANT"] },
+            { icon: "💰", name: "Sales", link: "/modules/distributor/web/sales.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR", "ACCOUNTANT", "WAREHOUSE_MANAGER"] },
+            { icon: "💳", name: "Finance", link: "/modules/core/finance-ledger.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR", "ACCOUNTANT"] },
             
             // Mobile App Menus (for Reps)
             { icon: "📱", name: "Rep Order Form", link: "/modules/distributor/mobile/order.html", role: ["REP"], mobileOnly: true },
@@ -180,6 +182,58 @@ const BUSINESS_TYPES = {
             barcodeScanner: true,
             locationTracking: true
         }
+    },
+
+    manufacturer: {
+        id: "manufacturer",
+        name: "Manufacturer",
+        icon: "🏭",
+        description: "Raw materials, production planning, cost tracking and profitability",
+        menus: [
+            { icon: "📥", name: "Inbound", link: "/modules/manufacturer/inbound.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
+            { icon: "📤", name: "Outbound", link: "/modules/manufacturer/outbound.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
+            { icon: "📦", name: "Stock 360", link: "/modules/manufacturer/stock.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
+            { icon: "🧾", name: "Expenses", link: "/modules/manufacturer/expenses.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
+            { icon: "💳", name: "Finance", link: "/modules/core/finance-ledger.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
+            { icon: "📁", name: "Account", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
+            { icon: "📚", name: "History", link: "/modules/manufacturer/history.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
+            { icon: "📈", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
+            { icon: "👥", name: "Customers", link: "/modules/core/customers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] }
+        ],
+        dashboardComponents: [
+            "rmStockValue", "fgStockValue", "productionRuns", "rmPurchaseMonth",
+            "productionCostMonth", "operationalCostMonth", "sideIncomeMonth",
+            "monthSales", "monthProfit", "cashFlow"
+        ],
+        features: {
+            rawMaterialManagement: true,
+            transformationMapping: true,
+            productionIntelligence: true,
+            manufacturingCostSheets: true,
+            supplierPriceTracking: true
+        }
+    },
+
+    scrap_collection_center: {
+        id: "scrap_collection_center",
+        name: "Scrap Collection Center",
+        icon: "♻️",
+        description: "Scrap buying, inventory, debts and messaging suite",
+        hidden: true,
+        restrictedToUid: "oDhSDYHQ2dV1DP33koysmZAqaY13",
+        menus: [
+            { icon: "📊", name: "DASHBOARD", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN"] },
+            { icon: "🧾", name: "BILL", link: "/modules/admin/scrap-buying.html", role: ["SUPER_ADMIN"] },
+            { icon: "💸", name: "SELL", link: "/modules/admin/scrap-sell.html", role: ["SUPER_ADMIN"] },
+            { icon: "📦", name: "STOCK", link: "/modules/admin/scrap-workbench.html?view=STOCK", role: ["SUPER_ADMIN"] },
+            { icon: "📚", name: "BUY", link: "/modules/admin/scrap-workbench.html?view=BUY", role: ["SUPER_ADMIN"] },
+            { icon: "📜", name: "HISTORY", link: "/modules/admin/scrap-selling-history.html", role: ["SUPER_ADMIN"] },
+            { icon: "🏦", name: "ADVANCE", link: "/modules/admin/scrap-advance.html", role: ["SUPER_ADMIN"] },
+            { icon: "📘", name: "DAILYTR", link: "/modules/admin/scrap-workbench.html?view=DAILYTR", role: ["SUPER_ADMIN"] },
+            { icon: "📁", name: "ACCOUNTING", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN"] },
+            { icon: "📈", name: "REPORTS", link: "/modules/reports/index.html", role: ["SUPER_ADMIN"] }
+        ],
+        dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"]
     }
 };
 
@@ -226,13 +280,23 @@ function getBusinessTypeDetails(businessType) {
 }
 
 // Get all business types (for registration)
-function getAllBusinessTypes() {
-    return Object.keys(BUSINESS_TYPES).map(key => ({
-        id: BUSINESS_TYPES[key].id,
-        name: BUSINESS_TYPES[key].name,
-        icon: BUSINESS_TYPES[key].icon,
-        description: BUSINESS_TYPES[key].description
-    }));
+function getAllBusinessTypes(options = {}) {
+    const userId = options.userId || null;
+    const userRole = String(options.userRole || "").toUpperCase();
+    return Object.keys(BUSINESS_TYPES)
+        .map((key) => BUSINESS_TYPES[key])
+        .filter((entry) => {
+            if (!entry.hidden) return true;
+            const allowedUid = entry.restrictedToUid && entry.restrictedToUid === userId;
+            const isSuperAdmin = userRole === "SUPER_ADMIN";
+            return allowedUid && isSuperAdmin;
+        })
+        .map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            icon: entry.icon,
+            description: entry.description
+        }));
 }
 
 // Check if business type has specific feature

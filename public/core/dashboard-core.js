@@ -1,6 +1,14 @@
 // Universal Dashboard Core - business-aware metrics aggregator
 
 class DashboardCore {
+    getMwTradingCanonicalBusinessId() {
+        return 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+    }
+
+    isMwTradingOwner(user) {
+        return !!(user && user.email && String(user.email).trim().toLowerCase() === 'mwtradingsolutions@gmail.com');
+    }
+
     /** @see window.ensureMwTradingOwnerBizMembership in firebase-init.js */
     async ensureMwTradingOwnerBizMembership(user) {
         if (typeof window.ensureMwTradingOwnerBizMembership === 'function') {
@@ -36,20 +44,41 @@ class DashboardCore {
         if (!user) return null;
 
         await this.ensureMwTradingOwnerBizMembership(user);
+        if (typeof window.ensureMwTradingBusinessProfile === 'function' && this.isMwTradingOwner(user)) {
+            await window.ensureMwTradingBusinessProfile();
+        }
 
         const userDoc = await window.db.collection('users').doc(user.uid).get();
         const storedBusinessId = this.getStoredBusinessId();
-        const storedBusinessType = this.getStoredBusinessType();
-        const businessId = userDoc.exists
+        let businessId = userDoc.exists
             ? (userDoc.data().businessId || storedBusinessId || user.uid)
             : (storedBusinessId || user.uid);
+        if (storedBusinessId === this.getMwTradingCanonicalBusinessId()) {
+            businessId = this.getMwTradingCanonicalBusinessId();
+        }
+        if (this.isMwTradingOwner(user)) {
+            businessId = this.getMwTradingCanonicalBusinessId();
+        }
 
-        let businessType = storedBusinessType || 'retail';
+        const storedBusinessType = this.getStoredBusinessType();
+        const shouldPreferManufacturer = storedBusinessType === 'manufacturer' || String(window.location.pathname || '').toLowerCase().includes('/modules/manufacturer/');
+        let businessType = shouldPreferManufacturer ? 'manufacturer' : 'retail';
         let businessName = 'Business';
         const businessDoc = await window.db.collection('businesses').doc(businessId).get();
         if (businessDoc.exists) {
             businessType = businessDoc.data().businessType || businessType;
             businessName = businessDoc.data().name || businessName;
+        } else {
+            businessType = storedBusinessType || businessType;
+        }
+        if (businessId === this.getMwTradingCanonicalBusinessId()) {
+            businessType = 'distributor';
+            if (typeof window.ensureMwTradingBusinessProfile === 'function') {
+                await window.ensureMwTradingBusinessProfile();
+            }
+        }
+        if (shouldPreferManufacturer && businessType !== 'distributor' && businessType !== 'scrap_collection_center') {
+            businessType = 'manufacturer';
         }
 
         const context = { userId: user.uid, businessId, businessType, businessName };
@@ -57,7 +86,30 @@ class DashboardCore {
         return context;
     }
 
-    async getRecentJournalActivities(businessId, limit = 5) {
+    /**
+     * Recent activity for dashboard. Scrap uses account_ledger (GL) because journal/entries is not appended for scrap flows.
+     * @param {string} businessType optional — when scrap_collection_center, reads journal/{id}/account_ledger
+     */
+    async getRecentJournalActivities(businessId, limit = 5, businessType = '') {
+        if (String(businessType || '').toLowerCase() === 'scrap_collection_center') {
+            const snap = await window.db.collection('journal').doc(businessId).collection('account_ledger').get().catch(() => ({ docs: [] }));
+            const rows = snap.docs.map((doc) => {
+                const d = doc.data() || {};
+                return {
+                    id: doc.id,
+                    reference: String(d.lastReferenceType || 'GL'),
+                    description: `${String(d.accountCode || doc.id || '').trim()} — ${String(d.lastDescription || d.accountName || '').trim()}`.replace(/\s+—\s*$/, '').trim(),
+                    date: d.updatedAt || null,
+                    totalDebit: Math.max(Number(d.totalDebit) || 0, Number(d.totalCredit) || 0)
+                };
+            });
+            rows.sort((a, b) => {
+                const ta = a.date && a.date.toDate ? a.date.toDate().getTime() : 0;
+                const tb = b.date && b.date.toDate ? b.date.toDate().getTime() : 0;
+                return tb - ta;
+            });
+            return rows.slice(0, limit);
+        }
         const snapshot = await window.db.collection('journal').doc(businessId).collection('entries')
             .orderBy('date', 'desc')
             .limit(limit)
@@ -75,22 +127,233 @@ class DashboardCore {
         }, 0);
     }
 
+    accountBalance(entries, matcher) {
+        let total = 0;
+        entries.forEach((entry) => {
+            (entry.entries || []).forEach((line) => {
+                const code = String(line.accountCode || '');
+                const name = String(line.accountName || '').toLowerCase();
+                if (matcher(code, name)) {
+                    total += (Number(line.debit) || 0) - (Number(line.credit) || 0);
+                }
+            });
+        });
+        return total;
+    }
+
+    /** Firestore row date: ISO string, Date, or Timestamp. */
+    scrapOperationalDateMs(row) {
+        if (!row || typeof row !== 'object') return null;
+        const d = row.date;
+        if (d && typeof d.toDate === 'function') {
+            const t = d.toDate().getTime();
+            return Number.isNaN(t) ? null : t;
+        }
+        const c = row.createdAt;
+        if (c && typeof c.toDate === 'function') {
+            const t = c.toDate().getTime();
+            return Number.isNaN(t) ? null : t;
+        }
+        if (typeof d === 'string' || d instanceof Date) {
+            const t = new Date(d).getTime();
+            return Number.isNaN(t) ? null : t;
+        }
+        return null;
+    }
+
+    querySnapDocs(snap) {
+        if (!snap) return [];
+        if (Array.isArray(snap.docs)) return snap.docs;
+        return [];
+    }
+
+    aggregateEntryDocsToAccountMap(docs) {
+        const byCode = {};
+        (docs || []).forEach((doc) => {
+            const row = doc.data ? doc.data() : doc;
+            const entries = row.entries || [];
+            entries.forEach((line) => {
+                const c = String(line.accountCode || '').trim() || 'UNKNOWN';
+                if (!byCode[c]) {
+                    byCode[c] = { accountCode: c, accountName: String(line.accountName || c), debit: 0, credit: 0 };
+                }
+                byCode[c].debit += Number(line.debit) || 0;
+                byCode[c].credit += Number(line.credit) || 0;
+            });
+        });
+        return byCode;
+    }
+
+    /**
+     * Journal entries posted from web loan modules (stored in journal/{bid}/entries only).
+     * Scrap GL view otherwise ignores entries to avoid double-counting stock — loans must still appear.
+     */
+    aggregateLoanJournalEntryDocsToAccountMap(docs) {
+        const byCode = {};
+        (docs || []).forEach((doc) => {
+            const row = doc.data ? doc.data() : doc;
+            const rt = String(row.referenceType || '');
+            if (!/^(HAND_LOAN|LOAN_|ADV_LOAN)/.test(rt)) return;
+            const entries = row.entries || [];
+            entries.forEach((line) => {
+                const c = String(line.accountCode || '').trim() || 'UNKNOWN';
+                if (!byCode[c]) {
+                    byCode[c] = { accountCode: c, accountName: String(line.accountName || c), debit: 0, credit: 0 };
+                }
+                byCode[c].debit += Number(line.debit) || 0;
+                byCode[c].credit += Number(line.credit) || 0;
+            });
+        });
+        return byCode;
+    }
+
+    aggregateLedgerDocsToAccountMap(docs) {
+        const byCode = {};
+        (docs || []).forEach((doc) => {
+            const r = doc.data ? doc.data() : doc;
+            const c = String(r.accountCode || (doc.id != null ? doc.id : '') || '').trim() || 'UNKNOWN';
+            byCode[c] = {
+                accountCode: c,
+                accountName: String(r.accountName || c),
+                debit: Number(r.totalDebit) || 0,
+                credit: Number(r.totalCredit) || 0
+            };
+        });
+        return byCode;
+    }
+
+    mergeAccountMaps(a, b) {
+        const out = { ...a };
+        Object.keys(b || {}).forEach((k) => {
+            if (!out[k]) {
+                out[k] = { ...b[k] };
+            } else {
+                out[k] = {
+                    accountCode: k,
+                    accountName: b[k].accountName || out[k].accountName,
+                    debit: (Number(out[k].debit) || 0) + (Number(b[k].debit) || 0),
+                    credit: (Number(out[k].credit) || 0) + (Number(b[k].credit) || 0)
+                };
+            }
+        });
+        return out;
+    }
+
+    aggregateOpeningDocData(data) {
+        const byCode = {};
+        const row = data && typeof data === 'object' ? data : {};
+        const lines = Array.isArray(row.lines) ? row.lines : [];
+        lines.forEach((line) => {
+            const c = String(line.accountCode || '').trim();
+            if (!c) return;
+            if (!byCode[c]) {
+                byCode[c] = { accountCode: c, accountName: String(line.accountName || c), debit: 0, credit: 0 };
+            }
+            byCode[c].debit += Number(line.debit) || 0;
+            byCode[c].credit += Number(line.credit) || 0;
+        });
+        return byCode;
+    }
+
+    /**
+     * @param openingSnap Firestore DocumentSnapshot for journal/{bid}/ledger_opening/current (optional)
+     * @param options.scrapOpeningLedgerOnly — scrap: opening + account_ledger only (no legacy entries; fixes double stock)
+     */
+    syntheticJournalFromMerged(entriesSnap, ledgerSnap, openingSnap, options = {}) {
+        let map;
+        if (options.scrapOpeningLedgerOnly) {
+            const openingData = openingSnap && openingSnap.exists ? openingSnap.data() : {};
+            const base = this.mergeAccountMaps(
+                this.aggregateOpeningDocData(openingData),
+                this.aggregateLedgerDocsToAccountMap(ledgerSnap && ledgerSnap.docs ? ledgerSnap.docs : [])
+            );
+            const loanFromEntries = this.aggregateLoanJournalEntryDocsToAccountMap(
+                entriesSnap && entriesSnap.docs ? entriesSnap.docs : []
+            );
+            map = this.mergeAccountMaps(base, loanFromEntries);
+        } else {
+            map = this.mergeAccountMaps(
+                this.aggregateEntryDocsToAccountMap(entriesSnap && entriesSnap.docs ? entriesSnap.docs : []),
+                this.aggregateLedgerDocsToAccountMap(ledgerSnap && ledgerSnap.docs ? ledgerSnap.docs : [])
+            );
+        }
+        const lines = Object.values(map).filter((row) => (Number(row.debit) || 0) > 0.0001 || (Number(row.credit) || 0) > 0.0001);
+        if (!lines.length) return [];
+        return [{
+            entries: lines,
+            referenceType: options.scrapOpeningLedgerOnly ? 'SCRAP_OPENING_PLUS_LEDGER' : 'MERGED_LEDGER',
+            description: options.scrapOpeningLedgerOnly
+                ? 'Scrap GL: opening + ledger + loan journals (entries)'
+                : 'Running balances (legacy journal + consolidated ledger)',
+            date: null
+        }];
+    }
+
     async getDistributorMetrics(context) {
         const bid = context.businessId;
-        const [snapshot, pendingSnap, productsSnap, repsSnap, shopsSnap] = await Promise.all([
+        const [snapshot, pendingSnap, productsSnap, repsSnap, shopsSnap, journalSnap] = await Promise.all([
             window.db.collection('orders').where('businessId', '==', bid).get(),
             window.db.collection('pendingOrders').where('businessId', '==', bid).get(),
             window.db.collection('products').where('businessId', '==', bid).get(),
             window.db.collection('reps').where('businessId', '==', bid).get(),
-            window.db.collection('shops').where('businessId', '==', bid).get()
+            window.db.collection('shops').where('businessId', '==', bid).get(),
+            window.db.collection('journal').doc(bid).collection('entries').get()
         ]);
 
+        const journalEntries = journalSnap.docs.map(d => d.data());
         const startToday = new Date();
         startToday.setHours(0, 0, 0, 0);
         const startMonth = new Date(startToday.getFullYear(), startToday.getMonth(), 1);
 
+        // --- ACCOUNTING-BASED METRICS (The Truth Source) ---
+        
+        // 1. Sales (Income Accounts: 4-xxxx)
         let todaySales = 0;
         let monthSales = 0;
+        let monthReturnsValue = 0;
+        let monthFreeIssuesValue = 0;
+
+        journalEntries.forEach(entry => {
+            const entryDate = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date);
+            const isThisMonth = entryDate >= startMonth;
+            const isToday = entryDate >= startToday;
+
+            (entry.entries || []).forEach(line => {
+                const code = String(line.accountCode);
+                // Sales Revenue
+                if (code.startsWith('4-4010-01')) {
+                    const val = Number(line.credit) || 0;
+                    if (isToday) todaySales += val;
+                    if (isThisMonth) monthSales += val;
+                }
+                // Sales Returns (Subtract from Sales)
+                else if (code.startsWith('4-4010-02')) {
+                    const val = Number(line.debit) || 0;
+                    if (isToday) todaySales -= val;
+                    if (isThisMonth) {
+                        monthSales -= val;
+                        monthReturnsValue += val;
+                    }
+                }
+                // Free Issues (Marketing Expense)
+                else if (code.startsWith('5-5030-01')) {
+                    const val = Number(line.debit) || 0;
+                    if (isThisMonth) monthFreeIssuesValue += val;
+                }
+            });
+        });
+
+        // 2. Outstanding Balance (Accounts Receivable: 1-1030)
+        let outstandingBalance = this.accountBalance(journalEntries, (code) => code.startsWith('1-1030'));
+
+        // 3. Cash Flow (Cash & Bank: 1-1010, 1-1020)
+        const cashFlow = this.accountBalance(journalEntries, (code) => code.startsWith('1-1010') || code.startsWith('1-1020'));
+
+        // 4. Inventory Value (1-1040 only — scrap supplier advances were mis-posted to 1-1040 before 1-1060 split)
+        let totalStockValue = this.accountBalance(journalEntries, (code, name) =>
+            code.startsWith('1-1040') && !String(name || '').toLowerCase().includes('supplier advance'));
+
+        // --- OPERATIONAL METRICS (Process Tracking) ---
         let pendingOrders = pendingSnap.size;
         let approvedCount = 0;
         let rejectedCount = 0;
@@ -101,7 +364,6 @@ class DashboardCore {
         let returnsCat2Units = 0;
         let freeIssueUnits = 0;
         let freeIssueValueEst = 0;
-        let outstandingBalance = 0;
         const repMap = {};
         const brandMonth = {};
         const trendDayKeyToIndex = {};
@@ -159,14 +421,6 @@ class DashboardCore {
             else if (status === 'dispatched') dispatchedCount++;
             else if (status === 'delivered') deliveredCount++;
 
-            if (dateValue && dateValue >= startMonth && isRevenueOrder) monthSales += amount;
-            if (dateValue && dateValue >= startToday && isRevenueOrder) todaySales += amount;
-
-            if (isRevenueOrder) {
-                const paid = Number(order.collectionAmount) || Number(order.collectedAmount) || 0;
-                outstandingBalance += Math.max(0, amount - paid);
-            }
-
             if (dateValue && isRevenueOrder) {
                 const dk = `${dateValue.getFullYear()}-${dateValue.getMonth()}-${dateValue.getDate()}`;
                 const di = trendDayKeyToIndex[dk];
@@ -177,7 +431,6 @@ class DashboardCore {
         pendingSnap.docs.forEach((doc) => accumulateOrder(doc.data(), true));
         snapshot.docs.forEach((doc) => accumulateOrder(doc.data(), false));
 
-        let totalStockValue = 0;
         let outOfStockCount = 0;
         let lowStockAlertCount = 0;
         const lowStockList = [];
@@ -186,7 +439,6 @@ class DashboardCore {
             const p = doc.data();
             const q = Number(p.currentStock != null ? p.currentStock : p.stock) || 0;
             const price = Number(p.unitPrice) || 0;
-            totalStockValue += q * price;
             if (q === 0) outOfStockCount++;
             else if (q <= (Number(p.minStockLevel) || 10)) lowStockAlertCount++;
             if (q === 0 || (q > 0 && q <= (Number(p.minStockLevel) || 10))) {
@@ -206,11 +458,6 @@ class DashboardCore {
             const c = doc.data().createdAt?.toDate ? doc.data().createdAt.toDate() : null;
             if (c && c >= startMonth) newCustomers++;
         });
-
-        const monthJournal = await window.db.collection('journal').doc(bid).collection('entries')
-            .where('date', '>=', startMonth)
-            .get();
-        const cashFlow = this.calculateCashFlow(monthJournal.docs.map((doc) => doc.data()));
 
         const repSummary = Object.values(repMap).sort((a, b) => b.totalOrders - a.totalOrders);
         const brandLabels = Object.keys(brandMonth).sort((a, b) => (brandMonth[b] || 0) - (brandMonth[a] || 0)).slice(0, 8);
@@ -247,6 +494,8 @@ class DashboardCore {
             newCustomers,
             monthOrderCount,
             cashFlow,
+            monthReturnsValue,
+            monthFreeIssuesValue,
             repSummary,
             repFilterOptions: repSummary.map((rep) => ({ repId: rep.repId, repName: rep.repName })),
             distributorTrendLabels: dayKeys,
@@ -470,6 +719,409 @@ class DashboardCore {
         };
     }
 
+    async getScrapMetrics(context) {
+        const bid = context.businessId;
+        const startToday = new Date();
+        startToday.setHours(0, 0, 0, 0);
+        const startMonth = new Date(startToday.getFullYear(), startToday.getMonth(), 1);
+        const startTodayMs = startToday.getTime();
+        const startMonthMs = startMonth.getTime();
+
+        const isScrap = String(context.businessType || '').toLowerCase() === 'scrap_collection_center';
+        const emptySnap = () => ({ docs: [] });
+        const [itemsSnap, buySnap, sellSnap, loanSnap, allJournalSnap, journalLedgerSnap, openingSnap, extSnap, advSnap] = await Promise.all([
+            window.db.collection('scrap_items').where('businessId', '==', bid).get().catch(() => emptySnap()),
+            window.db.collection('buying_history').where('businessId', '==', bid).get().catch(() => emptySnap()),
+            window.db.collection('selling_history').where('businessId', '==', bid).get().catch(() => emptySnap()),
+            window.db.collection('scrap_loans').where('businessId', '==', bid).get().catch(() => emptySnap()),
+            window.db.collection('journal').doc(bid).collection('entries').get().catch(() => emptySnap()),
+            window.db.collection('journal').doc(bid).collection('account_ledger').get().catch(() => emptySnap()),
+            window.db.collection('journal').doc(bid).collection('ledger_opening').doc('current').get().catch(() => ({ exists: false, data: () => ({}) })),
+            window.db.collection('scrap_external_settlements').where('businessId', '==', bid).get().catch(() => emptySnap()),
+            window.db.collection('scrap_advances').where('businessId', '==', bid).get().catch(() => emptySnap())
+        ]);
+        const legacyEntries = this.querySnapDocs(allJournalSnap).map((doc) => doc.data());
+        const todayEntries = legacyEntries.filter((entry) => {
+            const dt = entry.date?.toDate ? entry.date.toDate() : (entry.date ? new Date(entry.date) : null);
+            return dt && !Number.isNaN(dt.getTime()) && dt >= startToday;
+        });
+        const monthEntries = legacyEntries.filter((entry) => {
+            const dt = entry.date?.toDate ? entry.date.toDate() : (entry.date ? new Date(entry.date) : null);
+            return dt && !Number.isNaN(dt.getTime()) && dt >= startMonth;
+        });
+        const mergedSynthetic = isScrap
+            ? this.syntheticJournalFromMerged(allJournalSnap, journalLedgerSnap, openingSnap, { scrapOpeningLedgerOnly: true })
+            : this.syntheticJournalFromMerged(allJournalSnap, journalLedgerSnap, openingSnap, {});
+        const allEntries = isScrap
+            ? (mergedSynthetic.length ? mergedSynthetic : [])
+            : (mergedSynthetic.length ? mergedSynthetic : legacyEntries);
+
+        let stockValue = 0;
+        let lowStock = 0;
+        this.querySnapDocs(itemsSnap).forEach((doc) => {
+            const r = doc.data();
+            const stock = Number(r.currentStock) || 0;
+            const cp = Number(r.costPrice);
+            const cost = (Number.isFinite(cp) && cp > 0) ? cp : 0;
+            stockValue += stock * cost;
+            if (stock > 0 && stock <= 10) lowStock += 1;
+        });
+
+        let todayBuying = 0;
+        let monthBuying = 0;
+        let todayStockIn = 0;
+        let monthStockIn = 0;
+        this.querySnapDocs(buySnap).forEach((doc) => {
+            const r = doc.data();
+            const amount = Number(r.totalAmount) || 0;
+            const weight = Number(r.totalWeight) || 0;
+            const tms = this.scrapOperationalDateMs(r);
+            if (tms == null) return;
+            if (tms >= startMonthMs) {
+                monthBuying += amount;
+                monthStockIn += weight;
+            }
+            if (tms >= startTodayMs) {
+                todayBuying += amount;
+                todayStockIn += weight;
+            }
+        });
+        let todaySales = 0;
+        let monthSales = 0;
+        let todayStockOut = 0;
+        let monthStockOut = 0;
+        this.querySnapDocs(sellSnap).forEach((doc) => {
+            const r = doc.data();
+            const amount = Number(r.totalAmount) || 0;
+            const qty = Number(r.qty) || 0;
+            const tms = this.scrapOperationalDateMs(r);
+            if (tms == null) return;
+            if (tms >= startMonthMs) {
+                monthSales += amount;
+                monthStockOut += qty;
+            }
+            if (tms >= startTodayMs) {
+                todaySales += amount;
+                todayStockOut += qty;
+            }
+        });
+        let outstandingLoans = 0;
+        this.querySnapDocs(loanSnap).forEach((doc) => {
+            const row = doc.data() || {};
+            const bal = Number(row.balance) || 0;
+            if (bal > 0) outstandingLoans += bal;
+        });
+        let externalSettlementNet = 0;
+        this.querySnapDocs(extSnap).forEach((doc) => {
+            const row = doc.data();
+            const tms = this.scrapOperationalDateMs(row);
+            if (tms == null || tms < startMonthMs) return;
+            externalSettlementNet += Number(row.amount) || 0;
+        });
+        let advanceOutstanding = 0;
+        this.querySnapDocs(advSnap).forEach((doc) => {
+            const row = doc.data();
+            advanceOutstanding += Number(row.balance != null ? row.balance : row.amount) || 0;
+        });
+        /* Cash + bank: merged GL when available; else legacy journal lines (calculateCashFlow only looked at 1-1010-01). */
+        const cashFlow = mergedSynthetic.length
+            ? this.accountBalance(allEntries, (code) => String(code || '').startsWith('1-1010') || String(code || '').startsWith('1-1020'))
+            : this.accountBalance(legacyEntries, (code) => String(code || '').startsWith('1-1010') || String(code || '').startsWith('1-1020'));
+        const accountingTodaySales = todayEntries.reduce((sum, entry) => {
+            const ref = String(entry.referenceType || '').toUpperCase();
+            if (!['SCRAP_BILL', 'SCRAP_SELL'].includes(ref)) return sum;
+            return sum + (Number(entry.totalCredit) || 0);
+        }, 0);
+        const accountingTodayBuying = todayEntries.reduce((sum, entry) => {
+            const ref = String(entry.referenceType || '').toUpperCase();
+            if (ref !== 'SCRAP_BUYING') return sum;
+            return sum + (Number(entry.totalDebit) || 0);
+        }, 0);
+        const accountingMonthSales = monthEntries.reduce((sum, entry) => {
+            const ref = String(entry.referenceType || '').toUpperCase();
+            if (!['SCRAP_BILL', 'SCRAP_SELL'].includes(ref)) return sum;
+            return sum + (Number(entry.totalCredit) || 0);
+        }, 0);
+        const accountingMonthBuying = monthEntries.reduce((sum, entry) => {
+            const ref = String(entry.referenceType || '').toUpperCase();
+            if (ref !== 'SCRAP_BUYING') return sum;
+            return sum + (Number(entry.totalDebit) || 0);
+        }, 0);
+        /* 1-1030-01 is shared in GL between AR and Scrap Inventory — ledger stores one bucket; cannot split. */
+        const scrapGlNet1030 = mergedSynthetic.length
+            ? this.accountBalance(allEntries, (code) => String(code || '').trim() === '1-1030-01')
+            : 0;
+        const scrapGlNet1060 = mergedSynthetic.length
+            ? this.accountBalance(allEntries, (code) => String(code || '').trim() === '1-1060-01')
+            : 0;
+        /* Stock value KPI: operational (qty×cost). If no cost data but GL inventory leg exists, fall back to GL net on 1-1030 (combined AR+inventory — approximate). */
+        const stockValueReported = stockValue > 0.01
+            ? stockValue
+            : (mergedSynthetic.length && Math.abs(scrapGlNet1030) > 0.01 ? scrapGlNet1030 : stockValue);
+        const effectiveMonthSales = (accountingMonthSales || monthSales);
+        const effectiveMonthBuying = (accountingMonthBuying || monthBuying);
+        /* Scrap no longer posts dated rows to journal/entries — MTD margin from ops (buy/sell history), aligned with KPI sales/buying. */
+        const monthProfit = effectiveMonthSales - effectiveMonthBuying;
+        const scrapGlRevenue = mergedSynthetic.length
+            ? -this.accountBalance(allEntries, (code) => String(code || '').startsWith('4-4010'))
+            : 0;
+        const scrapGlCogs = mergedSynthetic.length
+            ? this.accountBalance(allEntries, (code) => String(code || '').startsWith('5-5010'))
+            : 0;
+        const scrapGlLoansGiven = mergedSynthetic.length
+            ? this.accountBalance(allEntries, (code) => String(code || '').startsWith('1-1050'))
+            : 0;
+        const scrapGlInterestIncome = mergedSynthetic.length
+            ? -this.accountBalance(allEntries, (code) => String(code || '').startsWith('4-4020'))
+            : 0;
+        const trendDayKeyToIndex = {};
+        const scrapTrendLabels = [];
+        for (let i = 6; i >= 0; i--) {
+            const ds = new Date(startToday);
+            ds.setDate(ds.getDate() - i);
+            const dk = `${ds.getFullYear()}-${ds.getMonth()}-${ds.getDate()}`;
+            trendDayKeyToIndex[dk] = scrapTrendLabels.length;
+            scrapTrendLabels.push(ds.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
+        }
+        const scrapTrendBuying = new Array(7).fill(0);
+        const scrapTrendSales = new Array(7).fill(0);
+        this.querySnapDocs(buySnap).forEach((doc) => {
+            const r = doc.data();
+            const tms = this.scrapOperationalDateMs(r);
+            if (tms == null) return;
+            const dt = new Date(tms);
+            const dk = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
+            const idx = trendDayKeyToIndex[dk];
+            if (idx == null) return;
+            scrapTrendBuying[idx] += Number(r.totalAmount) || 0;
+        });
+        this.querySnapDocs(sellSnap).forEach((doc) => {
+            const r = doc.data();
+            const tms = this.scrapOperationalDateMs(r);
+            if (tms == null) return;
+            const dt = new Date(tms);
+            const dk = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
+            const idx = trendDayKeyToIndex[dk];
+            if (idx == null) return;
+            scrapTrendSales[idx] += Number(r.totalAmount) || 0;
+        });
+
+        return {
+            todaySales: accountingTodaySales || todaySales,
+            monthSales: accountingMonthSales || monthSales,
+            todayBuying: accountingTodayBuying || todayBuying,
+            monthBuying: accountingMonthBuying || monthBuying,
+            cashFlow,
+            stockValue: stockValueReported,
+            lowStock,
+            outstandingLoans,
+            monthProfit,
+            todayStockIn,
+            todayStockOut,
+            monthStockIn,
+            monthStockOut,
+            externalSettlementNet,
+            advanceOutstanding,
+            scrapGlRevenue,
+            scrapGlCogs,
+            scrapGlLoansGiven,
+            scrapGlInterestIncome,
+            scrapGlNet1030,
+            scrapGlNet1060,
+            scrapTrendLabels,
+            scrapTrendBuying,
+            scrapTrendSales
+        };
+    }
+
+    async getManufacturerMetrics(context) {
+        const bid = context.businessId;
+        const startToday = new Date();
+        startToday.setHours(0, 0, 0, 0);
+        const startMonth = new Date(startToday.getFullYear(), startToday.getMonth(), 1);
+        const start30 = new Date(startToday);
+        start30.setDate(start30.getDate() - 29);
+        const dayKeys = [];
+        const dayIdx = {};
+        for (let i = 0; i < 30; i++) {
+            const d = new Date(start30);
+            d.setDate(start30.getDate() + i);
+            const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+            dayIdx[key] = i;
+            dayKeys.push(d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
+        }
+        const purchases30 = new Array(30).fill(0);
+        const sales30 = new Array(30).fill(0);
+        const production30 = new Array(30).fill(0);
+        const profit30 = new Array(30).fill(0);
+        const purchaseSplit30 = new Array(30).fill(0).map(() => ({ cash: 0, credit: 0, cheque: 0 }));
+        const salesSplit30 = new Array(30).fill(0).map(() => ({ cash: 0, credit: 0, cheque: 0 }));
+
+        const [rmSnap, fgSnap, prodSnap, opSnap, sideSnap, journalSnap, mapSnap, payableSnap, receivableSnap, rawHist30, salesHist30, side30] = await Promise.all([
+            window.db.collection('manufacturer_raw_materials').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+            window.db.collection('manufacturer_finished_products').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+            window.db.collection('manufacturer_production_runs').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+            window.db.collection('manufacturer_expenses').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+            window.db.collection('manufacturer_side_income').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+            window.db.collection('journal').doc(bid).collection('entries').where('date', '>=', startMonth).get().catch(() => ({ docs: [] })),
+            window.db.collection('manufacturer_transformations').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+            window.db.collection('manufacturer_raw_material_history').where('businessId', '==', bid).where('paymentStatus', 'in', ['PENDING', 'PENDING_CLEARANCE']).get().catch(() => ({ docs: [] })),
+            window.db.collection('manufacturer_sales').where('businessId', '==', bid).where('paymentStatus', 'in', ['PENDING', 'PENDING_CLEARANCE']).get().catch(() => ({ docs: [] })),
+            window.db.collection('manufacturer_raw_material_history').where('businessId', '==', bid).where('createdAt', '>=', start30).get().catch(() => ({ docs: [] })),
+            window.db.collection('manufacturer_sales').where('businessId', '==', bid).where('createdAt', '>=', start30).get().catch(() => ({ docs: [] })),
+            window.db.collection('manufacturer_side_income').where('businessId', '==', bid).where('date', '>=', start30).get().catch(() => ({ docs: [] }))
+        ]);
+
+        let rmStockValue = 0;
+        rmSnap.docs.forEach((doc) => {
+            const d = doc.data() || {};
+            rmStockValue += (Number(d.stockQty) || 0) * (Number(d.lastUnitCost) || 0);
+        });
+
+        let fgStockValue = 0;
+        fgSnap.docs.forEach((doc) => {
+            const d = doc.data() || {};
+            fgStockValue += (Number(d.stockQty) || 0) * (Number(d.unitPrice) || 0);
+        });
+
+        let productionRuns = 0;
+        let productionCostMonth = 0;
+        prodSnap.docs.forEach((doc) => {
+            const d = doc.data() || {};
+            const t = d.createdAt?.toDate ? d.createdAt.toDate() : (d.createdAt ? new Date(d.createdAt) : null);
+            if (t && !Number.isNaN(t.getTime()) && t >= startMonth) {
+                productionRuns += 1;
+                productionCostMonth += Number(d.processingCost || 0);
+            }
+            if (t && !Number.isNaN(t.getTime()) && t >= start30) {
+                const k = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}`;
+                const i = dayIdx[k];
+                if (i != null) {
+                    production30[i] += Number(d.producedQty || 0);
+                    profit30[i] -= Number(d.processingCost || 0);
+                }
+            }
+        });
+
+        let operationalCostMonth = 0;
+        opSnap.docs.forEach((doc) => {
+            const d = doc.data() || {};
+            const t = d.createdAt?.toDate ? d.createdAt.toDate() : (d.createdAt ? new Date(d.createdAt) : null);
+            if (t && !Number.isNaN(t.getTime()) && t >= startMonth) {
+                operationalCostMonth += Number(d.amount || 0);
+            }
+            if (t && !Number.isNaN(t.getTime()) && t >= start30) {
+                const k = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}`;
+                const i = dayIdx[k];
+                if (i != null) profit30[i] -= Number(d.amount || 0);
+            }
+        });
+
+        let sideIncomeMonth = 0;
+        sideSnap.docs.forEach((doc) => {
+            const d = doc.data() || {};
+            const t = d.date?.toDate ? d.date.toDate() : (d.date ? new Date(d.date) : null);
+            if (t && !Number.isNaN(t.getTime()) && t >= startMonth) {
+                sideIncomeMonth += Number(d.amount || 0);
+            }
+        });
+        rawHist30.docs.forEach((doc) => {
+            const d = doc.data() || {};
+            const t = d.createdAt?.toDate ? d.createdAt.toDate() : (d.createdAt ? new Date(d.createdAt) : null);
+            if (!t || Number.isNaN(t.getTime())) return;
+            const k = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}`;
+            const i = dayIdx[k];
+            if (i == null) return;
+            const amt = Number(d.amount || 0);
+            purchases30[i] += amt;
+            profit30[i] -= amt;
+            const m = String(d.paymentMode || '').toUpperCase();
+            if (m === 'CREDIT') purchaseSplit30[i].credit += amt;
+            else if (m === 'CHEQUE') purchaseSplit30[i].cheque += amt;
+            else purchaseSplit30[i].cash += amt;
+        });
+        salesHist30.docs.forEach((doc) => {
+            const d = doc.data() || {};
+            const t = d.createdAt?.toDate ? d.createdAt.toDate() : (d.createdAt ? new Date(d.createdAt) : null);
+            if (!t || Number.isNaN(t.getTime())) return;
+            const k = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}`;
+            const i = dayIdx[k];
+            if (i == null) return;
+            const amt = Number(d.amount || 0);
+            sales30[i] += amt;
+            profit30[i] += amt;
+            const m = String(d.paymentMode || '').toUpperCase();
+            if (m === 'CREDIT') salesSplit30[i].credit += amt;
+            else if (m === 'CHEQUE') salesSplit30[i].cheque += amt;
+            else salesSplit30[i].cash += amt;
+        });
+        side30.docs.forEach((doc) => {
+            const d = doc.data() || {};
+            const t = d.date?.toDate ? d.date.toDate() : (d.date ? new Date(d.date) : null);
+            if (!t || Number.isNaN(t.getTime())) return;
+            const k = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}`;
+            const i = dayIdx[k];
+            if (i == null) return;
+            profit30[i] += Number(d.amount || 0);
+        });
+
+        const entries = journalSnap.docs.map((doc) => doc.data() || {});
+        const monthSales = entries.reduce((sum, entry) => {
+            const ref = String(entry.referenceType || '').toUpperCase();
+            if (!['MANUFACTURING_FINISHED_GOOD_SALE', 'SALE', 'DISTRIBUTOR_ORDER_APPROVED'].includes(ref)) return sum;
+            return sum + (Number(entry.totalCredit) || 0);
+        }, 0);
+
+        const rmPurchaseMonth = entries.reduce((sum, entry) => {
+            const ref = String(entry.referenceType || '').toUpperCase();
+            if (ref !== 'MANUFACTURING_RAW_MATERIAL_PURCHASED') return sum;
+            return sum + (Number(entry.totalDebit) || 0);
+        }, 0);
+
+        const netProfit = (monthSales + sideIncomeMonth) - (rmPurchaseMonth + productionCostMonth + operationalCostMonth);
+        const cashFlow = this.calculateCashFlow(entries);
+        const runToday = prodSnap.docs.filter((doc) => {
+            const d = doc.data() || {};
+            const t = d.createdAt?.toDate ? d.createdAt.toDate() : (d.createdAt ? new Date(d.createdAt) : null);
+            return t && !Number.isNaN(t.getTime()) && t >= startToday;
+        }).length;
+        const productionStatus = runToday > 0 ? 100 : (productionRuns > 0 ? 65 : 20);
+        const yieldSeries = mapSnap.docs.map((doc) => {
+            const d = doc.data() || {};
+            const i = Number(d.inputQty) || 0;
+            const o = Number(d.outputQty) || 0;
+            return i > 0 ? (o / i) * 100 : null;
+        }).filter((v) => v != null);
+        const materialEfficiencyYield = yieldSeries.length
+            ? yieldSeries.reduce((a, b) => a + b, 0) / yieldSeries.length
+            : 0;
+        const pendingSettlements = (payableSnap.size || 0) + (receivableSnap.size || 0);
+
+        return {
+            todaySales: 0,
+            monthSales,
+            rmStockValue,
+            fgStockValue,
+            productionRuns,
+            productionStatus,
+            materialEfficiencyYield,
+            pendingSettlements,
+            manufacturer30Labels: dayKeys,
+            manufacturerPurchases30: purchases30,
+            manufacturerSales30: sales30,
+            manufacturerProduction30: production30,
+            manufacturerProfit30: profit30,
+            manufacturerPurchasesPaymentSplit30: purchaseSplit30,
+            manufacturerSalesPaymentSplit30: salesSplit30,
+            rmPurchaseMonth,
+            productionCostMonth,
+            operationalCostMonth,
+            sideIncomeMonth,
+            monthProfit: netProfit,
+            cashFlow
+        };
+    }
+
     getDashboardStructure(businessType) {
         const structures = {
             retail: ['todaySales', 'monthSales', 'pendingOrders', 'lowStock', 'cashFlow'],
@@ -481,7 +1133,9 @@ class DashboardCore {
             ],
             pharmacy: ['todaySales', 'monthSales', 'expiringSoon', 'drugCategories', 'prescriptionUploads', 'cashFlow'],
             hardware: ['todaySales', 'monthSales', 'unitConvertibleItems', 'bulkWeightPricedItems', 'bulkItems', 'quotationCount', 'quoteConversionRate', 'cashFlow'],
-            service: ['todayAppointments', 'upcomingAppointments', 'todaySales', 'serviceBills', 'utilization', 'clients', 'cashFlow']
+            service: ['todayAppointments', 'upcomingAppointments', 'todaySales', 'serviceBills', 'utilization', 'clients', 'cashFlow'],
+            manufacturer: ['rmStockValue', 'fgStockValue', 'productionRuns', 'productionStatus', 'materialEfficiencyYield', 'pendingSettlements', 'rmPurchaseMonth', 'productionCostMonth', 'operationalCostMonth', 'sideIncomeMonth', 'monthSales', 'monthProfit', 'cashFlow'],
+            scrap_collection_center: ['todaySales', 'todayBuying', 'todayStockIn', 'todayStockOut', 'monthSales', 'monthBuying', 'monthStockIn', 'monthStockOut', 'monthProfit', 'stockValue', 'cashFlow', 'scrapGlRevenue', 'scrapGlCogs', 'scrapGlLoansGiven', 'scrapGlInterestIncome', 'scrapGlNet1030', 'scrapGlNet1060', 'outstandingLoans', 'advanceOutstanding', 'externalSettlementNet', 'lowStock']
         };
         return structures[businessType] || structures.retail;
     }
@@ -492,6 +1146,8 @@ class DashboardCore {
         if (context.businessType === 'pharmacy') return this.getPharmacyMetrics(context);
         if (context.businessType === 'hardware') return this.getHardwareMetrics(context);
         if (context.businessType === 'service') return this.getServiceMetrics(context);
+        if (context.businessType === 'manufacturer') return this.getManufacturerMetrics(context);
+        if (context.businessType === 'scrap_collection_center') return this.getScrapMetrics(context);
         return this.getRetailMetrics(context);
     }
 }

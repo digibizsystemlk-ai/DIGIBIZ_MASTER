@@ -26,6 +26,17 @@ service cloud.firestore {
       return userExists() && userData().role == 'SUPER_ADMIN';
     }
 
+    function hasGlobalOwnerAccessRole() {
+      return userExists() && (
+        userData().role in [
+          'BUSINESS_OWNER',
+          'DISTRIBUTOR_OWNER',
+          'business_owner',
+          'distributor_owner'
+        ]
+      );
+    }
+
     function myPrimaryBusinessId() {
       return userExists() && 'businessId' in userData() && userData().businessId != null
         ? userData().businessId
@@ -59,11 +70,11 @@ service cloud.firestore {
     }
 
     function isRepInBusiness(bid) {
-      return isBusinessMember(bid) && roleForBusiness(bid) == 'REP';
+      return isBusinessMember(bid) && roleForBusiness(bid) in ['REP', 'rep'];
     }
 
     function isAccountantInBusiness(bid) {
-      return isBusinessMember(bid) && roleForBusiness(bid) == 'ACCOUNTANT';
+      return isBusinessMember(bid) && roleForBusiness(bid) in ['ACCOUNTANT', 'accountant'];
     }
 
     function isOwnerClassInBusiness(bid) {
@@ -72,7 +83,10 @@ service cloud.firestore {
         roleForBusiness(bid) in [
           'BUSINESS_OWNER',
           'DISTRIBUTOR_OWNER',
-          'ADMIN'
+          'ADMIN',
+          'business_owner',
+          'distributor_owner',
+          'admin'
         ]
       );
     }
@@ -80,7 +94,12 @@ service cloud.firestore {
     function isDistributorOpsInBusiness(bid) {
       return isOwnerClassInBusiness(bid) || (
         isBusinessMember(bid) &&
-        roleForBusiness(bid) in ['WAREHOUSE_MANAGER', 'DELIVERY_MANAGER']
+        roleForBusiness(bid) in [
+          'WAREHOUSE_MANAGER',
+          'DELIVERY_MANAGER',
+          'warehouse_manager',
+          'delivery_manager'
+        ]
       );
     }
 
@@ -276,7 +295,13 @@ service cloud.firestore {
         (
           resource.data.businessId is string &&
           isBusinessMember(resource.data.businessId) &&
-          roleForBusiness(resource.data.businessId) != 'REP'
+          (
+            roleForBusiness(resource.data.businessId) != 'REP' ||
+            (
+              resource.data.repId is string &&
+              repDocValidForCaller(resource.data.repId)
+            )
+          )
         )
       );
       allow create: if signedIn() &&
@@ -292,7 +317,20 @@ service cloud.firestore {
           request.resource.data.repId,
           request.resource.data.shopId
         );
-      allow update, delete: if signedIn() &&
+      allow update: if signedIn() &&
+        resource.data.businessId is string &&
+        (
+          isOwnerClassInBusiness(resource.data.businessId) ||
+          (
+            isRepInBusiness(resource.data.businessId) &&
+            resource.data.repId is string &&
+            repDocValidForCaller(resource.data.repId) &&
+            request.resource.data.businessId == resource.data.businessId &&
+            request.resource.data.repId == resource.data.repId &&
+            request.resource.data.status == 'pending'
+          )
+        );
+      allow delete: if signedIn() &&
         resource.data.businessId is string &&
         isOwnerClassInBusiness(resource.data.businessId);
     }
@@ -489,6 +527,14 @@ service cloud.firestore {
       allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
     }
 
+    match /journal/{bid}/account_ledger/{acctId} {
+      allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+    }
+
+    match /journal/{bid}/ledger_opening/{docId} {
+      allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+    }
+
     match /settings/{bid} {
       allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
     }
@@ -536,9 +582,223 @@ service cloud.firestore {
         isOwnerClassInBusiness(request.resource.data.businessId);
     }
 
+    // ----- Web loan modules (journal entries + SMS from loan pages) -----
+    match /hand_loans/{loanId} {
+      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
+      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+    }
+    match /loan_no_interest/{loanId} {
+      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
+      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+    }
+    match /loan_interest_entries/{loanId} {
+      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
+      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+    }
+    match /loan_advanced_entries/{loanId} {
+      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
+      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+    }
+
+    match /investor_capital_ledger/{lineId} {
+      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
+      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+    }
+
+    match /investor_portfolio_config/{bid} {
+      allow read, write: if signedIn() && isBusinessMember(bid);
+    }
+
+    match /investor_payouts/{payoutId} {
+      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
+      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+    }
+
+    match /investor_ledger/{ledgerId} {
+      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
+      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
+      allow update, delete: if false;
+    }
+
+    /** REPs were blocked from pending_sms; loan/hand modules enqueue with createdBy markers. */
+    function isLoanRelatedSmsCreatedBy() {
+      return 'createdBy' in request.resource.data &&
+        request.resource.data.createdBy is string &&
+        (
+          request.resource.data.createdBy == 'scrapVbaCore.enqueuePendingSms' ||
+          request.resource.data.createdBy.matches('.*[Ll]oan.*') ||
+          request.resource.data.createdBy.matches('.*handloan.*') ||
+          request.resource.data.createdBy.matches('.*advloan.*') ||
+          request.resource.data.createdBy.matches('.*noint.*')
+        );
+    }
+
+    function isLoanRelatedSmsLogSource() {
+      return ('deliverySource' in request.resource.data &&
+          request.resource.data.deliverySource is string &&
+          (
+            request.resource.data.deliverySource.matches('.*[Ll]oan.*') ||
+            request.resource.data.deliverySource.matches('.*handloan.*') ||
+            request.resource.data.deliverySource.matches('.*advloan.*') ||
+            request.resource.data.deliverySource.matches('.*noint.*')
+          )) ||
+        ('createdBy' in request.resource.data &&
+          request.resource.data.createdBy is string &&
+          request.resource.data.createdBy.matches('.*[Ll]oan.*'));
+    }
+
+    // ----- SMS queue (web enqueues; Android gateway reads pending, updates status to "sent") -----
+    // Query example: .where("businessId","==",bid).where("status","==","pending") — composite index in firestore.indexes.json
+    match /pending_sms/{smsId} {
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasAll(['businessId', 'mobile', 'message', 'status', 'createdAt']) &&
+        request.resource.data.businessId is string &&
+        request.resource.data.mobile is string &&
+        request.resource.data.message is string &&
+        request.resource.data.status == 'pending' &&
+        isBusinessMember(request.resource.data.businessId) &&
+        (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(request.resource.data.businessId) ||
+          isAccountantInBusiness(request.resource.data.businessId) ||
+          (
+            isBusinessMember(request.resource.data.businessId) &&
+            roleForBusiness(request.resource.data.businessId) != 'REP' &&
+            roleForBusiness(request.resource.data.businessId) != 'rep'
+          ) ||
+          isLoanRelatedSmsCreatedBy()
+        );
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+      allow update: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId) &&
+        (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(resource.data.businessId) ||
+          isAccountantInBusiness(resource.data.businessId) ||
+          (
+            roleForBusiness(resource.data.businessId) != 'REP' &&
+            roleForBusiness(resource.data.businessId) != 'rep'
+          )
+        );
+      allow delete: if signedIn() &&
+        resource.data.businessId is string &&
+        (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(resource.data.businessId)
+        );
+    }
+
+    // ----- SMS delivery audit trail -----
+    // Source-of-truth log for queued/sent/failed transitions.
+    match /sms_logs/{logId} {
+      allow create: if signedIn() &&
+        request.resource.data.businessId is string &&
+        isBusinessMember(request.resource.data.businessId) &&
+        (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(request.resource.data.businessId) ||
+          isAccountantInBusiness(request.resource.data.businessId) ||
+          (
+            roleForBusiness(request.resource.data.businessId) != 'REP' &&
+            roleForBusiness(request.resource.data.businessId) != 'rep'
+          ) ||
+          isLoanRelatedSmsLogSource()
+        );
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+      allow update: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId) &&
+        (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(resource.data.businessId) ||
+          isAccountantInBusiness(resource.data.businessId) ||
+          (
+            roleForBusiness(resource.data.businessId) != 'REP' &&
+            roleForBusiness(resource.data.businessId) != 'rep'
+          )
+        );
+      allow delete: if signedIn() &&
+        resource.data.businessId is string &&
+        (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(resource.data.businessId)
+        );
+    }
+
+    // ----- SMS gateway mirror (same payload as /pending_sms; Android / RTDB bridge) -----
+    // Without this block, writes fell through to /{document=**} and required hasGlobalOwnerAccessRole().
+    match /sms_gateway/{bid}/pending_sms/{smsId} {
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasAll(['businessId', 'mobile', 'message', 'status', 'createdAt']) &&
+        request.resource.data.businessId is string &&
+        request.resource.data.businessId == bid &&
+        request.resource.data.mobile is string &&
+        request.resource.data.message is string &&
+        request.resource.data.status == 'pending' &&
+        isBusinessMember(bid) &&
+        (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(bid) ||
+          isAccountantInBusiness(bid) ||
+          (
+            isBusinessMember(bid) &&
+            roleForBusiness(bid) != 'REP' &&
+            roleForBusiness(bid) != 'rep'
+          )
+        );
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+      allow update: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId) &&
+        (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(resource.data.businessId) ||
+          isAccountantInBusiness(resource.data.businessId) ||
+          (
+            isBusinessMember(resource.data.businessId) &&
+            roleForBusiness(resource.data.businessId) != 'REP' &&
+            roleForBusiness(resource.data.businessId) != 'rep'
+          )
+        );
+      allow delete: if signedIn() &&
+        resource.data.businessId is string &&
+        (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(resource.data.businessId)
+        );
+    }
+
+    // ----- MW / distributor: append-only product price & metadata audit -----
+    match /product_audit_log/{logId} {
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasAll(['businessId', 'productId', 'source', 'createdAt']) &&
+        request.resource.data.businessId is string &&
+        request.resource.data.productId is string &&
+        request.resource.data.source is string &&
+        isBusinessMember(request.resource.data.businessId) &&
+        roleForBusiness(request.resource.data.businessId) != 'REP';
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isBusinessMember(resource.data.businessId);
+      allow update, delete: if false;
+    }
+
     // ----- Safe default: deny anything not declared above -----
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if signedIn() && (isSuperAdmin() || hasGlobalOwnerAccessRole());
     }
   }
 }

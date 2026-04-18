@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>වියදම් — Scrap</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=58"></script>
+    <script src="../../core/auth-roles.js?v=58"></script>
+    <script src="../../core/sidebar.js?v=63"></script>
+    <script src="../../core/scrap-vba-core.js?v=70"></script>
+    <style>
+        body{font-family:Inter,Segoe UI,sans-serif;background:#fefce8;color:#0f172a;margin:0;}
+        .page{padding:20px;max-width:900px;margin:0 auto;}
+        .card{background:#fff;border:1px solid #fde68a;border-radius:14px;padding:18px;margin-bottom:14px;}
+        h1{font-size:22px;color:#854d0e;margin:0 0 8px;}
+        label{display:block;font-size:11px;font-weight:700;color:#64748b;margin-top:10px;}
+        input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;box-sizing:border-box;}
+        button{background:#854d0e;color:#fff;border:none;padding:11px 20px;border-radius:10px;cursor:pointer;font-weight:600;margin-top:14px;}
+        .small{font-size:12px;color:#64748b;}
+        table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px;}
+        th,td{padding:8px;border-bottom:1px solid #e5e7eb;}
+        th{background:#fffbeb;text-align:left;}
+        .num{text-align:right;}
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="card">
+        <h1>වියදම් සටහන් (GL)</h1>
+        <p class="small">ගිණුම් පද්ධතියට <strong>postJournalEntry</strong> මගින් එකතු වේ. දිනය <code>expenseDate</code> — <a href="/modules/admin/scrap-revenue.html">රෙවනියු</a> පිටුවේ අද වියදම් ලෙස පෙනෙයි.</p>
+        <label for="expenseDate">දිනය</label>
+        <input type="date" id="expenseDate">
+        <label for="expAmount">මුදල (Rs)</label>
+        <input type="number" id="expAmount" step="0.01" min="0" placeholder="0.00">
+        <label for="expCategory">වර්ගය</label>
+        <select id="expCategory">
+            <option value="Fuel">Fuel / ඉන්ධන</option>
+            <option value="Wages">Wages / වැටුප්</option>
+            <option value="Transport">Transport</option>
+            <option value="Utilities">Utilities</option>
+            <option value="Rent">Rent</option>
+            <option value="Other">Other</option>
+        </select>
+        <label for="expAccount">GL ගිණුම (Debit)</label>
+        <select id="expAccount">
+            <option value="5-5030-01|Scrap overhead">5-5030-01 Scrap overhead</option>
+            <option value="5-5040-01|Transport expense">5-5040-01 Transport</option>
+            <option value="5-5050-01|Wages expense">5-5050-01 Wages</option>
+            <option value="5-5060-01|Utilities expense">5-5060-01 Utilities</option>
+            <option value="5-5070-01|Rent expense">5-5070-01 Rent</option>
+        </select>
+        <label for="expPay">ගෙවීම</label>
+        <select id="expPay"><option value="CASH">Cash</option><option value="BANK">Bank</option></select>
+        <label for="expNote">සටහන</label>
+        <textarea id="expNote" rows="2" placeholder="Optional"></textarea>
+        <button type="button" id="saveExpBtn">සුරකින්න</button>
+    </div>
+    <div class="card">
+        <h2 style="font-size:16px;margin:0 0 8px;">මෑත වියදම්</h2>
+        <table><thead><tr><th>දිනය</th><th>Category</th><th class="num">Amount</th><th>GL</th><th>Note</th></tr></thead><tbody id="expList"><tr><td colspan="5" class="small">Loading…</td></tr></tbody></table>
+    </div>
+</div>
+<script>
+const OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function parseAccount(sel) {
+    const v = String(sel.value || '');
+    const [code, name] = v.split('|');
+    return { code: code || '5-5030-01', name: name || 'Expense' };
+}
+async function loadList() {
+    const snap = await db.collection('scrap_expenses').where('businessId', '==', OWNER_UID).limit(80).get().catch(() => ({ docs: [] }));
+    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    rows.sort((a, b) => String(b.expenseDate || '').localeCompare(String(a.expenseDate || '')) || (b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0) - (a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0));
+    document.getElementById('expList').innerHTML = rows.length
+        ? rows.map((r) => `<tr><td>${String(r.expenseDate || '-')}</td><td>${String(r.category || '-')}</td><td class="num">${fmt(r.amount)}</td><td>${String(r.accountCode || '')}</td><td>${String(r.note || '').slice(0, 40)}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="small">No rows yet.</td></tr>';
+}
+document.getElementById('saveExpBtn').addEventListener('click', async () => {
+    const expenseDate = String(document.getElementById('expenseDate').value || '').trim();
+    const amount = Number(document.getElementById('expAmount').value) || 0;
+    if (!expenseDate) return alert('දිනය තෝරන්න.');
+    if (amount <= 0) return alert('මුදල වලංගු විය යුතුයි.');
+    const category = document.getElementById('expCategory').value;
+    const note = String(document.getElementById('expNote').value || '').trim();
+    const pay = String(document.getElementById('expPay').value || 'CASH').toUpperCase();
+    const acc = parseAccount(document.getElementById('expAccount'));
+    const cashLine = pay === 'BANK'
+        ? { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: 0, credit: amount }
+        : { accountCode: '1-1010-01', accountName: 'Cash - Main', debit: 0, credit: amount };
+    await db.collection('scrap_expenses').add({
+        businessId: OWNER_UID,
+        expenseDate,
+        amount,
+        category,
+        note,
+        accountCode: acc.code,
+        accountName: acc.name,
+        paymentMethod: pay,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+        await window.scrapVbaCore.postJournalEntry(OWNER_UID, {
+            description: `Scrap expense — ${category}`,
+            reference: expenseDate,
+            referenceType: 'SCRAP_EXPENSE',
+            date: new Date().toISOString(),
+            entries: [
+                { accountCode: acc.code, accountName: acc.name, debit: amount, credit: 0 },
+                cashLine
+            ]
+        });
+    }
+    document.getElementById('expAmount').value = '';
+    document.getElementById('expNote').value = '';
+    await loadList();
+    alert('වියදම සුරකින ලදී.');
+});
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '../../auth/login.html'; return; }
+    const userDoc = await db.collection('users').doc(user.uid).get();
+    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    const bizDoc = await db.collection('businesses').doc(businessId).get();
+    const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
+    if (user.uid !== OWNER_UID || businessType !== 'scrap_collection_center') {
+        window.location.href = '/modules/core/dashboard.html';
+        return;
+    }
+    const d = new Date();
+    document.getElementById('expenseDate').value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    await loadList();
+});
+</script>
+</body>
+</html>

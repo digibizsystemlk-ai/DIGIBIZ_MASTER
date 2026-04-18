@@ -114,6 +114,17 @@
             const bp = Number(buying);
             if (!Number.isFinite(bp) || bp < 0) return null;
             return Math.round(bp * this.COST_TO_SELL_MULTIPLIER * 100) / 100;
+        },
+
+        /**
+         * Distributor: on MW tenant, allow creating a **new** customer row for anyone who can view
+         * the customer module (matrix + warehouse-style roles with canCustomerView only).
+         * Editing/deleting existing rows stays gated by canCustomerEditDelete in the page logic.
+         */
+        mwTradingDistributorCanCreateNewCustomer(perms, isMwActive) {
+            if (!perms) return false;
+            if (perms.canCustomerCreate) return true;
+            return !!isMwActive && !!perms.canCustomerView;
         }
     };
 

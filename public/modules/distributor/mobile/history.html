@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My pending orders</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <style>
+        body{font-family:Arial,sans-serif;background:#f5f5f5;padding:12px;padding-bottom:80px;}
+        .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+        a.home{color:#10b981;font-weight:bold;text-decoration:none;}
+        .card{background:#fff;border-radius:12px;padding:12px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.1);}
+        .meta{font-size:12px;color:#64748b;}
+        .btn{display:inline-block;margin-top:8px;padding:8px 12px;background:#10b981;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;}
+    </style>
+</head>
+<body>
+    <div class="top">
+        <h2 style="font-size:18px;">Pending orders</h2>
+        <a class="home" href="order.html">← Order</a>
+    </div>
+    <div id="list">Loading…</div>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBLFefSjFXp84Hg7nnIfuJ18SFcM92bsno",
+            authDomain: "digibiz-sys.firebaseapp.com",
+            projectId: "digibiz-sys",
+            storageBucket: "digibiz-sys.firebasestorage.app",
+            messagingSenderId: "761278318158",
+            appId: "1:761278318158:web:f4451f5cf5f8762192a51f"
+        };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (!user) { location.href = 'index.html'; return; }
+            let snap = await db.collection('reps').where('userId', '==', user.uid).get();
+            if (snap.empty) snap = await db.collection('reps').where('email', '==', user.email).get();
+            if (snap.empty) { document.getElementById('list').innerHTML = '<p>No rep profile.</p>'; return; }
+            const rep = snap.docs[0];
+            const repId = rep.id;
+            const businessId = rep.data().businessId;
+            const qs = await db.collection('pendingOrders').where('businessId', '==', businessId).get();
+            const mine = [];
+            qs.forEach((d) => {
+                const o = d.data();
+                if (o.repId === repId) mine.push({ id: d.id, ...o });
+            });
+            mine.sort((a, b) => {
+                const ta = a.orderDate && a.orderDate.toDate ? a.orderDate.toDate().getTime() : 0;
+                const tb = b.orderDate && b.orderDate.toDate ? b.orderDate.toDate().getTime() : 0;
+                return tb - ta;
+            });
+            if (!mine.length) {
+                document.getElementById('list').innerHTML = '<p>No pending orders. You can only edit while an order is pending.</p>';
+                return;
+            }
+            document.getElementById('list').innerHTML = mine.map((o) => {
+                const dt = o.orderDate && o.orderDate.toDate ? o.orderDate.toDate().toLocaleString() : '—';
+                const amt = Number(o.totalAmount) || 0;
+                return `<div class="card">
+                    <div><strong>${o.orderNumber || o.id.slice(-8)}</strong></div>
+                    <div class="meta">${dt} · Rs ${amt.toLocaleString()}</div>
+                    <a class="btn" href="order.html?edit=${encodeURIComponent(o.id)}">Edit order</a>
+                </div>`;
+            }).join('');
+        });
+    </script>
+</body>
+</html>

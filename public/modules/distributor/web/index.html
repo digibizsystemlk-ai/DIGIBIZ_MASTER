@@ -2,6 +2,7 @@
 <html lang="si">
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Distributor HQ - DIGIBIZ</title>
     <style>
@@ -24,17 +25,17 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/core/firebase-init.js?v=31"></script>
+    <script src="/core/firebase-init.js?v=46"></script>
     <script src="/core/event-validation.js?v=2"></script>
     <script src="/core/event-bus.js?v=2"></script>
     <script src="/core/accounts-core.js?v=2"></script>
-    <script src="/core/auth-roles.js?v=31"></script>
-    <script src="/core/business-types.js?v=31"></script>
-    <script src="/core/dashboard-core.js?v=31"></script>
+    <script src="/core/auth-roles.js?v=47"></script>
+    <script src="/core/business-types.js?v=46"></script>
+    <script src="/core/dashboard-core.js?v=46"></script>
     <script src="/core/subscription-manager.js?v=2"></script>
-    <script src="/core/distributor-inventory.js?v=31"></script>
-    <script src="/core/mw-trading-dsl-config.js?v=31"></script>
-    <script src="/core/sidebar.js?v=31"></script>
+    <script src="/core/distributor-inventory.js?v=46"></script>
+    <script src="/core/mw-trading-dsl-config.js?v=46"></script>
+    <script src="/core/sidebar.js?v=49"></script>
     <style>
         * {
             margin: 0;
@@ -248,6 +249,25 @@
             background: #0f766e;
             color: white;
         }
+        .hq-order-actions {
+            display: none;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+            align-items: center;
+        }
+        .hq-order-actions a {
+            text-decoration: none;
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .hq-order-actions .hq-cta-web { background: #10b981; color: #fff; }
+        .hq-order-actions .hq-cta-mob { background: #fff; color: #047857; border: 2px solid #10b981; }
         @media (max-width: 768px) {
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
@@ -263,7 +283,14 @@
     <div class="main-content">
         <div class="page-header">
             <h1>📑 Order Status</h1>
-            <p>Pending queue and all rep orders in one place — approve, reject, dispatch, and mark delivered.</p>
+            <p id="orderStatusPageSubtitle">Pending queue and all rep orders in one place — approve, reject, dispatch, and mark delivered.</p>
+            <p id="repOrderMobileHint" style="display:none;margin-top:10px;padding:10px 12px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;font-size:13px;color:#065f46;">
+                <strong>Rep:</strong> place and edit draft orders on <a href="/modules/distributor/mobile/order.html" style="color:#047857;font-weight:600;">mobile Rep order</a>. Use this page to track status and print your bills when allowed.
+            </p>
+            <div class="hq-order-actions" id="hqOrderActionsBar">
+                <a href="/modules/distributor/web/new-order.html" class="hq-cta-web" id="hqNewOrderWebBtn">🛒 New sales order</a>
+                <a href="/modules/distributor/mobile/order.html" class="hq-cta-mob" id="hqNewOrderMobileBtn">📱 Rep order (phone)</a>
+            </div>
         </div>
 
         <div class="stats-grid">
@@ -292,7 +319,7 @@
                 <div class="stat-value" id="todayCount">-</div>
             </div>
         </div>
-        <div class="rep-summary">
+        <div class="rep-summary" id="repSummarySection">
             <div class="rep-summary-head">
                 <h3>📌 Rep Summary</h3>
                 <select id="repFilter" class="rep-filter">
@@ -361,15 +388,293 @@
         <div class="modal-content">
             <h3 id="modalTitle">Order Details</h3>
             <div id="modalBody"></div>
-            <div id="modalActions" style="margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end;"></div>
+            <div id="modalActions" style="margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;"></div>
             <button onclick="closeModal()" style="margin-top: 16px; padding: 8px; width: 100%; background: #f3f4f6; border: none; border-radius: 8px;">Close</button>
+        </div>
+    </div>
+
+    <div id="adminEditModal" class="modal">
+        <div class="modal-content" style="max-width: 640px; max-height: 85vh; overflow-y: auto;">
+            <h3 id="adminEditTitle">Edit order</h3>
+            <p style="font-size:12px;color:#64748b;margin-bottom:10px;">Edit header (shop/rep/payment/date/collection), every line (qty, free, returns, unit, reasons, batch), or remove a line. Agent return = resell; company return = factory. Firestore rules still apply.</p>
+            <div id="adminEditBody"></div>
+            <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+                <button type="button" class="btn btn-view" onclick="closeAdminEditModal()">Cancel</button>
+                <button type="button" class="btn btn-approve" onclick="saveAdminOrderEdit()">Save changes</button>
+            </div>
         </div>
     </div>
 
     <script>
         let currentUser = null;
         let currentBusinessId = null;
+        let __ORDER_STATUS_ROLE__ = '';
+        let __REP_DOC_ID__ = null;
+        let adminEditState = { collection: '', id: '', order: null };
+
+        function isRepOrderView() {
+            return normalizeRole(__ORDER_STATUS_ROLE__) === 'REP';
+        }
+
+        function orderVisibleForCurrentRole(order) {
+            if (!isRepOrderView()) return true;
+            if (!__REP_DOC_ID__) return false;
+            return String(order.repId || '') === String(__REP_DOC_ID__);
+        }
+
+        function normalizeRole(r){
+            return String(r || '')
+                .toUpperCase()
+                .replace(/\s+/g,'_')
+                .replace(/[^A-Z0-9_]/g,'')
+                .trim();
+        }
+
+        function distributorOrderPerms() {
+            if (window.DigibizDistributorPermissions) {
+                return window.DigibizDistributorPermissions.permissionsForRole(__ORDER_STATUS_ROLE__);
+            }
+            return null;
+        }
+
+        function updateHqNewOrderBar() {
+            var webBtn = document.getElementById('hqNewOrderWebBtn');
+            var mobBtn = document.getElementById('hqNewOrderMobileBtn');
+            var bar = document.getElementById('hqOrderActionsBar');
+            var p = distributorOrderPerms();
+            var canC = p ? !!p.canInvoiceCreateEdit : false;
+            if (webBtn) webBtn.style.display = canC ? 'inline-flex' : 'none';
+            if (mobBtn) mobBtn.style.display = (normalizeRole(__ORDER_STATUS_ROLE__) === 'REP') ? 'inline-flex' : 'none';
+            if (bar) bar.style.display = (canC || normalizeRole(__ORDER_STATUS_ROLE__) === 'REP') ? 'flex' : 'none';
+        }
+
+        function escapeAttr(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;');
+        }
+
+        function toDatetimeLocalValue(v) {
+            if (!v) return '';
+            let d = null;
+            if (typeof v.toDate === 'function') d = v.toDate();
+            else if (v.seconds) d = new Date(v.seconds * 1000);
+            else d = new Date(v);
+            if (!d || isNaN(d.getTime())) return '';
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        /** Who may open the full order editor (lines + header). Reps: own pending only — checked again in openAdminOrderEdit. */
+        function canAdminEditOrders() {
+            if (isRepOrderView()) return true;
+            const p = distributorOrderPerms();
+            if (p) return !!(p.canInvoiceCreateEdit || p.canStockView);
+            const r = normalizeRole(__ORDER_STATUS_ROLE__);
+            return ['BUSINESS_OWNER', 'DISTRIBUTOR_OWNER', 'SUPER_ADMIN', 'ADMIN', 'SALES_COORDINATOR', 'AREA_MANAGER', 'REP'].includes(r);
+        }
+
+        function showOrderEditButton(order) {
+            if (!order || !canAdminEditOrders()) return false;
+            if (isRepOrderView()) {
+                return orderVisibleForCurrentRole(order) && String(order.status || '').toLowerCase() === 'pending';
+            }
+            return true;
+        }
+
+        function canApproveInvoices(){
+            const p = distributorOrderPerms();
+            if (p) return !!p.canOrderWorkflowApprove;
+            const r = normalizeRole(__ORDER_STATUS_ROLE__);
+            return ['AREA_MANAGER','BUSINESS_OWNER','DISTRIBUTOR_OWNER','SUPER_ADMIN','ADMIN','SALES_COORDINATOR'].includes(r);
+        }
+
+        function canRejectInvoices() {
+            const p = distributorOrderPerms();
+            if (p) return !!p.canOrderReject;
+            const r = normalizeRole(__ORDER_STATUS_ROLE__);
+            return ['BUSINESS_OWNER','DISTRIBUTOR_OWNER','SUPER_ADMIN','ADMIN'].includes(r);
+        }
+
+        function closeAdminEditModal() {
+            document.getElementById('adminEditModal').style.display = 'none';
+            adminEditState = { collection: '', id: '', order: null };
+        }
+
+        function recalcItemsAndTotals(items) {
+            const arr = Array.isArray(items) ? items.map((it) => ({ ...it })) : [];
+            let subtotal = 0;
+            arr.forEach((it) => {
+                const oq = Number(it.orderedQty) || 0;
+                const fq = Number(it.freeQty) || 0;
+                const rr = Number(it.returnResellQty) || 0;
+                const rc = Number(it.returnCompanyQty) || 0;
+                it.returnQty = rr + rc;
+                const rate = Number(it.unitPrice) || 0;
+                it.totalPrice = (oq + fq - rr - rc) * rate;
+                subtotal += it.totalPrice;
+            });
+            return { items: arr, subtotal, totalAmount: subtotal };
+        }
+
+        function openAdminOrderEdit(order) {
+            if (!order) return;
+            if (isRepOrderView()) {
+                if (!orderVisibleForCurrentRole(order)) {
+                    alert('You can only edit your own orders.');
+                    return;
+                }
+                if (String(order.status || '').toLowerCase() !== 'pending') {
+                    alert('Reps can only edit pending orders here. Use HQ for changes after approval.');
+                    return;
+                }
+            } else {
+                const p = distributorOrderPerms();
+                const ok = p ? !!(p.canInvoiceCreateEdit || p.canStockView) : true;
+                if (!ok) {
+                    alert('Your role cannot edit orders.');
+                    return;
+                }
+            }
+            const collection = order.status === 'pending' ? 'pendingOrders' : 'orders';
+            adminEditState = { collection, id: order.id, order: JSON.parse(JSON.stringify(order)) };
+            const body = document.getElementById('adminEditBody');
+            const o = adminEditState.order;
+            document.getElementById('adminEditTitle').textContent = `Edit order ${o.orderNumber || order.id.slice(-8)}`;
+            const items = Array.isArray(o.items) ? o.items : [];
+            const pay = String(o.paymentMethod || 'CASH').toUpperCase();
+            const headerBlock = `
+                <div style="border:1px solid #cbd5e1;border-radius:10px;padding:12px;margin-bottom:14px;background:#f8fafc;">
+                    <div style="font-weight:700;margin-bottom:10px;font-size:13px;">Header &amp; payment</div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;font-size:12px;">
+                        <label>Shop ID<br><input type="text" data-h="shopId" value="${escapeAttr(o.shopId || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Shop name<br><input type="text" data-h="shopName" value="${escapeAttr(o.shopName || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Rep ID<br><input type="text" data-h="repId" value="${escapeAttr(o.repId || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Rep name<br><input type="text" data-h="repName" value="${escapeAttr(o.repName || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Order #<br><input type="text" data-h="orderNumber" value="${escapeAttr(o.orderNumber || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Payment<br><select data-h="paymentMethod" style="width:100%;padding:6px;">
+                            <option value="CASH"${pay === 'CASH' ? ' selected' : ''}>Cash</option>
+                            <option value="CREDIT"${pay === 'CREDIT' || pay === 'BANK' ? ' selected' : ''}>Credit</option>
+                            <option value="CHEQUE"${pay === 'CHEQUE' ? ' selected' : ''}>Cheque</option>
+                        </select></label>
+                        <label>Order date<br><input type="datetime-local" data-h="orderDateLocal" value="${escapeAttr(toDatetimeLocalValue(o.orderDate))}" style="width:100%;padding:6px;"></label>
+                        <label>Collection Rs<br><input type="number" min="0" step="0.01" data-h="collectionAmount" value="${Number(o.collectionAmount != null ? o.collectionAmount : o.collectedAmount) || 0}" style="width:100%;padding:6px;"></label>
+                    </div>
+                </div>`;
+            const linesHtml = items.map((it, idx) => `
+                <div class="admin-line-block" data-original-idx="${idx}" style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-bottom:10px;">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">
+                        <div style="font-weight:600;">${escapeAttr(String(it.productName || ''))} <span style="color:#64748b;font-weight:400;">${escapeAttr(String(it.productBrand || ''))}</span></div>
+                        <button type="button" class="btn btn-reject" style="padding:4px 8px;font-size:11px;" onclick="this.closest('.admin-line-block').setAttribute('data-removed','1'); this.closest('.admin-line-block').style.opacity='0.45';">Remove line</button>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;font-size:12px;">
+                        <label>Sales qty<br><input type="number" min="0" data-f="oq" value="${Number(it.orderedQty) || 0}" style="width:100%;padding:6px;"></label>
+                        <label>Free qty<br><input type="number" min="0" data-f="fq" value="${Number(it.freeQty) || 0}" style="width:100%;padding:6px;"></label>
+                        <label>Agent return<br><input type="number" min="0" data-f="rr" value="${Number(it.returnResellQty) || 0}" style="width:100%;padding:6px;"></label>
+                        <label>Company return<br><input type="number" min="0" data-f="rc" value="${Number(it.returnCompanyQty) || 0}" style="width:100%;padding:6px;"></label>
+                        <label>Unit Rs<br><input type="number" min="0" step="0.01" data-f="pr" value="${Number(it.unitPrice) || 0}" style="width:100%;padding:6px;"></label>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:8px;font-size:12px;">
+                        <label>Free reason<br><input type="text" data-f="fr" value="${escapeAttr(it.freeReason || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Return reason<br><input type="text" data-f="rrs" value="${escapeAttr(it.returnReason || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Batch / FIFO id<br><input type="text" data-f="bid" value="${escapeAttr(it.batchIdentifier || '')}" style="width:100%;padding:6px;"></label>
+                    </div>
+                </div>
+            `).join('') || '<p>No line items</p>';
+            body.innerHTML = headerBlock + linesHtml;
+            document.getElementById('adminEditModal').style.display = 'flex';
+        }
+
+        async function saveAdminOrderEdit() {
+            if (!adminEditState.id || !adminEditState.order) return;
+            const baseItems = Array.isArray(adminEditState.order.items) ? adminEditState.order.items.map((it) => ({ ...it })) : [];
+            const newItems = [];
+            document.querySelectorAll('#adminEditBody .admin-line-block').forEach((block) => {
+                if (block.getAttribute('data-removed') === '1') return;
+                const orig = parseInt(block.getAttribute('data-original-idx'), 10);
+                if (isNaN(orig) || !baseItems[orig]) return;
+                const row = { ...baseItems[orig] };
+                block.querySelectorAll('input[data-f]').forEach((inp) => {
+                    const f = inp.getAttribute('data-f');
+                    if (f === 'fr' || f === 'rrs' || f === 'bid') {
+                        row[f === 'fr' ? 'freeReason' : f === 'rrs' ? 'returnReason' : 'batchIdentifier'] = String(inp.value || '').trim();
+                        return;
+                    }
+                    const v = parseFloat(inp.value) || 0;
+                    if (f === 'oq') row.orderedQty = v;
+                    if (f === 'fq') row.freeQty = v;
+                    if (f === 'rr') row.returnResellQty = v;
+                    if (f === 'rc') row.returnCompanyQty = v;
+                    if (f === 'pr') row.unitPrice = v;
+                });
+                const rr = Number(row.returnResellQty) || 0;
+                const rc = Number(row.returnCompanyQty) || 0;
+                row.returnQty = rr + rc;
+                newItems.push(row);
+            });
+            const { items: recalced, subtotal, totalAmount } = recalcItemsAndTotals(newItems);
+            const freeIssuesTotal = recalced.reduce((s, it) => s + (Number(it.freeQty) || 0), 0);
+            const payload = {
+                ...adminEditState.order,
+                items: recalced,
+                subtotal,
+                totalAmount,
+                freeIssuesTotal,
+                lastEditedBy: currentUser?.uid,
+                lastEditedAt: new Date()
+            };
+            document.querySelectorAll('#adminEditBody [data-h]').forEach((inp) => {
+                const k = inp.getAttribute('data-h');
+                if (k === 'orderDateLocal') return;
+                if (k === 'collectionAmount') {
+                    const n = parseFloat(inp.value) || 0;
+                    payload.collectionAmount = n;
+                    payload.collectedAmount = n;
+                    return;
+                }
+                if (inp.tagName === 'SELECT' || inp.type === 'text' || inp.type === 'number') {
+                    payload[k] = String(inp.value || '').trim();
+                }
+            });
+            const odEl = document.querySelector('#adminEditBody [data-h="orderDateLocal"]');
+            if (odEl && odEl.value) {
+                const d = new Date(odEl.value);
+                if (!isNaN(d.getTime()) && typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.Timestamp) {
+                    payload.orderDate = firebase.firestore.Timestamp.fromDate(d);
+                } else if (!isNaN(d.getTime())) {
+                    payload.orderDate = d;
+                }
+            }
+            try {
+                await db.collection(adminEditState.collection).doc(adminEditState.id).set(payload, { merge: true });
+                alert('Order updated.');
+                closeAdminEditModal();
+                await loadOrders();
+                await loadStats();
+            } catch (e) {
+                console.error(e);
+                alert('Save failed: ' + (e.message || e));
+            }
+        }
+
+        function openAdminOrderEditFromView(orderId) {
+            closeModal();
+            const order = allOrders.find((o) => o.id === orderId);
+            if (order) openAdminOrderEdit(order);
+        }
         const ORDER_TABS = ['pending', 'approved', 'rejected', 'dispatched', 'delivered', 'all'];
+        (function repairOrderStatusUrlTab() {
+            try {
+                const sp = new URLSearchParams(window.location.search);
+                const t = (sp.get('tab') || '').toLowerCase().trim();
+                if (!ORDER_TABS.includes(t)) {
+                    const u = new URL(window.location.href);
+                    u.searchParams.set('tab', 'pending');
+                    history.replaceState(null, '', u.pathname + '?' + u.searchParams.toString());
+                }
+            } catch (e) { /* ignore */ }
+        })();
         const urlTabParam = (typeof URLSearchParams !== 'undefined')
             ? new URLSearchParams(window.location.search).get('tab')
             : null;
@@ -586,12 +891,14 @@ ${meta}
                 
                 pendingSnapshot.docs.forEach(doc => {
                     const order = doc.data();
+                    if (!orderVisibleForCurrentRole(order)) return;
                     pending++;
                     const orderDate = order.orderDate?.toDate ? order.orderDate.toDate() : null;
                     if (orderDate && orderDate >= todayStart) today++;
                 });
                 approvedSnapshot.docs.forEach(doc => {
                     const order = doc.data();
+                    if (!orderVisibleForCurrentRole(order)) return;
                     const status = String(order.status || '').toLowerCase();
                     if (status === 'approved') approved++;
                     if (status === 'rejected') rejected++;
@@ -611,6 +918,27 @@ ${meta}
             } catch (error) {
                 console.error('Error loading stats:', error);
             }
+        }
+
+        function orderDateMs(order) {
+            if (!order) return 0;
+            const od = order.orderDate;
+            if (od && typeof od.toDate === 'function') {
+                const d = od.toDate();
+                return d && !isNaN(d.getTime()) ? d.getTime() : 0;
+            }
+            if (od && typeof od.seconds === 'number') {
+                return od.seconds * 1000 + Math.floor((od.nanoseconds || 0) / 1e6);
+            }
+            const ca = order.createdAt;
+            if (ca && typeof ca.toDate === 'function') {
+                const d2 = ca.toDate();
+                return d2 && !isNaN(d2.getTime()) ? d2.getTime() : 0;
+            }
+            if (ca && typeof ca.seconds === 'number') {
+                return ca.seconds * 1000 + Math.floor((ca.nanoseconds || 0) / 1e6);
+            }
+            return 0;
         }
 
         async function enrichOrderRow(doc, forcedStatus) {
@@ -642,39 +970,42 @@ ${meta}
                     const [pSnap, oSnap] = await Promise.all([
                         db.collection('pendingOrders')
                             .where('businessId', '==', currentBusinessId)
-                            .orderBy('orderDate', 'desc')
-                            .limit(80)
+                            .limit(150)
                             .get(),
                         db.collection('orders')
                             .where('businessId', '==', currentBusinessId)
-                            .orderBy('orderDate', 'desc')
-                            .limit(80)
+                            .limit(200)
                             .get()
                     ]);
                     const pendingRows = await Promise.all(pSnap.docs.map((d) => enrichOrderRow(d, 'pending')));
                     const orderRows = await Promise.all(oSnap.docs.map((d) => enrichOrderRow(d, null)));
-                    orders = [...pendingRows, ...orderRows].sort((a, b) => {
-                        const ta = a.orderDate?.toDate ? a.orderDate.toDate().getTime() : 0;
-                        const tb = b.orderDate?.toDate ? b.orderDate.toDate().getTime() : 0;
-                        return tb - ta;
-                    }).slice(0, 120);
+                    orders = [...pendingRows, ...orderRows]
+                        .sort((a, b) => orderDateMs(b) - orderDateMs(a))
+                        .slice(0, 120);
                 } else if (currentStatus === 'pending') {
                     const snapshot = await db.collection('pendingOrders')
                         .where('businessId', '==', currentBusinessId)
-                        .orderBy('orderDate', 'desc')
-                        .limit(100)
+                        .limit(200)
                         .get();
                     orders = await Promise.all(snapshot.docs.map((d) => enrichOrderRow(d, 'pending')));
+                    orders.sort((a, b) => orderDateMs(b) - orderDateMs(a));
+                    orders = orders.slice(0, 100);
                 } else {
-                    let query = db.collection('orders')
+                    const snapshot = await db.collection('orders')
                         .where('businessId', '==', currentBusinessId)
-                        .where('status', '==', currentStatus)
-                        .orderBy('orderDate', 'desc');
-                    const snapshot = await query.limit(100).get();
-                    orders = await Promise.all(snapshot.docs.map((d) => enrichOrderRow(d, null)));
+                        .limit(300)
+                        .get();
+                    const allRows = await Promise.all(snapshot.docs.map((d) => enrichOrderRow(d, null)));
+                    const want = String(currentStatus || '').toLowerCase();
+                    orders = allRows
+                        .filter((o) => String(o.status || '').toLowerCase() === want)
+                        .sort((a, b) => orderDateMs(b) - orderDateMs(a))
+                        .slice(0, 100);
                 }
 
-                allOrders = orders;
+                allOrders = isRepOrderView()
+                    ? orders.filter((o) => orderVisibleForCurrentRole(o))
+                    : orders;
                 displayOrders();
                 
             } catch (error) {
@@ -698,6 +1029,7 @@ ${meta}
         }
 
         async function loadRepSummary() {
+            if (isRepOrderView()) return;
             try {
                 const pendingSnapshot = await db.collection('pendingOrders')
                     .where('businessId', '==', currentBusinessId)
@@ -764,31 +1096,64 @@ ${meta}
         }
 
         function getActionButtons(order) {
+            const editBtn = showOrderEditButton(order)
+                ? `<button class="btn btn-view" onclick="openAdminOrderEditFromView('${order.id}')">✏️ Edit</button>` : '';
             if (order.status === 'pending') {
+                const canApprove = canApproveInvoices();
+                const canReject = canRejectInvoices();
                 return `
-                    <button class="btn btn-approve" onclick="approveOrder('${order.id}')">✓ Approve</button>
-                    <button class="btn btn-reject" onclick="rejectOrder('${order.id}')">✕ Reject</button>
+                    ${canApprove ? `<button class="btn btn-approve" onclick="approveOrder('${order.id}')">✓ Approve</button>` : ''}
+                    ${canReject ? `<button class="btn btn-reject" onclick="rejectOrder('${order.id}')">✕ Reject</button>` : ''}
                     <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
+                    ${editBtn}
                     ${thermalPrintBtn(order.id)}
                 `;
             } else if (order.status === 'approved') {
+                const canApprove = canApproveInvoices();
                 return `
-                    <button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}')">🚚 Dispatch</button>
+                    ${canApprove ? `<button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}')">🚚 Dispatch</button>` : ''}
                     <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
+                    ${editBtn}
                     ${thermalPrintBtn(order.id)}
                 `;
             } else if (order.status === 'dispatched') {
+                const canApprove = canApproveInvoices();
                 return `
-                    <button class="btn btn-approve" onclick="markDelivered('${order.id}')">📬 Delivered</button>
+                    ${canApprove ? `<button class="btn btn-approve" onclick="markDelivered('${order.id}')">📬 Delivered</button>` : ''}
                     <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
+                    ${editBtn}
                     ${thermalPrintBtn(order.id)}
                 `;
             } else {
                 return `
                     <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
+                    ${editBtn}
                     ${thermalPrintBtn(order.id)}
                 `;
             }
+        }
+
+        function toMillis(v) {
+            if (!v) return 0;
+            if (typeof v.toDate === 'function') return v.toDate().getTime();
+            if (v.seconds) return Number(v.seconds) * 1000;
+            const d = new Date(v);
+            return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+        }
+
+        function consumeFifoBatches(stockBatches, qtyToConsume) {
+            const arr = Array.isArray(stockBatches) ? stockBatches.map((b) => ({ ...b })) : [];
+            // Absolute FIFO: deplete strictly by oldest createdAt (price or identifier never changes priority).
+            arr.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt));
+            let left = Math.max(0, Number(qtyToConsume) || 0);
+            for (let i = 0; i < arr.length && left > 0; i += 1) {
+                const av = Math.max(0, Number(arr[i].availableQty) || 0);
+                if (!av) continue;
+                const take = Math.min(av, left);
+                arr[i].availableQty = av - take;
+                left -= take;
+            }
+            return arr;
         }
 
         async function adjustInventoryForApprovedOrder(order) {
@@ -802,20 +1167,49 @@ ${meta}
                 byId[doc.id] = doc;
                 byName[String(doc.data().name || '').toLowerCase()] = doc;
             });
+            const agg = new Map();
             items.forEach((item) => {
-                const delta = inv ? inv.orderApprovalStockDelta(item) : -(Number(item.orderedQty) || 0) - (Number(item.freeQty) || 0) + (Number(item.returnQty) || 0);
-                if (!delta) return;
                 const productDoc = item.productId ? byId[item.productId] : byName[String(item.productName || '').toLowerCase()];
                 if (!productDoc) return;
-                const cur = inv ? inv.numericStock(productDoc.data()) : (Number(productDoc.data().stock) || 0);
-                const next = Math.max(0, cur + delta);
+                const delta = inv ? inv.orderApprovalStockDelta(item) : -(Number(item.orderedQty) || 0) - (Number(item.freeQty) || 0) + (Number(item.returnQty) || 0);
+                const factoryAdd = inv ? inv.factoryReturnUnitsFromLine(item) : (Number(item.returnCompanyQty) || 0);
+                const saleQty = Math.max(
+                    0,
+                    (Number(item.orderedQty) || 0) +
+                    (Number(item.freeQty) || 0) -
+                    (Number(item.returnResellQty != null ? item.returnResellQty : item.returnQty) || 0)
+                );
+                const key = productDoc.ref.path;
+                if (!agg.has(key)) {
+                    agg.set(key, { ref: productDoc.ref, doc: productDoc, deltaSum: 0, factorySum: 0, saleQtySum: 0 });
+                }
+                const row = agg.get(key);
+                row.deltaSum += delta;
+                row.factorySum += factoryAdd;
+                row.saleQtySum += saleQty;
+            });
+            agg.forEach(({ ref, doc, deltaSum, factorySum, saleQtySum }) => {
+                if (!deltaSum && !factorySum) return;
+                const cur = inv ? inv.numericStock(doc.data()) : (Number(doc.data().stock) || 0);
+                const next = Math.max(0, cur + (deltaSum || 0));
                 const payload = inv ? inv.syncStockPayload(next) : { stock: next, currentStock: next };
-                batch.update(productDoc.ref, { ...payload, updatedAt: new Date() });
+                if (saleQtySum > 0) {
+                    payload.stockBatches = consumeFifoBatches(doc.data().stockBatches, saleQtySum);
+                }
+                payload.updatedAt = new Date();
+                if (factorySum > 0) {
+                    payload.factoryReturnBucket = firebase.firestore.FieldValue.increment(factorySum);
+                }
+                batch.update(ref, payload);
             });
             await batch.commit();
         }
 
         async function approveOrder(orderId) {
+            if(!canApproveInvoices()){
+                alert('Approve is restricted to Owner, Sales Coordinator, or Area Manager.');
+                return;
+            }
             if (!confirm('Approve this order?')) return;
             try {
                 const order = allOrders.find(o => o.id === orderId);
@@ -839,6 +1233,32 @@ ${meta}
                         businessId: currentBusinessId,
                         approvedBy: currentUser?.uid || ''
                     });
+
+                    // Calculate and publish Free Issues
+                    const items = Array.isArray(order.items) ? order.items : [];
+                    const freeValue = items.reduce((sum, i) => sum + (Number(i.freeQty) || 0) * (Number(i.unitPrice) || 0), 0);
+                    if (freeValue > 0) {
+                        window.eventBus.publish('FREE_ISSUES_RECORDED', {
+                            businessId: currentBusinessId,
+                            orderId,
+                            amount: freeValue,
+                            date: order.orderDate
+                        });
+                    }
+
+                    // Calculate and publish Market Returns
+                    const returnVal = items.reduce((sum, i) => {
+                        const q = Number(i.returnCompanyQty || i.returnResellQty || i.returnQty || 0);
+                        return sum + (q * (Number(i.unitPrice) || 0));
+                    }, 0);
+                    if (returnVal > 0) {
+                        window.eventBus.publish('MARKET_RETURNS_RECORDED', {
+                            businessId: currentBusinessId,
+                            orderId,
+                            amount: returnVal,
+                            date: order.orderDate
+                        });
+                    }
                 }
                 alert('Order approved!');
                 loadStats();
@@ -850,6 +1270,10 @@ ${meta}
         }
 
         async function dispatchOrder(orderId) {
+            if(!canApproveInvoices()){
+                alert('Dispatch is restricted to Owner, Sales Coordinator, or Area Manager.');
+                return;
+            }
             if (!confirm('Mark as dispatched?')) return;
             try {
                 await db.collection('orders').doc(orderId).update({
@@ -866,6 +1290,10 @@ ${meta}
         }
 
         async function rejectOrder(orderId) {
+            if(!canRejectInvoices()){
+                alert('Reject is restricted to the business owner.');
+                return;
+            }
             if (!confirm('Reject this order? It will leave the pending queue and be recorded as rejected.')) return;
             try {
                 const order = allOrders.find((o) => o.id === orderId);
@@ -890,6 +1318,10 @@ ${meta}
         }
 
         async function markDelivered(orderId) {
+            if(!canApproveInvoices()){
+                alert('Delivered marking is restricted to Owner, Sales Coordinator, or Area Manager.');
+                return;
+            }
             if (!confirm('Mark this order as delivered?')) return;
             try {
                 await db.collection('orders').doc(orderId).update({
@@ -970,14 +1402,28 @@ ${meta}
             `;
             
             const print80 = `<button type="button" class="btn btn-print" onclick="printDistributorThermalBill('${order.id}')">🖨 Print 80mm</button>`;
+            const adminEd = showOrderEditButton(order)
+                ? `<button type="button" class="btn btn-view" onclick="openAdminOrderEditFromView('${order.id}')">✏️ Edit</button>` : '';
+            const canApprove = canApproveInvoices();
+            const canReject = canRejectInvoices();
             if (order.status === 'pending') {
-                modalActions.innerHTML = `${print80}<button class="btn btn-approve" onclick="approveOrder('${order.id}'); closeModal();">✓ Approve</button><button class="btn btn-reject" onclick="rejectOrder('${order.id}'); closeModal();">✕ Reject</button>`;
+                modalActions.innerHTML = `${print80}${adminEd}` +
+                    (canApprove || canReject ? [
+                        canApprove ? `<button class="btn btn-approve" onclick="approveOrder('${order.id}'); closeModal();">✓ Approve</button>` : '',
+                        canReject ? `<button class="btn btn-reject" onclick="rejectOrder('${order.id}'); closeModal();">✕ Reject</button>` : ''
+                    ].join('') : '');
             } else if (order.status === 'approved') {
-                modalActions.innerHTML = `${print80}<button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}'); closeModal();">🚚 Dispatch</button>`;
+                modalActions.innerHTML = `${print80}${adminEd}` +
+                    (canApprove
+                        ? `<button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}'); closeModal();">🚚 Dispatch</button>`
+                        : '');
             } else if (order.status === 'dispatched') {
-                modalActions.innerHTML = `${print80}<button class="btn btn-approve" onclick="markDelivered('${order.id}'); closeModal();">📬 Delivered</button>`;
+                modalActions.innerHTML = `${print80}${adminEd}` +
+                    (canApprove
+                        ? `<button class="btn btn-approve" onclick="markDelivered('${order.id}'); closeModal();">📬 Delivered</button>`
+                        : '');
             } else {
-                modalActions.innerHTML = print80;
+                modalActions.innerHTML = `${print80}${adminEd}`;
             }
             
             modal.style.display = 'flex';
@@ -1003,12 +1449,6 @@ ${meta}
         firebase.auth().onAuthStateChanged(async (user) => {
             if (user) {
                 currentUser = user;
-                const roleInfo = window.getUserRole ? await window.getUserRole(user.uid) : null;
-                const userRole = String(roleInfo?.role || '').toUpperCase();
-                if (userRole === 'REP') {
-                    window.location.href = '/modules/distributor/mobile/order.html';
-                    return;
-                }
                 currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
                 if (!currentBusinessId) {
                     const context = window.dashboardCore ? await window.dashboardCore.getContext(user) : null;
@@ -1021,6 +1461,38 @@ ${meta}
                 }
                 localStorage.setItem('currentBusinessId', currentBusinessId);
                 sessionStorage.setItem('currentBusinessId', currentBusinessId);
+                const roleInfo = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
+                let userRole = String(roleInfo?.role || '').toUpperCase();
+                try {
+                    const bu = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(user.uid).get();
+                    if (bu.exists && bu.data().role) userRole = String(bu.data().role).toUpperCase();
+                } catch (e) { /* ignore */ }
+                __ORDER_STATUS_ROLE__ = userRole;
+                __REP_DOC_ID__ = null;
+                if (userRole === 'REP') {
+                    try {
+                        let rs = await db.collection('reps').where('userId', '==', user.uid).where('businessId', '==', currentBusinessId).limit(1).get();
+                        if (rs.empty) rs = await db.collection('reps').where('userId', '==', user.uid).limit(1).get();
+                        if (rs.empty && user.email) {
+                            rs = await db.collection('reps').where('email', '==', user.email).where('businessId', '==', currentBusinessId).limit(1).get();
+                        }
+                        if (!rs.empty) __REP_DOC_ID__ = rs.docs[0].id;
+                    } catch (e) { console.warn('Rep profile lookup failed', e); }
+                    const hint = document.getElementById('repOrderMobileHint');
+                    if (hint) hint.style.display = 'block';
+                    const sub = document.getElementById('orderStatusPageSubtitle');
+                    if (sub) sub.textContent = __REP_DOC_ID__
+                        ? 'Showing your orders only. Managers approve or dispatch from the same queue.'
+                        : 'Rep profile not linked — contact the owner. You can still open the mobile order app.';
+                    const rsSec = document.getElementById('repSummarySection');
+                    if (rsSec) rsSec.style.display = 'none';
+                } else {
+                    const hintOff = document.getElementById('repOrderMobileHint');
+                    if (hintOff) hintOff.style.display = 'none';
+                    const rsSec = document.getElementById('repSummarySection');
+                    if (rsSec) rsSec.style.display = '';
+                }
+                updateHqNewOrderBar();
                 try {
                     const bdSnap = await db.collection('businesses').doc(currentBusinessId).get();
                     currentBusinessData = bdSnap.exists ? bdSnap.data() : null;

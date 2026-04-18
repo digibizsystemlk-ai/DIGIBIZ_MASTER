@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investor - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/sidebar.js?v=64"></script>
+    <style>
+        body{font-family:Inter,system-ui,sans-serif;background:#f3f4f6;margin:0;color:#0f172a}
+        .wrap{padding:20px;max-width:1200px;margin:0 auto}
+        .sum-panel{background:#fff;border:1px solid #dbe4ee;border-radius:12px;padding:14px 16px;margin-bottom:12px}
+        .sum-panel .block{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e2e8f0}
+        .sum-panel .block:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
+        .sum-panel .lbl{font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+        .sum-panel .amt{font-size:24px;font-weight:900;color:#b91c1c;margin-top:2px}
+        .sum-panel .sub{font-size:13px;color:#475569;margin-top:4px}
+        .sum-panel .line{font-size:14px;margin-top:6px;color:#0f172a}
+        .sum-panel .line strong{color:#991b1b}
+        .card{background:#fff;border:1px solid #dbe4ee;border-radius:12px;padding:14px}
+        .table-wrap{overflow-x:auto;border:1px solid #cbd5e1;border-radius:10px}
+        table.inv-ledger{width:100%;border-collapse:collapse;font-size:13px;min-width:900px}
+        table.inv-ledger th{background:#14532d;color:#fff;font-weight:700;padding:10px 8px;text-align:left;border:1px solid #0f3d22}
+        table.inv-ledger th.ar,table.inv-ledger td.ar{text-align:right}
+        table.inv-ledger tr.sum-row th{background:#166534;font-size:12px}
+        table.inv-ledger td{padding:8px;border-bottom:1px solid #e2e8f0}
+        table.inv-ledger tbody tr:nth-child(even){background:#f8fafc}
+        input,button{padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px}
+        button{background:#0f766e;color:#fff;border:none;cursor:pointer;font-weight:600}
+        button:hover{filter:brightness(.95)}
+        button.btn-muted{background:#64748b}
+        button.btn-danger{background:#b91c1c}
+        .open-toolbar{margin:12px 0 0;font-size:13px;padding-top:12px;border-top:1px solid #e2e8f0}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="sum-panel" id="sumPanel">
+        <div class="block">
+            <div class="lbl">Advanced loan — investor ට ගෙවිය යුතු (Principal Due + Interest Due)</div>
+            <div class="amt" id="advDueTotal">Rs. 0.00</div>
+            <div class="sub" id="advDueSub">Principal due Rs. 0.00 · Interest due Rs. 0.00</div>
+        </div>
+        <div class="block">
+            <div class="lbl">මේ වෙලාවේ ledger යථාත්වය · Current portfolio ledger</div>
+            <div class="line"><strong>Capital balance:</strong> <span id="lbCap">Rs. 0.00</span></div>
+            <div class="line"><strong>Interest balance:</strong> <span id="lbInt">Rs. 0.00</span></div>
+        </div>
+        <div class="block">
+            <div class="lbl">Journal — Temporary investor payable (2-2060-01)</div>
+            <div class="line"><strong>හිග මුදල (credit balance):</strong> <span id="jrPay">Rs. 0.00</span></div>
+        </div>
+        <div class="block">
+            <div class="lbl">සමාලෝචන හිගීම් (එකට එකතු නොකරන ලද වෙනම මූලාශ්‍ර)</div>
+            <div class="sub" style="margin-top:4px;">ඉහත තුනම investor සම්බන්ධ හිගීම් වෙන වෙනම පෙන්වයි. එකට එකතු කිරීම double-count විය හැකි නිසා ස්වයංක්‍රීය එකතුවක් නොපෙන්වයි.</div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="table-wrap">
+            <table class="inv-ledger">
+                <thead>
+                    <tr class="sum-row" id="ledgerSumRow"></tr>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th class="ar">Capital Change</th>
+                        <th class="ar">Interest Change</th>
+                        <th class="ar">Capital Balance</th>
+                        <th class="ar">Interest Balance</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody id="ledgerBody"></tbody>
+            </table>
+        </div>
+        <div class="open-toolbar" id="openToolbar"></div>
+    </div>
+</div>
+<script>
+const DEFAULT_INVESTOR_PHONE = '0773125715';
+let businessId = null;
+function n(v){ const x = Number(v); return Number.isFinite(x) ? x : 0; }
+function m(v){ return `Rs. ${n(v).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2})}`; }
+function escapeHtml(str){
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function todayInputDate(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function rowTime(r){
+  return r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().getTime() : new Date(r.createdAt||0).getTime();
+}
+async function sumAdvancedDueToInvestor(){
+  const snap = await db.collection('loan_advanced_entries').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
+  let pr = 0, ir = 0;
+  snap.docs.forEach((d)=>{ const r=d.data()||{}; pr += n(r.principalDueToInvestor); ir += n(r.interestDueToInvestor); });
+  return { principal: pr, interest: ir, total: pr + ir };
+}
+async function journalPayable206001(){
+  const snap = await db.collection('journal').doc(businessId).collection('entries').limit(4000).get().catch(()=>({docs:[]}));
+  let bal = 0;
+  snap.docs.forEach((d)=>{ const r=d.data()||{}; (r.entries||[]).forEach((e)=>{ if(String(e.accountCode||'')==='2-2060-01'){ bal += (Number(e.credit)||0) - (Number(e.debit)||0); } }); });
+  return bal;
+}
+async function getPortfolioConfig(){
+  const s = await db.collection('investor_portfolio_config').doc(businessId).get().catch(()=>null);
+  return s && s.exists ? (s.data()||{}) : {};
+}
+async function ensurePortfolioPhone(){
+  await db.collection('investor_portfolio_config').doc(businessId).set({
+    businessId,
+    investorPhone: String(DEFAULT_INVESTOR_PHONE).replace(/\s/g,''),
+    dailyCapitalRatePercent: 8,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+/** Newest first (client sort) — avoids composite index for businessId + createdAt. */
+async function fetchLedgerRowsDesc(){
+  try {
+    const ledgerSnap = await db.collection('investor_capital_ledger')
+      .where('businessId','==',businessId).limit(500).get();
+    const rows = ledgerSnap.docs.map((d)=>({ id:d.id, ...(d.data()||{}) }));
+    rows.sort((a,b)=>rowTime(b)-rowTime(a));
+    return rows;
+  } catch (e) {
+    console.error('investor_capital_ledger fetch', e);
+    if (!window.__invLedgerFetchErrOnce){ window.__invLedgerFetchErrOnce = true; alert('Investor ledger කියවීම අසාර්ථක: '+(e&&e.message?e.message:String(e))); }
+    return [];
+  }
+}
+function findOpeningRow(rowsChronoOldestFirst){
+  const open = rowsChronoOldestFirst.filter((r)=>String(r.source||'')==='OPENING');
+  if (!open.length) return null;
+  return open.reduce((a,b)=>rowTime(a)<rowTime(b)?a:b);
+}
+async function saveOpeningFirst(cap0, int0, note){
+  const existing = await db.collection('investor_capital_ledger').where('businessId','==',businessId).limit(1).get().catch(()=>({docs:[]}));
+  if (existing.docs.length) return { ok:false, err:'already' };
+  if (!confirm(`ආරම්භක පේළිය සුරකින්නද?\nCapital ${m(cap0)}\nInterest ${m(int0)}`)) return { ok:false };
+  try {
+    /* Client Timestamp so orderBy(createdAt) queries see this row immediately; serverTimestamp can be omitted from index-sorted results until resolved. */
+    const createdAt = firebase.firestore.Timestamp.fromDate(new Date());
+    await db.collection('investor_capital_ledger').add({
+      businessId,
+      entryDate: todayInputDate(),
+      description: 'Opening balance',
+      capitalChange: cap0,
+      interestChange: int0,
+      capitalBalance: cap0,
+      interestBalance: int0,
+      notes: note || 'Opening',
+      source: 'OPENING',
+      createdAt
+    });
+    await db.collection('investor_portfolio_config').doc(businessId).set({
+      businessId,
+      openingAllowOneRevision: true,
+      investorPhone: String(DEFAULT_INVESTOR_PHONE).replace(/\s/g,''),
+      dailyCapitalRatePercent: 8,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    return { ok:true };
+  } catch (e) {
+    console.error('saveOpeningFirst', e);
+    alert('ආරම්භක පේළිය සුරකින්න බැරි විය: '+(e&&e.message?e.message:String(e)));
+    return { ok:false, err:'write' };
+  }
+}
+async function reviseOpeningOnce(docId, cap0, int0, note){
+  const cfg = await getPortfolioConfig();
+  if (!cfg.openingAllowOneRevision) return { ok:false, err:'used' };
+  const ref = db.collection('investor_capital_ledger').doc(docId);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok:false, err:'missing' };
+  const r = snap.data()||{};
+  if (String(r.source||'')!=='OPENING') return { ok:false, err:'not_opening' };
+  if (!confirm(`ආරම්භක පේළිය එක වරක් වෙනස් කරන්න — සුරකින්නද?\nCapital ${m(cap0)}\nInterest ${m(int0)}`)) return { ok:false };
+  await ref.set({
+    entryDate: r.entryDate || todayInputDate(),
+    description: 'Opening balance (revised)',
+    capitalChange: cap0,
+    interestChange: int0,
+    capitalBalance: cap0,
+    interestBalance: int0,
+    notes: note || r.notes || '',
+    source: 'OPENING',
+    updatedAt: new Date()
+  }, { merge: true });
+  await db.collection('investor_portfolio_config').doc(businessId).set({
+    openingAllowOneRevision: false,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+  return { ok:true };
+}
+function buildLedgerSumRow(rowsDesc){
+  const tr = document.getElementById('ledgerSumRow');
+  if (!tr) return;
+  if (!rowsDesc.length){
+    tr.innerHTML = '<th colspan="7" style="text-align:center;">—</th>';
+    return;
+  }
+  let sCap = 0, sInt = 0;
+  rowsDesc.forEach((r)=>{ sCap += n(r.capitalChange); sInt += n(r.interestChange); });
+  const latest = rowsDesc[0] || {};
+  tr.innerHTML = `
+    <th colspan="2">Σ (${rowsDesc.length})</th>
+    <th class="ar">${m(sCap)}</th>
+    <th class="ar">${m(sInt)}</th>
+    <th class="ar">${m(latest.capitalBalance)}</th>
+    <th class="ar">${m(latest.interestBalance)}</th>
+    <th></th>`;
+}
+function renderOpeningToolbar(rowsDesc, openingRow, cfg){
+  const el = document.getElementById('openToolbar');
+  if (!el) return;
+  if (!rowsDesc.length){
+    el.innerHTML = `
+      <div><strong>ආරම්භක ගණන්</strong> — පළමු පේළිය පමණක් (එක වරක් සුරකින්න)</div>
+      <div style="font-size:12px;color:#64748b;margin-top:4px;">සුරකළ පසු ඉහළින් ඇති වගුවේ නව පේළිය පෙනෙනු ඇත.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:end;">
+        <div><label style="font-size:11px;color:#64748b;">Capital</label><br><input id="opCap" type="number" step="0.01" style="width:120px;"></div>
+        <div><label style="font-size:11px;color:#64748b;">Interest</label><br><input id="opInt" type="number" step="0.01" style="width:120px;"></div>
+        <div style="flex:1;min-width:160px;"><label style="font-size:11px;color:#64748b;">Notes</label><br><input id="opNote" style="width:100%;box-sizing:border-box;"></div>
+        <button type="button" id="opSaveBtn">Save opening row</button>
+      </div>`;
+    const save = async ()=>{
+      const cap0 = n(document.getElementById('opCap').value);
+      const int0 = n(document.getElementById('opInt').value);
+      const note = String(document.getElementById('opNote').value||'').trim();
+      const res = await saveOpeningFirst(cap0, int0, note);
+      if (!res.ok && res.err==='already') alert('Ledger already started.');
+      await refresh();
+    };
+    document.getElementById('opSaveBtn').onclick = save;
+    return;
+  }
+  const allow = !!cfg.openingAllowOneRevision && openingRow && rowsDesc.length === 1 && String(openingRow.source||'')==='OPENING';
+  if (!allow){
+    el.innerHTML = '<span style="color:#64748b;font-size:12px;">ආරම්භක පේළිය සුරකින ලදී. වෙනස් කිරීමට දෙවන පේළි එකතු වූ පසු අවසර නැහැ (එක වරක් correction දැනටමත් ගෙවී ඇති නම් හෝ ledger එකට වැඩි පේළි තිබේ නම්).</span>';
+    return;
+  }
+  el.innerHTML = `
+    <div><strong>ආරම්භක පේළිය එක වරක් වෙනස් කිරීම</strong> (පසුව අගුළු)</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:end;">
+      <div><label style="font-size:11px;color:#64748b;">Capital</label><br><input id="opCap" type="number" step="0.01" value="${n(openingRow.capitalBalance)}" style="width:120px;"></div>
+      <div><label style="font-size:11px;color:#64748b;">Interest</label><br><input id="opInt" type="number" step="0.01" value="${n(openingRow.interestBalance)}" style="width:120px;"></div>
+      <div style="flex:1;min-width:160px;"><label style="font-size:11px;color:#64748b;">Notes</label><br><input id="opNote" value="${escapeHtml(openingRow.notes||'')}" style="width:100%;box-sizing:border-box;"></div>
+      <button type="button" id="opRevBtn" class="btn-muted">Save opening revision (once)</button>
+    </div>`;
+  document.getElementById('opRevBtn').onclick = async ()=>{
+    const cap0 = n(document.getElementById('opCap').value);
+    const int0 = n(document.getElementById('opInt').value);
+    const note = String(document.getElementById('opNote').value||'').trim();
+    const res = await reviseOpeningOnce(openingRow.id, cap0, int0, note);
+    if (!res.ok && res.err==='used') alert('Opening revision already used.');
+    else if (!res.ok && res.err==='not_opening') alert('Invalid opening row.');
+    await refresh();
+  };
+}
+async function refresh(){
+  const [rowsDesc, due, jrBal, cfg0] = await Promise.all([
+    fetchLedgerRowsDesc(),
+    sumAdvancedDueToInvestor(),
+    journalPayable206001(),
+    getPortfolioConfig()
+  ]);
+  const cfg = cfg0 || {};
+  document.getElementById('advDueTotal').textContent = m(due.total);
+  document.getElementById('advDueSub').textContent = `Principal due ${m(due.principal)} · Interest due ${m(due.interest)}`;
+  const latest = rowsDesc[0] || {};
+  document.getElementById('lbCap').textContent = m(latest.capitalBalance);
+  document.getElementById('lbInt').textContent = m(latest.interestBalance);
+  document.getElementById('jrPay').textContent = m(jrBal);
+  const rowsAsc = [...rowsDesc].sort((a,b)=>rowTime(a)-rowTime(b));
+  const openingRow = findOpeningRow(rowsAsc);
+  const canShowReviseMulti = !!cfg.openingAllowOneRevision && openingRow && rowsDesc.length > 1;
+  let cfgUse = { ...cfg };
+  if (canShowReviseMulti){
+    await db.collection('investor_portfolio_config').doc(businessId).set({ openingAllowOneRevision: false }, { merge: true });
+    cfgUse.openingAllowOneRevision = false;
+  }
+  renderOpeningToolbar(rowsDesc, openingRow, cfgUse);
+  if (rowsDesc.length && !cfg.investorPhone) await ensurePortfolioPhone();
+  buildLedgerSumRow(rowsDesc);
+  const body = document.getElementById('ledgerBody');
+  body.innerHTML = rowsDesc.map((r)=>`<tr>
+    <td>${escapeHtml(r.entryDate || (r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toISOString().slice(0,10) : '-'))}</td>
+    <td>${escapeHtml(r.description)}</td>
+    <td class="ar">${m(r.capitalChange)}</td>
+    <td class="ar">${m(r.interestChange)}</td>
+    <td class="ar">${m(r.capitalBalance)}</td>
+    <td class="ar">${m(r.interestBalance)}</td>
+    <td>${escapeHtml(r.notes||'')}</td>
+  </tr>`).join('') || '<tr><td colspan="7" style="padding:14px;">Ledger හිස් — පහළින් ආරම්භක ගණන් සුරකින්න (සුරකළ පසු මෙම වගුවේ ඉහළින් පේළිය පෙනෙයි).</td></tr>';
+}
+firebase.auth().onAuthStateChanged(async (u)=>{
+  if(!u){location.href='/auth/login.html';return;}
+  const ctx = await window.dashboardCore.getContext(u);
+  businessId = String((ctx&&ctx.businessId)||u.uid);
+  await refresh();
+});
+</script>
+</body>
+</html>

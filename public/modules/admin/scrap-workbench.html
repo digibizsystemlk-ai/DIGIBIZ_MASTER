@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Scrap Workbench</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=58"></script>
+    <script src="../../core/event-validation.js?v=58"></script>
+    <script src="../../core/event-bus.js?v=58"></script>
+    <script src="../../core/accounts-core.js?v=58"></script>
+    <script src="../../core/auth-roles.js?v=58"></script>
+    <script src="../../core/business-types.js?v=58"></script>
+    <script src="../../core/dashboard-core.js?v=58"></script>
+    <script src="../../core/subscription-manager.js?v=58"></script>
+    <script src="../../core/sidebar.js?v=62"></script>
+    <script src="../../core/sms-wallet-core.js?v=4"></script>
+    <script src="../../core/scrap-vba-core.js?v=70"></script>
+    <style>
+        body{font-family:Inter,Segoe UI,sans-serif;background:#f5f7fb;color:#0f172a;}
+        .page{padding:20px;}
+        .card{background:#fff;border:1px solid #dbe4ee;border-radius:12px;padding:16px;margin-bottom:12px;}
+        table{width:100%;border-collapse:collapse;font-size:13px;}
+        th,td{padding:8px;border-bottom:1px solid #eef2f7;text-align:left;}
+        th{background:#f8fafc;}
+        .kpi{font-size:22px;font-weight:800;color:#0f3b2c;}
+        .small{font-size:12px;color:#64748b;}
+        input,button{padding:9px;border:1px solid #cbd5e1;border-radius:8px;}
+        button{background:#0f3b2c;color:#fff;border:none;cursor:pointer;}
+        .danger{background:#b91c1c;}
+        .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:10000;}
+        .modal-card{background:#fff;border-radius:12px;padding:14px;border:1px solid #dbe4ee;min-width:360px;max-width:540px;}
+        .summary-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:8px;margin-bottom:10px;}
+        .summary-card{border:1px solid #dbe4ee;border-radius:10px;padding:10px;background:#fff;}
+
+        .bill-workspace{display:flex;gap:14px;align-items:flex-start;}
+        .bill-left{width:560px;max-width:100%;}
+        .bill-right{flex:1;min-height:40px;}
+        .bill-sheet{border:1px solid #0f172a;border-radius:10px;background:#fff;overflow:hidden;}
+        .bill-head{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;border-bottom:1px solid #0f172a;}
+        .bill-meta{display:grid;grid-template-columns:120px 1fr;gap:6px 8px;align-items:center;font-size:12px;}
+        .bill-meta label{font-weight:700;}
+        .bill-meta input{padding:6px 8px;border:1px solid #94a3b8;border-radius:8px;font-size:12px;}
+        .bill-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;}
+        .bill-table{width:100%;border-collapse:collapse;font-size:12px;}
+        .bill-table th,.bill-table td{border:1px solid #0f172a;padding:6px;}
+        .bill-table th{background:#f8fafc;font-weight:800;}
+        .bill-table td:nth-child(2), .bill-table td:nth-child(3), .bill-table th:nth-child(2), .bill-table th:nth-child(3){text-align:right;}
+        .bill-table input{width:100%;padding:4px 6px;border:0;border-radius:0;text-align:right;outline:none;font-size:12px;}
+        .bill-foot{display:grid;grid-template-columns:1fr 220px;gap:10px;padding:10px;border-top:1px solid #0f172a;align-items:end;}
+        .bill-total{display:grid;grid-template-columns:120px 1fr;gap:6px 8px;align-items:center;font-size:12px;}
+        .bill-total label{font-weight:900;}
+        .bill-actions{display:flex;gap:8px;justify-content:flex-end;}
+        .bill-actions button{padding:8px 10px;}
+        .bill-muted{color:#64748b;font-size:12px;}
+
+        @media (max-width:980px){
+            .bill-workspace{flex-direction:column;}
+            .bill-left{width:100%;}
+            .bill-grid{grid-template-columns:1fr;}
+            .bill-foot{grid-template-columns:1fr;}
+            .bill-actions{justify-content:flex-start;}
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="card">
+        <h1 id="viewTitle">SCRAP WORKBENCH</h1>
+        <p class="small" id="viewDesc">VBA sheet style operational view.</p>
+        <div id="smsDebugBadge" class="small" style="margin-top:8px;display:none;padding:8px;border-radius:8px;"></div>
+    </div>
+    <div class="card" id="viewBody"></div>
+</div>
+<script>
+const OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+const VIEW_META = {
+    BILL: { title: 'BILL', desc: 'Create selling/billing entries (web equivalent).' },
+    STOCK: { title: 'STOCK', desc: 'Stock foundation list (65 items).' },
+    BUY: { title: 'BUY', desc: 'Supplier purchase history (horizontal sheet).' },
+    LOAN: { title: 'LOAN', desc: 'Loan control; use Scrap Debts for full management.' },
+    DAILYTR: { title: 'DAILYTR', desc: 'Daily transaction log view.' },
+    PERFORMANCE: { title: 'PERFORMANCE', desc: 'Performance summary from history.' },
+    RISK_MONITOR: { title: 'RISK_MONITOR', desc: 'Risk dashboard & daily recovery equivalent.' },
+    RWD: { title: 'RWD', desc: 'Rewards/bonus dashboard.' },
+    PT: { title: 'PT', desc: 'PT engine summary view.' }
+};
+
+function qView() {
+    const v = new URLSearchParams(window.location.search).get('view');
+    return (v || 'STOCK').toUpperCase();
+}
+function fmt(v) { return `LKR ${(Number(v)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`; }
+function smsSkipReasonText(code) {
+    if (code === 'event_disabled') return 'SMS skipped: event toggle is OFF.';
+    if (code === 'no_phone') return 'SMS skipped: customer phone number missing.';
+    if (code === 'wallet_exhausted') return 'SMS skipped: SMS wallet exhausted.';
+    if (code === 'quota_exhausted') return 'SMS skipped: Firestore quota exceeded (billing / daily limit).';
+    if (code === 'permission') return 'SMS skipped: permission denied for SMS queue.';
+    if (code === 'invalid_input') return 'SMS skipped: invalid phone/message input.';
+    if (code === 'db_unavailable') return 'SMS skipped: database unavailable.';
+    if (code === 'firestore_error') return 'SMS skipped: queue write failed (see detail below).';
+    return `SMS skipped: ${code || 'unknown reason'}`;
+}
+function showSmsDebug(result, extraReason) {
+    const el = document.getElementById('smsDebugBadge');
+    if (!el) return;
+    let ok = false;
+    let txt = '';
+    if (result && result.ok) {
+        ok = true;
+        if (result.via === 'rtdb_quota_fallback') {
+            txt = 'SMS queued via Realtime Database (Firestore write quota exceeded). Gateway app should send; cloud wallet was not debited — reconcile when Firestore is available again.';
+        } else if (result.fallback) {
+            txt = 'SMS queued via direct gateway fallback.';
+        } else {
+            txt = 'SMS queued successfully.';
+        }
+    } else {
+        txt = smsSkipReasonText(extraReason || (result && result.skipped));
+        if (result && result.error) {
+            txt += ' — ' + String(result.error);
+        }
+    }
+    el.style.display = 'block';
+    el.style.background = ok ? '#dcfce7' : '#fee2e2';
+    el.style.color = ok ? '#14532d' : '#7f1d1d';
+    el.style.border = `1px solid ${ok ? '#86efac' : '#fca5a5'}`;
+    el.textContent = txt;
+}
+
+async function renderSTOCK(body) {
+    const [snap] = await Promise.all([
+        db.collection('scrap_items').where('businessId','==',OWNER_UID).get(),
+    ]);
+    const rows = snap.docs.map(d=>({ id: d.id, ...d.data() })).sort((a,b)=>String(a.itemName||'').localeCompare(String(b.itemName||'')));
+    const unitCost = (r) => {
+        const cp = Number(r.costPrice);
+        if (Number.isFinite(cp) && cp > 0) return cp;
+        return 0;
+    };
+    const stockValue = rows.reduce((sum, r) => sum + ((Number(r.currentStock) || 0) * unitCost(r)), 0);
+    const totalSalesValue = rows.reduce((sum, r) => sum + ((Number(r.currentStock) || 0) * (Number(r.sellingPrice) || 0)), 0);
+    const expectedProfit = totalSalesValue - stockValue;
+    body.innerHTML = `<div class="summary-grid">
+      <div class="summary-card"><div class="small">Total Purchase Value</div><div class="kpi">${fmt(stockValue)}</div></div>
+      <div class="summary-card"><div class="small">Total Sales Value</div><div class="kpi">${fmt(totalSalesValue)}</div></div>
+      <div class="summary-card"><div class="small">Expected Profit on Stock</div><div class="kpi">${fmt(expectedProfit)}</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:10px;">
+      <input id="stockNewName" placeholder="Item Name">
+      <input id="stockNewQty" type="number" step="0.01" placeholder="Stock">
+      <input id="stockNewProfit" type="number" step="0.01" placeholder="Profit">
+      <input id="stockNewSell" type="number" step="0.01" placeholder="Sell Price">
+      <button id="stockAddBtn">Add Item</button>
+    </div>
+    <table><thead><tr><th>Item Name</th><th>Current Stock</th><th>Buying Price</th><th>Profit</th><th>Sell Price</th><th>Action</th></tr></thead><tbody>${
+        rows.map(r=>`<tr><td>${r.itemName||'-'}</td><td>${Number(r.currentStock||0)}</td><td>${Number(unitCost(r) || 0)}</td><td>${Number(r.profit||0)}</td><td>${Number(r.sellingPrice||0)}</td><td><button data-edit="${r.id}" style="padding:4px 8px;">Edit</button></td></tr>`).join('')
+        || '<tr><td colspan="6">No items</td></tr>'
+    }</tbody></table>`;
+    document.getElementById('stockAddBtn').addEventListener('click', async () => {
+        const itemName = String(document.getElementById('stockNewName').value || '').trim();
+        const currentStock = Number(document.getElementById('stockNewQty').value) || 0;
+        const profit = Number(document.getElementById('stockNewProfit').value) || 0;
+        const sellingPrice = Number(document.getElementById('stockNewSell').value) || 0;
+        if (!itemName) return alert('Item name is required.');
+        await db.collection('scrap_items').add({
+            businessId: OWNER_UID,
+            itemName,
+            currentStock,
+            profit,
+            sellingPrice,
+            costPrice: 0,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
+            await window.scrapVbaCore.syncInventoryAssetWithStock(OWNER_UID);
+        }
+        await renderSTOCK(body);
+    });
+    document.querySelectorAll('button[data-edit]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.edit;
+            const row = rows.find((r) => r.id === id);
+            if (!row) return;
+            const wrap = document.createElement('div');
+            wrap.className = 'modal';
+            wrap.innerHTML = `<div class="modal-card">
+                <h3 style="margin-bottom:8px;">Edit Item</h3>
+                <div class="small" style="margin-bottom:8px;">${row.itemName || '-'}</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+                    <input id="mQty" type="number" step="0.01" value="${Number(row.currentStock) || 0}">
+                    <input id="mProfit" type="number" step="0.01" value="${Number(row.profit) || 0}">
+                    <input id="mSell" type="number" step="0.01" value="${Number(row.sellingPrice) || 0}">
+                </div>
+                <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end;">
+                    <button id="mDelete" class="danger">Delete</button>
+                    <button id="mClose" style="background:#64748b;">Cancel</button>
+                    <button id="mSave">Save</button>
+                </div>
+            </div>`;
+            document.body.appendChild(wrap);
+            wrap.querySelector('#mClose').addEventListener('click', () => wrap.remove());
+            wrap.querySelector('#mSave').addEventListener('click', async () => {
+                const currentStock = Number(wrap.querySelector('#mQty').value) || 0;
+                const profit = Number(wrap.querySelector('#mProfit').value) || 0;
+                const sellingPrice = Number(wrap.querySelector('#mSell').value) || 0;
+                await db.collection('scrap_items').doc(id).update({
+                    currentStock, profit, sellingPrice,
+                    costPrice: Number(row.costPrice) > 0 ? Number(row.costPrice) : 0,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
+                    await window.scrapVbaCore.syncInventoryAssetWithStock(OWNER_UID);
+                }
+                wrap.remove();
+                await renderSTOCK(body);
+            });
+            wrap.querySelector('#mDelete').addEventListener('click', async () => {
+                if (!confirm('Delete this item?')) return;
+                await db.collection('scrap_items').doc(id).delete();
+                if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
+                    await window.scrapVbaCore.syncInventoryAssetWithStock(OWNER_UID);
+                }
+                wrap.remove();
+                await renderSTOCK(body);
+            });
+        });
+    });
+}
+
+async function renderBUY(body) {
+    const [buySnap, itemSnap] = await Promise.all([
+        db.collection('buying_history').where('businessId', '==', OWNER_UID).get(),
+        db.collection('scrap_items').where('businessId', '==', OWNER_UID).get()
+    ]);
+    const itemNames = itemSnap.docs.map((d) => String(d.data().itemName || '').trim()).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    const rows = buySnap.docs.map((d) => d.data())
+        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    body.innerHTML = `<div class="small" style="margin-bottom:8px;">Newest transactions on top. Item columns follow stock list.</div>
+      <div style="overflow:auto;border:1px solid #e2e8f0;border-radius:10px;">
+        <table style="min-width:${Math.max(1200, 750 + (itemNames.length * 110))}px;">
+          <thead>
+            <tr>
+              <th>Date</th><th>Name</th><th>Total Weight</th><th>Total Amount</th>
+              ${itemNames.map((n) => `<th>${n}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((r) => {
+                const weights = {};
+                (Array.isArray(r.items) ? r.items : []).forEach((line) => {
+                    weights[String(line.itemName || '').trim()] = Number(line.weight) || 0;
+                });
+                return `<tr>
+                  <td>${r.date ? new Date(r.date).toLocaleString() : '-'}</td>
+                  <td>${r.supplierName || '-'}</td>
+                  <td>${(Number(r.totalWeight) || 0).toFixed(2)}</td>
+                  <td>${fmt(r.totalAmount || 0)}</td>
+                  ${itemNames.map((name) => `<td>${(weights[name] || 0).toFixed(2)}</td>`).join('')}
+                </tr>`;
+            }).join('') || `<tr><td colspan="${4 + itemNames.length}">No buying history</td></tr>`}
+          </tbody>
+        </table>
+      </div>`;
+}
+
+async function renderDAILYTR(body) {
+    const [ev, buy, sell, journal, extSettle, advances] = await Promise.all([
+        db.collection('scrap_event_log').where('businessId','==',OWNER_UID).get(),
+        db.collection('buying_history').where('businessId','==',OWNER_UID).get(),
+        db.collection('selling_history').where('businessId','==',OWNER_UID).get(),
+        db.collection('journal').doc(OWNER_UID).collection('entries').get(),
+        db.collection('scrap_external_settlements').where('businessId','==',OWNER_UID).get(),
+        db.collection('scrap_advances').where('businessId','==',OWNER_UID).get()
+    ]);
+    const events = [];
+    const minDate = new Date();
+    minDate.setDate(minDate.getDate() - 60);
+    ev.forEach(d=>events.push({t:'EVENT',dt:d.data().createdAt?.toDate?.()?.toISOString()||'',d:d.data(),refType:''}));
+    buy.forEach(d=>events.push({t:'BUY',dt:String(d.data().date||''),d:d.data(),refType:'SCRAP_BUYING'}));
+    sell.forEach(d=>events.push({t:'SELL',dt:String(d.data().date||''),d:d.data(),refType:'SCRAP_BILL'}));
+    extSettle.forEach((d) => {
+        const row = d.data();
+        events.push({
+            t: 'EXT',
+            dt: String(row.date || ''),
+            d: {
+                action: 'EXTERNAL_SETTLEMENT',
+                detail: `${row.customerName || '-'} (${row.note || ''})`,
+                amount: Number(row.amount) || 0
+            },
+            refType: 'SCRAP_EXT_SETTLEMENT'
+        });
+    });
+    advances.forEach((d) => {
+        const row = d.data();
+        const at = row.updatedAt?.toDate ? row.updatedAt.toDate().toISOString() : '';
+        events.push({
+            t: 'ADV',
+            dt: at,
+            d: {
+                action: 'ADVANCE_BALANCE',
+                detail: `${row.customerName || '-'} (${row.note || ''})`,
+                amount: Number(row.amount) || 0
+            },
+            refType: 'SCRAP_ADVANCE_BALANCE'
+        });
+    });
+    journal.forEach((d) => {
+        const row = d.data();
+        events.push({
+            t: 'ACC',
+            dt: row.date?.toDate ? row.date.toDate().toISOString() : '',
+            d: {
+                action: row.referenceType || 'JOURNAL',
+                detail: row.description || '',
+                amount: Number(row.totalDebit) || 0
+            },
+            refType: String(row.referenceType || '')
+        });
+    });
+    events.sort((a,b)=>String(b.dt).localeCompare(String(a.dt)));
+    const typeOptions = ['ALL', 'EVENT', 'BUY', 'SELL', 'EXT', 'ADV', 'ACC'];
+    const refTypes = Array.from(new Set(events.map((e) => String(e.refType || '').trim()).filter(Boolean))).sort();
+    const todayIso = new Date().toISOString().slice(0, 10);
+    body.innerHTML = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+        <select id="dailyTypeFilter">${typeOptions.map((t) => `<option value="${t}">${t}</option>`).join('')}</select>
+        <select id="dailyRefFilter"><option value="ALL">ALL_REF_TYPES</option>${refTypes.map((r) => `<option value="${r}">${r}</option>`).join('')}</select>
+        <input id="dailyFromDate" type="date" value="${todayIso}">
+        <input id="dailyToDate" type="date" value="${todayIso}">
+        <button id="dailyExportBtn" style="background:#2563eb;">Export CSV</button>
+        <div class="small">Rows: <b id="dailyRowsCount">${events.length}</b></div>
+        <div class="small">Total: <b id="dailyRowsTotal">${fmt(0)}</b></div>
+      </div>
+      <table><thead><tr><th>Time</th><th>Type</th><th>Detail</th><th>Amount</th></tr></thead><tbody id="dailyTrBody"></tbody></table>`;
+    const filteredRows = () => {
+        const selected = document.getElementById('dailyTypeFilter').value;
+        const refSelected = document.getElementById('dailyRefFilter').value;
+        const from = document.getElementById('dailyFromDate').value;
+        const to = document.getElementById('dailyToDate').value;
+        return events.filter((r) => {
+            if (!r.dt) return false;
+            const stamp = new Date(r.dt);
+            if (Number.isNaN(stamp.getTime()) || stamp < minDate) return false;
+            if (selected !== 'ALL' && r.t !== selected) return false;
+            if (refSelected !== 'ALL' && String(r.refType || '') !== refSelected) return false;
+            if (!from && !to) return true;
+            const day = String(r.dt).slice(0, 10);
+            if (from && day < from) return false;
+            if (to && day > to) return false;
+            return true;
+        });
+    };
+    const renderRows = () => {
+        const rows = filteredRows();
+        document.getElementById('dailyRowsCount').textContent = rows.length;
+        const total = rows.reduce((sum, r) => sum + (Number(r.d.totalAmount || r.d.amount || 0)), 0);
+        document.getElementById('dailyRowsTotal').textContent = fmt(total);
+        document.getElementById('dailyTrBody').innerHTML = rows.slice(0, 300).map((r) => {
+            const detail = r.d.action || r.d.supplierName || r.d.customerName || r.d.detail || '-';
+            const amount = Number(r.d.totalAmount || r.d.amount || 0);
+            const isOut = ['BUY','ADV'].includes(r.t) || String(r.refType || '').includes('COGS');
+            const sign = amount ? (isOut ? `- ${fmt(amount)}` : `+ ${fmt(amount)}`) : '-';
+            const color = isOut ? '#b91c1c' : '#15803d';
+            return `<tr><td>${r.dt || '-'}</td><td>${r.t}</td><td>${detail}</td><td style="color:${amount ? color : '#0f172a'};font-weight:${amount ? '700' : '400'};">${sign}</td></tr>`;
+        }).join('') || '<tr><td colspan="4">No transactions</td></tr>';
+    };
+    document.getElementById('dailyTypeFilter').addEventListener('change', renderRows);
+    document.getElementById('dailyRefFilter').addEventListener('change', renderRows);
+    document.getElementById('dailyFromDate').addEventListener('change', renderRows);
+    document.getElementById('dailyToDate').addEventListener('change', renderRows);
+    document.getElementById('dailyExportBtn').addEventListener('click', () => {
+        const rows = filteredRows();
+        const csv = ['time,type,detail,amount'].concat(rows.map((r) => {
+            const detail = String(r.d.action || r.d.supplierName || r.d.customerName || r.d.detail || '-').replace(/"/g, '""');
+            const amount = Number(r.d.totalAmount || r.d.amount || 0);
+            return `"${r.dt || ''}","${r.t}","${detail}",${amount}`;
+        })).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `dailytr_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    });
+    renderRows();
+}
+
+async function renderPERFORMANCE(body) {
+    const snap = await db.collection('buying_history').where('businessId','==',OWNER_UID).get();
+    let totalA=0,totalW=0,count=0;
+    snap.forEach(d=>{const r=d.data();totalA+=Number(r.totalAmount)||0;totalW+=Number(r.totalWeight)||0;count++;});
+    body.innerHTML = `<div class="kpi">${fmt(totalA)}</div><div class="small">Total Buying Value</div>
+        <div class="kpi" style="margin-top:10px;">${totalW.toFixed(2)} kg</div><div class="small">Total Buying Weight</div>
+        <div class="kpi" style="margin-top:10px;">${count}</div><div class="small">Buying Sessions</div>`;
+}
+
+async function renderRWD(body) {
+    const summary = await window.scrapVbaCore.getSupplierRewardSummary(OWNER_UID);
+    const top = summary?.topSupplier;
+    const bonus = summary?.annualBonus || [];
+    body.innerHTML = `<div><b>Weekly Top Supplier:</b> ${top ? `${top.name} (${Number(top.weight).toFixed(2)}kg)` : 'N/A'}</div>
+      <table style="margin-top:10px;"><thead><tr><th>Supplier</th><th>Weight</th><th>Bonus</th></tr></thead><tbody>${
+        bonus.slice(0,30).map(r=>`<tr><td>${r.supplierName}</td><td>${Number(r.totalWeight).toFixed(2)}</td><td>${fmt(r.bonus)}</td></tr>`).join('')
+        || '<tr><td colspan="3">No bonus data</td></tr>'
+      }</tbody></table>`;
+}
+
+async function renderRISK(body) {
+    const [loanSnap, queueSnap, buySnap, sellSnap] = await Promise.all([
+        db.collection('scrap_loans').where('businessId','==',OWNER_UID).where('active','==',true).get(),
+        db.collection('scrap_recovery_queue').where('businessId','==',OWNER_UID).get(),
+        db.collection('buying_history').where('businessId','==',OWNER_UID).get(),
+        db.collection('selling_history').where('businessId','==',OWNER_UID).get()
+    ]);
+    const buyRows = buySnap.docs.map((d) => d.data());
+    const sellRows = sellSnap.docs.map((d) => d.data());
+    const risky = [];
+    loanSnap.forEach((d) => {
+        const r = d.data();
+        const lastSupplyAt = r.lastSupplyAt ? new Date(r.lastSupplyAt).getTime() : 0;
+        const daysSinceSupply = lastSupplyAt ? Math.floor((Date.now() - lastSupplyAt) / (24 * 60 * 60 * 1000)) : 999;
+        const riskMeta = window.scrapVbaCore.riskStatusByDays(daysSinceSupply);
+        risky.push({
+            ...r,
+            daysSinceSupply,
+            status: riskMeta.status,
+            risk: riskMeta.risk,
+            color: riskMeta.color
+        });
+    });
+    risky.sort((a, b) => {
+        const byPriority = Number(window.scrapVbaCore.riskPriority(b.status)) - Number(window.scrapVbaCore.riskPriority(a.status));
+        if (byPriority !== 0) return byPriority;
+        const byDebt = Number(b.balance || 0) - Number(a.balance || 0);
+        if (byDebt !== 0) return byDebt;
+        return Number(b.daysSinceSupply || 0) - Number(a.daysSinceSupply || 0);
+    });
+    const state = { filter: 'ALL' };
+    function byFilter(rows) {
+        if (state.filter === 'ALL') return rows;
+        if (state.filter === 'SAFE') return rows.filter((r) => r.status === 'ACTIVE' || r.status === 'WARNING');
+        if (state.filter === 'BLOCKED') return rows.filter((r) => r.status === 'BLOCKED');
+        if (state.filter === 'CRITICAL') return rows.filter((r) => r.status === 'CRITICAL');
+        return rows;
+    }
+    function customerSpark(name) {
+        const points = [];
+        buyRows.forEach((r) => {
+            if (String(r.supplierName || '').trim() === name) {
+                points.push({ t: String(r.date || ''), v: Number(r.totalAmount || 0), type: 'BUY' });
+            }
+        });
+        sellRows.forEach((r) => {
+            if (String(r.customerName || '').trim() === name) {
+                points.push({ t: String(r.date || ''), v: Number(r.totalAmount || 0), type: 'SELL' });
+            }
+        });
+        points.sort((a, b) => String(a.t).localeCompare(String(b.t)));
+        return points.slice(-8);
+    }
+    function renderTable() {
+        const rows = byFilter(risky);
+        document.getElementById('riskRows').innerHTML = rows.map((r, idx) =>
+            `<tr data-name="${(r.customerName || '').replace(/"/g, '&quot;')}">
+                <td>${idx + 1}</td>
+                <td>${r.customerName||'-'}</td>
+                <td>${r.loanType||'-'}</td>
+                <td>${fmt(r.balance)}</td>
+                <td>${r.daysSinceSupply}</td>
+                <td><span style="display:inline-block;padding:2px 8px;border-radius:999px;background:${r.color};color:white;font-size:11px;">${r.status}</span></td>
+                <td>${r.risk}</td>
+                <td>${r.promiseDate ? new Date(r.promiseDate).toLocaleDateString() : '-'}</td>
+                <td><button data-promise="${(r.customerName || '').replace(/"/g, '&quot;')}" style="padding:4px 8px;">Promise</button></td>
+            </tr>`
+        ).join('') || '<tr><td colspan="9">No risk data</td></tr>';
+        document.querySelectorAll('button[data-promise]').forEach((btn) => {
+            btn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                const cName = btn.dataset.promise;
+                const raw = prompt(`Set promise date for ${cName} (YYYY-MM-DD):`);
+                if (!raw) return;
+                const pDate = new Date(raw);
+                if (Number.isNaN(pDate.getTime())) return alert('Invalid date format.');
+                const targets = loanSnap.docs.filter((d) => String(d.data().customerName || '').trim() === cName);
+                for (const doc of targets) {
+                    await doc.ref.update({
+                        promiseDate: pDate.toISOString(),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+                await window.scrapVbaCore.logEvent(OWNER_UID, 'RISK_PROMISE_DATE', `${cName} ${pDate.toISOString().slice(0, 10)}`, 'Admin');
+                await renderRISK(body);
+            });
+        });
+        document.querySelectorAll('#riskRows tr[data-name]').forEach((rowEl) => {
+            rowEl.addEventListener('click', () => {
+                const cName = rowEl.dataset.name;
+                const points = customerSpark(cName);
+                document.getElementById('riskHistoryTitle').textContent = `History: ${cName}`;
+                document.getElementById('riskHistoryBody').innerHTML = points.map((p) =>
+                    `<tr><td>${p.t ? new Date(p.t).toLocaleString() : '-'}</td><td>${p.type}</td><td>${fmt(p.v)}</td></tr>`
+                ).join('') || '<tr><td colspan="3">No BUY/SELL history</td></tr>';
+            });
+        });
+    }
+    const critical = risky.filter((r) => r.status === 'CRITICAL').length;
+    const blocked = risky.filter((r) => r.status === 'BLOCKED').length;
+    const safe = risky.filter((r) => r.status === 'ACTIVE' || r.status === 'WARNING').length;
+    body.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="runRecoveryBtn">Run Daily Recovery</button>
+        <button id="sendPromiseReminderBtn" style="background:#7c3aed;">Send Promise Reminders</button>
+        <button data-filter="ALL" style="background:#2563eb;">SHOW ALL</button>
+        <button data-filter="SAFE" style="background:#16a34a;">SAFE</button>
+        <button data-filter="BLOCKED" style="background:#dc2626;">BLOCKED</button>
+        <button data-filter="CRITICAL" style="background:#111827;">CRITICAL</button>
+        <button id="toggleQueueBtn" style="background:#0ea5e9;">QUEUE</button>
+        <div class="small" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">SAFE: <b>${safe}</b></div>
+        <div class="small" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">CRITICAL: <b>${critical}</b></div>
+        <div class="small" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">BLOCKED: <b>${blocked}</b></div>
+        <div class="small" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">Queue: <b>${queueSnap.size}</b></div>
+      </div>
+      <table style="margin-top:10px;"><thead><tr><th>#</th><th>Customer</th><th>Type</th><th>Balance</th><th>Days</th><th>Status</th><th>Risk</th><th>Promise Date</th><th>Action</th></tr></thead><tbody id="riskRows"></tbody></table>
+      <div id="queuePanel" style="display:none;margin-top:12px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;">
+        <div style="font-weight:700;">Recovery Queue</div>
+        <table style="margin-top:8px;"><thead><tr><th>Created</th><th>Customer</th><th>Status</th><th>Risk</th><th>Balance</th></tr></thead><tbody id="queueRows">${
+            queueSnap.docs.map((q) => {
+                const r = q.data();
+                const at = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : '-';
+                return `<tr><td>${at}</td><td>${r.customerName || '-'}</td><td>${r.status || '-'}</td><td>${r.risk || '-'}</td><td>${fmt(r.balance)}</td></tr>`;
+            }).join('') || '<tr><td colspan="5">No queue data</td></tr>'
+        }</tbody></table>
+      </div>
+      <div style="margin-top:12px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;">
+        <div id="riskHistoryTitle" style="font-weight:700;">History: (click customer row)</div>
+        <table style="margin-top:8px;"><thead><tr><th>Time</th><th>Type</th><th>Amount</th></tr></thead><tbody id="riskHistoryBody"><tr><td colspan="3">No customer selected</td></tr></tbody></table>
+      </div>`;
+    document.getElementById('runRecoveryBtn').addEventListener('click', async ()=>{
+        const result = await window.scrapVbaCore.runDailyRecovery(OWNER_UID);
+        alert(`Daily recovery queued: ${Number(result?.queued)||0}`);
+        await renderRISK(body);
+    });
+    document.querySelectorAll('button[data-filter]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            state.filter = btn.dataset.filter;
+            renderTable();
+        });
+    });
+    document.getElementById('sendPromiseReminderBtn').addEventListener('click', async () => {
+        const result = await window.scrapVbaCore.sendPromiseReminders(OWNER_UID);
+        if (result && result.disabled) showSmsDebug(null, 'event_disabled');
+        alert(`Promise reminders sent: ${Number(result?.sent) || 0}`);
+    });
+    document.getElementById('toggleQueueBtn').addEventListener('click', () => {
+        const panel = document.getElementById('queuePanel');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    renderTable();
+}
+
+async function renderPT(body) {
+    const [buy, sell, extSettle] = await Promise.all([
+        db.collection('buying_history').where('businessId','==',OWNER_UID).get(),
+        db.collection('selling_history').where('businessId','==',OWNER_UID).get(),
+        db.collection('scrap_external_settlements').where('businessId','==',OWNER_UID).get()
+    ]);
+    let b=0,s=0; buy.forEach(d=>b+=Number(d.data().totalAmount)||0); sell.forEach(d=>s+=Number(d.data().totalAmount)||0);
+    let revenue = 0;
+    let cogs = 0;
+    let expenses = 0;
+    let flatLines = [];
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.getFlattenedJournalLines === 'function') {
+        flatLines = await window.scrapVbaCore.getFlattenedJournalLines(OWNER_UID);
+    } else {
+        const journal = await db.collection('journal').doc(OWNER_UID).collection('entries').get();
+        journal.forEach((doc) => {
+            (doc.data().entries || []).forEach((line) => flatLines.push(line));
+        });
+    }
+    flatLines.forEach((line) => {
+        const name = String(line.accountName || '').toLowerCase();
+        const debit = Number(line.debit) || 0;
+        const credit = Number(line.credit) || 0;
+        if (name.includes('revenue') || name.includes('income')) revenue += (credit - debit);
+        if (name.includes('cost of goods sold') || name.includes('cogs')) cogs += (debit - credit);
+        if (name.includes('expense')) expenses += (debit - credit);
+    });
+    let extNet = 0;
+    extSettle.forEach((d) => { extNet += Number(d.data().amount) || 0; });
+    const accountingNet = revenue - cogs - expenses;
+    body.innerHTML = `<div class="kpi">${fmt(b)}</div><div class="small">Operational Buying Total</div>
+      <div class="kpi" style="margin-top:10px;">${fmt(s)}</div><div class="small">Operational Selling Total</div>
+      <div class="kpi" style="margin-top:10px;">${fmt(s-b)}</div><div class="small">Operational PT Net</div>
+      <div class="kpi" style="margin-top:10px;">${fmt(extNet)}</div><div class="small">External Settlement Net</div>
+      <hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0;">
+      <div class="kpi">${fmt(revenue)}</div><div class="small">Accounting Revenue</div>
+      <div class="kpi" style="margin-top:10px;">${fmt(cogs + expenses)}</div><div class="small">Accounting Costs</div>
+      <div class="kpi" style="margin-top:10px;">${fmt(accountingNet)}</div><div class="small">Accounting PT Net</div>`;
+}
+
+async function renderBILL(body) {
+    const itemSnap = await db.collection('scrap_items').where('businessId', '==', OWNER_UID).get();
+    const itemRows = itemSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => String(a.itemName || '').localeCompare(String(b.itemName || '')));
+    const mid = Math.ceil(itemRows.length / 2);
+    const leftRows = itemRows.slice(0, mid);
+    const rightRows = itemRows.slice(mid);
+
+    const renderTable = (rows) => `
+        <table class="bill-table">
+            <thead><tr><th style="width:58%;">ITEM</th><th style="width:20%;">WEIGHT</th><th style="width:22%;">AMOUNT</th></tr></thead>
+            <tbody>
+                ${rows.map((r) => {
+                    const price = Number(r.sellingPrice) || 0;
+                    return `<tr>
+                        <td>${String(r.itemName || '-').replace(/</g,'&lt;')}</td>
+                        <td><input inputmode="decimal" data-w="${r.id}" data-price="${price}" placeholder="0"></td>
+                        <td><input inputmode="decimal" data-a="${r.id}" placeholder="0" readonly></td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>`;
+
+    body.innerHTML = `
+        <div class="bill-workspace">
+            <div class="bill-left">
+                <div class="bill-muted">Bill view: items are split into two columns. Left aligned layout leaves space on the right for future details.</div>
+                <div class="bill-sheet" style="margin-top:10px;">
+                    <div class="bill-head">
+                        <div class="bill-meta">
+                            <label>Customer</label>
+                            <div>
+                                <input id="billCustomer" list="billCustomerList" placeholder="Customer name">
+                                <datalist id="billCustomerList"></datalist>
+                            </div>
+                            <label>Phone</label><input id="billPhone" placeholder="07xxxxxxxx">
+                        </div>
+                        <div class="bill-meta">
+                            <label>Date</label><input id="billDate" value="${new Date().toISOString().slice(0, 10)}">
+                            <label>Bill No</label><input id="billNo" placeholder="Optional">
+                        </div>
+                    </div>
+                    <div class="bill-grid">
+                        <div>${renderTable(leftRows)}</div>
+                        <div>${renderTable(rightRows)}</div>
+                    </div>
+                    <div class="bill-foot">
+                        <div class="bill-total">
+                            <label>Total Weight</label><input id="billTotalWeight" readonly value="0.00">
+                            <label>Total Amount</label><input id="billTotalAmount" readonly value="0.00">
+                        </div>
+                        <div class="bill-actions">
+                            <button id="billClearBtn" style="background:#64748b;">Clear</button>
+                            <button id="saveBillBtn">Save BILL</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="bill-right"></div>
+        </div>`;
+
+    function recalcTotals() {
+        let tw = 0;
+        let ta = 0;
+        body.querySelectorAll('input[data-w]').forEach((el) => {
+            const w = Number(el.value) || 0;
+            const price = Number(el.dataset.price) || 0;
+            const amt = w * price;
+            tw += w;
+            ta += amt;
+            const out = body.querySelector(`input[data-a="${el.dataset.w}"]`);
+            if (out) out.value = amt ? amt.toFixed(2) : '';
+        });
+        const tWeight = body.querySelector('#billTotalWeight');
+        const tAmount = body.querySelector('#billTotalAmount');
+        if (tWeight) tWeight.value = tw.toFixed(2);
+        if (tAmount) tAmount.value = ta.toFixed(2);
+    }
+
+    body.querySelectorAll('input[data-w]').forEach((el) => {
+        el.addEventListener('input', recalcTotals);
+        el.addEventListener('keydown', (ev) => {
+            if (ev.key !== 'Enter') return;
+            ev.preventDefault();
+            const all = Array.from(body.querySelectorAll('input[data-w]'));
+            const idx = all.indexOf(el);
+            const next = all[idx + 1];
+            if (next) next.focus();
+        });
+    });
+
+    document.getElementById('billClearBtn').addEventListener('click', () => {
+        body.querySelectorAll('input[data-w], input[data-a]').forEach((el) => (el.value = ''));
+        recalcTotals();
+        const c = body.querySelector('#billCustomer');
+        if (c) c.focus();
+    });
+
+    const customersByName = {};
+    try {
+        const snap = await db.collection('customers').where('businessId', '==', OWNER_UID).limit(500).get();
+        const listEl = document.getElementById('billCustomerList');
+        if (listEl) {
+            listEl.innerHTML = snap.docs.map((d) => {
+                const row = d.data() || {};
+                const name = String(row.fullName || '').trim();
+                if (!name) return '';
+                customersByName[name.toLowerCase()] = row;
+                return `<option value="${name.replace(/\"/g, '&quot;')}"></option>`;
+            }).join('');
+        }
+    } catch (e) {
+        console.warn('BILL customers load', e);
+    }
+
+    const customerInput = document.getElementById('billCustomer');
+    if (customerInput) {
+        customerInput.addEventListener('change', () => {
+            const key = String(customerInput.value || '').trim().toLowerCase();
+            const row = customersByName[key];
+            if (row && row.mobile && !String(document.getElementById('billPhone').value || '').trim()) {
+                document.getElementById('billPhone').value = String(row.mobile);
+            }
+        });
+    }
+
+    document.getElementById('saveBillBtn').addEventListener('click', async ()=>{
+        const customerName = String(document.getElementById('billCustomer').value||'').trim();
+        const billDate = String(document.getElementById('billDate').value || '').trim();
+        const billNo = String(document.getElementById('billNo').value || '').trim();
+        const phoneInput = String(document.getElementById('billPhone').value || '').trim();
+        if(!customerName) return alert('Customer is required.');
+
+        const weightsById = {};
+        body.querySelectorAll('input[data-w]').forEach((el) => { weightsById[el.dataset.w] = Number(el.value) || 0; });
+        const lines = itemRows.map((item) => {
+            const qty = Number(weightsById[item.id]) || 0;
+            if (!qty) return null;
+            const sellPrice = Number(item.sellingPrice) || 0;
+            const cp = Number(item.costPrice);
+            const costPrice = (Number.isFinite(cp) && cp > 0) ? cp : 0;
+            return { itemId: item.id, itemName: item.itemName || '', qty, sellPrice, amount: qty * sellPrice, cogs: qty * costPrice };
+        }).filter(Boolean);
+
+        if (!lines.length) return alert('Enter at least one weight.');
+
+        let cogsAmount = 0;
+        for (const line of lines) {
+            const ref = db.collection('scrap_items').doc(line.itemId);
+            const snap = await ref.get();
+            if (!snap.exists) continue;
+            const row = snap.data();
+            const currentStock = Number(row.currentStock) || 0;
+            const nextStock = currentStock - (Number(line.qty) || 0);
+            const cp = Number(row.costPrice);
+            const cost = (Number.isFinite(cp) && cp > 0) ? cp : 0;
+            cogsAmount += (Number(line.qty) || 0) * cost;
+            await ref.update({
+                currentStock: nextStock,
+                totalBuyingValue: nextStock * cost,
+                totalSellingValue: nextStock * (Number(row.sellingPrice) || 0),
+                potentialProfitValue: nextStock * (Number(row.profit) || 0),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        const totalAmount = lines.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const totalWeight = lines.reduce((s, r) => s + (Number(r.qty) || 0), 0);
+
+        await db.collection('selling_history').add({
+            businessId: OWNER_UID,
+            customerName,
+            phone: phoneInput,
+            billNo,
+            billDate,
+            totalWeight,
+            totalAmount,
+            items: lines,
+            cogsAmount,
+            date: new Date().toISOString(),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+            await window.scrapVbaCore.postJournalEntry(OWNER_UID, {
+                description: `Scrap BILL - ${customerName}`,
+                reference: customerName,
+                referenceType: 'SCRAP_BILL',
+                date: new Date().toISOString(),
+                entries: [
+                    { accountCode: '1-1010-01', accountName: 'Cash', debit: totalAmount, credit: 0 },
+                    { accountCode: '4-4010-01', accountName: 'Scrap Sales Revenue', debit: 0, credit: totalAmount }
+                ]
+            });
+            if (cogsAmount > 0) {
+                await window.scrapVbaCore.postJournalEntry(OWNER_UID, {
+                    description: `Scrap BILL COGS - ${customerName}`,
+                    reference: customerName,
+                    referenceType: 'SCRAP_BILL_COGS',
+                    date: new Date().toISOString(),
+                    entries: [
+                        { accountCode: '5-5010-01', accountName: 'Cost of Goods Sold', debit: cogsAmount, credit: 0 },
+                        { accountCode: '1-1030-01', accountName: 'Scrap Inventory', debit: 0, credit: cogsAmount }
+                    ]
+                });
+            }
+        }
+
+        const [customerSnap, settingsSnap] = await Promise.all([
+            db.collection('scrap_customers').where('businessId', '==', OWNER_UID).where('name', '==', customerName).limit(1).get(),
+            db.collection('scrap_sms_settings').doc(OWNER_UID).get()
+        ]);
+        if (window.scrapVbaCore && (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function' || typeof window.scrapVbaCore.enqueuePendingSms === 'function')) {
+            const enabled = window.scrapVbaCore.isScrapSmsEventEnabled
+                ? await window.scrapVbaCore.isScrapSmsEventEnabled(OWNER_UID, 'bill')
+                : false;
+            if (enabled && !customerSnap.empty) {
+                const customer = customerSnap.docs[0].data();
+                const settings = settingsSnap.exists ? settingsSnap.data() : {};
+                const defaultSettlement = window.scrapVbaCore.buildSettlementMessage(customerName, totalAmount);
+                const tpl = String(settings.tplSettlement || defaultSettlement);
+                const msg = window.scrapVbaCore.renderTemplate
+                    ? window.scrapVbaCore.renderTemplate(tpl, {
+                        name: customerName,
+                        amount: `Rs. ${Math.round(totalAmount).toLocaleString()}/=`,
+                        direction: 'you have to pay us',
+                        date: new Date().toLocaleString()
+                    })
+                    : defaultSettlement;
+                const targetPhone = phoneInput || customer?.phone;
+                if (targetPhone) {
+                    const smsRes = await (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function'
+                        ? window.scrapVbaCore.enqueuePendingSmsForScrap(targetPhone, msg)
+                        : window.scrapVbaCore.enqueuePendingSms(OWNER_UID, targetPhone, msg));
+                    showSmsDebug(smsRes);
+                } else {
+                    showSmsDebug(null, 'no_phone');
+                }
+            } else {
+                showSmsDebug(null, enabled ? 'no_phone' : 'event_disabled');
+            }
+        }
+
+        await window.scrapVbaCore.logEvent(OWNER_UID,'BILL_SAVE',`${customerName} ${totalAmount}`,'Admin');
+        if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
+            await window.scrapVbaCore.syncInventoryAssetWithStock(OWNER_UID);
+        }
+        alert('BILL saved.');
+        document.getElementById('billClearBtn').click();
+    });
+}
+
+async function renderLOAN(body) {
+    const snap = await db.collection('scrap_loans').where('businessId','==',OWNER_UID).where('active','==',true).get();
+    const rows = snap.docs.map(d=>d.data());
+    body.innerHTML = `<div><a href="/modules/admin/scrap-debts.html" style="text-decoration:none;">Open Full LOAN Manager</a></div>
+      <table style="margin-top:10px;"><thead><tr><th>Customer</th><th>Type</th><th>Balance</th></tr></thead><tbody>${
+        rows.map(r=>`<tr><td>${r.customerName||'-'}</td><td>${r.loanType||'-'}</td><td>${fmt(r.balance)}</td></tr>`).join('')
+        || '<tr><td colspan="3">No loans</td></tr>'
+      }</tbody></table>`;
+}
+
+async function renderView(view) {
+    const meta = VIEW_META[view] || VIEW_META.STOCK;
+    document.getElementById('viewTitle').textContent = meta.title;
+    document.getElementById('viewDesc').textContent = meta.desc;
+    const body = document.getElementById('viewBody');
+    if (view === 'BILL') return renderBILL(body);
+    if (view === 'STOCK') return renderSTOCK(body);
+    if (view === 'BUY') return renderBUY(body);
+    if (view === 'LOAN') return renderLOAN(body);
+    if (view === 'DAILYTR') return renderDAILYTR(body);
+    if (view === 'PERFORMANCE') return renderPERFORMANCE(body);
+    if (view === 'RISK_MONITOR') return renderRISK(body);
+    if (view === 'RWD') return renderRWD(body);
+    if (view === 'PT') return renderPT(body);
+    return renderSTOCK(body);
+}
+
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '../../auth/login.html'; return; }
+    const userDoc = await db.collection('users').doc(user.uid).get();
+    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    const bizDoc = await db.collection('businesses').doc(businessId).get();
+    const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
+    if (user.uid !== OWNER_UID || businessType !== 'scrap_collection_center') {
+        window.location.href = '/modules/core/dashboard.html';
+        return;
+    }
+    if (window.scrapVbaCore) {
+        const dayKey = new Date().toISOString().slice(0, 10);
+        const autoKey = `scrapWorkbookAuto_${OWNER_UID}_${dayKey}`;
+        if (!localStorage.getItem(autoKey)) {
+            await window.scrapVbaCore.calculateAllDailyInterest(OWNER_UID);
+            await window.scrapVbaCore.checkClosedLoans(OWNER_UID);
+            await window.scrapVbaCore.runDailyRecovery(OWNER_UID);
+            await window.scrapVbaCore.sendPromiseReminders(OWNER_UID);
+            localStorage.setItem(autoKey, '1');
+        }
+    }
+    await renderView(qView());
+});
+</script>
+</body>
+</html>

@@ -2,6 +2,7 @@
 <html lang="si">
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Super Admin - DIGIBIZ</title>
     
@@ -12,6 +13,7 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
     
     <script src="../core/firebase-init.js?v=30"></script>
+    <script src="../core/sms-wallet-core.js?v=4"></script>
     <script src="../core/event-bus.js?v=4"></script>
     <script src="../core/auth-roles.js?v=30"></script>
     <script src="../core/business-types.js?v=4"></script>
@@ -155,6 +157,17 @@
                         <tr><td>VAT Rate</td><td><input type="number" id="sysTax" value="0" style="width:100px;padding:8px;"> %</td></tr>
                         <tr><td></td><td><button class="btn-primary" id="saveSettings">Save Changes</button></td></tr>
                     </table>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:20px;">
+                <div class="card-header"><h3><i class="fas fa-sms"></i> SMS paid credits (any business)</h3></div>
+                <div class="card-body" style="padding:18px 22px;">
+                    <p style="font-size:13px;color:#64748b;margin:0 0 12px;">Adds to <b>paidSmsBalance</b> in Settings. Each SMS uses <b>1 credit</b>.</p>
+                    <input type="text" id="superSmsBizId" placeholder="Business ID" style="width:100%;max-width:440px;padding:10px;border:1px solid #e9ecef;border-radius:8px;margin-bottom:10px;display:block;">
+                    <input type="number" id="superSmsCredits" placeholder="Credits" min="1" style="width:100%;max-width:200px;padding:10px;border:1px solid #e9ecef;border-radius:8px;margin-bottom:10px;display:block;">
+                    <button class="btn-primary" type="button" id="superSmsAddBtn">Add credits</button>
+                    <p id="superSmsMsg" style="font-size:13px;margin-top:10px;color:#334155;"></p>
                 </div>
             </div>
         </div>
@@ -496,6 +509,59 @@
         document.getElementById('saveBizBtn').onclick = addBusiness;
         
         document.getElementById('saveSettings').onclick = saveSettings;
+
+        const superSmsAddBtn = document.getElementById('superSmsAddBtn');
+        if (superSmsAddBtn) {
+            superSmsAddBtn.onclick = async () => {
+                const msgEl = document.getElementById('superSmsMsg');
+                const bid = String(document.getElementById('superSmsBizId').value || '').trim();
+                const credits = Number(document.getElementById('superSmsCredits').value || 0);
+                if (!bid || credits <= 0) {
+                    msgEl.textContent = 'Enter business ID and a positive credit amount.';
+                    msgEl.style.color = '#dc2626';
+                    return;
+                }
+                const settingsRef = db.collection('settings').doc(bid);
+                try {
+                    await db.runTransaction(async (tx) => {
+                        const snap = await tx.get(settingsRef);
+                        const data = snap.exists ? (snap.data() || {}) : {};
+                        const wallet = data.smsWallet || {};
+                        if (!window.SmsWalletCore) throw new Error('SMS wallet module not loaded');
+                        const base = window.SmsWalletCore.withExpiredTrialZeroed(
+                            window.SmsWalletCore.normalizeWallet(wallet, data.smsBalance)
+                        );
+                        const newPaid = Number(base.paidSmsBalance || 0) + credits;
+                        const trialEff = window.SmsWalletCore.effectiveTrialBalance(base);
+                        const nextWallet = {
+                            ...base,
+                            paidSmsBalance: newPaid,
+                            smsBalance: trialEff + newPaid,
+                            updatedAt: new Date().toISOString()
+                        };
+                        tx.set(
+                            settingsRef,
+                            {
+                                smsWallet: {
+                                    ...wallet,
+                                    ...nextWallet,
+                                    lowBalanceThreshold: Number(nextWallet.lowBalanceThreshold || wallet.lowBalanceThreshold || 50),
+                                    unitPrice: Number(nextWallet.unitPrice || wallet.unitPrice || 1),
+                                    monthlyFee: Number(nextWallet.monthlyFee || wallet.monthlyFee || 1000)
+                                },
+                                smsBalance: nextWallet.smsBalance
+                            },
+                            { merge: true }
+                        );
+                    });
+                    msgEl.textContent = `Added ${credits} paid credits to ${bid}.`;
+                    msgEl.style.color = '#15803d';
+                } catch (e) {
+                    msgEl.textContent = e && e.message ? e.message : 'Failed';
+                    msgEl.style.color = '#dc2626';
+                }
+            };
+        }
         
         // Auto refresh every 10 seconds
         setInterval(() => {

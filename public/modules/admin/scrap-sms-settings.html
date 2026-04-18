@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Scrap SMS Settings</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=61"></script>
+    <script src="../../core/event-validation.js?v=61"></script>
+    <script src="../../core/event-bus.js?v=61"></script>
+    <script src="../../core/accounts-core.js?v=61"></script>
+    <script src="../../core/auth-roles.js?v=61"></script>
+    <script src="../../core/business-types.js?v=61"></script>
+    <script src="../../core/dashboard-core.js?v=61"></script>
+    <script src="../../core/subscription-manager.js?v=61"></script>
+    <script src="../../core/sidebar.js?v=63"></script>
+    <script src="../../core/sms-wallet-core.js?v=4"></script>
+    <script src="../../core/scrap-vba-core.js?v=70"></script>
+    <style>
+        body{font-family:Inter,Segoe UI,sans-serif;background:#f5f7fb;color:#0f172a;}
+        .page{padding:20px;}
+        .card{background:#fff;border:1px solid #dbe4ee;border-radius:12px;padding:20px;margin-bottom:12px;}
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+        textarea,input,button{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;}
+        button{background:#0f3b2c;color:#fff;border:none;cursor:pointer;}
+        .small{font-size:12px;color:#64748b;}
+        .tog{display:flex;gap:8px;align-items:center;padding:10px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;}
+        .tog input{width:auto;padding:0;border:none;}
+        .sms-lock-overlay{position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.65);display:none;align-items:center;justify-content:center;padding:16px;}
+        .sms-lock-overlay.open{display:flex;}
+        .sms-lock-card{background:#fff;border-radius:14px;padding:22px;max-width:400px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,.25);}
+        .sms-lock-card button{margin-top:10px;}
+    </style>
+</head>
+<body>
+<div id="smsLockOverlay" class="sms-lock-overlay" aria-hidden="true">
+    <div class="sms-lock-card">
+        <h2 style="margin:0 0 8px;font-size:1.15rem;">SMS settings are locked</h2>
+        <p class="small">Enter the PIN you saved for this page. Unlock lasts for this browser session (about 12 hours).</p>
+        <input type="password" id="smsUnlockPinInput" autocomplete="off" placeholder="PIN">
+        <button type="button" id="smsUnlockSubmitBtn">Unlock</button>
+        <p id="smsUnlockErr" class="small" style="color:#b91c1c;display:none;margin-top:10px;"></p>
+    </div>
+</div>
+<div class="page" id="scrapSmsApp">
+    <div class="card">
+        <h1>Scrap SMS Settings</h1>
+        <p class="small">Templates are rendered on save; each SMS is queued in Firestore <code>pending_sms</code> for the Android gateway. The same job is mirrored to Realtime Database <code>pending_sms/&lt;id&gt;</code> as a two-item list <code>[mobile, message]</code> for MIT App Inventor (index 1 = phone, 2 = text). Do not run two auto-senders on the same queue.</p>
+    </div>
+    <div class="card" id="pinProtectionCard">
+        <h3>PIN protection (optional) · අගුළ (විකල්ප)</h3>
+        <p class="small"><strong>Enable PIN lock</strong> බොත්තම මෙහි පහළින් — මෙම කාඩ්පත scroll කර බලන්න. PIN එක Firestore හි hash විදියට පමණක් තබයි. Bill/Buying SMS (event ON) මෙයින් නවත්වන්නේ නැත.</p>
+        <div id="lockWhenOff">
+            <input type="password" id="newLockPin" autocomplete="new-password" placeholder="New PIN (min 4 characters)">
+            <input type="password" id="newLockPin2" autocomplete="new-password" placeholder="Confirm PIN" style="margin-top:8px;">
+            <button type="button" id="btnEnableLock" style="margin-top:10px;">Enable PIN lock</button>
+        </div>
+        <div id="lockWhenOn" style="display:none;margin-top:4px;">
+            <p class="small" id="lockOnMsg">PIN lock is <strong>on</strong> for this page.</p>
+            <input type="password" id="disableLockPin" autocomplete="off" placeholder="Current PIN to disable lock">
+            <button type="button" id="btnDisableLock" style="margin-top:10px;background:#64748b;">Disable PIN lock</button>
+        </div>
+    </div>
+    <div class="card">
+        <h3>Bill print header (A5)</h3>
+        <p class="small">මුද්‍රණ බිලේ ඉහළින් පෙනෙන නම/ලිපිනය — <code>scrap-buying</code> Print A5 මෙය කියවයි.</p>
+        <input id="billPrintTitle" placeholder="Business name (e.g. Ape Kade Scrap)">
+        <input id="billPrintSubtitle" placeholder="Phone / address line" style="margin-top:8px;">
+    </div>
+    <div class="card">
+        <h3>Message Templates</h3>
+        <div class="grid">
+            <div>
+                <label class="small">Buying Confirmation Template</label>
+                <textarea id="tplBuying" rows="6">Dear {{name}},
+Buying recorded.
+Total Weight: {{weight}} kg
+Total Amount: {{amount}}
+Thank you.</textarea>
+            </div>
+            <div>
+                <label class="small">Loan Update Template</label>
+                <textarea id="tplLoan" rows="6">Hi {{name}},
+Your loan balance is {{balance}}.
+Date: {{date}}
+Thank you.</textarea>
+            </div>
+        </div>
+        <div class="grid" style="margin-top:10px;">
+            <div>
+                <label class="small">Advance Balance Template (Dashboard K)</label>
+                <textarea id="tplAdvance" rows="5">Hi {{name}},
+Your Advance Balance Updated.
+Adv due : {{amount}}
+Date: {{date}}</textarea>
+            </div>
+            <div>
+                <label class="small">External Settlement Template (Dashboard Y)</label>
+                <textarea id="tplSettlement" rows="5">Dear {{name}},
+As of now, {{direction}} {{amount}}.
+Thank you.</textarea>
+            </div>
+        </div>
+        <div class="grid" style="margin-top:10px;">
+            <input id="testPhone" placeholder="Test phone (07XXXXXXXX)">
+            <button id="sendTestBtn">Send Test SMS</button>
+        </div>
+        <div id="smsDebugBadge" class="small" style="margin-top:10px;display:none;padding:8px;border-radius:8px;"></div>
+        <div style="margin-top:10px;">
+            <h3>Automation Controls</h3>
+            <div class="grid">
+                <label class="tog"><input type="checkbox" id="evBuying"> Buying Session Saved</label>
+                <label class="tog"><input type="checkbox" id="evBill"> Bill / Sell Saved</label>
+                <label class="tog"><input type="checkbox" id="evAdvance"> Advance Balance Updated</label>
+                <label class="tog"><input type="checkbox" id="evSettlement"> External Settlement Updated</label>
+                <label class="tog"><input type="checkbox" id="evLoan"> Loan Payment / Update</label>
+                <label class="tog"><input type="checkbox" id="evInterest"> Daily Interest / Promise Reminders</label>
+            </div>
+            <p class="small" style="margin-top:8px;">Tip: keep these OFF until you are ready. You can enable one-by-one.</p>
+        </div>
+        <div style="margin-top:10px;">
+            <button id="saveSmsSettingsBtn">Save SMS Settings</button>
+        </div>
+    </div>
+</div>
+<script>
+const OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+const LOCK_SALT = 'DIGIBIZ_SCRAP_SMS_LOCK_V1|' + OWNER_UID + '|';
+const UNLOCK_STORAGE_KEY = 'digibiz_scrap_sms_unlock_v1';
+let gLockEnabled = false;
+let gLockPinSha256 = '';
+
+function smsSkipReasonText(code) {
+    if (code === 'no_phone') return 'SMS skipped: test phone number missing.';
+    if (code === 'wallet_exhausted') return 'SMS skipped: SMS wallet exhausted.';
+    if (code === 'quota_exhausted') return 'SMS skipped: Firestore quota exceeded (billing / daily limit).';
+    if (code === 'permission') return 'SMS skipped: permission denied for SMS queue.';
+    if (code === 'invalid_input') return 'SMS skipped: invalid phone/message input.';
+    if (code === 'db_unavailable') return 'SMS skipped: database unavailable.';
+    if (code === 'firestore_error') return 'SMS skipped: queue write failed (see detail below).';
+    return `SMS skipped: ${code || 'unknown reason'}`;
+}
+function showSmsDebug(result, extraReason) {
+    const el = document.getElementById('smsDebugBadge');
+    if (!el) return;
+    let ok = false;
+    let txt = '';
+    if (result && result.ok) {
+        ok = true;
+        if (result.via === 'rtdb_quota_fallback') {
+            txt = 'SMS queued via Realtime Database (Firestore write quota exceeded). Gateway app should send; cloud wallet was not debited — reconcile when Firestore is available again.';
+        } else if (result.fallback) {
+            txt = 'SMS queued via direct gateway fallback.';
+        } else {
+            txt = 'SMS queued successfully.';
+        }
+    } else {
+        txt = smsSkipReasonText(extraReason || (result && result.skipped));
+        if (result && result.error) {
+            txt += ' — ' + String(result.error);
+        }
+    }
+    el.style.display = 'block';
+    el.style.background = ok ? '#dcfce7' : '#fee2e2';
+    el.style.color = ok ? '#14532d' : '#7f1d1d';
+    el.style.border = `1px solid ${ok ? '#86efac' : '#fca5a5'}`;
+    el.textContent = txt;
+}
+
+function unlockStoragePayload() {
+    try {
+        const raw = sessionStorage.getItem(UNLOCK_STORAGE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch (e) {
+        return null;
+    }
+}
+
+function isUnlockSessionValid() {
+    const o = unlockStoragePayload();
+    if (!o || !o.until || o.businessId !== OWNER_UID) return false;
+    return Date.now() < Number(o.until);
+}
+
+function setUnlockSession() {
+    sessionStorage.setItem(UNLOCK_STORAGE_KEY, JSON.stringify({
+        businessId: OWNER_UID,
+        until: Date.now() + 12 * 3600000
+    }));
+}
+
+async function sha256Hex(str) {
+    const buf = new TextEncoder().encode(String(str));
+    const hash = await crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function showLockOverlay(show) {
+    const el = document.getElementById('smsLockOverlay');
+    if (!el) return;
+    if (show) {
+        el.classList.add('open');
+        el.setAttribute('aria-hidden', 'false');
+    } else {
+        el.classList.remove('open');
+        el.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function updateLockPanels() {
+    const off = document.getElementById('lockWhenOff');
+    const on = document.getElementById('lockWhenOn');
+    if (!off || !on) return;
+    if (gLockEnabled) {
+        off.style.display = 'none';
+        on.style.display = 'block';
+    } else {
+        off.style.display = 'block';
+        on.style.display = 'none';
+    }
+}
+
+function applyLockGateAfterLoad() {
+    const app = document.getElementById('scrapSmsApp');
+    if (gLockEnabled && !isUnlockSessionValid()) {
+        if (app) app.style.display = 'none';
+        showLockOverlay(true);
+        return;
+    }
+    if (app) app.style.display = 'block';
+    showLockOverlay(false);
+    updateLockPanels();
+}
+
+async function assertEditable() {
+    if (!gLockEnabled) return true;
+    if (isUnlockSessionValid()) return true;
+    alert('Unlock this page with your PIN first (use the overlay).');
+    showLockOverlay(true);
+    return false;
+}
+
+async function loadSettings() {
+    const ref = db.collection('scrap_sms_settings').doc(OWNER_UID);
+    const snap = await ref.get();
+    const row = snap.exists ? (snap.data() || {}) : {};
+    gLockEnabled = row.settingsEditLockEnabled === true;
+    gLockPinSha256 = String(row.settingsEditLockPinSha256 || '').trim();
+    if (gLockEnabled && !gLockPinSha256) {
+        gLockEnabled = false;
+        await ref.set({ settingsEditLockEnabled: false }, { merge: true }).catch(() => {});
+    }
+    const elBt = document.getElementById('billPrintTitle');
+    const elBs = document.getElementById('billPrintSubtitle');
+    if (elBt && row.billPrintTitle) elBt.value = row.billPrintTitle;
+    if (elBs && row.billPrintSubtitle) elBs.value = row.billPrintSubtitle;
+    if (row.tplBuying) document.getElementById('tplBuying').value = row.tplBuying;
+    if (row.tplLoan) document.getElementById('tplLoan').value = row.tplLoan;
+    if (row.tplAdvance) document.getElementById('tplAdvance').value = row.tplAdvance;
+    if (row.tplSettlement) document.getElementById('tplSettlement').value = row.tplSettlement;
+    const ev = row.events || {};
+    document.getElementById('evBuying').checked = ev.buying === true;
+    document.getElementById('evBill').checked = ev.bill === true;
+    document.getElementById('evAdvance').checked = ev.advance === true;
+    document.getElementById('evSettlement').checked = ev.settlement === true;
+    document.getElementById('evLoan').checked = ev.loan === true;
+    document.getElementById('evInterest').checked = ev.interest === true;
+    applyLockGateAfterLoad();
+}
+
+async function saveSettings() {
+    if (!(await assertEditable())) return;
+    await db.collection('scrap_sms_settings').doc(OWNER_UID).set({
+        businessId: OWNER_UID,
+        billPrintTitle: String((document.getElementById('billPrintTitle') && document.getElementById('billPrintTitle').value) || '').trim(),
+        billPrintSubtitle: String((document.getElementById('billPrintSubtitle') && document.getElementById('billPrintSubtitle').value) || '').trim(),
+        tplBuying: document.getElementById('tplBuying').value,
+        tplLoan: document.getElementById('tplLoan').value,
+        tplAdvance: document.getElementById('tplAdvance').value,
+        tplSettlement: document.getElementById('tplSettlement').value,
+        events: {
+            buying: !!document.getElementById('evBuying').checked,
+            bill: !!document.getElementById('evBill').checked,
+            advance: !!document.getElementById('evAdvance').checked,
+            settlement: !!document.getElementById('evSettlement').checked,
+            loan: !!document.getElementById('evLoan').checked,
+            interest: !!document.getElementById('evInterest').checked
+        },
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.logEvent === 'function') {
+        await window.scrapVbaCore.logEvent(OWNER_UID, 'SMS_SETTINGS_SAVE', 'Templates updated', 'Admin');
+    }
+    alert('SMS settings saved.');
+}
+
+async function sendTest() {
+    if (!(await assertEditable())) return;
+    const phone = document.getElementById('testPhone').value;
+    if (!phone) {
+        showSmsDebug(null, 'no_phone');
+        return;
+    }
+    const message = window.scrapVbaCore
+        ? window.scrapVbaCore.buildAdvanceBalanceMessage('Sample Customer', 12500, new Date().toISOString())
+        : 'Scrap SMS test message.';
+    let smsRes = { ok: false, skipped: 'db_unavailable', error: 'scrapVbaCore not loaded' };
+    if (window.scrapVbaCore && (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function' || typeof window.scrapVbaCore.enqueuePendingSms === 'function')) {
+        if (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function') {
+            smsRes = await window.scrapVbaCore.enqueuePendingSmsForScrap(phone, message);
+        } else {
+            smsRes = await window.scrapVbaCore.enqueuePendingSms(OWNER_UID, phone, message);
+        }
+    }
+    showSmsDebug(smsRes);
+}
+
+document.getElementById('saveSmsSettingsBtn').addEventListener('click', saveSettings);
+document.getElementById('sendTestBtn').addEventListener('click', sendTest);
+
+document.getElementById('smsUnlockSubmitBtn').addEventListener('click', async () => {
+    const err = document.getElementById('smsUnlockErr');
+    err.style.display = 'none';
+    const pin = document.getElementById('smsUnlockPinInput').value;
+    if (!gLockPinSha256) {
+        err.textContent = 'No PIN hash in database — disable lock from Firebase console if stuck.';
+        err.style.display = 'block';
+        return;
+    }
+    const h = await sha256Hex(LOCK_SALT + pin);
+    if (h !== gLockPinSha256) {
+        err.textContent = 'Incorrect PIN.';
+        err.style.display = 'block';
+        return;
+    }
+    setUnlockSession();
+    document.getElementById('smsUnlockPinInput').value = '';
+    const appEl = document.getElementById('scrapSmsApp');
+    if (appEl) appEl.style.display = 'block';
+    showLockOverlay(false);
+    updateLockPanels();
+});
+
+document.getElementById('btnEnableLock').addEventListener('click', async () => {
+    const a = document.getElementById('newLockPin').value;
+    const b = document.getElementById('newLockPin2').value;
+    if (a.length < 4 || a !== b) {
+        alert('PIN must be at least 4 characters and both fields must match.');
+        return;
+    }
+    const hash = await sha256Hex(LOCK_SALT + a);
+    await db.collection('scrap_sms_settings').doc(OWNER_UID).set({
+        settingsEditLockEnabled: true,
+        settingsEditLockPinSha256: hash,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    gLockEnabled = true;
+    gLockPinSha256 = hash;
+    setUnlockSession();
+    document.getElementById('newLockPin').value = '';
+    document.getElementById('newLockPin2').value = '';
+    updateLockPanels();
+    alert('PIN lock enabled. Remember this PIN — it is not shown again.');
+});
+
+document.getElementById('btnDisableLock').addEventListener('click', async () => {
+    const pin = document.getElementById('disableLockPin').value;
+    if (!pin) return alert('Enter current PIN.');
+    const h = await sha256Hex(LOCK_SALT + pin);
+    if (!gLockPinSha256 || h !== gLockPinSha256) {
+        alert('Incorrect PIN.');
+        return;
+    }
+    await db.collection('scrap_sms_settings').doc(OWNER_UID).set({
+        settingsEditLockEnabled: false,
+        settingsEditLockPinSha256: firebase.firestore.FieldValue.delete(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    gLockEnabled = false;
+    gLockPinSha256 = '';
+    document.getElementById('disableLockPin').value = '';
+    try { sessionStorage.removeItem(UNLOCK_STORAGE_KEY); } catch (e2) { /* ignore */ }
+    updateLockPanels();
+    showLockOverlay(false);
+    alert('PIN lock disabled.');
+});
+
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '../../auth/login.html'; return; }
+    const userDoc = await db.collection('users').doc(user.uid).get();
+    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    const bizDoc = await db.collection('businesses').doc(businessId).get();
+    const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
+    if (user.uid !== OWNER_UID || businessType !== 'scrap_collection_center') {
+        window.location.href = '/modules/core/dashboard.html';
+        return;
+    }
+    await loadSettings();
+});
+</script>
+</body>
+</html>

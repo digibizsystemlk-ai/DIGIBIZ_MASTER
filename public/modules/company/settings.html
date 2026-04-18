@@ -2,6 +2,7 @@
 <html lang="si">
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Settings - DIGIBIZ</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -10,10 +11,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
     <script src="../../core/firebase-init.js"></script>
+    <script src="../../core/auth-roles.js?v=47"></script>
     <script src="../../core/event-bus.js"></script>
     <script src="../../core/dashboard-core.js"></script>
     <script src="../../core/subscription-manager.js"></script>
-    <script src="../../core/sidebar.js"></script>
+    <script src="../../core/sidebar.js?v=47"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
         body{font-family:'Inter',sans-serif;background:#f5f6fa;color:#1a1a2e;}
@@ -277,6 +279,17 @@
 
     <script>
         let currentBusinessId = null;
+        let distributorSettingsReadOnly = false;
+
+        function applyDistributorSettingsLock() {
+            const ro = distributorSettingsReadOnly;
+            ['currency', 'taxRate', 'language', 'dateFormat', 'emailNotifications', 'smsNotifications', 'autoBackup', 'notifyNewOrders', 'notifyLowStock', 'notifyPayments', 'invoicePrefix', 'invoiceFooter'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = ro;
+            });
+            const saveBtn = document.getElementById('saveSettingsBtn');
+            if (saveBtn) saveBtn.disabled = ro;
+        }
 
         function showMessage(message, isSuccess) {
             const msgDiv = document.getElementById('alertMessage');
@@ -310,6 +323,10 @@
         }
 
         async function saveSettings() {
+            if (distributorSettingsReadOnly) {
+                showMessage('Only the business owner can change settings for this distributor account.', false);
+                return;
+            }
             const settings = {
                 currency: document.getElementById('currency').value,
                 taxRate: Math.max(0, parseFloat(document.getElementById('taxRate').value) || 0),
@@ -375,6 +392,22 @@
             
             await loadSettings();
             const roleInfo = await window.getUserRole(user.uid, currentBusinessId);
+            let navRole = String((roleInfo && roleInfo.role) || '');
+            try {
+                const bud = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(user.uid).get();
+                if (bud.exists && bud.data().role) navRole = String(bud.data().role);
+            } catch (e) { /* ignore */ }
+            const uSnap = await db.collection('users').doc(user.uid).get();
+            const globalRole = uSnap.exists ? String(uSnap.data().role || '') : '';
+            const bizSnap = await db.collection('businesses').doc(currentBusinessId).get();
+            const btype = bizSnap.exists ? String(bizSnap.data().businessType || '').toLowerCase() : '';
+            if (globalRole === 'SUPER_ADMIN') {
+                distributorSettingsReadOnly = false;
+            } else {
+                distributorSettingsReadOnly = btype === 'distributor' && window.DigibizDistributorPermissions
+                    && !window.DigibizDistributorPermissions.permissionsForRole(navRole).canSettingsChange;
+            }
+            applyDistributorSettingsLock();
             const state = await window.subscriptionManager.initializeForUser(user, roleInfo ? roleInfo.role : 'VIEWER', currentBusinessId);
             renderSubscriptionHealth(state);
         });

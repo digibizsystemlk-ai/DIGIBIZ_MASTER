@@ -4,7 +4,9 @@ const firebaseConfig = {
   projectId: "digibiz-sys",
   storageBucket: "digibiz-sys.firebasestorage.app",
   messagingSenderId: "761278318158",
-  appId: "1:761278318158:web:f4451f5cf5f8762192a51f"
+  appId: "1:761278318158:web:f4451f5cf5f8762192a51f",
+  /** Realtime Database URL (Console → Realtime Database → copy). Replace region if yours differs. */
+  databaseURL: "https://digibiz-sys-default-rtdb.firebaseio.com"
 };
 
 /** Exposed for secondary Auth app (e.g. admin-led staff creation without signing out the owner). */
@@ -40,6 +42,26 @@ const auth = window.auth;
     const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
 
     /**
+     * Ensures MW Trading business profile is pinned to distributor mode.
+     */
+    window.ensureMwTradingBusinessProfile = async function () {
+        if (!window.db) return;
+        try {
+            await window.db.collection('businesses').doc(MW_TRADING_BUSINESS_ID).set(
+                {
+                    businessType: 'distributor',
+                    mwTradingSolutionsTenant: true
+                },
+                { merge: true }
+            );
+            localStorage.setItem('currentBusinessType', 'distributor');
+            sessionStorage.setItem('currentBusinessType', 'distributor');
+        } catch (e) {
+            console.warn('[DigiBiz] MW Trading business profile bootstrap failed:', e && (e.message || e));
+        }
+    };
+
+    /**
      * Ensures MW Trading owner has businesses/{MW}/users/{uid} (BUSINESS_OWNER) + users/{uid}.businessId for RBAC.
      */
     window.ensureMwTradingOwnerBizMembership = async function (user) {
@@ -49,14 +71,15 @@ const auth = window.auth;
         const uid = user.uid;
         const bizUserRef = window.db.collection('businesses').doc(MW_TRADING_BUSINESS_ID).collection('users').doc(uid);
         const payload = {
-            role: 'BUSINESS_OWNER',
+            role: 'distributor_owner',
             email: MW_TRADING_OWNER_EMAIL,
             businessId: MW_TRADING_BUSINESS_ID
         };
         try {
+            await window.ensureMwTradingBusinessProfile();
             await bizUserRef.set(payload, { merge: true });
             await window.db.collection('users').doc(uid).set(
-                { businessId: MW_TRADING_BUSINESS_ID },
+                { businessId: MW_TRADING_BUSINESS_ID, role: 'distributor_owner' },
                 { merge: true }
             );
             console.info('[DigiBiz] ensureMwTradingOwnerBizMembership: wrote businesses/' + MW_TRADING_BUSINESS_ID + '/users/' + uid + ' (BUSINESS_OWNER)');
@@ -78,19 +101,30 @@ const auth = window.auth;
             return;
         }
         const email = String(user.email || '').trim().toLowerCase();
+        const storedBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+        if (storedBusinessId === MW_TRADING_BUSINESS_ID) {
+            try {
+                window.ensureMwTradingBusinessProfile();
+                localStorage.setItem('currentBusinessType', 'distributor');
+                sessionStorage.setItem('currentBusinessType', 'distributor');
+            } catch (e) { /* ignore */ }
+        }
         if (email === MW_TRADING_OWNER_EMAIL) {
             window.__DIGIBIZ_MW_PROFILE_SYNC__ = {
-                role: 'BUSINESS_OWNER',
+                role: 'distributor_owner',
                 businessId: MW_TRADING_BUSINESS_ID,
                 email: user.email
             };
             try {
+                window.ensureMwTradingBusinessProfile();
                 localStorage.removeItem('digibizMwDisplayName');
-                localStorage.setItem('digibizMwDisplayRole', 'BUSINESS_OWNER');
+                localStorage.setItem('digibizMwDisplayRole', 'distributor_owner');
                 localStorage.setItem('digibizMwBusinessId', MW_TRADING_BUSINESS_ID);
                 localStorage.setItem('digibizMwSyncEmail', email);
                 localStorage.setItem('currentBusinessId', MW_TRADING_BUSINESS_ID);
+                localStorage.setItem('currentBusinessType', 'distributor');
                 sessionStorage.setItem('currentBusinessId', MW_TRADING_BUSINESS_ID);
+                sessionStorage.setItem('currentBusinessType', 'distributor');
             } catch (e) { /* ignore */ }
             console.info('[DigiBiz] MW email master: BUSINESS_OWNER @', MW_TRADING_BUSINESS_ID);
         } else {

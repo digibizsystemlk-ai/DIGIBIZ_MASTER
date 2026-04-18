@@ -2,6 +2,7 @@
 <html lang="si">
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reports - DIGIBIZ</title>
     
@@ -12,11 +13,12 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
     
-    <script src="../../core/firebase-init.js"></script>
-    <script src="../../core/event-bus.js"></script>
-    <script src="../../core/auth-roles.js"></script>
-    <script src="../../core/business-types.js"></script>
-    <script src="../../core/sidebar.js"></script>
+    <script src="../../core/firebase-init.js?v=58"></script>
+    <script src="../../core/event-bus.js?v=58"></script>
+    <script src="../../core/auth-roles.js?v=58"></script>
+    <script src="../../core/business-types.js?v=58"></script>
+    <script src="../../core/dashboard-core.js?v=62"></script>
+    <script src="../../core/sidebar.js?v=62"></script>
     
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
@@ -71,7 +73,7 @@
     <div class="main-content">
         <div class="page-header">
             <h1><i class="fas fa-chart-bar"></i> Reports Dashboard</h1>
-            <p>Sales, Tax, Inventory and Financial Reports</p>
+            <p>Accounting-driven sales, stock, and financial reporting</p>
         </div>
         
         <!-- Date Filter Bar -->
@@ -88,7 +90,7 @@
         <div class="report-tabs">
             <button class="report-tab active" data-tab="sales"><i class="fas fa-chart-line"></i> Sales Report</button>
             <button class="report-tab" data-tab="tax"><i class="fas fa-percent"></i> Tax Report</button>
-            <button class="report-tab" data-tab="inventory"><i class="fas fa-boxes"></i> Inventory Report</button>
+            <button class="report-tab" data-tab="inventory"><i class="fas fa-boxes"></i> Current Stock Report</button>
             <button class="report-tab" data-tab="financial"><i class="fas fa-chart-pie"></i> Financial Report</button>
         </div>
         
@@ -105,7 +107,7 @@
                 <div class="card-body">
                     <table class="data-table" id="salesTable">
                         <thead><tr><th>Date</th><th>Invoice No</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Tax</th><th>Total</th></tr></thead>
-                        <tbody id="salesList"><tr><td colspan="7" style="text-align:center;padding:40px;">Select date range and apply filter...</tbody>
+                        <tbody id="salesList"><tr><td colspan="7" style="text-align:center;padding:40px;">Select date range and apply filter...</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -124,7 +126,7 @@
                 <div class="card-body">
                     <table class="data-table" id="taxTable">
                         <thead><tr><th>Tax Type</th><th>Rate</th><th>Taxable Amount</th><th>Tax Amount</th></tr></thead>
-                        <tbody id="taxList"><tr><td colspan="4" style="text-align:center;padding:40px;">No tax data available</tbody>
+                        <tbody id="taxList"><tr><td colspan="4" style="text-align:center;padding:40px;">No tax data available</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -142,8 +144,8 @@
                 <div class="card-header"><h3><i class="fas fa-box"></i> Inventory Status</h3></div>
                 <div class="card-body">
                     <table class="data-table" id="inventoryTable">
-                        <thead><tr><th>Product Code</th><th>Product Name</th><th>Current Stock</th><th>Unit Price</th><th>Stock Value</th><th>Status</th></tr></thead>
-                        <tbody id="inventoryList"><tr><td colspan="6" style="text-align:center;padding:40px;">No inventory data</tbody>
+                        <thead><tr><th>Item Name</th><th>Current Stock</th><th>Cost Price</th><th>Sell Price</th><th>Stock Value</th><th>Status</th></tr></thead>
+                        <tbody id="inventoryList"><tr><td colspan="6" style="text-align:center;padding:40px;">No inventory data</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -169,83 +171,133 @@
     <script>
         let currentBusinessId = null;
         let incomeExpenseChart = null;
-        
-        function formatCurrency(amount){ return 'Rs. ' + (amount||0).toLocaleString('en-LK'); }
-        
+        const SCRAP_OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+
+        function formatCurrency(amount){ return 'Rs. ' + (Number(amount)||0).toLocaleString('en-LK'); }
+        function toDate(value) {
+            if (!value) return null;
+            if (value.toDate) return value.toDate();
+            const d = new Date(value);
+            return Number.isNaN(d.getTime()) ? null : d;
+        }
+
+        async function loadJournalEntries() {
+            const snap = await db.collection('journal').doc(currentBusinessId).collection('entries').get();
+            return snap.docs.map((d) => d.data());
+        }
+
         async function loadSalesReport(){
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
             if(!startDate || !endDate) return;
-            
-            // Demo data - replace with actual Firestore queries
-            document.getElementById('totalSales').innerHTML = formatCurrency(125000);
-            document.getElementById('totalTransactions').innerHTML = '45';
-            document.getElementById('avgOrder').innerHTML = formatCurrency(2778);
-            document.getElementById('topProduct').innerHTML = 'Sugar (1kg)';
-            
-            let html = '';
-            for(let i=1;i<=10;i++){
-                html += `<tr><td>2025-04-${i}</td><td>INV-00${i}</td><td>Customer ${i}</td><td>${Math.floor(Math.random()*5)+1}</td><td>${formatCurrency(Math.random()*5000)}</td><td>${formatCurrency(Math.random()*400)}</td><td>${formatCurrency(Math.random()*5400)}</td></tr>`;
-            }
-            document.getElementById('salesList').innerHTML = html;
+            const start = new Date(`${startDate}T00:00:00`);
+            const end = new Date(`${endDate}T23:59:59`);
+            const salesSnap = await db.collection('selling_history').where('businessId', '==', currentBusinessId).get();
+            const rows = salesSnap.docs.map((d) => d.data()).filter((r) => {
+                const dt = toDate(r.date);
+                return dt && dt >= start && dt <= end;
+            }).sort((a,b) => String(b.date||'').localeCompare(String(a.date||'')));
+            const totalSales = rows.reduce((s, r) => s + (Number(r.totalAmount) || 0), 0);
+            document.getElementById('totalSales').innerHTML = formatCurrency(totalSales);
+            document.getElementById('totalTransactions').innerHTML = String(rows.length);
+            document.getElementById('avgOrder').innerHTML = formatCurrency(rows.length ? (totalSales / rows.length) : 0);
+            const topMap = {};
+            rows.forEach((r) => { topMap[r.itemId || r.customerName || '-'] = (topMap[r.itemId || r.customerName || '-'] || 0) + (Number(r.totalAmount) || 0); });
+            const top = Object.entries(topMap).sort((a,b) => b[1]-a[1])[0];
+            document.getElementById('topProduct').innerHTML = top ? top[0] : '-';
+            document.getElementById('salesList').innerHTML = rows.map((r, i) => `<tr>
+                <td>${toDate(r.date)?.toLocaleString() || '-'}</td>
+                <td>SL-${i+1}</td>
+                <td>${r.customerName || '-'}</td>
+                <td>${Number(r.qty) || 0}</td>
+                <td>${formatCurrency(r.totalAmount || 0)}</td>
+                <td>${formatCurrency(0)}</td>
+                <td>${formatCurrency(r.totalAmount || 0)}</td>
+            </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;padding:40px;">No sales rows</td></tr>';
         }
-        
+
         async function loadTaxReport(){
-            document.getElementById('vatCollected').innerHTML = formatCurrency(8500);
-            document.getElementById('vatPaid').innerHTML = formatCurrency(3200);
-            document.getElementById('netVat').innerHTML = formatCurrency(5300);
+            const entries = await loadJournalEntries();
+            let vatCollected = 0;
+            let vatPaid = 0;
+            entries.forEach((entry) => {
+                (entry.entries || []).forEach((line) => {
+                    const name = String(line.accountName || '').toLowerCase();
+                    if (name.includes('vat') && (Number(line.credit) || 0) > 0) vatCollected += (Number(line.credit) || 0) - (Number(line.debit) || 0);
+                    if (name.includes('vat') && (Number(line.debit) || 0) > 0) vatPaid += (Number(line.debit) || 0) - (Number(line.credit) || 0);
+                });
+            });
+            const netVat = vatCollected - vatPaid;
+            document.getElementById('vatCollected').innerHTML = formatCurrency(vatCollected);
+            document.getElementById('vatPaid').innerHTML = formatCurrency(vatPaid);
+            document.getElementById('netVat').innerHTML = formatCurrency(netVat);
             document.getElementById('gstCollected').innerHTML = formatCurrency(0);
-            document.getElementById('taxList').innerHTML = `<tr><td>VAT (8%)</td><td>8%</td><td>${formatCurrency(106250)}</td><td>${formatCurrency(8500)}</td></tr>
-                <tr><td>WHT (2.5%)</td><td>2.5%</td><td>${formatCurrency(50000)}</td><td>${formatCurrency(1250)}</td></tr>`;
+            document.getElementById('taxList').innerHTML = `<tr><td>VAT</td><td>-</td><td>${formatCurrency(vatCollected + vatPaid)}</td><td>${formatCurrency(netVat)}</td></tr>`;
         }
-        
+
         async function loadInventoryReport(){
-            document.getElementById('totalProducts').innerHTML = '156';
-            document.getElementById('totalStockValue').innerHTML = formatCurrency(245000);
-            document.getElementById('lowStockCount').innerHTML = '8';
-            document.getElementById('outOfStockCount').innerHTML = '3';
-            
-            let html = '';
-            const products = ['Sugar 1kg', 'Rice 5kg', 'Milk Powder', 'Soap', 'Toothpaste'];
-            for(let i=0;i<products.length;i++){
-                const stock = Math.floor(Math.random()*100);
-                const status = stock < 10 ? '<span style="color:#ef4444;">Low Stock</span>' : stock === 0 ? '<span style="color:#ef4444;">Out of Stock</span>' : '<span style="color:#10b981;">In Stock</span>';
-                html += `<tr><td>P00${i+1}</td><td>${products[i]}</td><td>${stock}</td><td>${formatCurrency(Math.random()*500)}</td><td>${formatCurrency(stock * (Math.random()*500))}</td><td>${status}</td></tr>`;
-            }
-            document.getElementById('inventoryList').innerHTML = html;
+            const snap = await db.collection('scrap_items').where('businessId', '==', currentBusinessId).get();
+            const rows = snap.docs.map((d) => d.data()).sort((a,b) => String(a.itemName||'').localeCompare(String(b.itemName||'')));
+            const totalProducts = rows.length;
+            let totalStockValue = 0;
+            let low = 0;
+            let out = 0;
+            rows.forEach((r) => {
+                const stock = Number(r.currentStock) || 0;
+                const cp = Number(r.costPrice);
+                const cost = (Number.isFinite(cp) && cp > 0) ? cp : 0;
+                totalStockValue += stock * cost;
+                if (stock === 0) out += 1;
+                else if (stock <= 10) low += 1;
+            });
+            document.getElementById('totalProducts').innerHTML = String(totalProducts);
+            document.getElementById('totalStockValue').innerHTML = formatCurrency(totalStockValue);
+            document.getElementById('lowStockCount').innerHTML = String(low);
+            document.getElementById('outOfStockCount').innerHTML = String(out);
+            document.getElementById('inventoryList').innerHTML = rows.map((r) => {
+                const stock = Number(r.currentStock) || 0;
+                const cp = Number(r.costPrice);
+                const cost = (Number.isFinite(cp) && cp > 0) ? cp : 0;
+                const status = stock === 0 ? '<span style="color:#ef4444;">Out of Stock</span>' : (stock <= 10 ? '<span style="color:#f59e0b;">Low Stock</span>' : '<span style="color:#10b981;">In Stock</span>');
+                return `<tr><td>${r.itemName || '-'}</td><td>${stock}</td><td>${formatCurrency(cost)}</td><td>${formatCurrency(r.sellingPrice || 0)}</td><td>${formatCurrency(stock * cost)}</td><td>${status}</td></tr>`;
+            }).join('') || '<tr><td colspan="6" style="text-align:center;padding:40px;">No stock rows</td></tr>';
         }
-        
+
         async function loadFinancialReport(){
-            const income = 125000, expenses = 78000, profit = income - expenses;
+            const entries = await loadJournalEntries();
+            let income = 0;
+            let expenses = 0;
+            entries.forEach((entry) => {
+                (entry.entries || []).forEach((line) => {
+                    const name = String(line.accountName || '').toLowerCase();
+                    const debit = Number(line.debit) || 0;
+                    const credit = Number(line.credit) || 0;
+                    if (name.includes('revenue') || name.includes('income') || name.includes('sales')) income += (credit - debit);
+                    if (name.includes('expense') || name.includes('cost of goods sold') || name.includes('cogs')) expenses += (debit - credit);
+                });
+            });
+            const profit = income - expenses;
             document.getElementById('financialIncome').innerHTML = formatCurrency(income);
             document.getElementById('financialExpenses').innerHTML = formatCurrency(expenses);
             document.getElementById('financialProfit').innerHTML = formatCurrency(profit);
-            document.getElementById('profitMargin').innerHTML = ((profit/income)*100).toFixed(1) + '%';
-            
+            document.getElementById('profitMargin').innerHTML = income > 0 ? (((profit/income)*100).toFixed(1) + '%') : '0%';
             if(incomeExpenseChart) incomeExpenseChart.destroy();
             const ctx = document.getElementById('incomeExpenseChart').getContext('2d');
             incomeExpenseChart = new Chart(ctx, {
                 type: 'bar',
-                data: { labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'], datasets: [
-                    { label: 'Income', data: [25000, 32000, 28000, 40000], backgroundColor: '#10b981' },
-                    { label: 'Expenses', data: [18000, 22000, 19000, 19000], backgroundColor: '#ef4444' }
-                ]},
+                data: { labels: ['Income', 'Expenses', 'Profit'], datasets: [{ label: 'Amount', data: [income, expenses, profit], backgroundColor: ['#10b981', '#ef4444', '#3b82f6'] }]},
                 options: { responsive: true, maintainAspectRatio: true }
             });
         }
-        
-        function exportToCSV(type){ alert('CSV export feature coming soon'); }
-        
-        // Set default dates
+
+        function exportToCSV(type){ alert(`Export for ${type} is enabled via tab table copy currently.`); }
+
         const today = new Date();
         const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
         document.getElementById('startDate').value = firstDay.toISOString().split('T')[0];
         document.getElementById('endDate').value = today.toISOString().split('T')[0];
-        
         document.getElementById('applyFilterBtn').onclick = () => { loadSalesReport(); loadTaxReport(); loadInventoryReport(); loadFinancialReport(); };
         document.getElementById('exportBtn').onclick = () => exportToCSV('all');
-        
-        // Tab switching
         document.querySelectorAll('.report-tab').forEach(tab=>{
             tab.onclick=()=>{
                 document.querySelectorAll('.report-tab').forEach(t=>t.classList.remove('active'));
@@ -254,11 +306,11 @@
                 document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
             };
         });
-        
+
         auth.onAuthStateChanged(async(user)=>{
             if(!user){ window.location.href='../../auth/login.html'; return; }
-            const userDoc = await db.collection('users').doc(user.uid).get();
-            currentBusinessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+            const context = window.dashboardCore ? await window.dashboardCore.getContext(user) : null;
+            currentBusinessId = context?.businessType === 'scrap_collection_center' ? SCRAP_OWNER_UID : (context?.businessId || user.uid);
             loadSalesReport(); loadTaxReport(); loadInventoryReport(); loadFinancialReport();
         });
     </script>

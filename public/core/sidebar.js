@@ -1,12 +1,41 @@
 // Dynamic Sidebar Component - Retail Navbar Layout
 
 const SIDEBAR_WIDTH = 260;
+const DIGIBIZ_UPDATE_VERSION = '2026.04.17.2';
+/** Open primary nav links in a new tab (product default). */
+const SIDEBAR_NAV_LINK_TARGET = '_blank';
+const SIDEBAR_NAV_LINK_REL = 'noopener noreferrer';
+const DIGIBIZ_UPDATE_TITLE = "What's New";
+const DIGIBIZ_UPDATE_POINTS = [
+    'Custom SMS Header is now editable from SMS Settings.',
+    'All trial accounts now receive reliable free 300 SMS seeding.',
+    'Sidebar business-type locking is stabilized for correct menus on every load.',
+    'Manufacturer account, reports, and SMS queue logging are restored.',
+    'SMS wallet: 300 trial credits (7 days) + paid credits; Billing & Super Admin show usage (1 credit per SMS).'
+];
 /** Only the marketing root should skip the app sidebar — not module pages named index.html */
 const SHOULD_RESERVE_SIDEBAR_SPACE = (() => {
     const raw = (window.location.pathname || '').split('?')[0];
     const p = raw.replace(/\/+$/, '') || '/';
     return p !== '/' && p !== '/index.html';
 })();
+
+function digibizSmsEffectiveTotal(w) {
+    if (!w || typeof w !== 'object') return 0;
+    if (window.SmsWalletCore && typeof window.SmsWalletCore.effectiveTotal === 'function') {
+        return window.SmsWalletCore.effectiveTotal(w);
+    }
+    const paid = Math.max(0, Number(w.paidSmsBalance ?? w.paidBalance ?? 0));
+    let trial = Math.max(0, Number(w.trialSmsBalance ?? w.trialBalance ?? 0));
+    const exp = w.trialSmsExpiresAt || w.trialExpiresAt;
+    if (exp) {
+        const t = typeof exp.toDate === 'function' ? exp.toDate().getTime() : new Date(exp).getTime();
+        if (!Number.isNaN(t) && Date.now() > t) trial = 0;
+    }
+    const sum = paid + trial;
+    if (sum >= 1) return sum;
+    return Math.max(0, Number(w.smsBalance || 0));
+}
 
 function ensureSubscriptionManagerLoaded() {
     return new Promise((resolve) => {
@@ -32,7 +61,7 @@ function ensureSidebarStyles() {
     const style = document.createElement('style');
     style.id = 'sidebar-main-styles';
     style.textContent = `
-        html.digibiz-sidebar-reserved body{margin-left:${SIDEBAR_WIDTH}px;transition:margin-left .2s ease;}
+        /* Body left gutter: set only in each page's first <style> (avoids duplicate margin with module CSS). */
         .retail-navbar{position:fixed;left:0;top:0;width:${SIDEBAR_WIDTH}px;height:100vh;background:linear-gradient(135deg,#0a2a44 0%,#1e3c72 100%);color:#fff;z-index:9999 !important;overflow-y:auto;display:flex;flex-direction:column;justify-content:space-between;font-family:'Inter',sans-serif;pointer-events:auto;}
         .retail-navbar *{pointer-events:auto;}
         .digibiz-mobile-menu-toggle{position:fixed;top:15px;left:15px;z-index:10001;width:46px;height:46px;border:none;border-radius:12px;background:rgba(15,59,44,.95);color:#fff;display:none;align-items:center;justify-content:center;box-shadow:0 10px 24px rgba(0,0,0,.35);cursor:pointer;font-size:20px;padding:0;margin:0;backdrop-filter:blur(2px);}
@@ -59,11 +88,16 @@ function ensureSidebarStyles() {
         .menu-section-label{padding:8px 24px;font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.6);font-weight:700;}
         .menu-item{padding:12px 24px;display:flex;align-items:center;gap:14px;color:rgba(255,255,255,.85);text-decoration:none;font-size:14px;transition:all .2s;}
         .menu-item:hover,.menu-item.active{background:rgba(255,255,255,.12);color:#ffd966;border-left:3px solid #ffd966;}
+        .menu-dropdown-toggle{width:100%;text-align:left;background:transparent;border:none;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:14px;color:rgba(255,255,255,.85);font-size:14px;cursor:pointer;}
+        .menu-dropdown-toggle:hover{background:rgba(255,255,255,.12);color:#ffd966;border-left:3px solid #ffd966;}
+        .menu-dropdown-items{display:none;background:rgba(255,255,255,.06);}
+        .menu-dropdown.open .menu-dropdown-items{display:block;}
+        .menu-dropdown-items .menu-item{padding-left:52px;font-size:13px;}
         .menu-icon{width:22px;text-align:center;}
         .sidebar-footer{padding:20px;}
         .logout-sidebar-btn{background:rgba(220,38,38,.8);border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;width:100%;font-size:14px;}
         .logout-sidebar-btn:hover{background:#dc2626;}
-        @media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}html.digibiz-mobile-toggle-space body{padding-top:72px;} .digibiz-mobile-menu-toggle{display:flex;} .digibiz-mobile-topbar{display:flex;} .retail-navbar{transform:translateX(-100%);transition:transform .2s ease;} .retail-navbar .sidebar-business-name{display:block !important;visibility:hidden !important;} html.digibiz-sidebar-open .retail-navbar{transform:translateX(0);}}
+        @media (max-width:768px){html.digibiz-mobile-toggle-space body{padding-top:72px;} .digibiz-mobile-menu-toggle{display:flex;} .digibiz-mobile-topbar{display:flex;} .retail-navbar{transform:translateX(-100%);transition:transform .2s ease;} .retail-navbar .sidebar-business-name{display:block !important;visibility:hidden !important;} html.digibiz-sidebar-open .retail-navbar{transform:translateX(0);}}
     `;
     document.head.appendChild(style);
 }
@@ -126,66 +160,222 @@ function preReserveSidebarSpace() {
     if (!SHOULD_RESERVE_SIDEBAR_SPACE) return;
     ensureSidebarStyles();
     document.documentElement.classList.add('digibiz-sidebar-reserved');
-    if (!document.querySelector('.retail-navbar.sidebar-skeleton')) {
-        document.body.insertAdjacentHTML('afterbegin', `
-            <div class="retail-navbar sidebar-skeleton">
-                <div class="sidebar-header">
-                    <div class="logo">DIGIBIZ<span>™</span></div>
-                    <div class="sidebar-business-name biz-name" id="sidebarBusinessName"></div>
-                    <div class="user-info-sidebar">
-                        <span class="user-avatar-sidebar">👤</span>
-                        <div>
-                            <div class="user-name-sidebar">Loading...</div>
-                            <div class="user-role-sidebar">USER</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `);
-    }
 }
 
 class Sidebar {
     constructor() {
         preReserveSidebarSpace();
+        this.mwBusinessId = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        this.scrapOwnerUid = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+        if (SHOULD_RESERVE_SIDEBAR_SPACE) {
+            // Paint cached sidebar immediately at bootstrap (no auth/db wait).
+            this.bootCachedSidebarNow();
+        }
         this.init();
     }
 
+    getStoredBusinessType() {
+        return String(localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase();
+    }
+
+    shouldForceManufacturerMode() {
+        const path = String(window.location.pathname || '').toLowerCase();
+        return this.getStoredBusinessType() === 'manufacturer' || path.includes('/modules/manufacturer/');
+    }
+
+    primeFromCache(userId) {
+        const storedType = this.getStoredBusinessType();
+        const storedBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || null;
+        const storedBusinessName = localStorage.getItem('currentBusinessName') || sessionStorage.getItem('currentBusinessName') || 'Business';
+        const storedRole = localStorage.getItem('currentUserRole')
+            || sessionStorage.getItem('currentUserRole')
+            || window.__DIGIBIZ_LOCAL_ROLE__
+            || 'VIEWER';
+        const storedBizRole = localStorage.getItem('currentBusinessNavRole')
+            || sessionStorage.getItem('currentBusinessNavRole')
+            || storedRole;
+
+        this.currentUserId = userId;
+        this.currentRole = String(storedRole || 'VIEWER');
+        this.businessNavRole = String(storedBizRole || this.currentRole || 'VIEWER');
+        this.businessId = storedBusinessId;
+        const pathIsManufacturer = String(window.location.pathname || '').toLowerCase().includes('/modules/manufacturer/');
+        if (pathIsManufacturer && storedType !== 'scrap_collection_center') {
+            this.businessType = 'manufacturer';
+        } else {
+            this.businessType = storedType || (this.shouldForceManufacturerMode() ? 'manufacturer' : 'retail');
+        }
+        this.businessName = storedBusinessName || 'Business';
+        this.ownerName = this.ownerName || '';
+        this.manufacturerDueAlert = null;
+        this.smsLowBalanceAlert = null;
+    }
+
+    bootCachedSidebarNow() {
+        try {
+            this.primeFromCache(this.currentUserId || null);
+            this.render();
+            this.attachEvents();
+        } catch (e) {
+            // ignore bootstrap paint errors; async init will still recover
+        }
+    }
+
     async init() {
-        await ensureSubscriptionManagerLoaded();
+        // Load subscription manager in background so sidebar can paint immediately.
+        const subscriptionReady = ensureSubscriptionManagerLoaded();
         firebase.auth().onAuthStateChanged(async (user) => {
+            const cachedTypeBeforeLoad = String(localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase();
             if (user && SHOULD_RESERVE_SIDEBAR_SPACE) {
-                await this.loadUserData(user.uid);
-                this.subscriptionState = window.subscriptionManager
-                    ? await window.subscriptionManager.initializeForUser(user, this.currentRole, this.businessId || user.uid)
-                    : null;
+                document.querySelectorAll('.retail-navbar').forEach((el) => el.remove());
+                const mountPoint = document.getElementById('sidebar-container');
+                if (mountPoint) mountPoint.innerHTML = '';
+                // First paint using cached context to avoid delayed sidebar on every navigation.
+                this.primeFromCache(user.uid);
                 this.render();
                 this.attachEvents();
+
+                await this.loadUserData(user.uid);
+                if (this.businessType === 'manufacturer') {
+                    const reloadKey = 'digibiz_sidebar_mfg_reload_once';
+                    if (cachedTypeBeforeLoad && cachedTypeBeforeLoad !== 'manufacturer' && sessionStorage.getItem(reloadKey) !== '1') {
+                        sessionStorage.setItem(reloadKey, '1');
+                        window.location.reload();
+                        return;
+                    }
+                    sessionStorage.removeItem(reloadKey);
+                }
+                if (this.shouldForceManufacturerMode() && this.businessType !== 'manufacturer') {
+                    this.businessType = 'manufacturer';
+                    localStorage.setItem('currentBusinessType', 'manufacturer');
+                    sessionStorage.setItem('currentBusinessType', 'manufacturer');
+                }
+                // First paint sidebar immediately (without waiting on optional fetches).
+                this.render();
+                this.attachEvents();
+                // Non-critical tasks continue after first paint.
+                Promise.resolve().then(() => this.maybeShowUpdateAnnouncement(user)).catch(() => {});
+                Promise.resolve(subscriptionReady).then(async () => {
+                    this.subscriptionState = window.subscriptionManager
+                        ? await window.subscriptionManager.initializeForUser(user, this.currentRole, this.businessId || user.uid)
+                        : null;
+                    this.updateUserInfo();
+                }).catch(() => {});
             }
         });
     }
 
-    async loadUserData(userId) {
+    parseVersion(v) {
+        return String(v || '0').split('.').map((x) => Number(x) || 0);
+    }
+
+    isVersionNewer(current, seen) {
+        const a = this.parseVersion(current);
+        const b = this.parseVersion(seen);
+        const len = Math.max(a.length, b.length);
+        for (let i = 0; i < len; i += 1) {
+            const x = a[i] || 0;
+            const y = b[i] || 0;
+            if (x > y) return true;
+            if (x < y) return false;
+        }
+        return false;
+    }
+
+    async maybeShowUpdateAnnouncement(user) {
+        if (!user) return;
+        const lsKey = `digibiz_last_seen_update_${user.uid}`;
+        const localSeen = localStorage.getItem(lsKey) || '0';
+        let cloudSeen = '0';
         try {
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            cloudSeen = userDoc.exists ? String((userDoc.data() || {}).lastSeenUpdateVersion || '0') : '0';
+        } catch (e) {
+            cloudSeen = localSeen;
+        }
+        const seen = this.isVersionNewer(localSeen, cloudSeen) ? localSeen : cloudSeen;
+        if (!this.isVersionNewer(DIGIBIZ_UPDATE_VERSION, seen)) return;
+        if (document.getElementById('digibizUpdateBanner')) return;
+        const banner = document.createElement('div');
+        banner.id = 'digibizUpdateBanner';
+        banner.style.position = 'fixed';
+        banner.style.left = '50%';
+        banner.style.top = '50%';
+        banner.style.transform = 'translate(-50%, -50%)';
+        banner.style.margin = '0';
+        banner.style.maxWidth = '380px';
+        banner.style.width = 'calc(100% - 32px)';
+        banner.style.zIndex = '10002';
+        banner.style.background = '#ffffff';
+        banner.style.color = '#0f172a';
+        banner.style.border = '1px solid #dbe2ea';
+        banner.style.borderRadius = '14px';
+        banner.style.boxShadow = '0 12px 28px rgba(15,23,42,.2)';
+        banner.style.padding = '14px';
+        banner.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                <b>${DIGIBIZ_UPDATE_TITLE}</b>
+                <span style="font-size:11px;color:#475569;">v${DIGIBIZ_UPDATE_VERSION}</span>
+            </div>
+            <ul style="margin:8px 0 0 18px;padding:0;font-size:13px;line-height:1.4;">
+                ${DIGIBIZ_UPDATE_POINTS.map((p) => `<li>${p}</li>`).join('')}
+            </ul>
+            <div style="margin-top:10px;text-align:right;">
+                <button id="digibizUpdateOkBtn" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;">Got it</button>
+            </div>
+        `;
+        document.body.appendChild(banner);
+        const markSeen = async () => {
+            localStorage.setItem(lsKey, DIGIBIZ_UPDATE_VERSION);
+            try {
+                await db.collection('users').doc(user.uid).set({
+                    lastSeenUpdateVersion: DIGIBIZ_UPDATE_VERSION,
+                    lastSeenUpdateAt: new Date()
+                }, { merge: true });
+            } catch (e) { /* ignore */ }
+            banner.remove();
+        };
+        const okBtn = document.getElementById('digibizUpdateOkBtn');
+        if (okBtn) okBtn.addEventListener('click', markSeen);
+    }
+
+    async loadUserData(userId) {
+        const storedType = this.getStoredBusinessType();
+        try {
+            this.currentUserId = userId;
             const userDoc = await db.collection('users').doc(userId).get();
             this.currentRole = userDoc.exists ? userDoc.data().role : 'VIEWER';
             this.ownerName = userDoc.exists ? (userDoc.data().ownerName || userDoc.data().name || '') : '';
             this.businessId = userDoc.exists ? (userDoc.data().businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId')) : null;
             if (this.businessId) {
                 const businessDoc = await db.collection('businesses').doc(this.businessId).get();
-                this.businessType = businessDoc.exists ? (businessDoc.data().businessType || localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || 'retail') : (localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || 'retail');
+                this.businessType = businessDoc.exists ? (businessDoc.data().businessType || 'retail') : 'retail';
                 this.businessName = businessDoc.exists ? businessDoc.data().name : 'My Business';
                 if (businessDoc.exists && businessDoc.data().ownerName) this.ownerName = businessDoc.data().ownerName;
+                if (businessDoc.exists) {
+                    localStorage.setItem('currentBusinessType', this.businessType);
+                    sessionStorage.setItem('currentBusinessType', this.businessType);
+                }
+                if (this.businessId === 'YRMbB6aq4CMevSrLWkQvoVMtc8b2' && this.businessType !== 'scrap_collection_center') {
+                    this.businessType = 'distributor';
+                    localStorage.setItem('currentBusinessType', 'distributor');
+                    sessionStorage.setItem('currentBusinessType', 'distributor');
+                }
             } else {
-                this.businessType = localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || 'retail';
+                this.businessType = storedType || (this.shouldForceManufacturerMode() ? 'manufacturer' : 'retail');
                 this.businessName = 'No Business Connected';
             }
         } catch (error) {
             console.error('Error loading user data:', error);
             this.currentRole = 'VIEWER';
             this.ownerName = '';
-            this.businessType = localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || 'retail';
+            this.businessType = storedType || (this.shouldForceManufacturerMode() ? 'manufacturer' : 'retail');
             this.businessName = 'No Business Connected';
+        }
+        if (this.shouldForceManufacturerMode()) {
+            this.businessType = 'manufacturer';
+            localStorage.setItem('currentBusinessType', 'manufacturer');
+            sessionStorage.setItem('currentBusinessType', 'manufacturer');
         }
         this.businessNavRole = String(this.currentRole || '').toUpperCase();
         if (this.businessId && userId) {
@@ -198,6 +388,74 @@ class Sidebar {
                 console.warn('Sidebar business role lookup failed:', e?.message || e);
             }
         }
+        this.manufacturerDueAlert = null;
+        this.smsLowBalanceAlert = null;
+        if (this.businessId) {
+            try {
+                const settingsDoc = await db.collection('settings').doc(this.businessId).get();
+                const smsWallet = settingsDoc.exists ? ((settingsDoc.data() || {}).smsWallet || {}) : {};
+                const bal = digibizSmsEffectiveTotal(smsWallet);
+                const threshold = Number(smsWallet.lowBalanceThreshold || 50);
+                if (bal < threshold) {
+                    this.smsLowBalanceAlert = { bal, threshold };
+                }
+            } catch (e) {
+                console.warn('SMS wallet lookup failed:', e?.message || e);
+            }
+        }
+        if (this.businessType === 'manufacturer' && this.businessId) {
+            try {
+                const [payables, receivables] = await Promise.all([
+                    db.collection('manufacturer_raw_material_history')
+                        .where('businessId', '==', this.businessId)
+                        .where('paymentStatus', 'in', ['PENDING', 'PENDING_CLEARANCE'])
+                        .limit(40).get().catch(() => ({ docs: [] })),
+                    db.collection('manufacturer_sales')
+                        .where('businessId', '==', this.businessId)
+                        .where('paymentStatus', 'in', ['PENDING', 'PENDING_CLEARANCE'])
+                        .limit(40).get().catch(() => ({ docs: [] }))
+                ]);
+                const now = new Date();
+                now.setHours(0, 0, 0, 0);
+                const overdue = (payables.docs || []).concat(receivables.docs || []).reduce((n, doc) => {
+                    const row = doc.data() || {};
+                    const dueStr = row.dueDate || row.chequeClearanceDate;
+                    if (!dueStr) return n;
+                    const due = new Date(dueStr);
+                    if (Number.isNaN(due.getTime())) return n;
+                    due.setHours(0, 0, 0, 0);
+                    return due < now ? n + 1 : n;
+                }, 0);
+                const pendingCount = (payables.size || 0) + (receivables.size || 0);
+                if (pendingCount > 0) {
+                    this.manufacturerDueAlert = {
+                        pendingCount,
+                        overdue
+                    };
+                    if (window.eventBus && typeof window.eventBus.publish === 'function') {
+                        window.eventBus.publish('MANUFACTURER_DUE_ALERT', {
+                            businessId: this.businessId,
+                            pendingCount,
+                            overdue
+                        });
+                    }
+                }
+            } catch (e) {
+                console.warn('Manufacturer due alert check failed:', e?.message || e);
+            }
+        }
+
+        // Cache resolved identity/context for instant sidebar paint on next page load.
+        try {
+            localStorage.setItem('currentUserRole', String(this.currentRole || 'VIEWER'));
+            sessionStorage.setItem('currentUserRole', String(this.currentRole || 'VIEWER'));
+            localStorage.setItem('currentBusinessNavRole', String(this.businessNavRole || this.currentRole || 'VIEWER'));
+            sessionStorage.setItem('currentBusinessNavRole', String(this.businessNavRole || this.currentRole || 'VIEWER'));
+            if (this.businessName) {
+                localStorage.setItem('currentBusinessName', String(this.businessName));
+                sessionStorage.setItem('currentBusinessName', String(this.businessName));
+            }
+        } catch (e) { /* ignore */ }
     }
 
     isAdminRole() {
@@ -208,60 +466,169 @@ class Sidebar {
         return String(this.currentRole || '').toUpperCase() === 'REP';
     }
 
-    showsDistributorOwnerOrderLinks() {
-        const r = String(this.businessNavRole || this.currentRole || '').toUpperCase();
-        return r === 'BUSINESS_OWNER' || r === 'DISTRIBUTOR_OWNER';
+    isMwTradingContext() {
+        return this.businessId === this.mwBusinessId;
+    }
+
+    getDistributorPermissionProfile() {
+        const P = window.DigibizDistributorPermissions;
+        const roleRaw = this.businessNavRole || this.currentRole || '';
+        if (!P) {
+            return {
+                canViewAccounting: true,
+                canViewReportsFull: true,
+                canViewFinancialsProfit: true,
+                canInvoiceCreateEdit: true,
+                canManageRepsWeb: true
+            };
+        }
+        return P.permissionsForRole(roleRaw);
+    }
+
+    getDistributorWebMenuBase() {
+        return [
+            { icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
+            { icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
+            { icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
+            { icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
+            { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+            { icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
+            { icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
+            { icon: '👥', name: 'Reps', link: '/modules/distributor/web/reps.html' },
+            { icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
+            { icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
+            { icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
+            { icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
+            { icon: '📈', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' }
+        ];
+    }
+
+    buildDistributorMenusForCurrentRole() {
+        const perms = this.getDistributorPermissionProfile();
+        const tail = this.getSharedCrosscutMenus().filter((m) => {
+            if (m.name === 'Accounting') return !!perms.canViewAccounting;
+            if (m.name === 'Reports') return !!perms.canViewReportsFull;
+            if (m.name === 'Finance') return !!perms.canViewFinancialsProfit;
+            return true;
+        });
+        const menus = this.getDistributorWebMenuBase().filter((m) => {
+            if (m.name === 'Finance') return !!perms.canViewFinancialsProfit;
+            // Any distributor staff with stock visibility can open HQ orders; workflow buttons stay RBAC-gated on the page.
+            if (m.name === 'Orders') return !!(perms.canStockView || perms.canInvoiceCreateEdit);
+            if (m.name === 'New sales order') return !!perms.canInvoiceCreateEdit;
+            if (m.name === 'Reps') return !!perms.canManageRepsWeb;
+            return true;
+        });
+        return this.assembleSidebarMenus(menus, tail);
+    }
+
+    isScrapMasterOwner() {
+        return this.currentUserId === this.scrapOwnerUid;
+    }
+
+    isScrapSuiteContext() {
+        return this.isScrapMasterOwner() && this.isAdminRole() && this.businessType === 'scrap_collection_center';
+    }
+
+    getDashboardMenu() {
+        return [{ icon: '📊', name: 'Dashboard', link: '/modules/core/dashboard.html' }];
+    }
+
+    /** Customers + Accounting + Reports — always last block after business-specific links. */
+    getSharedCrosscutMenus() {
+        return [
+            { icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
+            { icon: '💸', name: 'Loans', link: '/modules/core/loans.html' },
+            { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+            { icon: '📁', name: 'Accounting', link: '/modules/accounts/advanced-accounting-dashboard.html' },
+            { icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
+        ];
+    }
+
+    getSharedModuleMenus() {
+        return [...this.getDashboardMenu(), ...this.getSharedCrosscutMenus()];
+    }
+
+    /**
+     * Order: Dashboard → coreMenus → tail (default: Customers, Accounting, Reports).
+     * Drops duplicates from core that match dashboard or any tail item (same name+link).
+     */
+    assembleSidebarMenus(coreMenus, tailMenus) {
+        const tail = Array.isArray(tailMenus) && tailMenus.length ? tailMenus : this.getSharedCrosscutMenus();
+        const key = (m) => `${m.name}|${m.link}`;
+        const tailKeys = new Set(tail.map(key));
+        const dash = this.getDashboardMenu();
+        const dashKeys = new Set(dash.map(key));
+        const core = (coreMenus || []).filter((m) => !tailKeys.has(key(m)) && !dashKeys.has(key(m)));
+        return [...dash, ...core, ...tail];
     }
 
     getMenus() {
+        const pathLower = String(window.location.pathname || '').toLowerCase();
+        const onManufacturerModule = pathLower.includes('/modules/manufacturer/');
+        const menuBusinessType = (onManufacturerModule && this.businessType !== 'scrap_collection_center')
+            ? 'manufacturer'
+            : this.businessType;
+
+        if (this.isScrapSuiteContext()) {
+            const scrapCore = [
+                { icon: '🧾', name: 'BILL', link: '/modules/admin/scrap-buying.html' },
+                { icon: '📈', name: 'REVENUE', link: '/modules/admin/scrap-revenue.html' },
+                { icon: '📉', name: 'EXPENSES', link: '/modules/admin/scrap-expenses.html' },
+                { icon: '💸', name: 'SELL', link: '/modules/admin/scrap-sell.html' },
+                { icon: '📲', name: 'Scrap SMS', link: '/modules/admin/scrap-sms-settings.html' },
+                { icon: '📦', name: 'STOCK', link: '/modules/admin/scrap-workbench.html?view=STOCK' },
+                { icon: '📚', name: 'BUY', link: '/modules/admin/scrap-workbench.html?view=BUY' },
+                { icon: '📜', name: 'HISTORY', link: '/modules/admin/scrap-selling-history.html' },
+                { icon: '🏦', name: 'ADVANCE', link: '/modules/admin/scrap-advance.html' },
+                { icon: '📘', name: 'DAILYTR', link: '/modules/admin/scrap-workbench.html?view=DAILYTR' }
+            ];
+            return this.assembleSidebarMenus(scrapCore);
+        }
+
         if (this.isRepRole()) {
             return [
-                { icon: '📝', name: 'Rep Order Form', link: '/modules/distributor/mobile/order.html' }
+                ...this.getDashboardMenu(),
+                { icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
+                { icon: '📝', name: 'Rep order (phone)', link: '/modules/distributor/mobile/order.html' },
+                { icon: '👁️', name: 'Rep view', link: '/modules/distributor/web/rep-view.html' },
+                { icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
+                { icon: '📑', name: 'HQ orders', link: '/modules/distributor/web/index.html?tab=pending' }
             ];
         }
 
+        if (!onManufacturerModule && (this.isMwTradingContext() || this.businessType === 'distributor')) {
+            return this.buildDistributorMenusForCurrentRole();
+        }
+
         let menus;
-        if (this.businessType === 'distributor') {
+        if (menuBusinessType === 'pharmacy') {
             menus = [
-                { icon: '📊', name: 'Dashboard', link: '/modules/core/dashboard.html' }
-            ];
-            if (this.showsDistributorOwnerOrderLinks()) {
-                menus.push(
-                    { icon: '📑', name: 'Order Status', link: '/modules/distributor/web/index.html?tab=pending' }
-                );
-            }
-            menus.push(
-                { icon: '👥', name: 'Reps', link: '/modules/distributor/web/reps.html' },
-                { icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
-                { icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
-                { icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
-                { icon: '📈', name: 'Reports', link: '/modules/distributor/web/reports.html' },
-                { icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
-                { icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' }
-            );
-        } else if (this.businessType === 'pharmacy') {
-            menus = [
-                { icon: '📊', name: 'Dashboard', link: '/modules/core/dashboard.html' },
                 { icon: '🛒', name: 'Point of Sale', link: '/modules/pharmacy/pos.html' },
-                { icon: '💊', name: 'Inventory', link: '/modules/pharmacy/inventory.html' },
-                { icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
+                { icon: '💊', name: 'Inventory', link: '/modules/pharmacy/inventory.html' }
             ];
-        } else if (this.businessType === 'hardware') {
+        } else if (menuBusinessType === 'hardware') {
             menus = [
-                { icon: '📊', name: 'Dashboard', link: '/modules/core/dashboard.html' },
                 { icon: '🧾', name: 'POS / Quotation', link: '/modules/hardware/pos.html' },
-                { icon: '🔧', name: 'Inventory', link: '/modules/hardware/inventory.html' },
-                { icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
+                { icon: '🔧', name: 'Inventory', link: '/modules/hardware/inventory.html' }
+            ];
+        } else if (menuBusinessType === 'manufacturer') {
+            menus = [
+                { icon: '📥', name: 'Inbound', link: '/modules/manufacturer/inbound.html' },
+                { icon: '📤', name: 'Outbound', link: '/modules/manufacturer/outbound.html' },
+                { icon: '📦', name: 'Stock 360', link: '/modules/manufacturer/stock.html' },
+                { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
+                { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+                { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
             ];
         } else {
             menus = [
-                { icon: '📊', name: 'Dashboard', link: '/modules/core/dashboard.html' },
                 { icon: '🛒', name: 'Point of Sale', link: '/modules/retail/pos.html' },
                 { icon: '📦', name: 'Inventory', link: '/modules/retail/inventory.html' },
-                { icon: '📥', name: 'Purchases', link: '/modules/retail/purchases.html' },
-                { icon: '👥', name: 'Customers', link: '/modules/retail/customers.html' }
+                { icon: '📥', name: 'Purchases', link: '/modules/retail/purchases.html' }
             ];
         }
+        menus = this.assembleSidebarMenus(menus);
 
         if (this.isAdminRole()) {
             menus.push(
@@ -275,8 +642,15 @@ class Sidebar {
 
     isMenuActive(link, pathname) {
         if (!link) return false;
-        const cleanLink = link.split('#')[0].replace(/\/+$/, '');
+        const [linkNoHash] = link.split('#');
+        const [linkPathRaw, linkQueryRaw = ''] = linkNoHash.split('?');
+        const cleanLink = (linkPathRaw || '').replace(/\/+$/, '');
         const cleanPath = (pathname || '').split('#')[0].split('?')[0].replace(/\/+$/, '');
+        const currentQuery = window.location.search || '';
+        const linkQuery = linkQueryRaw ? `?${linkQueryRaw}` : '';
+        if (linkQuery && cleanPath === cleanLink) {
+            return currentQuery === linkQuery;
+        }
         let tab = '';
         try {
             tab = new URLSearchParams(window.location.search).get('tab') || '';
@@ -299,6 +673,15 @@ class Sidebar {
                 return true;
             }
             return false;
+        }
+        if (cleanLink.includes('/modules/distributor/web/new-order.html')) {
+            return cleanPath.endsWith('new-order.html');
+        }
+        if (cleanLink.includes('/modules/admin/scrap-sms-settings.html')) {
+            return cleanPath.endsWith('scrap-sms-settings.html');
+        }
+        if (cleanLink.includes('/modules/distributor/web/rep-view.html')) {
+            return cleanPath.endsWith('rep-view.html');
         }
         if (cleanPath === cleanLink) return true;
         if (cleanLink.endsWith('/index.html')) {
@@ -359,6 +742,40 @@ class Sidebar {
     render() {
         ensureSidebarStyles();
         const pathname = window.location.pathname;
+        const settingsItemsBase = [
+            { icon: '🏢', name: 'Business Profile', link: '/modules/company/profile.html' },
+            { icon: '👥', name: 'Staff', link: '/modules/company/staff.html' },
+            { icon: '⚙️', name: 'Settings', link: '/modules/company/settings.html' },
+            { icon: '📲', name: 'SMS Settings', link: '/modules/company/sms-settings.html' },
+            { icon: '🧾', name: 'SMS Log', link: '/modules/company/sms-log.html' },
+            { icon: '💳', name: 'Billing & Charges', link: '/modules/core/billing.html' }
+        ];
+        let settingsItems = this.isRepRole() ? [] : settingsItemsBase.slice();
+        if (this.businessType === 'distributor' && window.DigibizDistributorPermissions && !this.isRepRole()) {
+            const p = window.DigibizDistributorPermissions.permissionsForRole(this.businessNavRole || this.currentRole || '');
+            const rb = p.roleBand;
+            const smsLogOk = rb === 'OWNER' || rb === 'SALES_COORDINATOR' || rb === 'AREA_MANAGER';
+            settingsItems = settingsItems.filter((item) => {
+                if (item.name === 'Business Profile') return !!p.canBusinessInfoEdit;
+                if (item.name === 'Staff') return !!p.canStaffMutate;
+                if (item.name === 'Settings') return !!p.canSettingsChange;
+                if (item.name === 'SMS Settings') return !!p.canSettingsChange;
+                if (item.name === 'SMS Log') return smsLogOk;
+                if (item.name === 'Billing & Charges') return !!p.canViewFinancialsProfit;
+                return true;
+            });
+        }
+        const settingsActive = settingsItems.some((item) => this.isMenuActive(item.link, pathname));
+        const loanItems = [
+            { icon: '🏠', name: 'Loan Hub', link: '/modules/core/loans.html' },
+            { icon: '🤝', name: 'Hand Loans', link: '/modules/core/hand-loans.html' },
+            { icon: '🟢', name: 'No-interest Loan', link: '/modules/core/loan-no-interest.html' },
+            { icon: '📈', name: 'Interest Loan (10%)', link: '/modules/core/loan-interest.html' },
+            { icon: '🏦', name: 'Advanced Loan', link: '/modules/core/loan-advanced-investor.html' },
+            { icon: '👤', name: 'Investor', link: '/modules/core/investor.html' }
+        ];
+        const loansActive = loanItems.some((item) => this.isMenuActive(item.link, pathname));
+        const menuItems = this.getMenus().filter((item) => !['Admin Dashboard', 'User Management', 'Loans'].includes(item.name));
         const html = `
             <div class="retail-navbar digibiz-sidebar">
                 <div>
@@ -376,16 +793,26 @@ class Sidebar {
                         </div>
                     </div>
                     <div class="nav-links" id="sidebarNavLinks">
-                        ${this.getMenus().filter((item) => !['Admin Dashboard', 'User Management'].includes(item.name)).map((item) => `<a href="${item.link}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
-                        ${this.isRepRole() ? '' : `
-                        <a href="/modules/company/profile.html" class="menu-item ${this.isMenuActive('/modules/company/profile.html', pathname) ? 'active' : ''}"><span class="menu-icon">🏢</span><span>Business Profile</span></a>
-                        <a href="/modules/company/staff.html" class="menu-item ${this.isMenuActive('/modules/company/staff.html', pathname) ? 'active' : ''}"><span class="menu-icon">👥</span><span>Staff</span></a>
-                        <a href="/modules/accounts/advanced-accounting-dashboard.html" class="menu-item ${this.isMenuActive('/modules/accounts/advanced-accounting-dashboard.html', pathname) ? 'active' : ''}"><span class="menu-icon">📁</span><span>Accounting</span></a>
-                        <a href="/modules/company/settings.html" class="menu-item ${this.isMenuActive('/modules/company/settings.html', pathname) ? 'active' : ''}"><span class="menu-icon">⚙️</span><span>Settings</span></a>
-                        <a href="/modules/core/subscription.html" class="menu-item ${this.isMenuActive('/modules/core/subscription.html', pathname) ? 'active' : ''}"><span class="menu-icon">💳</span><span>Subscription</span></a>`}
+                        ${menuItems.map((item) => `<a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
+                        <div class="menu-dropdown ${loansActive ? 'open' : ''}" id="loansDropdown">
+                            <button type="button" class="menu-dropdown-toggle ${loansActive ? 'active' : ''}" id="loansDropdownToggle">
+                                <span><span class="menu-icon">💸</span><span>Loans</span></span><span>${loansActive ? '▾' : '▸'}</span>
+                            </button>
+                            <div class="menu-dropdown-items">
+                                ${loanItems.map((item) => `<a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
+                            </div>
+                        </div>
+                        ${settingsItems.length ? `<div class="menu-dropdown ${settingsActive ? 'open' : ''}" id="settingsDropdown">
+                            <button type="button" class="menu-dropdown-toggle ${settingsActive ? 'active' : ''}" id="settingsDropdownToggle">
+                                <span><span class="menu-icon">⚙️</span><span>Settings</span></span><span>${settingsActive ? '▾' : '▸'}</span>
+                            </button>
+                            <div class="menu-dropdown-items">
+                                ${settingsItems.map((item) => `<a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
+                            </div>
+                        </div>` : ''}
                         ${this.isAdminRole() ? `<div class="menu-section-label">Admin Tools</div>
-                        <a href="/admin/super-dashboard.html" class="menu-item ${pathname === '/admin/super-dashboard.html' ? 'active' : ''}"><span class="menu-icon">👑</span><span>Admin Dashboard</span></a>
-                        <a href="/admin/super-dashboard.html#tab-users" class="menu-item"><span class="menu-icon">👥</span><span>User Management</span></a>` : ''}
+                        <a href="/admin/super-dashboard.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${pathname === '/admin/super-dashboard.html' ? 'active' : ''}"><span class="menu-icon">👑</span><span>Admin Dashboard</span></a>
+                        <a href="/admin/super-dashboard.html#tab-users" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item"><span class="menu-icon">👥</span><span>User Management</span></a>` : ''}
                     </div>
                 </div>
                 <div class="sidebar-footer">
@@ -394,10 +821,10 @@ class Sidebar {
             </div>
         `;
 
-        const oldSidebar = document.querySelector('.retail-navbar');
-        if (oldSidebar) oldSidebar.remove();
+        document.querySelectorAll('.retail-navbar').forEach((el) => el.remove());
         const mountPoint = document.getElementById('sidebar-container');
         if (mountPoint) {
+            mountPoint.innerHTML = '';
             mountPoint.innerHTML = html;
         } else {
             document.body.insertAdjacentHTML('afterbegin', html);
@@ -421,6 +848,22 @@ class Sidebar {
         if (subEl) {
             const text = this.subscriptionState ? this.subscriptionState.statusText : 'Free';
             subEl.textContent = text;
+            if (this.manufacturerDueAlert) {
+                const extra = document.createElement('div');
+                extra.style.fontSize = '11px';
+                extra.style.marginTop = '4px';
+                extra.style.color = this.manufacturerDueAlert.overdue > 0 ? '#fecaca' : '#fde68a';
+                extra.textContent = `Due alerts: ${this.manufacturerDueAlert.pendingCount} pending, ${this.manufacturerDueAlert.overdue} overdue`;
+                subEl.appendChild(extra);
+            }
+            if (this.smsLowBalanceAlert) {
+                const low = document.createElement('div');
+                low.style.fontSize = '11px';
+                low.style.marginTop = '4px';
+                low.style.color = '#fecaca';
+                low.textContent = `Low SMS balance: ${this.smsLowBalanceAlert.bal} left`;
+                subEl.appendChild(low);
+            }
         }
     }
 
@@ -434,21 +877,58 @@ class Sidebar {
         };
         const nav = document.getElementById('sidebarNavLinks');
         if (nav) {
+            const loanToggle = document.getElementById('loansDropdownToggle');
+            const loanDd = document.getElementById('loansDropdown');
+            if (loanToggle && loanDd) {
+                loanToggle.addEventListener('click', () => {
+                    loanDd.classList.toggle('open');
+                    const marker = loanToggle.querySelector('span:last-child');
+                    if (marker) marker.textContent = loanDd.classList.contains('open') ? '▾' : '▸';
+                });
+            }
+            const ddToggle = document.getElementById('settingsDropdownToggle');
+            const dd = document.getElementById('settingsDropdown');
+            if (ddToggle && dd) {
+                ddToggle.addEventListener('click', () => {
+                    dd.classList.toggle('open');
+                    const marker = ddToggle.querySelector('span:last-child');
+                    if (marker) marker.textContent = dd.classList.contains('open') ? '▾' : '▸';
+                });
+            }
             nav.querySelectorAll('a.menu-item').forEach((link) => {
                 link.addEventListener('click', () => {
                     closeMobileSidebar();
                 });
             });
         }
+        if (!window.__DIGIBIZ_PROFILE_SYNC_BOUND__) {
+            const refreshSidebar = () => this.refreshBusinessNameFromProfile();
+            window.addEventListener('digibiz-profile-updated', refreshSidebar);
+            if (window.eventBus && typeof window.eventBus.subscribe === 'function') {
+                window.eventBus.subscribe('BUSINESS_UPDATED', refreshSidebar);
+            }
+            window.__DIGIBIZ_PROFILE_SYNC_BOUND__ = true;
+        }
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+function bootstrapSidebarImmediate() {
+    if (window.__DIGIBIZ_SIDEBAR_BOOTSTRAPPED__) return;
+    if (!SHOULD_RESERVE_SIDEBAR_SPACE) return;
+    if (!document.body) {
+        // Do not wait for full DOMContentLoaded; start as soon as body exists.
+        setTimeout(bootstrapSidebarImmediate, 0);
+        return;
+    }
+    window.__DIGIBIZ_SIDEBAR_BOOTSTRAPPED__ = true;
     ensureMobileSidebarControls();
     preReserveSidebarSpace();
-    if (SHOULD_RESERVE_SIDEBAR_SPACE) {
-        window.sidebar = new Sidebar();
-    }
-});
+    window.sidebar = new Sidebar();
+}
+
+// Primary path: run immediately at script evaluation time.
+bootstrapSidebarImmediate();
+// Safety fallback for unusual parser timing.
+document.addEventListener('DOMContentLoaded', bootstrapSidebarImmediate);
 
 console.log('✅ Sidebar Component Initialized - Retail Navbar');

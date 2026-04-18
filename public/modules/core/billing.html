@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Billing & Charges - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=1"></script>
+    <script src="../../core/auth-roles.js?v=30"></script>
+    <script src="../../core/dashboard-core.js?v=62"></script>
+    <script src="../../core/sms-wallet-core.js?v=4"></script>
+    <script src="../../core/subscription-manager.js?v=2"></script>
+    <script src="../../core/sidebar.js?v=62"></script>
+    <style>
+        :root{
+            --bg:#f3f6fb;
+            --card:#ffffff;
+            --text:#0f172a;
+            --muted:#64748b;
+            --brand:#2563eb;
+            --ok:#16a34a;
+            --line:#e2e8f0;
+            --shadow:0 18px 45px rgba(15,23,42,.08);
+        }
+        *{box-sizing:border-box}
+        body{margin:0;font-family:Inter,system-ui,-apple-system,sans-serif;background:linear-gradient(160deg,#f8fafc 0%,#eef2ff 100%);color:var(--text)}
+        .main{padding:30px}
+        .page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+        .page-head h1{margin:0;font-size:28px;letter-spacing:-.4px}
+        .page-head p{margin:4px 0 0;color:var(--muted)}
+        .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+        .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
+        .card h2{margin:0 0 14px;font-size:16px}
+        .meta{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+        .plan-row{display:flex;align-items:center;justify-content:space-between;gap:14px}
+        .amount{font-size:24px;font-weight:800}
+        .progress-ring{
+            --p:0;
+            width:100px;height:100px;border-radius:50%;
+            background:conic-gradient(var(--brand) calc(var(--p)*1%), #e5e7eb 0);
+            display:grid;place-items:center;
+        }
+        .progress-inner{width:78px;height:78px;border-radius:50%;background:#fff;display:grid;place-items:center;text-align:center}
+        .progress-inner b{font-size:22px}
+        .progress-inner span{font-size:10px;color:var(--muted);display:block}
+        .badge{display:inline-flex;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;background:#dbeafe;color:#1e40af}
+        .wallet-balance{font-size:34px;font-weight:900;letter-spacing:-.5px}
+        .preset-wrap{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+        .preset{border:1px solid #cbd5e1;background:#fff;color:#0f172a;padding:8px 10px;border-radius:10px;cursor:pointer;font-weight:700}
+        .preset.active{background:#dbeafe;border-color:#93c5fd;color:#1e40af}
+        .slider{width:100%}
+        .muted{color:var(--muted);font-size:13px}
+        .input{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-weight:700;letter-spacing:.04em}
+        .bank-box{background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:12px}
+        .bank-box b{display:block;margin:4px 0 0}
+        .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+        .btn{border:none;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
+        .btn-primary{background:var(--ok);color:#fff}
+        .btn-wa{background:#22c55e;color:#052e16;text-decoration:none;display:inline-flex;align-items:center}
+        .summary{
+            margin-top:18px;background:#0f172a;color:#e2e8f0;border-radius:16px;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap
+        }
+        .summary b{font-size:28px;color:#fff}
+        .line-small{font-size:12px;color:#94a3b8}
+        .quick-recharge{margin-top:14px;border-top:1px dashed #cbd5e1;padding-top:12px}
+        .quick-recharge .row{display:grid;grid-template-columns:200px 130px 140px;gap:8px}
+        #msg{margin-top:10px;font-size:13px;min-height:18px}
+        @media (max-width:1080px){.cards{grid-template-columns:1fr 1fr}}
+        @media (max-width:768px){.main{padding:16px}.cards{grid-template-columns:1fr}.page-head h1{font-size:23px}.quick-recharge .row{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<div class="main">
+    <div class="page-head">
+        <div>
+            <h1>Billing & Charges</h1>
+            <p>7-day free trial with 300 SMS credits. Day 8 onward requires active billing.</p>
+        </div>
+        <span id="statusBadge" class="badge">Loading...</span>
+    </div>
+
+    <div class="cards">
+        <section class="card">
+            <h2>Subscription Package</h2>
+            <div class="plan-row">
+                <div>
+                    <div class="meta">Current Plan</div>
+                    <div id="planValue" class="amount">-</div>
+                    <div class="line-small">Monthly Fee: <b>Rs. 1,000</b></div>
+                    <div class="line-small">Expiry: <span id="expiryValue">-</span></div>
+                </div>
+                <div id="progressRing" class="progress-ring" style="--p:0;">
+                    <div class="progress-inner">
+                        <b id="daysRemaining">0</b>
+                        <span>days left</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>SMS Credits Wallet</h2>
+            <div class="meta">Custom SMS Header (max 10 chars)</div>
+            <div style="display:flex;gap:8px;margin:8px 0 12px;">
+                <input id="smsHeaderInput" class="input" maxlength="10" placeholder="APEKADE">
+                <button id="saveHeaderBtn" class="btn" style="background:#1d4ed8;color:#fff;">Save</button>
+            </div>
+            <div class="meta">Total SMS credits (usable now)</div>
+            <div id="smsBalanceValue" class="wallet-balance">0</div>
+            <div class="line-small">Trial credits left: <b id="trialCreditsEffective">0</b> · Paid credits: <b id="paidCreditsOnly">0</b></div>
+            <div class="line-small">Trial SMS pack ends: <span id="trialSmsEnds">-</span> (then trial pool becomes 0; paid credits stay.)</div>
+            <div class="line-small">Each queued SMS uses <b>1 credit</b> — see SMS Log for credit and balance after each send.</div>
+            <div class="muted">Select top-up units</div>
+            <div class="preset-wrap">
+                <button class="preset" data-units="100">100</button>
+                <button class="preset" data-units="200">200</button>
+                <button class="preset" data-units="500">500</button>
+                <button class="preset" data-units="1000">1000</button>
+            </div>
+            <input id="smsUnits" class="slider" type="range" min="100" max="1000" step="100" value="100">
+            <div class="line-small">Selected Units: <b id="selectedUnits">100</b> (Rs. 1 per SMS)</div>
+        </section>
+
+        <section class="card">
+            <h2>Payment & Settlement</h2>
+            <div class="bank-box">
+                <div class="meta">Sampath Bank</div>
+                <b>Account No: 1099 5448 6969</b>
+                <b>Account Name: K A N C Jayawardana</b>
+            </div>
+            <div class="actions">
+                <a class="btn btn-wa" target="_blank" href="https://wa.me/94713446500?text=Hi%20DIGIBIZ%2C%20I%20have%20sent%20my%20billing%20receipt.">Send Receipt via WhatsApp</a>
+                <button id="activateBtn" class="btn btn-primary">Confirm Payment & Activate</button>
+            </div>
+            <div class="line-small" style="margin-top:10px">After confirmation, plan renews for 30 days and selected SMS units are added.</div>
+        </section>
+    </div>
+
+    <div class="summary">
+        <div>
+            <div class="meta" style="color:#94a3b8">Total Payable</div>
+            <div class="line-small">Rs. 1,000 monthly + selected SMS units</div>
+        </div>
+        <b id="totalPayable">Rs. 1,000</b>
+    </div>
+
+    <p id="msg"></p>
+    <div id="quickRechargeBox" class="quick-recharge" style="display:none;">
+        <h3 style="margin:0 0 8px;">Quick Recharge</h3>
+        <div class="row">
+            <input id="quickBusinessId" class="input" type="text" placeholder="Business ID">
+            <input id="quickCredits" class="input" type="number" min="1" placeholder="Credits">
+            <button id="quickRechargeBtn" class="btn btn-primary" type="button">Add Credits</button>
+        </div>
+    </div>
+</div>
+<script>
+let context = null;
+let monthlyFee = 1000;
+let selectedUnits = 100;
+
+function fmt(n){ return `Rs. ${Number(n || 0).toLocaleString()}`; }
+function setMsg(t, ok){
+    const e = document.getElementById('msg');
+    e.textContent = t || '';
+    e.style.color = ok ? '#15803d' : '#dc2626';
+}
+function updatePayableUI(){
+    const total = monthlyFee + selectedUnits;
+    document.getElementById('selectedUnits').textContent = selectedUnits;
+    document.getElementById('totalPayable').textContent = fmt(total);
+}
+function updateRing(days){
+    const d = Math.max(0, Number(days || 0));
+    const pct = Math.max(0, Math.min(100, (d / 30) * 100));
+    document.getElementById('daysRemaining').textContent = d;
+    document.getElementById('progressRing').style.setProperty('--p', String(pct));
+}
+function setUnits(units){
+    const u = Number(units || 100);
+    selectedUnits = Math.min(1000, Math.max(100, u));
+    document.getElementById('smsUnits').value = selectedUnits;
+    document.querySelectorAll('.preset').forEach((btn) => {
+        btn.classList.toggle('active', Number(btn.dataset.units) === selectedUnits);
+    });
+    updatePayableUI();
+}
+
+function normalizedHeader(v){
+            return String(v || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10);
+        }
+
+document.getElementById('smsUnits').addEventListener('input', (e) => setUnits(e.target.value));
+document.querySelectorAll('.preset').forEach((btn) => {
+    btn.addEventListener('click', () => setUnits(Number(btn.dataset.units)));
+});
+
+async function refreshState(){
+    const user = firebase.auth().currentUser;
+    if (!user || !context) return;
+    const st = await window.subscriptionManager.initializeForUser(user, context.role, context.businessId);
+    document.getElementById('planValue').textContent = st && st.plan ? st.plan : 'TRIAL';
+    document.getElementById('statusBadge').textContent = st && st.statusText ? st.statusText : 'Unknown';
+    document.getElementById('expiryValue').textContent = st && st.expireDate ? new Date(st.expireDate).toLocaleDateString() : '-';
+    updateRing(st && Number.isFinite(st.remainingDays) ? st.remainingDays : 0);
+
+    if (window.SmsWalletCore && typeof window.SmsWalletCore.ensureSeeded === 'function') {
+        try { await window.SmsWalletCore.ensureSeeded(context.businessId); } catch (e) { console.warn('ensureSeeded failed:', e && (e.message || e)); }
+    }
+
+    const settingsDoc = await db.collection('settings').doc(context.businessId).get().catch(() => null);
+    const settingsData = settingsDoc && settingsDoc.exists ? settingsDoc.data() || {} : {};
+    const wallet = settingsData.smsWallet || {};
+    monthlyFee = Number((wallet && wallet.monthlyFee) || 1000);
+    const sw = window.SmsWalletCore ? window.SmsWalletCore.normalizeWallet(wallet, settingsData.smsBalance) : wallet;
+    const total = window.SmsWalletCore ? window.SmsWalletCore.effectiveTotal(sw) : Number(wallet.smsBalance ?? settingsData.smsBalance ?? 0);
+    const trialE = window.SmsWalletCore ? window.SmsWalletCore.effectiveTrialBalance(sw) : 0;
+    const paidE = window.SmsWalletCore ? window.SmsWalletCore.effectivePaidBalance(sw) : Math.max(0, total - trialE);
+    document.getElementById('smsBalanceValue').textContent = String(Math.max(0, Math.floor(total)));
+    document.getElementById('trialCreditsEffective').textContent = String(Math.max(0, Math.floor(trialE)));
+    document.getElementById('paidCreditsOnly').textContent = String(Math.max(0, Math.floor(paidE)));
+    const exp = sw.trialSmsExpiresAt || sw.trialExpiresAt;
+    document.getElementById('trialSmsEnds').textContent = exp ? new Date(exp).toLocaleString() : '-';
+    document.getElementById('smsHeaderInput').value = normalizedHeader(settingsData.smsHeader || '');
+    updatePayableUI();
+}
+async function updateQuickRechargeVisibility(){
+    const can = context && context.role === 'SUPER_ADMIN';
+    document.getElementById('quickRechargeBox').style.display = can ? 'block' : 'none';
+    if (can && context && !document.getElementById('quickBusinessId').value) {
+        document.getElementById('quickBusinessId').value = context.businessId;
+    }
+}
+
+document.getElementById('saveHeaderBtn').addEventListener('click', async () => {
+    if (!context) return;
+    const smsHeader = normalizedHeader(document.getElementById('smsHeaderInput').value);
+    if (!smsHeader) {
+        setMsg('SMS Header is required (letters/numbers only).', false);
+        return;
+    }
+    try {
+        await Promise.all([
+            db.collection('businesses').doc(context.businessId).set({ smsHeader, updatedAt: new Date() }, { merge: true }),
+            db.collection('settings').doc(context.businessId).set({ smsHeader, updatedAt: new Date().toISOString() }, { merge: true })
+        ]);
+        document.getElementById('smsHeaderInput').value = smsHeader;
+        setMsg('SMS Header saved successfully.', true);
+    } catch (e) {
+        setMsg(e && e.message ? e.message : 'Failed to save SMS Header', false);
+    }
+});
+
+document.getElementById('activateBtn').addEventListener('click', async () => {
+    if (!context) return;
+    const bid = context.businessId;
+    const units = Math.max(0, Number(selectedUnits || 0));
+    const settingsRef = db.collection('settings').doc(bid);
+    try {
+        await db.runTransaction(async (tx) => {
+            const snap = await tx.get(settingsRef);
+            const current = snap.exists ? (snap.data() || {}) : {};
+            const wallet = current.smsWallet || {};
+            const now = new Date();
+            const expireAt = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
+            let nextWallet;
+            if (window.SmsWalletCore) {
+                const base = window.SmsWalletCore.withExpiredTrialZeroed(
+                    window.SmsWalletCore.normalizeWallet(wallet, current.smsBalance)
+                );
+                const newPaid = Number(base.paidSmsBalance || 0) + units;
+                const trialEff = window.SmsWalletCore.effectiveTrialBalance(base);
+                nextWallet = {
+                    ...base,
+                    paidSmsBalance: newPaid,
+                    smsBalance: trialEff + newPaid,
+                    updatedAt: now.toISOString()
+                };
+            } else {
+                const prev = Number(wallet.smsBalance || 0);
+                nextWallet = {
+                    ...wallet,
+                    smsBalance: prev + units,
+                    updatedAt: now.toISOString()
+                };
+            }
+            tx.set(settingsRef, {
+                subscription: {
+                    plan: 'PRO',
+                    status: 'ACTIVE',
+                    activatedAt: now.toISOString(),
+                    expireDate: expireAt.toISOString()
+                },
+                smsWallet: {
+                    ...wallet,
+                    ...nextWallet,
+                    lowBalanceThreshold: Number(nextWallet.lowBalanceThreshold || wallet.lowBalanceThreshold || 50),
+                    unitPrice: Number(nextWallet.unitPrice || wallet.unitPrice || 1),
+                    monthlyFee: Number(nextWallet.monthlyFee || wallet.monthlyFee || 1000)
+                },
+                smsBalance: nextWallet.smsBalance
+            }, { merge: true });
+        });
+        setMsg('Payment marked active. Billing restored successfully.', true);
+        await refreshState();
+    } catch (e) {
+        setMsg(e && e.message ? e.message : 'Activation failed', false);
+    }
+});
+document.getElementById('quickRechargeBtn').addEventListener('click', async () => {
+    const bid = String(document.getElementById('quickBusinessId').value || '').trim();
+    const credits = Number(document.getElementById('quickCredits').value || 0);
+    if (!bid || credits <= 0) { setMsg('Business ID and positive credits are required.', false); return; }
+    const settingsRef = db.collection('settings').doc(bid);
+    try {
+        await db.runTransaction(async (tx) => {
+            const snap = await tx.get(settingsRef);
+            const data = snap.exists ? (snap.data() || {}) : {};
+            const wallet = data.smsWallet || {};
+            let nextWallet;
+            if (window.SmsWalletCore) {
+                const base = window.SmsWalletCore.withExpiredTrialZeroed(
+                    window.SmsWalletCore.normalizeWallet(wallet, data.smsBalance)
+                );
+                const newPaid = Number(base.paidSmsBalance || 0) + credits;
+                const trialEff = window.SmsWalletCore.effectiveTrialBalance(base);
+                nextWallet = {
+                    ...base,
+                    paidSmsBalance: newPaid,
+                    smsBalance: trialEff + newPaid,
+                    updatedAt: new Date().toISOString()
+                };
+            } else {
+                const prev = Number(wallet.smsBalance ?? data.smsBalance ?? 0);
+                nextWallet = { ...wallet, smsBalance: prev + credits, updatedAt: new Date().toISOString() };
+            }
+            tx.set(settingsRef, {
+                smsWallet: {
+                    ...wallet,
+                    ...nextWallet,
+                    lowBalanceThreshold: Number(nextWallet.lowBalanceThreshold || wallet.lowBalanceThreshold || 50),
+                    unitPrice: Number(nextWallet.unitPrice || wallet.unitPrice || 1),
+                    monthlyFee: Number(nextWallet.monthlyFee || wallet.monthlyFee || 1000),
+                    trialCreditsGranted: wallet.trialCreditsGranted !== false
+                },
+                smsBalance: nextWallet.smsBalance
+            }, { merge: true });
+        });
+        setMsg(`Quick recharge success: ${credits} credits added.`, true);
+    } catch (e) {
+        setMsg(e && e.message ? e.message : 'Quick recharge failed', false);
+    }
+});
+
+firebase.auth().onAuthStateChanged(async (u) => {
+    if (!u) {
+        window.location.href = '../../auth/login.html';
+        return;
+    }
+    const c = await window.dashboardCore.getContext(u);
+    const r = await window.getUserRole(u.uid, c.businessId).catch(() => ({ role: 'VIEWER' }));
+    context = { ...c, role: r.role || 'VIEWER' };
+    setUnits(100);
+    await refreshState();
+    await updateQuickRechargeVisibility();
+});
+</script>
+</body>
+</html>

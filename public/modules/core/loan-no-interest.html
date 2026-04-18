@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>No-interest Loan - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/loan-zero-cleanup.js?v=1"></script>
+    <script src="/core/loan-sms-notice.js?v=1"></script>
+    <script src="/core/scrap-vba-core.js?v=1"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/sidebar.js?v=64"></script>
+    <style>
+        body{font-family:Inter,system-ui,sans-serif;background:#fef2f2;margin:0;color:#450a0a}
+        /* Match Loans Hub / loan-interest: padding only — no margin:auto centering (avoids extra left gap beside sidebar). */
+        .wrap{padding:20px}
+        .hero{background:linear-gradient(135deg,#fecaca,#b91c1c);color:#fff;border-radius:16px;padding:20px 22px;margin-bottom:14px;box-shadow:0 8px 24px rgba(185,28,28,.18)}
+        .hero h2{margin:0;font-size:24px;text-shadow:0 1px 2px rgba(0,0,0,.12)}
+        .hero p{margin:6px 0 0;font-size:13px;opacity:.95}
+        .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+        .kpi{background:#fff;border:1px solid #fecaca;border-radius:12px;padding:12px;box-shadow:0 4px 14px rgba(185,28,28,.06)}
+        .kpi .label{font-size:12px;color:#991b1b}
+        .kpi .value{font-size:20px;font-weight:700;margin-top:4px;color:#450a0a}
+        .card{background:#fff;border:1px solid #fecaca;border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 6px 18px rgba(185,28,28,.06)}
+        .form-row{display:grid;grid-template-columns:1.4fr 1fr 1fr auto;gap:10px;align-items:end}
+        input,select,button{padding:10px;border:1px solid #fca5a5;border-radius:10px;font-size:14px}
+        button{background:#b91c1c;color:#fff;border:none;cursor:pointer;font-weight:600}
+        button:hover{filter:brightness(.95)}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th,td{padding:10px;border-bottom:1px solid #fecaca;text-align:left}
+        th{font-size:12px;text-transform:uppercase;letter-spacing:.3px;color:#9f1239}
+        .section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px}
+        .section-title h3{margin:0;color:#7f1d1d}
+        .sms-debug{font-size:12px;min-height:1.2em}
+        .hero-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px}
+        button.btn-danger{background:#7f1d1d;color:#fff}
+        button.btn-danger:hover{filter:brightness(1.05)}
+        @media (max-width:980px){.form-row,.kpis{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="hero">
+        <div class="hero-head">
+            <div>
+                <h2>No-interest Loan</h2>
+                <p>Principal-only loans with SMS updates — same queue as Hand Loans (pending_sms + gateway).</p>
+            </div>
+            <button type="button" id="clearAllBtn" class="btn-danger" style="align-self:center;padding:10px 14px;border-radius:10px;border:none;cursor:pointer;font-size:13px;font-weight:600;">Clear all no-interest loans</button>
+        </div>
+    </div>
+    <div class="kpis">
+        <div class="kpi"><div class="label">Total outstanding</div><div class="value" id="kpiOutstanding">Rs. 0.00</div></div>
+        <div class="kpi"><div class="label">Total repaid (booked)</div><div class="value" id="kpiRepaid">Rs. 0.00</div></div>
+        <div class="kpi"><div class="label">Loans with balance</div><div class="value" id="kpiActive">0</div></div>
+    </div>
+    <div class="card">
+        <div class="section-title"><h3>New no-interest loan</h3></div>
+        <div class="form-row">
+            <select id="customerId"><option value="">Select customer...</option></select>
+            <input id="amount" type="number" step="0.01" placeholder="Amount">
+            <input id="date" type="date">
+            <button id="saveBtn" type="button">Save</button>
+        </div>
+    </div>
+    <div class="card">
+        <div class="section-title"><h3>All loans</h3></div>
+        <table><thead><tr><th>Name</th><th>Principal</th><th>Total payable</th><th>Total paid</th><th>Balance</th><th>Date</th><th>Action</th></tr></thead><tbody id="rows"></tbody></table>
+        <div id="smsDebug" class="sms-debug" style="margin-top:12px;color:#334155;"></div>
+    </div>
+</div>
+<script>
+let businessId = null; const customerMap = {};
+let noIntSweepTimer = null;
+const GL_CASH = { accountCode:'1-1010-01', accountName:'Cash - Main' };
+const GL_NOINT_AR = { accountCode:'1-1030-11', accountName:'A/R — No-interest loans' };
+function noIntFullyZero(r){ return Math.max(0,n(r.balance||r.principalOutstanding))<=0.0001; }
+function m(v){ return `Rs. ${(Number(v)||0).toFixed(2)}`; }
+function n(v){ const x = Number(v); return Number.isFinite(x) ? x : 0; }
+function pickMobile(v){
+  return String(v?.mobile || v?.phone || v?.phoneNumber || '').trim();
+}
+function showSmsDebug(text, ok){
+  if (window.LoanSmsNotice && typeof window.LoanSmsNotice.show === 'function') {
+    window.LoanSmsNotice.show('smsDebug', text, ok);
+    return;
+  }
+  const el = document.getElementById('smsDebug');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = ok ? '#166534' : '#b91c1c';
+}
+/** Same path as Hand Loans: scrapVbaCore first, else pending_sms + RTDB. */
+async function enqueueSms(mobile, message){
+  try {
+    if (!mobile) return { ok:false, skipped:'no_mobile' };
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.enqueuePendingSms === 'function') {
+      return await window.scrapVbaCore.enqueuePendingSms(businessId, mobile, message);
+    }
+    const id = `noint_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+    await db.collection('pending_sms').doc(id).set({
+      businessId,mobile,message,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (typeof firebase !== 'undefined' && typeof firebase.database === 'function') {
+      await firebase.database().ref(`sms_gateway/${businessId}/pending_sms/${id}`).set({businessId,mobile,message});
+    }
+    return { ok:true, id };
+  } catch (e) {
+    return { ok:false, skipped:'send_error', error: String(e?.message || e || 'unknown') };
+  }
+}
+async function loadCustomers(){
+  const snap = await db.collection('customers').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
+  const sel = document.getElementById('customerId'); sel.innerHTML = '<option value="">Select customer...</option>';
+  snap.docs.forEach((d)=>{ const x=d.data()||{}; customerMap[d.id]=x; const o=document.createElement('option'); o.value=d.id; o.textContent=x.fullName||d.id; sel.appendChild(o); });
+}
+async function addJournal(desc, entries, refType, loanLink){
+  const totalDebit = entries.reduce((s,e)=>s+(Number(e.debit)||0),0);
+  const totalCredit = entries.reduce((s,e)=>s+(Number(e.credit)||0),0);
+  const row = { businessId, date: new Date(), description: desc, entries, totalDebit, totalCredit, referenceType: refType };
+  if (loanLink && loanLink.collection && loanLink.docId) {
+    row.loanCollection = loanLink.collection;
+    row.loanDocId = loanLink.docId;
+  }
+  const jref = await db.collection('journal').doc(businessId).collection('entries').add(row);
+  if (loanLink && loanLink.collection && loanLink.docId) {
+    try {
+      await db.collection(loanLink.collection).doc(loanLink.docId).set({
+        linkedJournalEntryIds: firebase.firestore.FieldValue.arrayUnion(jref.id)
+      }, { merge: true });
+    } catch (e) {
+      console.warn('[loan-no-interest] journal link to loan doc:', e && (e.message || e));
+    }
+  }
+  return jref;
+}
+async function saveLoan(){
+  const cid = document.getElementById('customerId').value; const amount = Number(document.getElementById('amount').value||0); const date = document.getElementById('date').value;
+  if(!cid || amount<=0) return alert('Customer and amount required.');
+  const customerName = customerMap[cid]?.fullName || cid;
+  if (!confirm(`Confirm no-interest loan issue?\nCustomer: ${customerName}\nAmount: Rs.${amount.toFixed(2)}`)) return;
+  const loanRef = await db.collection('loan_no_interest').add({
+    businessId,
+    customerId:cid,
+    customerName,
+    customerMobile: pickMobile(customerMap[cid]),
+    principalAmount:amount,
+    interestAmount:0,
+    totalPayable:amount,
+    totalPaid:0,
+    principalOutstanding:amount,
+    balance:amount,
+    date,
+    createdAt:new Date(),
+    active:true
+  });
+  await addJournal(`No-interest loan given - ${customerName}`,[{...GL_NOINT_AR,debit:amount,credit:0},{...GL_CASH,debit:0,credit:amount}],'LOAN_NO_INTEREST',{ collection: 'loan_no_interest', docId: loanRef.id });
+  const mob = pickMobile(customerMap[cid]);
+  const smsRes = await enqueueSms(mob, `Dear ${customerName}, no-interest loan issued Rs.${amount.toFixed(2)}. Balance due Rs.${amount.toFixed(2)}.`);
+  if (smsRes?.ok) showSmsDebug(`SMS queued for ${customerName}.`, true);
+  else showSmsDebug(`SMS skipped for ${customerName}: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
+  document.getElementById('amount').value=''; await loadRows();
+}
+async function repay(id){
+  const txt = prompt('Repayment amount'); const pay = Number(txt||0); if(pay<=0) return;
+  const ref = db.collection('loan_no_interest').doc(id); const snap = await ref.get(); if(!snap.exists) return;
+  const row = snap.data()||{};
+  if (!confirm(`Confirm repayment?\nCustomer: ${row.customerName || '-'}\nAmount: Rs.${pay.toFixed(2)}`)) return;
+  const outstanding = n(row.balance || row.principalOutstanding);
+  const applied = Math.min(pay, outstanding);
+  if (applied <= 0) return alert('This loan is already settled.');
+  const next = Math.max(0, outstanding - applied);
+  const totalPaid = n(row.totalPaid) + applied;
+  const patch = { principalOutstanding:next, balance:next, totalPaid, active: next > 0.0001, updatedAt:new Date() };
+  if (next <= 0.0001 && window.LoanZeroCleanup) patch.pendingRemovalAt = window.LoanZeroCleanup.removalTimestamp();
+  else patch.pendingRemovalAt = firebase.firestore.FieldValue.delete();
+  await ref.set(patch,{merge:true});
+  await addJournal(`No-interest loan repayment - ${row.customerName||'-'}`,[{...GL_CASH,debit:applied,credit:0},{...GL_NOINT_AR,debit:0,credit:applied}],'LOAN_NO_INTEREST_REPAY',{ collection: 'loan_no_interest', docId: id });
+  const mob = String(row.customerMobile || '').trim() || (row.customerId ? pickMobile(customerMap[row.customerId]) : '');
+  const smsRes = await enqueueSms(mob, `Dear ${row.customerName || 'customer'}, repayment received Rs.${applied.toFixed(2)}. Remaining balance Rs.${next.toFixed(2)}.`);
+  if (smsRes?.ok) showSmsDebug(`Repayment SMS queued for ${row.customerName || 'customer'}.`, true);
+  else showSmsDebug(`Repayment SMS skipped: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
+  if (pay > applied) alert(`Only ${applied.toFixed(2)} applied. Excess ignored.`);
+  await loadRows();
+}
+async function deleteAllNoInterestForBusiness(){
+  if (!confirm('Delete ALL no-interest loan records for this business? This cannot be undone. Existing journal entries are NOT reversed.')) return;
+  if (String(prompt('Type DELETE to confirm')||'') !== 'DELETE') { alert('Cancelled.'); return; }
+  try {
+    let n = 0;
+    while (true) {
+      const snap = await db.collection('loan_no_interest').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
+      if (!snap.docs.length) break;
+      const batch = db.batch();
+      snap.docs.forEach((d)=>batch.delete(d.ref));
+      await batch.commit();
+      n += snap.docs.length;
+      if (snap.docs.length < 500) break;
+    }
+    alert(n ? `Removed ${n} record(s).` : 'No records to remove.');
+    await loadRows();
+  } catch (e) {
+    alert('Delete failed: ' + (e?.message || e));
+  }
+}
+async function loadRows(){
+  if (window.LoanZeroCleanup && businessId) {
+    await window.LoanZeroCleanup.sweepExpired(db, businessId, 'loan_no_interest', noIntFullyZero);
+  }
+  const snap = await db.collection('loan_no_interest').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
+  const rows = snap.docs.map((d)=>({id:d.id,...(d.data()||{})})).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  let totOut = 0, totPaid = 0, activeCount = 0;
+  document.getElementById('rows').innerHTML = rows.map((r)=>{
+    const principalAmount = n(r.principalAmount || r.principalOutstanding);
+    const interestAmount = n(r.interestAmount);
+    const totalPayable = n(r.totalPayable || (principalAmount + interestAmount));
+    const totalPaid = n(r.totalPaid || (totalPayable - n(r.balance || r.principalOutstanding)));
+    const balance = Math.max(0, n(r.balance || r.principalOutstanding));
+    totOut += balance;
+    totPaid += totalPaid;
+    if (balance > 0.0001) activeCount += 1;
+    return `<tr>
+      <td>${r.customerName||'-'}</td>
+      <td>${m(principalAmount)}</td>
+      <td>${m(totalPayable)}</td>
+      <td>${m(totalPaid)}</td>
+      <td>${m(balance)}</td>
+      <td>${r.date||'-'}</td>
+      <td><button type="button" data-id="${r.id}" ${balance<=0?'disabled':''}>Receive</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7">No records</td></tr>';
+  document.getElementById('kpiOutstanding').textContent = m(totOut);
+  document.getElementById('kpiRepaid').textContent = m(totPaid);
+  document.getElementById('kpiActive').textContent = String(activeCount);
+  document.querySelectorAll('#rows button[data-id]').forEach((b)=>b.onclick=()=>repay(b.dataset.id));
+}
+firebase.auth().onAuthStateChanged(async (u)=>{
+  if(!u){location.href='/auth/login.html';return;}
+  if (noIntSweepTimer) { clearInterval(noIntSweepTimer); noIntSweepTimer = null; }
+  const ctx = await window.dashboardCore.getContext(u);
+  businessId = String((ctx&&ctx.businessId)||u.uid);
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('date').value = today;
+  await loadCustomers();
+  await loadRows();
+  if (window.LoanZeroCleanup) {
+    noIntSweepTimer = setInterval(async ()=>{
+      if (!businessId) return;
+      await window.LoanZeroCleanup.sweepExpired(db, businessId, 'loan_no_interest', noIntFullyZero);
+      await loadRows();
+    }, 20000);
+  }
+});
+document.getElementById('saveBtn').onclick = saveLoan;
+document.getElementById('clearAllBtn').onclick = deleteAllNoInterestForBusiness;
+</script>
+</body>
+</html>

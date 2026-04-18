@@ -57,6 +57,121 @@ const EVENT_PAYLOAD_SCHEMAS = {
             orderNo: 'string',
             approvedBy: 'string'
         }
+    },
+    MANUFACTURING_RAW_MATERIAL_PURCHASED: {
+        required: {
+            amount: 'positiveNumber',
+            businessId: 'nonEmptyString',
+            purchaseId: 'nonEmptyString'
+        },
+        optional: {
+            supplierName: 'string',
+            materialName: 'string',
+            paymentMode: 'string',
+            paymentStatus: 'string',
+            dueDate: 'string',
+            chequeClearanceDate: 'string'
+        }
+    },
+    MANUFACTURING_OPERATIONAL_EXPENSE: {
+        required: {
+            amount: 'positiveNumber',
+            businessId: 'nonEmptyString',
+            expenseId: 'nonEmptyString',
+            category: 'nonEmptyString'
+        },
+        optional: {
+            notes: 'string',
+            paymentMode: 'string',
+            paymentStatus: 'string',
+            dueDate: 'string',
+            chequeClearanceDate: 'string'
+        }
+    },
+    MANUFACTURING_FINISHED_GOOD_SALE: {
+        required: {
+            amount: 'positiveNumber',
+            businessId: 'nonEmptyString',
+            saleId: 'nonEmptyString'
+        },
+        optional: {
+            productName: 'string',
+            paymentMode: 'string',
+            paymentStatus: 'string',
+            dueDate: 'string',
+            chequeClearanceDate: 'string',
+            companyName: 'string'
+        }
+    },
+    MANUFACTURING_SIDE_INCOME: {
+        required: {
+            amount: 'positiveNumber',
+            businessId: 'nonEmptyString',
+            incomeId: 'nonEmptyString'
+        },
+        optional: {
+            incomeType: 'string'
+        }
+    },
+    HAND_LOAN_RECORDED: {
+        required: {
+            amount: 'positiveNumber',
+            businessId: 'nonEmptyString',
+            type: 'nonEmptyString',
+            personName: 'nonEmptyString'
+        },
+        optional: {
+            loanId: 'string',
+            interestType: 'string',
+            interestValue: 'number',
+            description: 'string',
+            date: 'string'
+        }
+    },
+    DISTRIBUTOR_GRN_POSTED: {
+        required: {
+            amount: 'positiveNumber',
+            businessId: 'nonEmptyString',
+            grnId: 'nonEmptyString'
+        },
+        optional: {
+            supplier: 'string',
+            date: 'string'
+        }
+    },
+    FREE_ISSUES_RECORDED: {
+        required: {
+            amount: 'positiveNumber',
+            businessId: 'nonEmptyString',
+            orderId: 'nonEmptyString'
+        },
+        optional: {
+            date: 'any'
+        }
+    },
+    MARKET_RETURNS_RECORDED: {
+        required: {
+            amount: 'positiveNumber',
+            businessId: 'nonEmptyString',
+            orderId: 'nonEmptyString'
+        },
+        optional: {
+            date: 'any'
+        }
+    },
+    FINANCE_TRANSACTION_RECORDED: {
+        required: {
+            amount: 'positiveNumber',
+            businessId: 'nonEmptyString',
+            type: 'nonEmptyString',
+            customerId: 'nonEmptyString'
+        },
+        optional: {
+            method: 'string',
+            date: 'string',
+            note: 'string',
+            transactionId: 'string'
+        }
     }
 };
 

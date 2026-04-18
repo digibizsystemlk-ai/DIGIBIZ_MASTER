@@ -32,7 +32,8 @@
 
     /**
      * Stock change when approving a rep order line (sales + return split).
-     * Cat 2 (resell) returns add stock back; Cat 1 (to factory/company) does not.
+     * Cat 2 (resell / agent) returns add stock back; Cat 1 (to factory/company) does not add to sellable stock.
+ * On manager approval, company-return units increment `factoryReturnBucket` on the product (non-sellable bucket).
      * Legacy lines with only returnQty count as resell when split fields are absent.
      */
     function orderApprovalStockDelta(item) {
@@ -50,10 +51,15 @@
         return -(ordered + free) + resellBack;
     }
 
+    function factoryReturnUnitsFromLine(item) {
+        return Number(item && item.returnCompanyQty) || 0;
+    }
+
     global.DigiBizDistributorInventory = {
         MOVEMENT_TYPES: MOVEMENT_TYPES,
         numericStock: numericStock,
         syncStockPayload: syncStockPayload,
-        orderApprovalStockDelta: orderApprovalStockDelta
+        orderApprovalStockDelta: orderApprovalStockDelta,
+        factoryReturnUnitsFromLine: factoryReturnUnitsFromLine
     };
 })(typeof window !== 'undefined' ? window : globalThis);

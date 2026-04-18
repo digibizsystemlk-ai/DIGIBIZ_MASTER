@@ -12,7 +12,11 @@ const ROLES = {
     REP_SUPERVISOR: 'REP_SUPERVISOR',
     WAREHOUSE_MANAGER: 'WAREHOUSE_MANAGER',
     DELIVERY_MANAGER: 'DELIVERY_MANAGER',
-    REP: 'REP'
+    REP: 'REP',
+
+    // MW Trading (Destrugatters) roles
+    SALES_COORDINATOR: 'SALES_COORDINATOR',
+    AREA_MANAGER: 'AREA_MANAGER'
 };
 
 const PERMISSIONS = {
@@ -127,7 +131,9 @@ const MENU_BY_ROLE = {
         { icon: "📦", name: "Products", link: "/modules/distributor/web/products.html" },
         { icon: "🏭", name: "Warehouse", link: "/modules/distributor/web/warehouse.html" },
         { icon: "🚚", name: "Deliveries", link: "/modules/distributor/web/deliveries.html" },
-        { icon: "📈", name: "Reports", link: "/modules/distributor/web/reports.html" }
+        { icon: "📈", name: "Reports", link: "/modules/distributor/web/reports.html" },
+        { icon: "💰", name: "Sales", link: "/modules/distributor/web/sales.html" },
+        { icon: "📒", name: "Financials", link: "/modules/distributor/web/financials.html" }
     ]
 };
 
@@ -165,21 +171,23 @@ async function getUserRole(userId, businessId = null) {
         if (window.auth && window.auth.currentUser && window.auth.currentUser.uid === userId) {
             const em = String(window.auth.currentUser.email || '').trim().toLowerCase();
             if (em === MW_OWNER_EMAIL) {
-                window.__DIGIBIZ_LOCAL_ROLE__ = 'BUSINESS_OWNER';
+                window.__DIGIBIZ_LOCAL_ROLE__ = 'distributor_owner';
                 window.__DIGIBIZ_MW_PROFILE_SYNC__ = {
-                    role: 'BUSINESS_OWNER',
+                    role: 'distributor_owner',
                     businessId: MW_BUSINESS_ID,
                     email: window.auth.currentUser.email
                 };
                 try {
-                    localStorage.setItem('digibizMwDisplayRole', 'BUSINESS_OWNER');
+                    localStorage.setItem('digibizMwDisplayRole', 'distributor_owner');
                     localStorage.setItem('digibizMwBusinessId', MW_BUSINESS_ID);
                     localStorage.setItem('digibizMwSyncEmail', MW_OWNER_EMAIL);
                     localStorage.setItem('currentBusinessId', MW_BUSINESS_ID);
+                    localStorage.setItem('currentBusinessType', 'distributor');
                     sessionStorage.setItem('currentBusinessId', MW_BUSINESS_ID);
+                    sessionStorage.setItem('currentBusinessType', 'distributor');
                 } catch (e) { /* ignore */ }
-                console.log('[getUserRole] MW email master: BUSINESS_OWNER @', MW_BUSINESS_ID);
-                return { role: 'BUSINESS_OWNER', businessId: MW_BUSINESS_ID };
+                console.log('[getUserRole] MW email master: distributor_owner @', MW_BUSINESS_ID);
+                return { role: 'distributor_owner', businessId: MW_BUSINESS_ID };
             }
         }
         
@@ -206,5 +214,101 @@ window.MENU_BY_ROLE = MENU_BY_ROLE;
 window.hasPermission = hasPermission;
 window.getMenuForRole = getMenuForRole;
 window.getUserRole = getUserRole;
+
+/**
+ * Distributor (MW-style) web RBAC: Owner, Sales Coordinator, Area Manager, Rep.
+ * Rep is enforced mainly via mobile; web pages still use these flags when role is known.
+ */
+(function attachDistributorPermissions() {
+    const OWNER_NORMS = new Set(['DISTRIBUTOR_OWNER', 'BUSINESS_OWNER', 'SUPER_ADMIN', 'ADMIN']);
+
+    function normalizeRole(r) {
+        let s = String(r || '')
+            .trim()
+            .toUpperCase()
+            .replace(/\s+/g, '_')
+            .replace(/[^A-Z0-9_]/g, '');
+        if (s === 'DISTRIBUTOROWNER') s = 'DISTRIBUTOR_OWNER';
+        return s;
+    }
+
+    function roleBand(roleRaw) {
+        const r = normalizeRole(roleRaw);
+        if (OWNER_NORMS.has(r)) return 'OWNER';
+        if (r === 'SALES_COORDINATOR') return 'SALES_COORDINATOR';
+        if (r === 'AREA_MANAGER') return 'AREA_MANAGER';
+        if (r === 'REP') return 'REP';
+        return 'OTHER';
+    }
+
+    function permissionsForRole(roleRaw) {
+        const b = roleBand(roleRaw);
+        const isOwner = b === 'OWNER';
+        const isSC = b === 'SALES_COORDINATOR';
+        const isAM = b === 'AREA_MANAGER';
+        const isRep = b === 'REP';
+        const matrix = isOwner || isSC || isAM || isRep;
+
+        if (b === 'OTHER') {
+            return {
+                roleBand: b,
+                canInvoiceCreateEdit: false,
+                canInvoiceReject: false,
+                canInvoiceDelete: false,
+                canViewAccounting: false,
+                canViewReportsFull: false,
+                canViewFinancialsProfit: false,
+                canStockEdit: false,
+                canStockView: true,
+                canCustomerCreate: false,
+                canCustomerEditDelete: false,
+                canCustomerView: true,
+                canProductCreate: false,
+                canProductEditDelete: false,
+                canProductView: true,
+                canStaffMutate: false,
+                canExpensesCreate: false,
+                canExpensesEdit: false,
+                canSettingsChange: false,
+                canBusinessInfoEdit: false,
+                canOrderWorkflowApprove: false,
+                canOrderReject: false,
+                canManageRepsWeb: false
+            };
+        }
+
+        return {
+            roleBand: b,
+            canInvoiceCreateEdit: matrix,
+            canInvoiceReject: isOwner,
+            canInvoiceDelete: isOwner,
+            canViewAccounting: isOwner || isSC,
+            canViewReportsFull: isOwner || isSC || isAM,
+            canViewFinancialsProfit: isOwner || isSC,
+            canStockEdit: isOwner,
+            canStockView: matrix,
+            canCustomerCreate: matrix,
+            canCustomerEditDelete: isOwner || isSC,
+            canCustomerView: matrix,
+            canProductCreate: isOwner || isSC,
+            canProductEditDelete: isOwner,
+            canProductView: matrix,
+            canStaffMutate: isOwner,
+            canExpensesCreate: isOwner || isSC,
+            canExpensesEdit: isOwner,
+            canSettingsChange: isOwner,
+            canBusinessInfoEdit: isOwner,
+            canOrderWorkflowApprove: isOwner || isSC || isAM,
+            canOrderReject: isOwner,
+            canManageRepsWeb: isOwner || isSC || isAM
+        };
+    }
+
+    window.DigibizDistributorPermissions = {
+        normalizeRole,
+        roleBand,
+        permissionsForRole
+    };
+})();
 
 console.log('✅ Auth Roles Core Initialized');

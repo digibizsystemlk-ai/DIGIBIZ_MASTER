@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Loan (Investor Fund) - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/loan-zero-cleanup.js?v=1"></script>
+    <script src="/core/loan-sms-notice.js?v=1"></script>
+    <script src="/core/scrap-vba-core.js?v=1"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/sidebar.js?v=64"></script>
+    <style>
+        body{font-family:Inter,system-ui,sans-serif;background:#f1f5f9;margin:0;color:#0f172a}
+        .wrap{padding:20px}
+        .card{background:#fff;border:1px solid #dbe4ee;border-radius:12px;padding:14px;margin-bottom:12px}
+        .row{display:grid;grid-template-columns:1fr 140px auto;gap:8px;align-items:end}
+        input,select,button,textarea{padding:9px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px}
+        button{background:#0f766e;color:#fff;border:none;cursor:pointer;font-weight:600}
+        button:hover{filter:brightness(.95)}
+        button.btn-secondary{background:#fff;color:#0f766e;border:1px solid #94a3b8}
+        button.btn-danger{background:#b91c1c;color:#fff}
+        button.btn-danger:hover{filter:brightness(.95)}
+        .card-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+        .table-wrap{overflow-x:auto;border:1px solid #e2e8f0;border-radius:10px;margin-top:8px}
+        table.adv-sheet{width:100%;border-collapse:collapse;font-size:11px;min-width:2200px}
+        table.adv-sheet th{background:#1e3a5f;color:#fff;font-weight:700;padding:8px 6px;text-align:left;white-space:nowrap;border:1px solid #0f172a}
+        table.adv-sheet th.ar,table.adv-sheet td.text-right{text-align:right}
+        table.adv-sheet tr.adv-totals-row th{background:#0f172a !important;color:#fde68a;font-weight:800;font-size:11px;border-color:#1e293b}
+        table.adv-sheet td{padding:6px;border-bottom:1px solid #e2e8f0;vertical-align:top;white-space:nowrap}
+        table.adv-sheet tbody tr:nth-child(even){background:#f8fafc}
+        .muted{font-size:12px;color:#64748b;margin:6px 0}
+        .sms-debug{font-size:12px;margin-top:10px;min-height:1.2em}
+        .owe-investor-banner{margin:0 0 12px;padding:14px 16px;border-radius:12px;background:#fef2f2;border:2px solid #b91c1c;color:#7f1d1d}
+        .owe-investor-banner .lbl{font-size:13px;font-weight:700;color:#991b1b;margin:0 0 4px}
+        .owe-investor-banner .amt{font-size:28px;font-weight:900;color:#b91c1c;letter-spacing:-0.02em}
+        .owe-investor-banner .sub{font-size:12px;color:#9f1239;margin-top:6px}
+        @media (max-width:980px){.row{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="owe-investor-banner" id="oweInvestorBanner" style="display:none;">
+        <div class="lbl">Investor ට ගෙවිය යුතු මුදල (Principal Due + Interest Due) · Amount to remit to investor</div>
+        <div class="amt" id="oweInvestorAmount">Rs. 0.00</div>
+        <div class="sub" id="oweInvestorSub"></div>
+    </div>
+    <div class="card">
+        <h2 style="margin:0 0 8px;">Advanced Loan (Investor Fund)</h2>
+        <div>Investor phone: <b id="investorPhoneDisplay">0773125715</b> · Default member daily rate: <b>0.27%</b> (editable per row / import)</div>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="sendNowBtn" type="button">Send investor SMS (recalc + queue)</button>
+        </div>
+    </div>
+    <div class="card">
+        <h3 style="margin:0 0 8px;">Paste spreadsheet (one row)</h3>
+        <p class="muted">Excel: copy rows with <strong>20 columns</strong> (tab-separated), same order as your sheet:<br>
+        MEMBER NAME · ORIGINAL LOAN · TRANSFER DATE · BALANCE · DAILY RATE · INTEREST · LAST PAYMENT · PHONE · NOTES · STATUS · EXEMPT · KEEP · OWNER · Collected Principal · Collected Interest · Principal Paid to Investor · Interest Paid to Investor · Principal Due to Investor · Interest Due to Investor · Last Interest Date</p>
+        <textarea id="bulkPaste" rows="6" style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:11px;" placeholder="Paste one or more tab-separated rows here…"></textarea>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button type="button" id="importBulkBtn" class="btn-secondary">Import rows</button>
+            <span id="importMsg" style="font-size:12px;"></span>
+        </div>
+    </div>
+    <div class="card">
+        <h3 style="margin:0 0 8px;">Quick issue (new member)</h3>
+        <div class="row">
+            <select id="customerId"><option value="">Select customer…</option></select>
+            <input id="amount" type="number" step="0.01" placeholder="Principal / balance">
+            <button id="saveBtn" type="button">Issue</button>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head">
+            <h3 style="margin:0;">Member loans (sheet view)</h3>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                <button type="button" id="payAllInvestorBtn" class="btn-secondary" style="padding:9px 12px;border-radius:8px;font-size:13px;font-weight:600;">Pay all to investor (total dues)</button>
+                <button type="button" id="clearAllBtn" class="btn-danger" style="padding:9px 12px;border-radius:8px;font-size:13px;font-weight:600;">Clear all advanced loans</button>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="adv-sheet">
+                <thead>
+                    <tr id="advTotalsRow" class="adv-totals-row"></tr>
+                    <tr>
+                        <th>MEMBER NAME</th>
+                        <th>ORIGINAL LOAN</th>
+                        <th>TRANSFER DATE</th>
+                        <th>BALANCE</th>
+                        <th>DAILY RATE</th>
+                        <th>INTEREST</th>
+                        <th>LAST PAYMENT</th>
+                        <th>PHONE</th>
+                        <th>NOTES</th>
+                        <th>STATUS</th>
+                        <th>EXEMPT</th>
+                        <th>KEEP</th>
+                        <th>OWNER</th>
+                        <th>Collected Principal</th>
+                        <th>Collected Interest</th>
+                        <th>Principal Paid to Investor</th>
+                        <th>Interest Paid to Investor</th>
+                        <th>Principal Due to Investor</th>
+                        <th>Interest Due to Investor</th>
+                        <th>Last Interest Date</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="rows"></tbody>
+            </table>
+        </div>
+        <p class="muted" style="margin-top:10px;"><strong>Receive:</strong> member balance/interest අඩු කරයි; <strong>Due to Investor</strong> වැඩි වේ. <strong>Pay investor:</strong> එම පේළියට cash ගෙවීම. <strong>Pay all to investor:</strong> සියලු member වල investor due එක confirm එකකින් ගෙවයි (per-member journal + එක SMS). <strong>Delete row:</strong> එම member පේළිය පමණක් මකයි (journal නොපෙරළයි).</p>
+        <div id="smsDebug" class="sms-debug" style="color:#334155;"></div>
+    </div>
+</div>
+<script>
+let businessId = null;
+const DEFAULT_INVESTOR_PHONE = '0773125715';
+const DEFAULT_MEMBER_RATE_MONTHLY = 8;
+const DEFAULT_DAILY_RATE_PERCENT = 0.27;
+const customerMap = {};
+let advLoanSweepTimer = null;
+
+const GL_CASH = { accountCode:'1-1010-01', accountName:'Cash - Main' };
+const GL_ADV_AR = { accountCode:'1-1030-13', accountName:'A/R — Advanced (investor) loans' };
+const GL_ADV_INV_AP = { accountCode:'2-2060-10', accountName:'Investor funds payable — Advanced loans' };
+
+function n(v){ const x = Number(v); return Number.isFinite(x) ? x : 0; }
+function m(v){ return `Rs. ${n(v).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2})}`; }
+function escapeHtml(str){
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function pickMobile(v){
+  return String(v?.mobile || v?.phone || v?.phoneNumber || '').trim();
+}
+function stripPercentCell(s){
+  const t = String(s||'').trim().replace(/%/g,'').replace(/,/g,'');
+  const x = Number(t);
+  return Number.isFinite(x) ? x : 0;
+}
+function advLoanFullyZero(r){
+  const bal = n(r.balance != null ? r.balance : r.principalOutstanding);
+  const intv = n(r.interestOutstanding);
+  return (bal + intv) <= 0.0001;
+}
+/** Normalize Firestore row → display + engine fields */
+function normAdvRow(raw){
+  const r = raw || {};
+  const originalLoan = n(r.originalLoan != null ? r.originalLoan : r.principalOutstanding);
+  const balance = n(r.balance != null ? r.balance : r.principalOutstanding);
+  const interest = n(r.interestOutstanding);
+  const dailyPct = n(r.dailyRatePercent != null ? r.dailyRatePercent : DEFAULT_DAILY_RATE_PERCENT);
+  return {
+    ...r,
+    customerName: r.customerName || r.memberName || '-',
+    originalLoan,
+    transferDate: r.transferDate || r.date || '',
+    balance,
+    dailyRatePercent: dailyPct,
+    interestOutstanding: interest,
+    lastPaymentDate: r.lastPaymentDate || '',
+    customerMobile: String(r.customerMobile || r.phone || '').trim(),
+    notes: r.notes || '',
+    status: r.status || (r.active === false ? 'Closed' : 'Active'),
+    exempt: r.exempt != null && r.exempt !== '' ? String(r.exempt) : '',
+    keepField: r.keepField != null && r.keepField !== '' ? String(r.keepField) : '',
+    owner: r.owner || '',
+    collectedPrincipal: n(r.collectedPrincipal),
+    collectedInterest: n(r.collectedInterest),
+    principalPaidToInvestor: n(r.principalPaidToInvestor),
+    interestPaidToInvestor: n(r.interestPaidToInvestor),
+    principalDueToInvestor: n(r.principalDueToInvestor),
+    interestDueToInvestor: n(r.interestDueToInvestor),
+    lastInterestDate: r.lastInterestDate || (r.lastInterestCalcAt ? String(r.lastInterestCalcAt).slice(0,10) : ''),
+    principalOutstanding: balance,
+    interestOutstanding: interest
+  };
+}
+async function loadCustomers(){
+  const snap = await db.collection('customers').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
+  const sel = document.getElementById('customerId'); sel.innerHTML = '<option value="">Select customer…</option>';
+  snap.docs.forEach((d)=>{ const x=d.data()||{}; customerMap[d.id]=x; const o=document.createElement('option'); o.value=d.id; o.textContent=x.fullName||d.id; sel.appendChild(o); });
+}
+async function addJournal(desc, entries, refType, loanLink){
+  const totalDebit = entries.reduce((s,e)=>s+n(e.debit),0);
+  const totalCredit = entries.reduce((s,e)=>s+n(e.credit),0);
+  const row = { businessId, date: new Date(), description: desc, entries, totalDebit, totalCredit, referenceType: refType };
+  if (loanLink && loanLink.collection && loanLink.docId) {
+    row.loanCollection = loanLink.collection;
+    row.loanDocId = loanLink.docId;
+  }
+  const jref = await db.collection('journal').doc(businessId).collection('entries').add(row);
+  if (loanLink && loanLink.collection && loanLink.docId) {
+    try {
+      await db.collection(loanLink.collection).doc(loanLink.docId).set({
+        linkedJournalEntryIds: firebase.firestore.FieldValue.arrayUnion(jref.id)
+      }, { merge: true });
+    } catch (e) {
+      console.warn('[loan-advanced] journal link:', e && (e.message || e));
+    }
+  }
+  return jref;
+}
+async function enqueueSms(mobile, message){
+  try {
+    if (!mobile) return { ok:false, skipped:'no_mobile' };
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.enqueuePendingSms === 'function') {
+      return await window.scrapVbaCore.enqueuePendingSms(businessId, mobile, message);
+    }
+    const id = `advloan_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+    await db.collection('pending_sms').doc(id).set({
+      businessId,mobile,message,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (typeof firebase !== 'undefined' && typeof firebase.database === 'function') {
+      await firebase.database().ref(`sms_gateway/${businessId}/pending_sms/${id}`).set({businessId,mobile,message});
+    }
+    return { ok:true, id };
+  } catch (e) {
+    return { ok:false, skipped:'send_error', error: String(e?.message || e || 'unknown') };
+  }
+}
+/** Append investor_capital_ledger line when cash is paid to investor (advanced loan). */
+async function appendInvestorCapitalLedgerRemit(intPortion, prPortion, memberLabel){
+  const intCh = -n(intPortion);
+  const capCh = -n(prPortion);
+  if (Math.abs(intCh) < 0.00001 && Math.abs(capCh) < 0.00001) return;
+  const snap = await db.collection('investor_capital_ledger').where('businessId', '==', businessId).limit(500).get().catch(()=>({ docs: [] }));
+  let prevC = 0, prevI = 0;
+  if (snap.docs.length){
+    let best = null, bestMs = -Infinity;
+    snap.docs.forEach((doc)=>{
+      const ld = doc.data() || {};
+      const ms = ld.createdAt && ld.createdAt.toDate ? ld.createdAt.toDate().getTime() : (ld.createdAt && ld.createdAt.toMillis ? ld.createdAt.toMillis() : 0);
+      if (ms >= bestMs){ bestMs = ms; best = ld; }
+    });
+    if (best){ prevC = n(best.capitalBalance); prevI = n(best.interestBalance); }
+  }
+  const label = String(memberLabel || '').trim();
+  await db.collection('investor_capital_ledger').add({
+    businessId,
+    entryDate: new Date().toISOString().slice(0, 10),
+    description: label ? `Investor payment (advanced — ${label})` : 'Investor payment (advanced loan)',
+    capitalChange: capCh,
+    interestChange: intCh,
+    capitalBalance: prevC + capCh,
+    interestBalance: prevI + intCh,
+    notes: label,
+    source: 'ADV_REMIT',
+    createdAt: firebase.firestore.Timestamp.fromDate(new Date())
+  });
+  await db.collection('investor_portfolio_config').doc(businessId).set({
+    businessId,
+    investorPhone: String(DEFAULT_INVESTOR_PHONE).replace(/\s/g, ''),
+    dailyCapitalRatePercent: 8,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+}
+function showSmsDebug(text, ok){
+  if (window.LoanSmsNotice && typeof window.LoanSmsNotice.show === 'function') {
+    window.LoanSmsNotice.show('smsDebug', text, ok);
+    return;
+  }
+  const el = document.getElementById('smsDebug');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = ok ? '#166534' : '#b91c1c';
+}
+function showImportMsg(text, ok){
+  const el = document.getElementById('importMsg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = ok ? '#166534' : '#b91c1c';
+}
+function dailyRateDecimal(r){
+  const v = normAdvRow(r).dailyRatePercent;
+  return v / 100;
+}
+async function recalcAndSendInvestorSms(){
+  try {
+    const now = new Date();
+    const snap = await db.collection('loan_advanced_entries').where('businessId','==',businessId).where('active','==',true).get().catch(()=>({docs:[]}));
+    let totalPrincipal = 0, totalInterest = 0, todayInterest = 0;
+    for (const d of snap.docs){
+      const row = d.data()||{};
+      const last = row.lastInterestCalcAt ? new Date(row.lastInterestCalcAt) : new Date(row.createdAt?.toDate ? row.createdAt.toDate() : Date.now());
+      const diffDays = Math.max(0, Math.floor((now.getTime()-last.getTime())/86400000));
+      const p = n(row.balance != null ? row.balance : row.principalOutstanding);
+      totalPrincipal += p;
+      let i = n(row.interestOutstanding);
+      if (diffDays > 0 && p > 0.0001){
+        const add = p * dailyRateDecimal(row) * diffDays;
+        i += add; todayInterest += add;
+        const lid = now.toISOString().slice(0,10);
+        await d.ref.set({
+          interestOutstanding:i,
+          lastInterestCalcAt:now.toISOString(),
+          lastInterestDate:lid,
+          updatedAt:new Date()
+        },{merge:true});
+        const memMob = pickMobile(row) || String(row.customerMobile||'').trim();
+        if (add > 0 && memMob) {
+          const smsRes = await enqueueSms(memMob, `Dear ${row.customerName || 'member'}, advanced loan interest accrued Rs.${add.toFixed(2)}. Total interest Rs.${i.toFixed(2)}, balance Rs.${p.toFixed(2)}, total due Rs.${(p+i).toFixed(2)}.`);
+          if (!smsRes?.ok) showSmsDebug(`Member SMS skipped (${row.customerName}): ${smsRes?.skipped||'failed'}`, false);
+        }
+      }
+      totalInterest += i;
+    }
+    if (todayInterest > 0) {
+      await db.collection('investor_ledger').add({
+        businessId,
+        type:'DAILY_INTEREST_ACCRUAL',
+        principal:totalPrincipal,
+        interest:todayInterest,
+        amount:todayInterest,
+        note:'Daily investor-side interest accrual',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+    await enqueueSms(DEFAULT_INVESTOR_PHONE, `Investor update: Principal Rs.${totalPrincipal.toFixed(2)}, Interest Rs.${totalInterest.toFixed(2)}, Today's interest Rs.${todayInterest.toFixed(2)}.`);
+    showSmsDebug(`Investor SMS queued. Principal ${totalPrincipal.toFixed(2)}, Interest ${totalInterest.toFixed(2)}.`, true);
+  } catch (e) {
+    showSmsDebug(`Investor SMS failed: ${e?.message||e}`, false);
+  }
+}
+function parseBulkRows(raw){
+  return String(raw||'').split(/\r?\n/).map((l)=>l.trim()).filter(Boolean).map((line)=>{
+    const parts = line.split('\t').map((x)=>String(x||'').trim());
+    while (parts.length < 20) parts.push('');
+    if (!parts[0]) return null;
+    return {
+      memberName: parts[0],
+      originalLoan: stripPercentCell(parts[1]),
+      transferDate: parts[2] || '',
+      balance: stripPercentCell(parts[3]),
+      dailyRatePercent: stripPercentCell(parts[4]),
+      interest: stripPercentCell(parts[5]),
+      lastPaymentDate: parts[6] || '',
+      phone: parts[7] || '',
+      notes: parts[8] || '',
+      status: parts[9] || 'Active',
+      exempt: parts[10] || '',
+      keepField: parts[11] || '',
+      owner: parts[12] || '',
+      collectedPrincipal: stripPercentCell(parts[13]),
+      collectedInterest: stripPercentCell(parts[14]),
+      principalPaidToInvestor: stripPercentCell(parts[15]),
+      interestPaidToInvestor: stripPercentCell(parts[16]),
+      principalDueToInvestor: stripPercentCell(parts[17]),
+      interestDueToInvestor: stripPercentCell(parts[18]),
+      lastInterestDate: parts[19] || ''
+    };
+  }).filter(Boolean);
+}
+async function importBulk(){
+  const raw = document.getElementById('bulkPaste').value;
+  const rows = parseBulkRows(raw);
+  if (!rows.length){ showImportMsg('No valid rows.', false); return; }
+  if (!confirm(`Import ${rows.length} row(s) into advanced loans?`)) return;
+  let ok = 0;
+  for (const r of rows){
+    const bal = n(r.balance);
+    const intv = n(r.interest);
+    const daily = r.dailyRatePercent > 0 ? r.dailyRatePercent : DEFAULT_DAILY_RATE_PERCENT;
+    const active = String(r.status).toLowerCase() !== 'closed' && bal + intv > 0.0001;
+    await db.collection('loan_advanced_entries').add({
+      businessId,
+      customerId:'',
+      customerName:r.memberName,
+      customerMobile:String(r.phone||'').replace(/\s/g,''),
+      originalLoan:n(r.originalLoan)||bal,
+      transferDate:r.transferDate||'',
+      balance:bal,
+      principalOutstanding:bal,
+      interestOutstanding:intv,
+      dailyRatePercent:daily,
+      rateMonthly:DEFAULT_MEMBER_RATE_MONTHLY,
+      lastPaymentDate:r.lastPaymentDate||'',
+      notes:r.notes||'',
+      status:r.status||'Active',
+      exempt:r.exempt||'',
+      keepField:r.keepField||'',
+      owner:r.owner||'',
+      collectedPrincipal:n(r.collectedPrincipal),
+      collectedInterest:n(r.collectedInterest),
+      principalPaidToInvestor:n(r.principalPaidToInvestor),
+      interestPaidToInvestor:n(r.interestPaidToInvestor),
+      principalDueToInvestor:n(r.principalDueToInvestor),
+      interestDueToInvestor:n(r.interestDueToInvestor),
+      lastInterestDate:r.lastInterestDate||'',
+      lastInterestCalcAt: r.lastInterestDate && r.lastInterestDate.length >= 10 ? new Date(r.lastInterestDate+'T12:00:00').toISOString() : new Date().toISOString(),
+      createdAt:new Date(),
+      active,
+      source:'SPREADSHEET_IMPORT'
+    });
+    ok += 1;
+  }
+  showImportMsg(`Imported ${ok} row(s).`, true);
+  document.getElementById('bulkPaste').value = '';
+  await loadRows();
+}
+async function issueLoan(){
+  const cid = document.getElementById('customerId').value; const amount = n(document.getElementById('amount').value); if(!cid||amount<=0) return alert('Customer and amount required.');
+  const c = customerMap[cid]||{};
+  if (!confirm(`Confirm advanced loan issue?\nCustomer: ${c.fullName||cid}\nBalance: Rs.${amount.toFixed(2)}`)) return;
+  const mob = pickMobile(c);
+  const today = new Date().toISOString().slice(0,10);
+  const loanRef = await db.collection('loan_advanced_entries').add({
+    businessId,
+    customerId:cid,
+    customerName:c.fullName||cid,
+    customerMobile:mob,
+    originalLoan:amount,
+    transferDate:today,
+    balance:amount,
+    principalOutstanding:amount,
+    interestOutstanding:0,
+    dailyRatePercent:DEFAULT_DAILY_RATE_PERCENT,
+    rateMonthly:DEFAULT_MEMBER_RATE_MONTHLY,
+    lastPaymentDate:'',
+    notes:'',
+    status:'Active',
+    exempt:'',
+    keepField:'',
+    owner:'',
+    collectedPrincipal:0,
+    collectedInterest:0,
+    principalPaidToInvestor:0,
+    interestPaidToInvestor:0,
+    principalDueToInvestor:0,
+    interestDueToInvestor:0,
+    lastInterestDate:today,
+    createdAt:new Date(),
+    lastInterestCalcAt:new Date().toISOString(),
+    active:true
+  });
+  await addJournal(`Advanced member loan issue - ${c.fullName||cid}`,[{...GL_ADV_AR,debit:amount,credit:0},{...GL_ADV_INV_AP,debit:0,credit:amount}],'ADV_LOAN_ISSUE',{ collection: 'loan_advanced_entries', docId: loanRef.id });
+  const nm = c.fullName || cid;
+  const memSms = await enqueueSms(mob, `Dear ${nm}, advanced (investor) loan issued Rs.${amount.toFixed(2)}. Balance Rs.${amount.toFixed(2)}.`);
+  if (!memSms?.ok) showSmsDebug(`Member issue SMS: ${memSms?.skipped||'skipped'}`, false);
+  await db.collection('investor_ledger').add({
+    businessId,type:'INVESTOR_FUNDED_ISSUE',customerName:nm,principal:amount,interest:0,amount,
+    note:'Investor-funded advanced loan issued to member',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  await recalcAndSendInvestorSms();
+  document.getElementById('amount').value='';
+  await loadRows();
+}
+function computeReceivePatch(r, pay){
+  let remain = n(pay);
+  let int = n(r.interestOutstanding);
+  let p = n(r.balance != null ? r.balance : r.principalOutstanding);
+  const intPaid = Math.min(int, remain); int -= intPaid; remain -= intPaid;
+  const principalPaid = Math.min(p, remain); p -= principalPaid; remain -= principalPaid;
+  const totAdv = p + int;
+  const colPr = n(r.collectedPrincipal) + principalPaid;
+  const colIn = n(r.collectedInterest) + intPaid;
+  const duePr = n(r.principalDueToInvestor) + principalPaid;
+  const dueIn = n(r.interestDueToInvestor) + intPaid;
+  const patch = {
+    interestOutstanding: int,
+    principalOutstanding: p,
+    balance: p,
+    collectedPrincipal: colPr,
+    collectedInterest: colIn,
+    principalDueToInvestor: duePr,
+    interestDueToInvestor: dueIn,
+    lastPaymentDate: new Date().toISOString().slice(0, 10),
+    active: totAdv > 0.0001,
+    updatedAt: new Date()
+  };
+  if (totAdv <= 0.0001 && window.LoanZeroCleanup) patch.pendingRemovalAt = window.LoanZeroCleanup.removalTimestamp();
+  else patch.pendingRemovalAt = firebase.firestore.FieldValue.delete();
+  return { intPaid, principalPaid, pay: n(pay), intAfter: int, pAfter: p, totAdv, patch };
+}
+async function applyReceivePay(id, pay){
+  const ref = db.collection('loan_advanced_entries').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  const r = snap.data() || {};
+  if (!confirm(`Confirm collection?\nMember: ${r.customerName || '-'}\nReceived: Rs.${n(pay).toFixed(2)}`)) return false;
+  const comp = computeReceivePatch(r, pay);
+  await ref.set(comp.patch, { merge: true });
+  await addJournal(`Advanced member repayment - ${r.customerName || '-'}`, [
+    { ...GL_CASH, debit: comp.pay, credit: 0 },
+    { ...GL_ADV_AR, debit: 0, credit: comp.principalPaid },
+    { ...GL_ADV_INV_AP, debit: 0, credit: comp.intPaid }
+  ], 'ADV_LOAN_REPAY', { collection: 'loan_advanced_entries', docId: id });
+  const mob = pickMobile(r) || String(r.customerMobile || '').trim();
+  const totalDue = comp.intAfter + comp.pAfter;
+  const colSms = await enqueueSms(mob, `Dear ${r.customerName || 'member'}, collection Rs.${comp.pay.toFixed(2)}. Balance Rs.${comp.pAfter.toFixed(2)}, interest Rs.${comp.intAfter.toFixed(2)}, total due Rs.${totalDue.toFixed(2)}.`);
+  if (!colSms?.ok) showSmsDebug(`Member collection SMS: ${colSms?.skipped || 'skipped'}`, false);
+  await db.collection('investor_ledger').add({
+    businessId,
+    type: 'MEMBER_COLLECTION',
+    customerName: r.customerName || '',
+    principal: comp.principalPaid,
+    interest: comp.intPaid,
+    amount: comp.pay,
+    note: 'Collected from member',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  return true;
+}
+async function receivePay(id){
+  const txt = prompt('Received amount'); const pay = n(txt); if (pay <= 0) return;
+  const ok = await applyReceivePay(id, pay);
+  if (ok){ await recalcAndSendInvestorSms(); await loadRows(); }
+}
+/** Cash paid out to investor: reduce Due, increase Paid (interest due first, then principal due). */
+async function applyRemitInvestorPay(id, pay, opts){
+  const skipConfirm = !!(opts && opts.skipConfirm);
+  const skipSms = !!(opts && opts.skipSms);
+  const skipCapitalLedger = !!(opts && opts.skipCapitalLedger);
+  const ref = db.collection('loan_advanced_entries').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false };
+  const r = snap.data() || {};
+  const dueIn0 = n(r.interestDueToInvestor);
+  const duePr0 = n(r.principalDueToInvestor);
+  const maxDue = dueIn0 + duePr0;
+  if (maxDue <= 0.0001) return { ok: false };
+  let remain = Math.min(n(pay), maxDue);
+  if (n(pay) > maxDue + 0.0001 && !skipConfirm && !confirm(`Entered Rs.${n(pay).toFixed(2)} exceeds total due Rs.${maxDue.toFixed(2)}. Remit Rs.${remain.toFixed(2)}?`)) return { ok: false };
+  const intPortion = Math.min(dueIn0, remain); remain -= intPortion;
+  const prPortion = Math.min(duePr0, remain);
+  const totRemit = intPortion + prPortion;
+  if (totRemit <= 0.0001) return { ok: false };
+  if (!skipConfirm && !confirm(`Confirm investor remittance?\nMember: ${r.customerName || '-'}\nInterest Rs.${intPortion.toFixed(2)}, Principal Rs.${prPortion.toFixed(2)}\nTotal Rs.${totRemit.toFixed(2)}`)) return { ok: false };
+  await ref.set({
+    interestDueToInvestor: dueIn0 - intPortion,
+    principalDueToInvestor: duePr0 - prPortion,
+    interestPaidToInvestor: n(r.interestPaidToInvestor) + intPortion,
+    principalPaidToInvestor: n(r.principalPaidToInvestor) + prPortion,
+    updatedAt: new Date()
+  }, { merge: true });
+  await addJournal(`Advanced investor remittance - ${r.customerName || '-'}`, [
+    { ...GL_ADV_INV_AP, debit: totRemit, credit: 0 },
+    { ...GL_CASH, debit: 0, credit: totRemit }
+  ], 'ADV_INVESTOR_REMIT', { collection: 'loan_advanced_entries', docId: id });
+  await db.collection('investor_ledger').add({
+    businessId,
+    type: 'INVESTOR_REMIT',
+    customerName: r.customerName || '',
+    principal: prPortion,
+    interest: intPortion,
+    amount: totRemit,
+    note: 'Remittance to investor (advanced loan row)',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  if (!skipCapitalLedger) {
+    try {
+      await appendInvestorCapitalLedgerRemit(intPortion, prPortion, r.customerName || '');
+    } catch (e) {
+      showSmsDebug(`Investor capital ledger: ${e?.message || e}`, false);
+    }
+  }
+  if (!skipSms) {
+    try {
+      const smsText = `DIGIBIZ — Investor: Advanced loan ගෙවීම Rs.${totRemit.toFixed(2)} (${r.customerName || 'member'}). පොලිය Rs.${intPortion.toFixed(2)}, අස්ති Rs.${prPortion.toFixed(2)}.`;
+      const smsRes = await enqueueSms(DEFAULT_INVESTOR_PHONE, smsText);
+      if (!smsRes?.ok) showSmsDebug(`Investor remit SMS: ${smsRes?.skipped || 'failed'}`, false);
+    } catch (e) {
+      showSmsDebug(`Investor remit SMS error: ${e?.message || e}`, false);
+    }
+  }
+  return { ok: true, intPortion, prPortion, totRemit };
+}
+async function remitInvestorPay(id){
+  const txt = prompt('Amount remitted to investor (cash paid out)'); const pay = n(txt); if (pay <= 0) return;
+  const snap = await db.collection('loan_advanced_entries').doc(id).get();
+  if (!snap.exists) return;
+  const r = snap.data() || {};
+  const maxDue = n(r.interestDueToInvestor) + n(r.principalDueToInvestor);
+  if (maxDue <= 0.0001) { alert('No amount due to investor on this row.'); return; }
+  const res = await applyRemitInvestorPay(id, pay, {});
+  if (res && res.ok){ await recalcAndSendInvestorSms(); await loadRows(); }
+}
+async function remitAllInvestorPay(){
+  const snap = await db.collection('loan_advanced_entries').where('businessId', '==', businessId).limit(500).get().catch(()=>({ docs: [] }));
+  const rows = snap.docs.map((d)=>({ id: d.id, ...(d.data() || {}) })).sort((a, b)=>String(a.customerName || '').localeCompare(String(b.customerName || '')));
+  let grand = 0;
+  rows.forEach((r)=>{ grand += n(r.principalDueToInvestor) + n(r.interestDueToInvestor); });
+  if (grand <= 0.0001) { alert('Investorට ගෙවිය යුතු due මුදලක් නැහැ · No investor dues to pay.'); return; }
+  if (!confirm(`සියලු member වල investor due එක වර ගෙවන්නද?\nPay ALL investor dues in one step?\nTotal Rs.${grand.toFixed(2)} (per-member journal lines; one SMS to investor).`)) return;
+  let done = 0;
+  let sumI = 0, sumP = 0;
+  for (const r of rows){
+    const due = n(r.principalDueToInvestor) + n(r.interestDueToInvestor);
+    if (due <= 0.0001) continue;
+    const res = await applyRemitInvestorPay(r.id, due, { skipConfirm: true, skipSms: true, skipCapitalLedger: true });
+    if (res && res.ok){
+      done += 1;
+      sumI += n(res.intPortion);
+      sumP += n(res.prPortion);
+    }
+  }
+  if (done > 0 && (sumI > 0.00001 || sumP > 0.00001)) {
+    try {
+      await appendInvestorCapitalLedgerRemit(sumI, sumP, 'Bulk — all members');
+    } catch (e) {
+      showSmsDebug(`Investor capital ledger (bulk): ${e?.message || e}`, false);
+    }
+  }
+  if (done > 0) {
+    await db.collection('investor_ledger').add({
+      businessId,
+      type: 'INVESTOR_REMIT_BULK',
+      customerName: '(all members)',
+      principal: 0,
+      interest: 0,
+      amount: grand,
+      note: `Bulk investor remittance Rs.${grand.toFixed(2)} (${done} row(s))`,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    try {
+      const smsText = `DIGIBIZ — Investor: සියලු advanced loan dues එක වර ගෙවීම Rs.${grand.toFixed(2)} (${done} member row(s)).`;
+      const smsRes = await enqueueSms(DEFAULT_INVESTOR_PHONE, smsText);
+      if (!smsRes?.ok) showSmsDebug(`Bulk investor SMS: ${smsRes?.skipped || 'failed'}`, false);
+    } catch (e) {
+      showSmsDebug(`Bulk investor SMS error: ${e?.message || e}`, false);
+    }
+  }
+  await recalcAndSendInvestorSms();
+  await loadRows();
+}
+async function deleteAdvancedLoanRow(id){
+  const ref = db.collection('loan_advanced_entries').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  const r = snap.data() || {};
+  const nm = String(r.customerName || r.memberName || id);
+  if (!confirm(`මෙම member පේළිය මකන්නද?\nDelete this advanced loan row?\n${nm}\n(Journal entries are NOT reversed.)`)) return;
+  if (String(prompt('Type DELETE to confirm') || '') !== 'DELETE') { alert('Cancelled.'); return; }
+  try {
+    await ref.delete();
+    await recalcAndSendInvestorSms();
+    await loadRows();
+  } catch (e) {
+    alert('Delete failed: ' + (e?.message || e));
+  }
+}
+async function deleteAllAdvancedLoansForBusiness(){
+  if (!confirm('Delete ALL advanced member loan rows? Journal entries are NOT reversed.')) return;
+  if (String(prompt('Type DELETE to confirm')||'') !== 'DELETE') { alert('Cancelled.'); return; }
+  try {
+    let n0 = 0;
+    while (true) {
+      const snap = await db.collection('loan_advanced_entries').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
+      if (!snap.docs.length) break;
+      const batch = db.batch();
+      snap.docs.forEach((d)=>batch.delete(d.ref));
+      await batch.commit();
+      n0 += snap.docs.length;
+      if (snap.docs.length < 500) break;
+    }
+    alert(n0 ? `Removed ${n0} record(s).` : 'No records.');
+    await loadRows();
+  } catch (e) {
+    alert('Delete failed: ' + (e?.message||e));
+  }
+}
+function buildAdvTotalsRowHtml(rows){
+  const tr = document.getElementById('advTotalsRow');
+  if (!tr) return;
+  if (!rows.length){
+    tr.innerHTML = '<th colspan="21" style="text-align:center;">—</th>';
+    return;
+  }
+  let so = 0, sb = 0, si = 0, scp = 0, sci = 0, sppi = 0, sipi = 0, sdpi = 0, sdii = 0, sw = 0;
+  rows.forEach((r)=>{
+    so += n(r.originalLoan); sb += n(r.balance); si += n(r.interestOutstanding);
+    scp += n(r.collectedPrincipal); sci += n(r.collectedInterest);
+    sppi += n(r.principalPaidToInvestor); sipi += n(r.interestPaidToInvestor);
+    sdpi += n(r.principalDueToInvestor); sdii += n(r.interestDueToInvestor);
+    sw += n(r.balance) * n(r.dailyRatePercent);
+  });
+  const wAvg = sb > 0.0001 ? (sw / sb) : 0;
+  const drAvg = wAvg > 0 ? `${wAvg.toFixed(2)}%` : '—';
+  const dash = '—';
+  tr.innerHTML = `
+    <th>Σ (${rows.length})</th>
+    <th class="ar">${m(so)}</th>
+    <th>${dash}</th>
+    <th class="ar">${m(sb)}</th>
+    <th>${escapeHtml(drAvg)}</th>
+    <th class="ar">${m(si)}</th>
+    <th>${dash}</th><th>${dash}</th><th>${dash}</th><th>${dash}</th><th>${dash}</th><th>${dash}</th><th>${dash}</th>
+    <th class="ar">${m(scp)}</th>
+    <th class="ar">${m(sci)}</th>
+    <th class="ar">${m(sppi)}</th>
+    <th class="ar">${m(sipi)}</th>
+    <th class="ar">${m(sdpi)}</th>
+    <th class="ar">${m(sdii)}</th>
+    <th>${dash}</th>
+    <th>${dash}</th>`;
+}
+function updateOweInvestorBanner(rows){
+  const box = document.getElementById('oweInvestorBanner');
+  const amtEl = document.getElementById('oweInvestorAmount');
+  const subEl = document.getElementById('oweInvestorSub');
+  if (!box || !amtEl || !subEl) return;
+  let pr = 0, ir = 0;
+  (rows||[]).forEach((r)=>{ pr += n(r.principalDueToInvestor); ir += n(r.interestDueToInvestor); });
+  const tot = pr + ir;
+  if (tot <= 0.0001){
+    box.style.display = 'none';
+    return;
+  }
+  box.style.display = 'block';
+  amtEl.textContent = m(tot);
+  subEl.textContent = `Principal due ${m(pr)} · Interest due ${m(ir)}`;
+}
+async function loadRows(){
+  if (window.LoanZeroCleanup && businessId) {
+    await window.LoanZeroCleanup.sweepExpired(db, businessId, 'loan_advanced_entries', advLoanFullyZero);
+  }
+  const snap = await db.collection('loan_advanced_entries').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
+  const rows = snap.docs.map((d)=>({ id: d.id, ...normAdvRow(d.data() || {}) }));
+  updateOweInvestorBanner(rows);
+  buildAdvTotalsRowHtml(rows);
+  document.getElementById('rows').innerHTML = rows.map((r)=>{
+    const dr = n(r.dailyRatePercent) > 0 ? `${n(r.dailyRatePercent).toFixed(2)}%` : `${DEFAULT_DAILY_RATE_PERCENT}%`;
+    const tot = n(r.balance) + n(r.interestOutstanding);
+    const invDueTot = n(r.principalDueToInvestor) + n(r.interestDueToInvestor);
+    return `<tr>
+      <td>${escapeHtml(r.customerName)}</td>
+      <td class="text-right">${m(r.originalLoan)}</td>
+      <td>${escapeHtml(r.transferDate||'')}</td>
+      <td class="text-right">${m(r.balance)}</td>
+      <td>${escapeHtml(dr)}</td>
+      <td class="text-right">${m(r.interestOutstanding)}</td>
+      <td>${escapeHtml(r.lastPaymentDate||'')}</td>
+      <td>${escapeHtml(r.customerMobile||'')}</td>
+      <td>${escapeHtml(r.notes)}</td>
+      <td>${escapeHtml(r.status)}</td>
+      <td>${escapeHtml(r.exempt)}</td>
+      <td>${escapeHtml(r.keepField)}</td>
+      <td>${escapeHtml(r.owner)}</td>
+      <td class="text-right">${m(r.collectedPrincipal)}</td>
+      <td class="text-right">${m(r.collectedInterest)}</td>
+      <td class="text-right">${m(r.principalPaidToInvestor)}</td>
+      <td class="text-right">${m(r.interestPaidToInvestor)}</td>
+      <td class="text-right">${m(r.principalDueToInvestor)}</td>
+      <td class="text-right">${m(r.interestDueToInvestor)}</td>
+      <td>${escapeHtml(r.lastInterestDate||'')}</td>
+      <td style="white-space:normal;max-width:200px;font-size:11px;">
+        <button type="button" class="btn-recv" data-id="${r.id}" ${tot<=0?'disabled':''}>Receive</button>
+        <button type="button" class="btn-remit-inv" data-id="${r.id}" ${invDueTot<=0.0001?'disabled':''} style="margin-top:4px;">Pay investor</button>
+        <button type="button" class="btn-del-adv btn-danger" data-id="${r.id}" style="margin-top:4px;padding:6px 8px;font-size:11px;">Delete row</button>
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="21" style="text-align:center;padding:16px;">No records</td></tr>';
+  document.querySelectorAll('#rows button.btn-recv').forEach((b)=>{ b.onclick = ()=>receivePay(b.dataset.id); });
+  document.querySelectorAll('#rows button.btn-remit-inv').forEach((b)=>{ b.onclick = ()=>remitInvestorPay(b.dataset.id); });
+  document.querySelectorAll('#rows button.btn-del-adv').forEach((b)=>{ b.onclick = ()=>deleteAdvancedLoanRow(b.dataset.id); });
+}
+firebase.auth().onAuthStateChanged(async (u)=>{
+  if(!u){location.href='/auth/login.html';return;}
+  if (advLoanSweepTimer){ clearInterval(advLoanSweepTimer); advLoanSweepTimer=null; }
+  const ctx = await window.dashboardCore.getContext(u);
+  businessId = String((ctx&&ctx.businessId)||u.uid);
+  await loadCustomers();
+  await loadRows();
+  if (window.LoanZeroCleanup) {
+    advLoanSweepTimer = setInterval(async ()=>{
+      if (!businessId) return;
+      await window.LoanZeroCleanup.sweepExpired(db, businessId, 'loan_advanced_entries', advLoanFullyZero);
+      await loadRows();
+    }, 20000);
+  }
+});
+function wireAdvLoanChromeButtons(){
+  const byId = (id, fn)=>{ const el = document.getElementById(id); if (el) el.onclick = fn; };
+  byId('saveBtn', issueLoan);
+  byId('sendNowBtn', recalcAndSendInvestorSms);
+  byId('importBulkBtn', importBulk);
+  byId('clearAllBtn', deleteAllAdvancedLoansForBusiness);
+  byId('payAllInvestorBtn', remitAllInvestorPay);
+}
+wireAdvLoanChromeButtons();
+</script>
+</body>
+</html>

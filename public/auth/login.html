@@ -2,6 +2,7 @@
 <html lang="si">
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - DIGIBIZ</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap&v=4" rel="stylesheet">
@@ -9,7 +10,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
-    <script src="../core/firebase-init.js?v=30"></script>
+    <script src="../core/firebase-init.js?v=46"></script>
+    <script src="../core/finalization-engine.js?v=1"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
         body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#10b981 0%,#059669 100%);min-height:100vh;display:flex;justify-content:center;align-items:center;}
@@ -19,10 +21,17 @@
         input{width:100%;padding:12px;margin-bottom:16px;border:1px solid #e9ecef;border-radius:10px;font-size:14px;}
         button{width:100%;padding:14px;background:#10b981;color:white;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;margin-bottom:12px;}
         button:hover{background:#059669;}
+        button:disabled{opacity:0.75;cursor:not-allowed;}
         .google-btn{background:#fff;color:#1a1a2e;border:1px solid #e9ecef;display:flex;align-items:center;justify-content:center;gap:10px;}
         .google-btn:hover{background:#f8f9fa;}
         .error{color:#ef4444;margin-bottom:16px;font-size:14px;}
         .register-link{text-align:center;margin-top:20px;}
+        .forgot-link{display:block;text-align:right;font-size:12px;color:#0f766e;margin-top:-8px;margin-bottom:12px;cursor:pointer;}
+        .reset-box{display:none;background:#f8fafc;border:1px solid #e2e8f0;padding:12px;border-radius:10px;margin-bottom:12px;text-align:left;}
+        .reset-box p{font-size:12px;color:#475569;margin:0 0 8px;}
+        .reset-inline{display:flex;gap:8px;}
+        .reset-inline input{margin:0;}
+        .reset-inline button{width:auto;padding:10px 12px;margin:0;}
         a{color:#10b981;text-decoration:none;}
         hr{margin:20px 0;border:1px solid #e9ecef;}
     </style>
@@ -34,6 +43,14 @@
         <div id="error" class="error"></div>
         <input type="email" id="email" placeholder="Email Address">
         <input type="password" id="password" placeholder="Password">
+        <a id="forgotPasswordLink" class="forgot-link">Forgot Password?</a>
+        <div id="resetBox" class="reset-box">
+            <p>Enter your email to receive a password reset link.</p>
+            <div class="reset-inline">
+                <input type="email" id="resetEmail" placeholder="you@example.com">
+                <button id="sendResetBtn" type="button">Send Link</button>
+            </div>
+        </div>
         <button id="loginBtn">Login</button>
         <hr>
         <button id="googleBtn" class="google-btn"><i class="fab fa-google"></i> Continue with Google</button>
@@ -44,6 +61,10 @@
         const loginBtn = document.getElementById('loginBtn');
         const googleBtn = document.getElementById('googleBtn');
         const errorDiv = document.getElementById('error');
+        const forgotPasswordLink = document.getElementById('forgotPasswordLink');
+        const resetBox = document.getElementById('resetBox');
+        const sendResetBtn = document.getElementById('sendResetBtn');
+        const loginBtnDefaultText = loginBtn.textContent;
 
         async function routeToUniversalDashboard(user) {
             try {
@@ -59,6 +80,9 @@
                 sessionStorage.setItem('currentBusinessId', businessId);
                 localStorage.setItem('currentBusinessType', businessType);
                 sessionStorage.setItem('currentBusinessType', businessType);
+                if (window.FinalizationEngine && window.FinalizationEngine.runAutoFinalizationForCurrentUser) {
+                    await window.FinalizationEngine.runAutoFinalizationForCurrentUser();
+                }
             } catch (error) {
                 console.warn('Login context resolution failed:', error);
             }
@@ -81,6 +105,8 @@
             }
             
             try {
+                loginBtn.disabled = true;
+                loginBtn.innerHTML = '⏳ Logging in...';
                 await auth.signInWithEmailAndPassword(email, password);
                 await routeToUniversalDashboard(auth.currentUser);
             } catch (error) {
@@ -91,6 +117,9 @@
                 } else {
                     errorDiv.textContent = error.message;
                 }
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = loginBtnDefaultText;
             }
         });
         
@@ -111,6 +140,32 @@
                 }
             } catch (error) {
                 errorDiv.textContent = error.message;
+            }
+        });
+
+        forgotPasswordLink.addEventListener('click', () => {
+            resetBox.style.display = resetBox.style.display === 'block' ? 'none' : 'block';
+            document.getElementById('resetEmail').value = document.getElementById('email').value || '';
+        });
+
+        sendResetBtn.addEventListener('click', async () => {
+            const email = String(document.getElementById('resetEmail').value || '').trim();
+            if (!email) {
+                errorDiv.textContent = 'Please enter your email for password reset.';
+                return;
+            }
+            try {
+                sendResetBtn.disabled = true;
+                sendResetBtn.textContent = 'Sending...';
+                await auth.sendPasswordResetEmail(email);
+                errorDiv.style.color = '#059669';
+                errorDiv.textContent = 'Password reset link sent. Check your inbox.';
+            } catch (error) {
+                errorDiv.style.color = '#ef4444';
+                errorDiv.textContent = error.message || 'Failed to send reset link.';
+            } finally {
+                sendResetBtn.disabled = false;
+                sendResetBtn.textContent = 'Send Link';
             }
         });
     </script>

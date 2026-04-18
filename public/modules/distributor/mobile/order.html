@@ -2,12 +2,14 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Take Order</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/core/distributor-inventory.js?v=31"></script>
+    <script src="/core/distributor-inventory.js?v=34"></script>
+    <script src="/core/mw-trading-dsl-config.js?v=2"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
         body{font-family:Arial;background:#f5f5f5;padding:10px;padding-bottom:80px;}
@@ -66,6 +68,8 @@
         .btn-cancel{background:#f0f0f0;}
         
         .history-btn{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;width:50px;height:50px;border-radius:25px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:24px;box-shadow:0 2px 10px rgba(0,0,0,0.2);}
+        .edit-banner{display:none;background:#fef3c7;color:#92400e;padding:10px 12px;margin:-10px -10px 10px -10px;font-size:13px;text-align:center;line-height:1.35;}
+        .line-edit-btn{background:#e0f2fe;color:#0369a1;border:none;padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;}
     </style>
 </head>
 <body>
@@ -74,6 +78,11 @@
     <h2>📝 Take Order</h2>
     <button class="logout-btn" onclick="logout()">Logout</button>
 </div>
+<div class="edit-banner" id="editBanner"></div>
+<p style="font-size:12px;padding:8px 12px;margin:0 0 10px;background:#fff;border-radius:8px;border:1px solid #d1fae5;color:#065f46;">
+    <a href="/modules/distributor/web/index.html?tab=pending" style="color:#047857;font-weight:600;">Order status (web)</a>
+    · <a href="history.html" style="color:#047857;font-weight:600;">History</a>
+</p>
 
 <!-- Shop Section -->
 <div class="card">
@@ -84,10 +93,11 @@
             <datalist id="shopOptions"></datalist>
             <button onclick="showNewShopInput()">+ New</button>
         </div>
+        <p id="mwShopNote" style="display:none;font-size:11px;color:#64748b;margin-top:8px;line-height:1.35;">MW Trading: suggestions include every active shop in this business (not only this device), so names you added before stay easy to find.</p>
         <div class="pay-row">
             <select id="paymentMethod">
                 <option value="CASH">Cash</option>
-                <option value="BANK_TRANSFER">Bank Transfer</option>
+                <option value="CREDIT">Credit</option>
                 <option value="CHEQUE">Cheque</option>
             </select>
         </div>
@@ -121,7 +131,7 @@
     </div>
 </div>
 
-<button class="submit-btn" onclick="submitOrder()">✅ SUBMIT ORDER</button>
+<button class="submit-btn" id="submitOrderBtn" onclick="submitOrder()">✅ SUBMIT ORDER</button>
 
 <a href="history.html" class="history-btn">📋</a>
 
@@ -145,13 +155,37 @@
         <h3>↩️ Returns</h3>
         <select id="returnProductSelect"></select>
         <input type="number" id="returnQty" placeholder="Return quantity" min="1">
-        <p style="font-size:12px;margin:8px 0;color:#444;">Where do these units go?</p>
-        <label style="display:block;font-size:13px;margin:4px 0;"><input type="radio" name="returnDisposition" value="RESELL" checked> Return to <strong>resell</strong> (Category 2 — add to our stock)</label>
-        <label style="display:block;font-size:13px;margin:4px 0;"><input type="radio" name="returnDisposition" value="TO_COMPANY"> Return to <strong>company</strong> (Category 1 — send back to main company)</label>
+        <p style="font-size:12px;margin:8px 0;color:#444;">Return type</p>
+        <label style="display:block;font-size:13px;margin:4px 0;"><input type="radio" name="returnDisposition" value="RESELL" checked> <strong>Agent return</strong> (resell — returns to sellable stock when the order is approved)</label>
+        <label style="display:block;font-size:13px;margin:4px 0;"><input type="radio" name="returnDisposition" value="TO_COMPANY"> <strong>Company return</strong> (factory — not added to sellable stock)</label>
         <input type="text" id="returnReasonText" placeholder="Note (optional, e.g. Damaged / Wrong item)">
         <div class="modal-buttons">
             <button class="btn-confirm" onclick="addReturn()">Add</button>
             <button class="btn-cancel" onclick="closeModal('returnModal')">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Per-line editor: sales, free issue, agent vs company returns -->
+<div id="lineModal" class="modal">
+    <div class="modal-content">
+        <h3>✏️ Line quantities</h3>
+        <p id="lineProductName" style="margin-bottom:8px;font-size:14px;"></p>
+        <label style="font-size:12px;color:#555;">Sales qty</label>
+        <input type="number" id="lineSalesQty" min="0" step="1">
+        <label style="font-size:12px;color:#555;">Free issue qty</label>
+        <input type="number" id="lineFreeQty" min="0" step="1">
+        <label style="font-size:12px;color:#555;">Free issue reason</label>
+        <input type="text" id="lineFreeReason" placeholder="Required if free qty > 0">
+        <label style="font-size:12px;color:#555;">Agent return qty</label>
+        <input type="number" id="lineAgentReturnQty" min="0" step="1">
+        <label style="font-size:12px;color:#555;">Company return qty</label>
+        <input type="number" id="lineCompanyReturnQty" min="0" step="1">
+        <label style="font-size:12px;color:#555;">Return note (optional)</label>
+        <input type="text" id="lineReturnReason" placeholder="e.g. Damaged / Wrong item">
+        <div class="modal-buttons">
+            <button class="btn-confirm" onclick="saveLineModal()">Save</button>
+            <button class="btn-cancel" onclick="closeModal('lineModal')">Cancel</button>
         </div>
     </div>
 </div>
@@ -173,12 +207,167 @@
     let repId, repName, businessId, products = [], cart = [], returns = [];
     let selectedProductForFree = null;
     let selectedProductForReturn = null;
+    let selectedProductForLine = null;
     let allShops = [];
     let selectedShopId = '';
     let productsUnsubscribe = null;
+    let editingOrderId = null;
+    let isMwTradingMobile = false;
+
+    function getEditOrderIdFromUrl() {
+        try { return new URLSearchParams(window.location.search).get('edit'); } catch (e) { return null; }
+    }
+    function clearEditQueryFromUrl() {
+        try { history.replaceState(null, '', 'order.html'); } catch (e) {}
+    }
+    function updateEditBannerAndSubmitLabel() {
+        const b = document.getElementById('editBanner');
+        const btn = document.getElementById('submitOrderBtn');
+        if (!b || !btn) return;
+        if (editingOrderId) {
+            b.style.display = 'block';
+            b.textContent = 'Editing a pending order. It stays pending until a manager approves.';
+            btn.textContent = '💾 UPDATE PENDING ORDER';
+        } else {
+            b.style.display = 'none';
+            btn.textContent = '✅ SUBMIT ORDER';
+        }
+    }
+    function recalcCartLine(item) {
+        const p = products.find((x) => x.id === item.productId);
+        const up = p ? (Number(p.unitPrice) || 0) : (Number(item.unitPrice) || 0);
+        item.unitPrice = up;
+        const rr = Math.max(0, parseInt(item.returnResellQty, 10) || 0);
+        const rc = Math.max(0, parseInt(item.returnCompanyQty, 10) || 0);
+        item.returnResellQty = rr;
+        item.returnCompanyQty = rc;
+        item.returnQty = rr + rc;
+        item.total = (((Number(item.qty) || 0) + (Number(item.freeQty) || 0) - item.returnQty) * up);
+    }
+    async function tryLoadPendingOrderForEdit(orderId) {
+        const snap = await db.collection('pendingOrders').doc(orderId).get();
+        if (!snap.exists) {
+            alert('Order not found.');
+            clearEditQueryFromUrl();
+            return;
+        }
+        const o = snap.data();
+        if (o.repId !== repId) {
+            alert('You can only edit your own orders.');
+            clearEditQueryFromUrl();
+            return;
+        }
+        if (String(o.status || 'pending').toLowerCase() !== 'pending') {
+            alert('Only pending orders can be edited.');
+            clearEditQueryFromUrl();
+            return;
+        }
+        editingOrderId = orderId;
+        selectedShopId = o.shopId || '';
+        let shopName = '';
+        const local = allShops.find((s) => s.id === selectedShopId);
+        if (local) shopName = local.name;
+        else if (selectedShopId) {
+            try {
+                const sd = await db.collection('shops').doc(selectedShopId).get();
+                if (sd.exists) shopName = sd.data().name || '';
+            } catch (e) {}
+        }
+        document.getElementById('shopSearch').value = shopName || o.shopName || '';
+        if (o.paymentMethod) {
+            var pm = String(o.paymentMethod || '').toUpperCase();
+            if (pm === 'BANK') pm = 'CREDIT';
+            var sel = document.getElementById('paymentMethod');
+            var ok = Array.from(sel.options).some(function (o) { return o.value === pm; });
+            sel.value = ok ? pm : 'CASH';
+        }
+        cart = (Array.isArray(o.items) ? o.items : []).map((it) => {
+            const unitPrice = Number(it.unitPrice) || 0;
+            const qty = Number(it.orderedQty) || 0;
+            const fq = Number(it.freeQty) || 0;
+            let rr = Number(it.returnResellQty) || 0;
+            let rc = Number(it.returnCompanyQty) || 0;
+            const rqLegacy = Number(it.returnQty) || 0;
+            if (!rr && !rc && rqLegacy > 0) rr = rqLegacy;
+            const ret = rr + rc;
+            const total = Number(it.totalPrice) != null && !Number.isNaN(Number(it.totalPrice))
+                ? Number(it.totalPrice)
+                : ((qty + fq - ret) * unitPrice);
+            return {
+                productId: it.productId,
+                productName: it.productName || 'Item',
+                productBrand: it.productBrand || '',
+                qty,
+                freeQty: fq,
+                freeReason: it.freeReason || '',
+                returnResellQty: rr,
+                returnCompanyQty: rc,
+                returnQty: ret,
+                returnReason: it.returnReason || '',
+                unitPrice,
+                total
+            };
+        }).filter((row) => row.productId);
+        cart.forEach((line) => recalcCartLine(line));
+        updateCart();
+        showProducts();
+        updateEditBannerAndSubmitLabel();
+    }
+    function openLineModal(productId) {
+        const line = cart.find((c) => c.productId === productId);
+        if (!line) { alert('Add this product to the cart first (use + / line editor).'); return; }
+        selectedProductForLine = line;
+        const p = products.find((x) => x.id === productId);
+        document.getElementById('lineProductName').textContent = (p && p.name) ? p.name : line.productName;
+        document.getElementById('lineSalesQty').value = line.qty || 0;
+        document.getElementById('lineFreeQty').value = line.freeQty || 0;
+        document.getElementById('lineFreeReason').value = line.freeReason || '';
+        document.getElementById('lineAgentReturnQty').value = line.returnResellQty || 0;
+        document.getElementById('lineCompanyReturnQty').value = line.returnCompanyQty || 0;
+        document.getElementById('lineReturnReason').value = line.returnReason || '';
+        document.getElementById('lineModal').style.display = 'flex';
+    }
+    function saveLineModal() {
+        if (!selectedProductForLine) return;
+        const line = selectedProductForLine;
+        line.qty = Math.max(0, parseInt(document.getElementById('lineSalesQty').value, 10) || 0);
+        line.freeQty = Math.max(0, parseInt(document.getElementById('lineFreeQty').value, 10) || 0);
+        line.freeReason = document.getElementById('lineFreeReason').value.trim();
+        line.returnResellQty = Math.max(0, parseInt(document.getElementById('lineAgentReturnQty').value, 10) || 0);
+        line.returnCompanyQty = Math.max(0, parseInt(document.getElementById('lineCompanyReturnQty').value, 10) || 0);
+        line.returnReason = document.getElementById('lineReturnReason').value.trim();
+        if (line.freeQty > 0 && !line.freeReason) { alert('Enter a reason for free issue qty'); return; }
+        recalcCartLine(line);
+        if (line.qty === 0 && line.freeQty === 0 && (line.returnResellQty + line.returnCompanyQty) === 0) {
+            cart = cart.filter((c) => c.productId !== line.productId);
+        }
+        closeModal('lineModal');
+        selectedProductForLine = null;
+        updateCart();
+        showProducts();
+    }
 
     function productLineBrand(p) {
         return (p && p.brand) ? String(p.brand).trim() : '';
+    }
+    function toMillis(v) {
+        if (!v) return 0;
+        if (typeof v.toDate === 'function') return v.toDate().getTime();
+        if (v.seconds) return Number(v.seconds) * 1000;
+        var d = new Date(v);
+        return isNaN(d.getTime()) ? 0 : d.getTime();
+    }
+    function fifoBatchInfo(product) {
+        var batches = Array.isArray(product && product.stockBatches) ? product.stockBatches.slice() : [];
+        batches = batches.filter(function (b) { return Number(b.availableQty || 0) > 0; });
+        batches.sort(function (a, b) { return toMillis(a.createdAt) - toMillis(b.createdAt); });
+        if (!batches.length) return null;
+        var oldest = batches[0];
+        return {
+            identifier: oldest.specialIdentifier || oldest.batchId || 'BATCH',
+            sellingPrice: Number(oldest.sellingPrice != null ? oldest.sellingPrice : (product.unitPrice || 0)) || 0,
+            availableQty: Number(oldest.availableQty || 0) || 0
+        };
     }
     
     // ============ INIT ============
@@ -193,30 +382,59 @@
         repId = rep.id;
         repName = rep.data().name || rep.data().fullName || rep.data().displayName || 'Rep';
         businessId = rep.data().businessId;
+
+        isMwTradingMobile = false;
+        try {
+            const bs = await db.collection('businesses').doc(businessId).get();
+            const bd = bs.exists ? (bs.data() || {}) : null;
+            isMwTradingMobile = !!(window.DigibizMwDslConfig && window.DigibizMwDslConfig.isMwTradingTenantActive(businessId, bd));
+        } catch (eMw) { isMwTradingMobile = false; }
+        const mwNote = document.getElementById('mwShopNote');
+        if (mwNote) mwNote.style.display = isMwTradingMobile ? 'block' : 'none';
         
         await loadShops();
         await loadProducts();
+        const editId = getEditOrderIdFromUrl();
+        if (editId) await tryLoadPendingOrderForEdit(editId);
+        updateEditBannerAndSubmitLabel();
     });
     
     // ============ SHOPS ============
     async function loadShops() {
+        const byId = {};
         let snap = await db.collection('shops')
             .where('assignedRepId', '==', repId)
             .where('isActive', '==', true)
             .get();
-        
-        allShops = [];
+        snap.forEach(doc => {
+            const nm = String((doc.data() && doc.data().name) || '').trim();
+            if (!nm) return;
+            byId[doc.id] = { id: doc.id, name: nm };
+        });
+        if (isMwTradingMobile) {
+            const snapAll = await db.collection('shops').where('businessId', '==', businessId).limit(320).get().catch(() => ({ forEach: function () {} }));
+            snapAll.forEach(doc => {
+                const d = doc.data() || {};
+                if (d.isActive === false) return;
+                const nm = String(d.name || '').trim();
+                if (!nm) return;
+                if (!byId[doc.id]) byId[doc.id] = { id: doc.id, name: nm };
+            });
+        }
+        allShops = Object.values(byId).sort((a, b) => a.name.localeCompare(b.name));
         let options = document.getElementById('shopOptions');
         options.innerHTML = '';
-        
-        snap.forEach(doc => {
-            let shop = { id: doc.id, name: doc.data().name };
-            allShops.push(shop);
+        allShops.forEach(shop => {
             let opt = document.createElement('option');
             opt.value = shop.name;
-            opt.label = `${shop.name} (${doc.id.slice(-5)})`;
+            opt.label = `${shop.name} (${shop.id.slice(-5)})`;
             options.appendChild(opt);
         });
+        const ns = document.getElementById('newShopName');
+        if (ns) {
+            if (isMwTradingMobile) ns.setAttribute('list', 'shopOptions');
+            else ns.removeAttribute('list');
+        }
     }
     
     function showNewShopInput() {
@@ -263,14 +481,24 @@
     // ============ PRODUCTS ============
     async function loadProducts() {
         if (productsUnsubscribe) productsUnsubscribe();
-        productsUnsubscribe = db.collection('products')
-            .where('businessId', '==', businessId)
-            .where('isActive', '==', true)
-            .onSnapshot((snap) => {
-                products = [];
-                snap.forEach(doc => products.push({ id: doc.id, ...doc.data() }));
-                showProducts();
-            }, (error) => console.error('Inventory stream error:', error));
+        return new Promise((resolve) => {
+            let first = true;
+            productsUnsubscribe = db.collection('products')
+                .where('businessId', '==', businessId)
+                .where('isActive', '==', true)
+                .onSnapshot((snap) => {
+                    products = [];
+                    snap.forEach((doc) => products.push({ id: doc.id, ...doc.data() }));
+                    showProducts();
+                    if (first) {
+                        first = false;
+                        resolve();
+                    }
+                }, (error) => {
+                    console.error('Inventory stream error:', error);
+                    resolve();
+                });
+        });
     }
     
     function showProducts() {
@@ -287,11 +515,15 @@
             let qty = inCart ? inCart.qty : 0;
             const pb = productLineBrand(p);
             const brandHtml = pb ? `<span style="font-size:12px;color:#64748b;font-weight:normal;"> · ${pb}</span>` : '';
+            const fifo = fifoBatchInfo(p);
+            const batchBadge = fifo ? `<span style="display:inline-block;margin-top:4px;font-size:10px;color:#7c2d12;background:#ffedd5;padding:2px 6px;border-radius:10px;">FIFO ${fifo.identifier}</span>` : '';
+            const unitPrice = fifo ? fifo.sellingPrice : (Number(p.unitPrice) || 0);
             html += `
                 <div class="product-item">
                     <div class="product-info">
                         <div class="product-name">${p.name}${brandHtml}</div>
-                        <div class="product-price">Rs ${p.unitPrice} | Stock: ${window.DigiBizDistributorInventory ? window.DigiBizDistributorInventory.numericStock(p) : (Number(p.stock || p.currentStock) || 0)}</div>
+                        <div class="product-price">Rs ${unitPrice} | Stock: ${window.DigiBizDistributorInventory ? window.DigiBizDistributorInventory.numericStock(p) : (Number(p.stock || p.currentStock) || 0)}</div>
+                        ${batchBadge}
                     </div>
                     <div class="product-actions">
                         <button class="qty-btn" onclick="changeQty('${p.id}', -1)">-</button>
@@ -299,6 +531,7 @@
                         <button class="qty-btn" onclick="changeQty('${p.id}', 1)">+</button>
                         <button class="free-btn" onclick="openFreeModal('${p.id}', ${JSON.stringify(p.name)})">🎁 Free</button>
                         <button class="return-btn" onclick="openReturnModal('${p.id}', ${JSON.stringify(p.name)})">↩️ Return</button>
+                        ${inCart ? `<button type="button" class="line-edit-btn" onclick="openLineModal('${p.id}')">✏️ Line</button>` : ''}
                     </div>
                 </div>
             `;
@@ -309,18 +542,29 @@
     function changeQty(productId, delta) {
         let product = products.find(p => p.id === productId);
         if (!product) return;
+        const fifo = fifoBatchInfo(product);
+        const effectivePrice = fifo ? fifo.sellingPrice : (Number(product.unitPrice) || 0);
         
         let existing = cart.find(c => c.productId === productId);
         let newQty = (existing ? existing.qty : 0) + delta;
         
         if (newQty <= 0) {
-            cart = cart.filter(c => c.productId !== productId);
+            if (existing && ((existing.freeQty || 0) + (existing.returnResellQty || 0) + (existing.returnCompanyQty || 0) > 0)) {
+                existing.qty = 0;
+                if (existing.returnResellQty == null) existing.returnResellQty = 0;
+                if (existing.returnCompanyQty == null) existing.returnCompanyQty = 0;
+                recalcCartLine(existing);
+            } else {
+                cart = cart.filter(c => c.productId !== productId);
+            }
         } else if (existing) {
             existing.qty = newQty;
             if (existing.productBrand == null || existing.productBrand === '') existing.productBrand = productLineBrand(product);
+            existing.batchIdentifier = fifo ? fifo.identifier : '';
+            existing.unitPrice = effectivePrice;
             if (existing.returnResellQty == null) existing.returnResellQty = 0;
             if (existing.returnCompanyQty == null) existing.returnCompanyQty = 0;
-            existing.total = ((existing.qty || 0) + (existing.freeQty || 0) - ((existing.returnResellQty || 0) + (existing.returnCompanyQty || 0))) * product.unitPrice;
+            recalcCartLine(existing);
         } else {
             cart.push({
                 productId: product.id,
@@ -333,9 +577,11 @@
                 returnResellQty: 0,
                 returnCompanyQty: 0,
                 returnReason: '',
-                unitPrice: product.unitPrice,
-                total: newQty * product.unitPrice
+                batchIdentifier: fifo ? fifo.identifier : '',
+                unitPrice: effectivePrice,
+                total: 0
             });
+            recalcCartLine(cart[cart.length - 1]);
         }
         updateCart();
         showProducts();
@@ -362,11 +608,14 @@
             existing.freeQty = (existing.freeQty || 0) + qty;
             existing.freeReason = reason;
             if (existing.productBrand == null || existing.productBrand === '') existing.productBrand = productLineBrand(selectedProductForFree);
+            const fifo = fifoBatchInfo(selectedProductForFree);
+            existing.batchIdentifier = fifo ? fifo.identifier : (existing.batchIdentifier || '');
+            existing.unitPrice = fifo ? fifo.sellingPrice : existing.unitPrice;
             if (existing.returnResellQty == null) existing.returnResellQty = 0;
             if (existing.returnCompanyQty == null) existing.returnCompanyQty = 0;
-            const ret = (existing.returnResellQty || 0) + (existing.returnCompanyQty || 0);
-            existing.total = ((existing.qty || 0) + (existing.freeQty || 0) - ret) * selectedProductForFree.unitPrice;
+            recalcCartLine(existing);
         } else {
+            const fifo = fifoBatchInfo(selectedProductForFree);
             cart.push({
                 productId: selectedProductForFree.id,
                 productName: selectedProductForFree.name,
@@ -378,9 +627,11 @@
                 returnResellQty: 0,
                 returnCompanyQty: 0,
                 returnReason: '',
-                unitPrice: selectedProductForFree.unitPrice,
-                total: qty * selectedProductForFree.unitPrice
+                batchIdentifier: fifo ? fifo.identifier : '',
+                unitPrice: fifo ? fifo.sellingPrice : selectedProductForFree.unitPrice,
+                total: 0
             });
+            recalcCartLine(cart[cart.length - 1]);
         }
         closeModal('freeModal');
         updateCart();
@@ -429,8 +680,12 @@
             existing.returnReason = reason || existing.returnReason || '';
             existing.returnQty = (existing.returnResellQty || 0) + (existing.returnCompanyQty || 0);
             if (existing.productBrand == null || existing.productBrand === '') existing.productBrand = productLineBrand(product);
-            existing.total = ((existing.qty || 0) + (existing.freeQty || 0) - existing.returnQty) * product.unitPrice;
+            const fifo = fifoBatchInfo(product);
+            existing.batchIdentifier = fifo ? fifo.identifier : (existing.batchIdentifier || '');
+            existing.unitPrice = fifo ? fifo.sellingPrice : existing.unitPrice;
+            recalcCartLine(existing);
         } else {
+            const fifo = fifoBatchInfo(product);
             cart.push({
                 productId: product.id,
                 productName: product.name,
@@ -442,9 +697,11 @@
                 returnCompanyQty: rcAdd,
                 returnQty: rrAdd + rcAdd,
                 returnReason: reason,
-                unitPrice: product.unitPrice,
-                total: -(rrAdd + rcAdd) * product.unitPrice
+                batchIdentifier: fifo ? fifo.identifier : '',
+                unitPrice: fifo ? fifo.sellingPrice : product.unitPrice,
+                total: 0
             });
+            recalcCartLine(cart[cart.length - 1]);
         }
         closeModal('returnModal');
         updateCart();
@@ -470,14 +727,14 @@
             html += `
                 <div class="cart-item">
                     <div class="cart-item-header">
-                        <span class="cart-item-name">${item.productName}${item.productBrand ? '<span style="color:#64748b;font-weight:normal;"> · ' + item.productBrand + '</span>' : ''}</span>
+                        <span class="cart-item-name">${item.productName}${item.productBrand ? '<span style="color:#64748b;font-weight:normal;"> · ' + item.productBrand + '</span>' : ''}${item.batchIdentifier ? '<span style="color:#7c2d12;font-weight:normal;"> · ' + item.batchIdentifier + '</span>' : ''}</span>
                         <span class="cart-item-price">Rs ${(item.total || 0).toLocaleString()}</span>
                         <span class="remove-item" onclick="removeCartItem(${i})">🗑️</span>
                     </div>
                     <div class="cart-item-details">
                         Qty: ${item.qty || 0} units
                         ${item.freeQty ? `<span class="free-badge">🎁 Free: ${item.freeQty} (${item.freeReason})</span>` : ''}
-                        ${item.returnQty ? `<span class="return-badge">↩️ Return: ${item.returnQty} — resell ${item.returnResellQty || 0}, company ${item.returnCompanyQty || 0}${item.returnReason ? ' (' + item.returnReason + ')' : ''}</span>` : ''}
+                        ${item.returnQty ? `<span class="return-badge">↩️ Return: ${item.returnQty} — agent ${item.returnResellQty || 0}, company ${item.returnCompanyQty || 0}${item.returnReason ? ' (' + item.returnReason + ')' : ''}</span>` : ''}
                     </div>
                 </div>
             `;
@@ -500,20 +757,30 @@
         if (cart.length === 0) { alert('Please add at least one product'); return; }
         const paymentMethod = document.getElementById('paymentMethod').value;
         
-        let subtotal = cart.reduce((sum, i) => sum + ((i.qty || 0) * i.unitPrice), 0);
+        let subtotal = cart.reduce((sum, i) => sum + ((i.qty || 0) * (Number(i.unitPrice) || 0)), 0);
+        const totalAmount = cart.reduce((sum, i) => sum + (Number(i.total) || 0), 0);
         
+        let orderNumber = 'ORD-' + Date.now();
+        if (editingOrderId) {
+            try {
+                const ex = await db.collection('pendingOrders').doc(editingOrderId).get();
+                if (ex.exists && ex.data().orderNumber) orderNumber = ex.data().orderNumber;
+            } catch (e) {}
+        }
+
         let orderData = {
             businessId: businessId,
             repId: repId,
             repName: repName || '',
             shopId: shopId,
-            orderNumber: 'ORD-' + Date.now(),
+            orderNumber: orderNumber,
             orderDate: new Date(),
             status: 'pending',
             items: cart.map(item => ({
                 productId: item.productId,
                 productName: item.productName,
                 productBrand: item.productBrand || '',
+                batchIdentifier: item.batchIdentifier || '',
                 orderedQty: item.qty || 0,
                 freeQty: item.freeQty || 0,
                 freeReason: item.freeReason || '',
@@ -525,7 +792,7 @@
                 totalPrice: item.total || 0
             })),
             subtotal: subtotal,
-            totalAmount: subtotal,
+            totalAmount: totalAmount,
             freeIssuesTotal: cart.reduce((sum, item) => sum + (item.freeQty || 0), 0),
             collectionAmount: 0,
             paymentMethod: paymentMethod,
@@ -533,13 +800,30 @@
         };
         
         try {
-            await db.collection('pendingOrders').add(orderData);
-            alert('✅ Order submitted for approval!');
+            if (editingOrderId) {
+                await db.collection('pendingOrders').doc(editingOrderId).update({
+                    shopId: shopId,
+                    items: orderData.items,
+                    subtotal: orderData.subtotal,
+                    totalAmount: orderData.totalAmount,
+                    freeIssuesTotal: orderData.freeIssuesTotal,
+                    paymentMethod: paymentMethod,
+                    updatedAt: new Date(),
+                    lastRepEditAt: new Date()
+                });
+                alert('✅ Pending order updated.');
+                clearEditQueryFromUrl();
+                editingOrderId = null;
+            } else {
+                await db.collection('pendingOrders').add(orderData);
+                alert('✅ Order submitted for approval!');
+            }
             cart = [];
             updateCart();
             document.getElementById('shopSearch').value = '';
             selectedShopId = '';
             showProducts();
+            updateEditBannerAndSubmitLabel();
         } catch (error) {
             alert('Error: ' + error.message);
         }
