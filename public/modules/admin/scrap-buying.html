@@ -22,7 +22,7 @@
     <script src="../../core/sidebar.js?v=63"></script>
     <script src="../../core/sms-wallet-core.js?v=4"></script>
     <script src="../../core/scrap-vba-core.js?v=70"></script>
-    <script src="../../core/scrap-loans-store.js?v=1"></script>
+    <script src="../../core/scrap-loans-store.js?v=2"></script>
     <style>
         body{font-family:Inter,Segoe UI,sans-serif;background:#f5f7fb;color:#0f172a;}
         .page{padding:20px;}
@@ -272,19 +272,42 @@ function billGrandTotal() {
     return billItemsSubtotal() + miscChargesVal();
 }
 /** Firestore field names vary (camelCase / PascalCase). Never use generic `type` — it is not loan product. */
+function scrapCustomerKindNoise(s) {
+    return /^(REGISTERED|LOAN_REGISTERED|OTHERS|BORROWER|CUSTOMER|RETAIL|PERSONAL|SCRAP|MEMBER|SUPPLIER)$/i.test(String(s || '').trim());
+}
 function readLoanTypeFromRow(L) {
     if (!L || typeof L !== 'object') return '';
-    const keys = ['loanType', 'LoanType', 'loan_type', 'loanKind', 'kind', 'productType'];
+    /** `kind` is often customer context — read real loan fields first, then kind with filter. */
+    const keys = ['loanType', 'LoanType', 'loan_type', 'loanKind', 'productType', 'kind'];
     for (const k of keys) {
         const v = L[k];
-        if (v != null && String(v).trim() !== '') return String(v).trim();
+        if (v == null || String(v).trim() === '') continue;
+        const t = String(v).trim();
+        if (k === 'kind' && scrapCustomerKindNoise(t)) continue;
+        return t;
     }
     return '';
+}
+/** Map legacy / alternate labels to Scrap Debts select values (ADV_LN / STANDARD / INVESTOR_8). */
+function normalizeScrapLoanProductCode(s) {
+    if (!s) return '';
+    const u = String(s).trim().toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
+    if (u.includes('HAND')) return 'HAND_LOAN';
+    if (/^INVESTOR|^INV_/.test(u) || u.includes('INVESTOR_8') || u === 'INVESTOR8') return 'INVESTOR_8';
+    const advTokens = ['ADV_LN', 'ADVLN', 'ADVANCE', 'NO_INTEREST', 'NOINTEREST', 'INTEREST_FREE', 'INTERESTFREE', 'FREE_INTEREST', 'FREEINTEREST', 'NON_INTEREST', 'CASH_ADVANCE', 'CASHADVANCE', 'ZERO_INTEREST'];
+    if (advTokens.includes(u) || u.includes('NO_INTEREST') || u.includes('INTEREST_FREE')) return 'ADV_LN';
+    if (u.includes('ADV_LN') || (u.includes('ADV') && u.includes('LN') && !u.includes('STANDARD'))) return 'ADV_LN';
+    const stdTokens = ['STANDARD', 'STD', 'STDLN', 'INTEREST_LOAN', 'STANDARD_INTEREST', 'PRINCIPAL_PLUS', 'INTEREST'];
+    if (stdTokens.includes(u) || (u.includes('STANDARD') && !u.includes('ADV_LN'))) return 'STANDARD';
+    return u;
 }
 function rawLoanTypeString(L) {
     if (L && L._loanSource === 'loan_advanced_entries') return 'INVESTOR_8';
     const s = readLoanTypeFromRow(L);
-    if (s) return s;
+    if (s) {
+        const norm = normalizeScrapLoanProductCode(s);
+        if (['ADV_LN', 'STANDARD', 'INVESTOR_8', 'HAND_LOAN'].includes(norm)) return norm;
+    }
     const src = String(L.source || '').toUpperCase();
     if (src === 'THIRD_PARTY_INVESTOR') return 'INVESTOR_8';
     const mr = Number(L.monthlyRate);

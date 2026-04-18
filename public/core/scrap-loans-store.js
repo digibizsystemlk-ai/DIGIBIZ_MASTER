@@ -26,13 +26,21 @@
         }
         const snap = await db.collection('scrap_loans')
             .where('businessId', '==', businessId)
-            .where('active', '==', true)
             .get()
             .catch((e) => {
                 console.warn('scrap-loans-store fetch', e);
                 return { docs: [] };
             });
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        /** Legacy rows often omit `active`; Firestore `active == true` excluded them so ADV/Std vanished from Bill. */
+        const rows = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((r) => {
+                if (r.active === false) return false;
+                const b = Number(r.balance);
+                if (Number.isFinite(b) && b > 0.0001) return true;
+                const p = Number(r.principal);
+                return Number.isFinite(p) && p > 0.0001;
+            });
         cache.businessId = businessId;
         cache.rows = rows;
         return rows.slice();
