@@ -160,16 +160,48 @@ async function saveLoan(){
   const customerName = customerMap[cid]?.fullName || cid;
   if (!confirm(`Confirm save hand loan?\nType: ${type}\nCustomer: ${customerName}\nAmount: Rs.${amount.toFixed(2)}`)) return;
   const customerMobile = pickMobile(customerMap[cid]);
-  const loanRef = await db.collection('hand_loans').add({businessId,type,customerId:cid,customerName,customerMobile,balance:amount,date,createdAt:new Date(),active:true});
-  const link = { collection: 'hand_loans', docId: loanRef.id };
-  if(type === 'GIVEN'){
-    await addJournal(`Hand loan given - ${customerName}`,[{...GL_HAND_AR,debit:amount,credit:0},{...GL_CASH,debit:0,credit:amount}],'HAND_LOAN_GIVEN',link);
+
+  const existingSnap = await db.collection('hand_loans')
+    .where('businessId', '==', businessId)
+    .where('customerId', '==', cid)
+    .where('type', '==', type)
+    .where('active', '==', true)
+    .get();
+
+  let loanId;
+  let newTotal = amount;
+  let isTopUp = false;
+
+  if (!existingSnap.empty) {
+    const exDoc = existingSnap.docs[0];
+    const prevBal = Number(exDoc.data().balance || 0);
+    newTotal = prevBal + amount;
+    isTopUp = true;
+    await exDoc.ref.update({ balance: newTotal, updatedAt: new Date() });
+    loanId = exDoc.id;
   } else {
-    await addJournal(`Hand loan received - ${customerName}`,[{...GL_CASH,debit:amount,credit:0},{...GL_HAND_AP,debit:0,credit:amount}],'HAND_LOAN_RECEIVED',link);
+    const loanRef = await db.collection('hand_loans').add({businessId,type,customerId:cid,customerName,customerMobile,balance:amount,date,createdAt:new Date(),active:true});
+    loanId = loanRef.id;
   }
-  const msg = type === 'GIVEN'
-    ? `Dear ${customerName}, hand loan issued Rs.${amount.toFixed(2)}. Outstanding Rs.${amount.toFixed(2)}.`
-    : `Dear ${customerName}, hand loan received from you Rs.${amount.toFixed(2)}. Outstanding payable Rs.${amount.toFixed(2)}.`;
+
+  const link = { collection: 'hand_loans', docId: loanId };
+  if(type === 'GIVEN'){
+    await addJournal(`${isTopUp ? 'Additional ' : ''}Hand loan given - ${customerName}`,[{...GL_HAND_AR,debit:amount,credit:0},{...GL_CASH,debit:0,credit:amount}],'HAND_LOAN_GIVEN',link);
+  } else {
+    await addJournal(`${isTopUp ? 'Additional ' : ''}Hand loan received - ${customerName}`,[{...GL_CASH,debit:amount,credit:0},{...GL_HAND_AP,debit:0,credit:amount}],'HAND_LOAN_RECEIVED',link);
+  }
+
+  let msg = "";
+  if(type === 'GIVEN'){
+    msg = isTopUp 
+      ? `Dear ${customerName}, additional hand loan issued Rs.${amount.toFixed(2)}. Total outstanding Rs.${newTotal.toFixed(2)}.`
+      : `Dear ${customerName}, hand loan issued Rs.${amount.toFixed(2)}. Outstanding Rs.${amount.toFixed(2)}.`;
+  } else {
+    msg = isTopUp
+      ? `Dear ${customerName}, additional hand loan received from you Rs.${amount.toFixed(2)}. Total payable Rs.${newTotal.toFixed(2)}.`
+      : `Dear ${customerName}, hand loan received from you Rs.${amount.toFixed(2)}. Outstanding payable Rs.${amount.toFixed(2)}.`;
+  }
+
   const smsRes = await enqueueSms(customerMobile, msg);
   if (smsRes?.ok) showSmsDebug(`SMS queued for ${customerName}.`, true);
   else showSmsDebug(`SMS skipped for ${customerName}: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
@@ -229,8 +261,43 @@ async function loadRows(){
     await window.LoanZeroCleanup.sweepExpired(db, businessId, 'hand_loans', (r)=>Number(r.balance||0)<=0.0001);
   }
   const snap = await db.collection('hand_loans').where('businessId','==',businessId).limit(600).get().catch(()=>({docs:[]}));
-  const rows = snap.docs.map((d)=>({id:d.id,...(d.data()||{})})).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
-  const given = rows.filter((r)=>r.type==='GIVEN'); const recv = rows.filter((r)=>r.type==='RECEIVED');
+  let rows = snap.docs.map((d)=>({id:d.id,...(d.data()||{})}));
+
+  const groups = {};
+  const activeRows = rows.filter(r => r.active !== false && Number(r.balance || 0) > 0.0001);
+  activeRows.forEach(r => {
+    const key = `${r.type}_${r.customerId || r.customerName}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
+  });
+  
+  let didMerge = false;
+  for (const key in groups) {
+    const docs = groups[key];
+    if (docs.length > 1) {
+      docs.sort((a,b) => new Date(a.date || a.createdAt || 0) - new Date(b.date || b.createdAt || 0));
+      const primary = docs[0];
+      let totalBalance = Number(primary.balance || 0);
+      const batch = db.batch();
+      for (let i = 1; i < docs.length; i++) {
+        totalBalance += Number(docs[i].balance || 0);
+        batch.update(db.collection('hand_loans').doc(docs[i].id), { balance: 0, active: false, mergedInto: primary.id, updatedAt: new Date() });
+      }
+      batch.update(db.collection('hand_loans').doc(primary.id), { balance: totalBalance, updatedAt: new Date() });
+      await batch.commit();
+      didMerge = true;
+    }
+  }
+
+  if (didMerge) {
+    const snap2 = await db.collection('hand_loans').where('businessId','==',businessId).limit(600).get().catch(()=>({docs:[]}));
+    rows = snap2.docs.map((d)=>({id:d.id,...(d.data()||{})}));
+  }
+
+  rows.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const given = rows.filter((r)=>r.type==='GIVEN' && r.active !== false && Number(r.balance||0)>0.0001);
+  const recv = rows.filter((r)=>r.type==='RECEIVED' && r.active !== false && Number(r.balance||0)>0.0001);
+  
   const givenOut = given.reduce((s,r)=>s+(Number(r.balance)||0),0);
   const recvOut = recv.reduce((s,r)=>s+(Number(r.balance)||0),0);
   document.getElementById('kpiGiven').textContent = m(givenOut);
