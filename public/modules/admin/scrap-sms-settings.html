@@ -130,11 +130,15 @@ Thank you.</textarea>
     </div>
 </div>
 <script>
-const OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
-const LOCK_SALT = 'DIGIBIZ_SCRAP_SMS_LOCK_V1|' + OWNER_UID + '|';
+let SCRAP_BUSINESS_ID = '';
+const LOCK_SALT_PREFIX = 'DIGIBIZ_SCRAP_SMS_LOCK_V1|';
 const UNLOCK_STORAGE_KEY = 'digibiz_scrap_sms_unlock_v1';
 let gLockEnabled = false;
 let gLockPinSha256 = '';
+
+function lockSalt() {
+    return LOCK_SALT_PREFIX + String(SCRAP_BUSINESS_ID || '') + '|';
+}
 
 function smsSkipReasonText(code) {
     if (code === 'no_phone') return 'SMS skipped: test phone number missing.';
@@ -185,13 +189,13 @@ function unlockStoragePayload() {
 
 function isUnlockSessionValid() {
     const o = unlockStoragePayload();
-    if (!o || !o.until || o.businessId !== OWNER_UID) return false;
+    if (!o || !o.until || o.businessId !== SCRAP_BUSINESS_ID) return false;
     return Date.now() < Number(o.until);
 }
 
 function setUnlockSession() {
     sessionStorage.setItem(UNLOCK_STORAGE_KEY, JSON.stringify({
-        businessId: OWNER_UID,
+        businessId: SCRAP_BUSINESS_ID,
         until: Date.now() + 12 * 3600000
     }));
 }
@@ -248,7 +252,7 @@ async function assertEditable() {
 }
 
 async function loadSettings() {
-    const ref = db.collection('scrap_sms_settings').doc(OWNER_UID);
+    const ref = db.collection('scrap_sms_settings').doc(SCRAP_BUSINESS_ID);
     const snap = await ref.get();
     const row = snap.exists ? (snap.data() || {}) : {};
     gLockEnabled = row.settingsEditLockEnabled === true;
@@ -277,8 +281,8 @@ async function loadSettings() {
 
 async function saveSettings() {
     if (!(await assertEditable())) return;
-    await db.collection('scrap_sms_settings').doc(OWNER_UID).set({
-        businessId: OWNER_UID,
+    await db.collection('scrap_sms_settings').doc(SCRAP_BUSINESS_ID).set({
+        businessId: SCRAP_BUSINESS_ID,
         billPrintTitle: String((document.getElementById('billPrintTitle') && document.getElementById('billPrintTitle').value) || '').trim(),
         billPrintSubtitle: String((document.getElementById('billPrintSubtitle') && document.getElementById('billPrintSubtitle').value) || '').trim(),
         tplBuying: document.getElementById('tplBuying').value,
@@ -296,7 +300,7 @@ async function saveSettings() {
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
     if (window.scrapVbaCore && typeof window.scrapVbaCore.logEvent === 'function') {
-        await window.scrapVbaCore.logEvent(OWNER_UID, 'SMS_SETTINGS_SAVE', 'Templates updated', 'Admin');
+        await window.scrapVbaCore.logEvent(SCRAP_BUSINESS_ID, 'SMS_SETTINGS_SAVE', 'Templates updated', 'Admin');
     }
     alert('SMS settings saved.');
 }
@@ -313,11 +317,7 @@ async function sendTest() {
         : 'Scrap SMS test message.';
     let smsRes = { ok: false, skipped: 'db_unavailable', error: 'scrapVbaCore not loaded' };
     if (window.scrapVbaCore && (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function' || typeof window.scrapVbaCore.enqueuePendingSms === 'function')) {
-        if (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function') {
-            smsRes = await window.scrapVbaCore.enqueuePendingSmsForScrap(phone, message);
-        } else {
-            smsRes = await window.scrapVbaCore.enqueuePendingSms(OWNER_UID, phone, message);
-        }
+        smsRes = await window.scrapVbaCore.enqueuePendingSms(SCRAP_BUSINESS_ID, phone, message);
     }
     showSmsDebug(smsRes);
 }
@@ -334,7 +334,7 @@ document.getElementById('smsUnlockSubmitBtn').addEventListener('click', async ()
         err.style.display = 'block';
         return;
     }
-    const h = await sha256Hex(LOCK_SALT + pin);
+    const h = await sha256Hex(lockSalt() + pin);
     if (h !== gLockPinSha256) {
         err.textContent = 'Incorrect PIN.';
         err.style.display = 'block';
@@ -355,8 +355,8 @@ document.getElementById('btnEnableLock').addEventListener('click', async () => {
         alert('PIN must be at least 4 characters and both fields must match.');
         return;
     }
-    const hash = await sha256Hex(LOCK_SALT + a);
-    await db.collection('scrap_sms_settings').doc(OWNER_UID).set({
+    const hash = await sha256Hex(lockSalt() + a);
+    await db.collection('scrap_sms_settings').doc(SCRAP_BUSINESS_ID).set({
         settingsEditLockEnabled: true,
         settingsEditLockPinSha256: hash,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -373,12 +373,12 @@ document.getElementById('btnEnableLock').addEventListener('click', async () => {
 document.getElementById('btnDisableLock').addEventListener('click', async () => {
     const pin = document.getElementById('disableLockPin').value;
     if (!pin) return alert('Enter current PIN.');
-    const h = await sha256Hex(LOCK_SALT + pin);
+    const h = await sha256Hex(lockSalt() + pin);
     if (!gLockPinSha256 || h !== gLockPinSha256) {
         alert('Incorrect PIN.');
         return;
     }
-    await db.collection('scrap_sms_settings').doc(OWNER_UID).set({
+    await db.collection('scrap_sms_settings').doc(SCRAP_BUSINESS_ID).set({
         settingsEditLockEnabled: false,
         settingsEditLockPinSha256: firebase.firestore.FieldValue.delete(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -394,14 +394,21 @@ document.getElementById('btnDisableLock').addEventListener('click', async () => 
 
 auth.onAuthStateChanged(async (user) => {
     if (!user) { window.location.href = '../../auth/login.html'; return; }
-    const userDoc = await db.collection('users').doc(user.uid).get();
-    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    let businessId = user.uid;
+    if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+        const ctx = await window.dashboardCore.getContext(user);
+        businessId = String((ctx && ctx.businessId) || user.uid);
+    } else {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    }
     const bizDoc = await db.collection('businesses').doc(businessId).get();
     const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
-    if (user.uid !== OWNER_UID || businessType !== 'scrap_collection_center') {
+    if (businessType !== 'scrap_collection_center') {
         window.location.href = '/modules/core/dashboard.html';
         return;
     }
+    SCRAP_BUSINESS_ID = String(businessId || '').trim();
     await loadSettings();
 });
 </script>

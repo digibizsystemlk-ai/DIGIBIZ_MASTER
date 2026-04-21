@@ -36,11 +36,12 @@ Future<UniversalSmsOutcome> sendSmsUniversal({
   Duration telephonyTimeout = const Duration(seconds: 25),
 }) async {
   final trace = StringBuffer();
+  final String dest = _normalizeMsisdn(phone);
 
   String telephonyLine = '';
   try {
     await Telephony.instance
-        .sendSms(to: phone, message: body)
+        .sendSms(to: dest, message: body)
         .timeout(telephonyTimeout);
     telephonyLine = 'Telephony plugin: OK';
     trace.writeln(telephonyLine);
@@ -57,7 +58,7 @@ Future<UniversalSmsOutcome> sendSmsUniversal({
   try {
     final Map<String, dynamic> map = await _smsChannel.invokeMapMethod<String, dynamic>(
           'sendSmsNative',
-          <String, String>{'phone': phone, 'body': body},
+          <String, String>{'phone': dest, 'body': body},
         ) ??
         <String, dynamic>{};
     final bool ok = map['ok'] == true;
@@ -89,6 +90,17 @@ Future<UniversalSmsOutcome> sendSmsUniversal({
       fullTrace: trace.toString(),
     );
   }
+}
+
+String _normalizeMsisdn(String raw) {
+  String m = raw.replaceAll(RegExp(r'[^0-9]'), '');
+  if (m.length == 10 && m.startsWith('0')) {
+    m = '94${m.substring(1)}';
+  }
+  if (m.length == 9) {
+    m = '94$m';
+  }
+  return m;
 }
 
 String _classifyTelephony(Object e) {
