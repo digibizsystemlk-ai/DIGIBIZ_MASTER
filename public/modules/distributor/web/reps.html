@@ -140,15 +140,27 @@
             }
             
             // Get business ID
-            currentBusinessId = localStorage.getItem('currentBusinessId');
+            currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            if (!currentBusinessId && window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+                const ctx = await window.dashboardCore.getContext(user).catch(() => null);
+                currentBusinessId = ctx && ctx.businessId ? ctx.businessId : null;
+                if (currentBusinessId) {
+                    localStorage.setItem('currentBusinessId', currentBusinessId);
+                    sessionStorage.setItem('currentBusinessId', currentBusinessId);
+                }
+            }
             if (!currentBusinessId) {
                 const userDoc = await db.collection('users').doc(user.uid).get();
                 currentBusinessId = userDoc.data()?.businessId;
-                if (currentBusinessId) localStorage.setItem('currentBusinessId', currentBusinessId);
+                if (currentBusinessId) {
+                    localStorage.setItem('currentBusinessId', currentBusinessId);
+                    sessionStorage.setItem('currentBusinessId', currentBusinessId);
+                }
             }
             if (!currentBusinessId && String(user.email || '').trim().toLowerCase() === MW_TRADING_OWNER_EMAIL) {
                 currentBusinessId = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
                 localStorage.setItem('currentBusinessId', currentBusinessId);
+                sessionStorage.setItem('currentBusinessId', currentBusinessId);
                 console.log('[Reps] MW owner: defaulted currentBusinessId to MW business');
             }
             
@@ -209,11 +221,59 @@
             const snapshot = await db.collection('reps')
                 .where('businessId', '==', currentBusinessId)
                 .get();
-            
+
             allReps = [];
+            const seen = {};
             snapshot.docs.forEach(doc => {
-                allReps.push({ id: doc.id, ...doc.data() });
+                const x = doc.data() || {};
+                if (x.isActive === false) return;
+                const row = { id: doc.id, ...x };
+                allReps.push(row);
+                seen[String(doc.id)] = true;
             });
+
+            // Fallback for legacy setups: REP staff exists but reps docs are missing.
+            const staffSnap = await db.collection('businesses').doc(currentBusinessId).collection('users')
+                .where('role', '==', 'REP')
+                .get()
+                .catch(() => ({ docs: [] }));
+            const staffBackfill = [];
+            staffSnap.docs.forEach(doc => {
+                if (seen[String(doc.id)]) return;
+                const u = doc.data() || {};
+                if (u.isActive === false) return;
+                const fallbackRep = {
+                    id: doc.id,
+                    userId: doc.id,
+                    businessId: currentBusinessId,
+                    name: String(u.name || u.displayName || u.email || doc.id).trim(),
+                    email: String(u.email || '').trim().toLowerCase(),
+                    phone: '',
+                    route: '',
+                    isActive: true,
+                    provisionedFromStaff: true
+                };
+                allReps.push(fallbackRep);
+                seen[String(doc.id)] = true;
+                staffBackfill.push(fallbackRep);
+            });
+
+            // Self-heal into reps collection so every module sees the same data.
+            for (const rep of staffBackfill) {
+                db.collection('reps').doc(rep.id).set({
+                    userId: rep.userId,
+                    businessId: rep.businessId,
+                    name: rep.name,
+                    email: rep.email,
+                    phone: rep.phone || '',
+                    route: rep.route || '',
+                    isActive: true,
+                    provisionedFromStaff: true,
+                    updatedAt: new Date()
+                }, { merge: true }).catch(() => {});
+            }
+
+            allReps.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
             
             const container = document.getElementById('repsList');
             if (allReps.length === 0) {
