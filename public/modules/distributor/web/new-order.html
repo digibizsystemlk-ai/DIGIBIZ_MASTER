@@ -471,54 +471,19 @@
         async function loadRepsIntoSelect() {
             var sel = document.getElementById('repSelect');
             sel.innerHTML = '<option value="">Loading…</option>';
-            var snap = await db.collection('reps').where('businessId', '==', currentBusinessId).get().catch(function () { return { forEach: function () {} }; });
             var rows = [];
-            var byId = {};
-            snap.forEach(function (d) {
-                var x = d.data() || {};
-                if (x.isActive === false) return;
-                var rid = String(d.id || '').trim();
-                if (!rid) return;
-                var row = { id: rid, name: String(x.name || x.fullName || x.displayName || x.email || rid).trim() || rid };
-                rows.push(row);
-                byId[rid] = true;
-            });
-
-            // Fallback for businesses where REP staff exists but legacy reps docs were not created.
-            var staffRows = [];
             var staffSnap = await db.collection('businesses').doc(currentBusinessId).collection('users')
-                .where('role', '==', 'REP')
                 .get()
                 .catch(function () { return { forEach: function () {} }; });
             staffSnap.forEach(function (d) {
                 var x = d.data() || {};
                 if (x.isActive === false) return;
-                var sid = String(d.id || '').trim();
-                if (!sid || byId[sid]) return;
-                staffRows.push({
-                    id: sid,
-                    name: String(x.name || x.displayName || x.email || sid).trim() || sid,
-                    email: String(x.email || '').trim().toLowerCase()
+                var uid = String(d.id || '').trim();
+                if (!uid) return;
+                rows.push({
+                    id: uid,
+                    name: String(x.name || x.displayName || x.ownerName || x.email || uid).trim() || uid
                 });
-                byId[sid] = true;
-            });
-            if (staffRows.length) {
-                rows = rows.concat(staffRows.map(function (r) { return { id: r.id, name: r.name }; }));
-                // Self-heal: materialize minimal reps docs so other screens keep working.
-                for (var si = 0; si < staffRows.length; si++) {
-                    var s = staffRows[si];
-                    db.collection('reps').doc(s.id).set({
-                        userId: s.id,
-                        businessId: currentBusinessId,
-                        name: s.name,
-                        email: s.email || '',
-                        phone: '',
-                        route: '',
-                        isActive: true,
-                        provisionedFromStaff: true,
-                        updatedAt: new Date()
-                    }, { merge: true }).catch(function () { /* ignore self-heal failures */ });
-                }
             });
             rows.sort(function (a, b) { return a.name.localeCompare(b.name); });
             sel.innerHTML = '<option value="">Select rep…</option>';

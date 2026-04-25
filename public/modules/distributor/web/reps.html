@@ -218,31 +218,14 @@
         }
 
         async function loadReps() {
-            const snapshot = await db.collection('reps')
-                .where('businessId', '==', currentBusinessId)
-                .get();
-
             allReps = [];
-            const seen = {};
-            snapshot.docs.forEach(doc => {
-                const x = doc.data() || {};
-                if (x.isActive === false) return;
-                const row = { id: doc.id, ...x };
-                allReps.push(row);
-                seen[String(doc.id)] = true;
-            });
-
-            // Fallback for legacy setups: REP staff exists but reps docs are missing.
             const staffSnap = await db.collection('businesses').doc(currentBusinessId).collection('users')
-                .where('role', '==', 'REP')
                 .get()
                 .catch(() => ({ docs: [] }));
-            const staffBackfill = [];
             staffSnap.docs.forEach(doc => {
-                if (seen[String(doc.id)]) return;
                 const u = doc.data() || {};
                 if (u.isActive === false) return;
-                const fallbackRep = {
+                allReps.push({
                     id: doc.id,
                     userId: doc.id,
                     businessId: currentBusinessId,
@@ -252,26 +235,8 @@
                     route: '',
                     isActive: true,
                     provisionedFromStaff: true
-                };
-                allReps.push(fallbackRep);
-                seen[String(doc.id)] = true;
-                staffBackfill.push(fallbackRep);
+                });
             });
-
-            // Self-heal into reps collection so every module sees the same data.
-            for (const rep of staffBackfill) {
-                db.collection('reps').doc(rep.id).set({
-                    userId: rep.userId,
-                    businessId: rep.businessId,
-                    name: rep.name,
-                    email: rep.email,
-                    phone: rep.phone || '',
-                    route: rep.route || '',
-                    isActive: true,
-                    provisionedFromStaff: true,
-                    updatedAt: new Date()
-                }, { merge: true }).catch(() => {});
-            }
 
             allReps.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
             
