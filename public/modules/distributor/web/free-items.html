@@ -13,6 +13,7 @@
     <script src="/core/firebase-init.js?v=34"></script>
     <script src="/core/auth-roles.js?v=34"></script>
     <script src="/core/dashboard-core.js?v=34"></script>
+    <script src="/core/distributor-inventory.js?v=1"></script>
     <script src="/core/sidebar.js?v=34"></script>
     <style>
         body{font-family:Inter,system-ui,sans-serif;background:#f3f4f6;margin:0;}
@@ -43,9 +44,6 @@
     </div>
     <script>
         const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
-        const storageBusinessId = localStorage.getItem('currentBusinessId') ||
-            sessionStorage.getItem('selectedBusinessId');
-        const isMW = (storageBusinessId === MW_TRADING_BUSINESS_ID);
 
         function esc(s) {
             return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -80,14 +78,39 @@
             const end = new Date(ed); end.setHours(23, 59, 59, 999);
             document.getElementById('out').innerHTML = '<p>Loading…</p>';
             const rows = [];
+            const businessName = sessionStorage.getItem('businessName') || localStorage.getItem('businessName') || '';
+            const inv = window.DigiBizDistributorInventory || {};
+            const isMW = typeof inv.isMwTradingBusiness === 'function'
+                ? inv.isMwTradingBusiness(bid, businessName)
+                : (String(bid || '').trim() === MW_TRADING_BUSINESS_ID);
             try {
                 if (isMW) {
-                    // MW only: fetch directly from free_issues collection.
-                    const snap = await db.collection('free_issues')
+                    // MW only: load from all orders (data-entry flow unchanged).
+                    const snap = await db.collection('orders')
                         .where('businessId', '==', MW_TRADING_BUSINESS_ID)
                         .get();
                     snap.docs.forEach((doc) => {
                         const x = doc.data() || {};
+                        const extracted = (typeof inv.extractFreeIssueRowsFromOrder === 'function')
+                            ? inv.extractFreeIssueRowsFromOrder(x, doc.id)
+                            : [];
+                        extracted.forEach((row) => {
+                            const dtRaw = row.when || null;
+                            const dt = dtRaw && typeof dtRaw.toDate === 'function' ? dtRaw.toDate() : (dtRaw ? new Date(dtRaw) : null);
+                            if (dt && (dt < start || dt > end)) return;
+                            rows.push({
+                                id: row.orderId || doc.id,
+                                when: dt ? dt.toLocaleString() : '—',
+                                item: row.item || '—',
+                                brand: row.brand || '—',
+                                qty: Number(row.qty) || 0,
+                                val: Number(row.value) || 0,
+                                rep: row.rep || '—',
+                                customer: row.customer || '—',
+                                reason: row.note || '—'
+                            });
+                        });
+                        if (typeof inv.extractFreeIssueRowsFromOrder === 'function') return;
                         const dtRaw = x.date || x.createdAt || x.orderDate || null;
                         const dt = dtRaw && typeof dtRaw.toDate === 'function' ? dtRaw.toDate() : (dtRaw ? new Date(dtRaw) : null);
                         if (dt && (dt < start || dt > end)) return;
@@ -153,7 +176,7 @@
                             <td>${esc(r.rep)}</td>
                             <td>${esc(r.customer)}</td>
                             <td>${esc(r.reason)}</td>
-                        </tr>`).join('') : `<tr><td colspan="8">${isMW ? 'No free issues data' : 'No free-issue lines in this range.'}</td></tr>`}
+                        </tr>`).join('') : '<tr><td colspan="8">No free-issue lines in this range.</td></tr>'}
                     </tbody>
                 </table>`;
         }
@@ -185,7 +208,6 @@
                 const ctx = await window.dashboardCore.getContext(user);
                 currentBusinessId = ctx && ctx.businessId;
             }
-            if (isMW) currentBusinessId = MW_TRADING_BUSINESS_ID;
             if (!currentBusinessId) {
                 document.getElementById('out').textContent = 'Please open the dashboard and select a business first.';
                 return;

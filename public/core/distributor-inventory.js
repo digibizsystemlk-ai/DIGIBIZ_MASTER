@@ -6,6 +6,7 @@
  * Product docs keep synced numeric fields: currentStock + stock.
  */
 (function (global) {
+    const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
     const MOVEMENT_TYPES = {
         GRN: 'GRN',
         RETURN_TO_COMPANY: 'RETURN_TO_COMPANY',
@@ -55,11 +56,131 @@
         return Number(item && item.returnCompanyQty) || 0;
     }
 
+    function isMwTradingBusiness(businessId, businessName) {
+        const bid = String(businessId || '').trim();
+        const bname = String(businessName || '').trim().toUpperCase();
+        return bid === MW_TRADING_BUSINESS_ID || bname === 'M W TRADING';
+    }
+
+    function extractFreeIssueRowsFromOrder(order, orderId) {
+        const o = order || {};
+        const id = String(orderId || o.orderId || '').trim();
+        const when = o.orderDate || o.date || o.createdAt || null;
+        const customer = o.customerName || o.shopName || o.shopId || '—';
+        const rep = o.repName || o.salesRepName || o.repId || '—';
+        const rows = [];
+
+        if (Array.isArray(o.freeItems) && o.freeItems.length) {
+            o.freeItems.forEach((it) => {
+                const qty = Number(it.quantity ?? it.freeQty ?? it.qty) || 0;
+                if (qty <= 0) return;
+                const unitPrice = Number(it.unitPrice || it.price || 0) || 0;
+                rows.push({
+                    orderId: id,
+                    when,
+                    customer,
+                    rep,
+                    item: it.productName || it.itemName || it.name || '—',
+                    brand: String(it.brand || it.productBrand || '—').trim() || '—',
+                    qty,
+                    value: Number(it.value || (qty * unitPrice)),
+                    note: it.reason || it.note || it.freeReason || '—'
+                });
+            });
+            return rows;
+        }
+
+        const items = Array.isArray(o.items) ? o.items : [];
+        items.forEach((it) => {
+            const qty = Number(it.freeQty ?? it.freeQuantity ?? 0) || 0;
+            if (qty <= 0) return;
+            const unitPrice = Number(it.unitPrice || it.price || 0) || 0;
+            rows.push({
+                orderId: id,
+                when,
+                customer,
+                rep,
+                item: it.productName || it.itemName || it.name || '—',
+                brand: String(it.productBrand || it.brand || '—').trim() || '—',
+                qty,
+                value: qty * unitPrice,
+                note: it.freeReason || '—'
+            });
+        });
+        return rows;
+    }
+
+    function extractReturnRowsFromOrder(order, orderId) {
+        const o = order || {};
+        const id = String(orderId || o.orderId || '').trim();
+        const when = o.orderDate || o.date || o.createdAt || null;
+        const customer = o.customerName || o.shopName || o.shopId || '—';
+        const rep = o.repName || o.salesRepName || o.repId || '—';
+        const rows = [];
+
+        if (Array.isArray(o.returns) && o.returns.length) {
+            o.returns.forEach((it) => {
+                const cat1 = Number(it.returnCompanyQty || it.cat1 || 0) || 0;
+                const cat2 = Number(it.returnResellQty || it.returnQty || it.cat2 || 0) || 0;
+                if (cat1 <= 0 && cat2 <= 0) return;
+                const unitPrice = Number(it.unitPrice || it.price || 0) || 0;
+                rows.push({
+                    orderId: id,
+                    when,
+                    customer,
+                    rep,
+                    item: it.productName || it.itemName || it.name || '—',
+                    brand: String(it.productBrand || it.brand || '—').trim() || '—',
+                    cat1,
+                    cat2,
+                    value: Number(it.value || ((cat1 + cat2) * unitPrice)),
+                    note: it.reason || it.note || it.returnReason || '—'
+                });
+            });
+            return rows;
+        }
+
+        const items = Array.isArray(o.items) ? o.items : [];
+        items.forEach((it) => {
+            const rc = Number(it.returnCompanyQty) || 0;
+            const rr = Number(it.returnResellQty) || 0;
+            const hasSplit = it.returnResellQty != null || it.returnCompanyQty != null;
+            const legacy = Number(it.returnQty) || 0;
+            let cat1 = 0;
+            let cat2 = 0;
+            if (rc > 0 || rr > 0) {
+                cat1 = rc;
+                cat2 = rr;
+            } else if (!hasSplit && legacy > 0) {
+                cat2 = legacy;
+            }
+            if (cat1 <= 0 && cat2 <= 0) return;
+            const unitPrice = Number(it.unitPrice || it.price || 0) || 0;
+            rows.push({
+                orderId: id,
+                when,
+                customer,
+                rep,
+                item: it.productName || it.itemName || it.name || '—',
+                brand: String(it.productBrand || it.brand || '—').trim() || '—',
+                cat1,
+                cat2,
+                value: (cat1 + cat2) * unitPrice,
+                note: it.returnReason || '—'
+            });
+        });
+        return rows;
+    }
+
     global.DigiBizDistributorInventory = {
         MOVEMENT_TYPES: MOVEMENT_TYPES,
         numericStock: numericStock,
         syncStockPayload: syncStockPayload,
         orderApprovalStockDelta: orderApprovalStockDelta,
-        factoryReturnUnitsFromLine: factoryReturnUnitsFromLine
+        factoryReturnUnitsFromLine: factoryReturnUnitsFromLine,
+        MW_TRADING_BUSINESS_ID: MW_TRADING_BUSINESS_ID,
+        isMwTradingBusiness: isMwTradingBusiness,
+        extractFreeIssueRowsFromOrder: extractFreeIssueRowsFromOrder,
+        extractReturnRowsFromOrder: extractReturnRowsFromOrder
     };
 })(typeof window !== 'undefined' ? window : globalThis);
