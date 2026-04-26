@@ -32,7 +32,6 @@
     </table>
 </div>
 <script>
-const MW_BID='YRMbB6aq4CMevSrLWkQvoVMtc8b2';
 let invoiceRows=[];
 function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
 function money(n){return 'Rs '+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
@@ -44,8 +43,17 @@ window.viewPdf=function(idx){
 };
 firebase.auth().onAuthStateChanged(async(u)=>{
     if(!u){location.href='/auth/login.html';return;}
-    localStorage.setItem('currentBusinessId',MW_BID);sessionStorage.setItem('currentBusinessId',MW_BID);
-    const snap=await db.collection('orders').where('businessId','==',MW_BID).where('status','==','approved').get();
+    let bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+    if(!bid && window.dashboardCore && typeof window.dashboardCore.getContext==='function'){
+        const ctx = await window.dashboardCore.getContext(u).catch(()=>null);
+        bid = ctx && ctx.businessId ? ctx.businessId : '';
+    }
+    if(!bid){
+        rows.innerHTML = '<tr><td colspan="7">No business selected.</td></tr>';
+        return;
+    }
+    localStorage.setItem('currentBusinessId', bid);sessionStorage.setItem('currentBusinessId', bid);
+    const snap=await db.collection('orders').where('businessId','==',bid).where('status','==','approved').get();
     invoiceRows=snap.docs.map(d=>{const o=d.data();const dt=o.approvedAt?.toDate?o.approvedAt.toDate():(o.orderDate?.toDate?o.orderDate.toDate():new Date());return{id:d.id,...o,date:dt.toLocaleString()};}).sort((a,b)=>new Date(b.date)-new Date(a.date));
     render();
 });

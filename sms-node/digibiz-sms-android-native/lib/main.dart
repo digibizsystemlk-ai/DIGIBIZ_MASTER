@@ -158,6 +158,7 @@ class _SmsGatewayPageState extends State<SmsGatewayPage> with WidgetsBindingObse
   DatabaseReference? queueRef;
 
   StreamSubscription<DatabaseEvent>? queueSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? firestorePendingSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? businessSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? settingsSub;
   final Set<String> inflight = <String>{};
@@ -287,6 +288,7 @@ class _SmsGatewayPageState extends State<SmsGatewayPage> with WidgetsBindingObse
   Future<void> _startService() async {
     if (queueRef == null || !smsPermissionGranted) return;
     await queueSub?.cancel();
+    await firestorePendingSub?.cancel();
     await fetchAndProcessOnce();
     queueSub = queueRef!.onValue.listen(
       (DatabaseEvent event) {
@@ -305,17 +307,48 @@ class _SmsGatewayPageState extends State<SmsGatewayPage> with WidgetsBindingObse
         if (mounted) setState(() => connectionStatus = 'Firebase stream error: $error');
       },
     );
+    firestorePendingSub = FirebaseFirestore.instance
+        .collection('pending_sms')
+        .where('businessId', isEqualTo: widget.businessId)
+        .where('status', isEqualTo: 'pending')
+        .orderBy('createdAt', descending: false)
+        .limit(120)
+        .snapshots()
+        .listen((QuerySnapshot<Map<String, dynamic>> snap) {
+      if (!serviceEnabled) return;
+      for (final QueryDocumentSnapshot<Map<String, dynamic>> d in snap.docs) {
+        final SmsTask? task = parseTaskFromFirestoreDoc(d);
+        if (task != null) {
+          unawaited(sendOne(task));
+        }
+      }
+      if (mounted) {
+        setState(() {
+          if (!connectionStatus.startsWith('Last SMS failed')) {
+            connectionStatus = 'Gateway live - RTDB + Firestore queue monitoring';
+          }
+        });
+      }
+    }, onError: (Object error) {
+      if (mounted) {
+        setState(() {
+          connectionStatus = 'Firestore pending listener error: $error';
+        });
+      }
+    });
     if (mounted) {
       setState(() {
         serviceEnabled = true;
-        connectionStatus = 'Gateway live - monitoring business queue';
+        connectionStatus = 'Gateway live - RTDB + Firestore queue monitoring';
       });
     }
   }
 
   Future<void> _stopService() async {
     await queueSub?.cancel();
+    await firestorePendingSub?.cancel();
     queueSub = null;
+    firestorePendingSub = null;
     if (mounted) {
       setState(() {
         serviceEnabled = false;
@@ -368,6 +401,25 @@ class _SmsGatewayPageState extends State<SmsGatewayPage> with WidgetsBindingObse
         phone: phone.trim(),
         message: msg.trim(),
         status: inflight.contains(id) ? 'sending' : 'pending',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  SmsTask? parseTaskFromFirestoreDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    try {
+      final Map<String, dynamic> data = doc.data() ?? <String, dynamic>{};
+      final String phone = (data['mobile'] ?? data['phone'] ?? '').toString().trim();
+      final String message = (data['message'] ?? data['body'] ?? '').toString().trim();
+      final String status = (data['status'] ?? '').toString().trim().toLowerCase();
+      if (phone.isEmpty || message.isEmpty) return null;
+      if (status.isNotEmpty && status != 'pending') return null;
+      return SmsTask(
+        id: doc.id,
+        phone: phone,
+        message: message,
+        status: inflight.contains(doc.id) ? 'sending' : 'pending',
       );
     } catch (_) {
       return null;
@@ -512,6 +564,7 @@ class _SmsGatewayPageState extends State<SmsGatewayPage> with WidgetsBindingObse
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     queueSub?.cancel();
+    firestorePendingSub?.cancel();
     businessSub?.cancel();
     settingsSub?.cancel();
     super.dispose();

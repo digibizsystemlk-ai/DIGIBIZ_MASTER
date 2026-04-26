@@ -46,6 +46,9 @@ class AccountsCore {
         this.eventBus.subscribe('MANUFACTURING_SIDE_INCOME', (event) => {
             this.handleManufacturingSideIncome(event.data);
         }, 'AccountsCore');
+        this.eventBus.subscribe('MANUFACTURING_PRODUCTION_RECORDED', (event) => {
+            this.handleManufacturingProductionRecorded(event.data);
+        }, 'AccountsCore');
 
         this.eventBus.subscribe('HAND_LOAN_RECORDED', (event) => {
             this.handleHandLoan(event.data);
@@ -66,6 +69,20 @@ class AccountsCore {
         this.eventBus.subscribe('FINANCE_TRANSACTION_RECORDED', (event) => {
             this.handleFinanceTransaction(event.data);
         }, 'AccountsCore');
+    }
+
+    getManufacturingAccountMap() {
+        return {
+            CASH: { accountCode: '1-1010-01', accountName: 'Cash' },
+            BANK: { accountCode: '1-1020-01', accountName: 'Bank - Current Account' },
+            AP: { accountCode: '2-2010-01', accountName: 'Accounts Payable' },
+            AR: { accountCode: '1-1060-01', accountName: 'Accounts Receivable' },
+            RAW_INVENTORY: { accountCode: '1-1070-01', accountName: 'Raw Material Inventory' },
+            FG_INVENTORY: { accountCode: '1-1080-01', accountName: 'Finished Goods Inventory' },
+            WIP: { accountCode: '1-1090-01', accountName: 'Work In Progress Inventory' },
+            COGS: { accountCode: '5-5010-01', accountName: 'Cost of Goods Sold' },
+            MANUFACTURING_EXPENSE: { accountCode: '5-5020-01', accountName: 'Manufacturing Expense' }
+        };
     }
 
     validateEventData(eventType, data) {
@@ -229,20 +246,21 @@ class AccountsCore {
         const amount = validData.amount;
         const mode = String(validData.paymentMode || 'CASH').toUpperCase();
         const status = String(validData.paymentStatus || 'PAID').toUpperCase();
+        const acc = this.getManufacturingAccountMap();
         let settlementLine;
         if (status === 'PENDING' || status === 'PENDING_CLEARANCE' || mode === 'CREDIT' || mode === 'CHEQUE') {
-            settlementLine = { accountCode: '2-2010-01', accountName: 'Accounts Payable', debit: 0, credit: amount };
+            settlementLine = { ...acc.AP, debit: 0, credit: amount };
         } else if (mode === 'BANK' || mode === 'BANK_TRANSFER') {
-            settlementLine = { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: 0, credit: amount };
+            settlementLine = { ...acc.BANK, debit: 0, credit: amount };
         } else {
-            settlementLine = { accountCode: '1-1010-01', accountName: 'Cash', debit: 0, credit: amount };
+            settlementLine = { ...acc.CASH, debit: 0, credit: amount };
         }
         const journalEntry = {
             date: new Date(),
             description: `Raw material purchase - ${validData.materialName || 'Material'} (${validData.supplierName || 'Supplier'}) [${validData.paymentMode || 'CASH'}:${validData.paymentStatus || 'PAID'}]`,
             businessId: validData.businessId,
             entries: [
-                { accountCode: '1-1030-01', accountName: 'Raw Material Inventory', debit: amount, credit: 0 },
+                { ...acc.RAW_INVENTORY, debit: amount, credit: 0 },
                 settlementLine
             ],
             totalDebit: amount,
@@ -264,20 +282,21 @@ class AccountsCore {
         const category = String(validData.category || 'Operational Cost');
         const mode = String(validData.paymentMode || 'CASH').toUpperCase();
         const status = String(validData.paymentStatus || 'PAID').toUpperCase();
+        const acc = this.getManufacturingAccountMap();
         let settlementLine;
         if (status === 'PENDING' || status === 'PENDING_CLEARANCE' || mode === 'CREDIT' || mode === 'CHEQUE') {
-            settlementLine = { accountCode: '2-2010-01', accountName: 'Accounts Payable', debit: 0, credit: amount };
+            settlementLine = { ...acc.AP, debit: 0, credit: amount };
         } else if (mode === 'BANK' || mode === 'BANK_TRANSFER') {
-            settlementLine = { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: 0, credit: amount };
+            settlementLine = { ...acc.BANK, debit: 0, credit: amount };
         } else {
-            settlementLine = { accountCode: '1-1010-01', accountName: 'Cash', debit: 0, credit: amount };
+            settlementLine = { ...acc.CASH, debit: 0, credit: amount };
         }
         const journalEntry = {
             date: new Date(),
             description: `Manufacturing expense - ${category} [${validData.paymentMode || 'CASH'}:${validData.paymentStatus || 'PAID'}]`,
             businessId: validData.businessId,
             entries: [
-                { accountCode: '5-5020-01', accountName: `Manufacturing Expense: ${category}`, debit: amount, credit: 0 },
+                { ...acc.MANUFACTURING_EXPENSE, accountName: `Manufacturing Expense: ${category}`, debit: amount, credit: 0 },
                 settlementLine
             ],
             totalDebit: amount,
@@ -297,34 +316,82 @@ class AccountsCore {
         const validData = this.validateEventData('MANUFACTURING_FINISHED_GOOD_SALE', data);
         if (!validData) return;
         const amount = validData.amount;
+        const saleType = String(validData.saleType || 'STANDARD').toUpperCase();
         const mode = String(validData.paymentMode || 'CASH').toUpperCase();
         const status = String(validData.paymentStatus || 'PAID').toUpperCase();
+        const acc = this.getManufacturingAccountMap();
         let receiptLine;
         if (status === 'PENDING' || status === 'PENDING_CLEARANCE' || mode === 'CREDIT' || mode === 'CHEQUE') {
-            receiptLine = { accountCode: '1-1030-01', accountName: 'Accounts Receivable', debit: amount, credit: 0 };
+            receiptLine = { ...acc.AR, debit: amount, credit: 0 };
         } else if (mode === 'BANK' || mode === 'BANK_TRANSFER') {
-            receiptLine = { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: amount, credit: 0 };
+            receiptLine = { ...acc.BANK, debit: amount, credit: 0 };
         } else {
-            receiptLine = { accountCode: '1-1010-01', accountName: 'Cash', debit: amount, credit: 0 };
+            receiptLine = { ...acc.CASH, debit: amount, credit: 0 };
         }
+        const cogsAmount = Number(validData.cogsAmount) || 0;
         const journalEntry = {
             date: new Date(),
-            description: `Finished goods sale - ${validData.productName || 'Product'} (${validData.companyName || 'Company'}) [${validData.paymentMode || 'CASH'}:${validData.paymentStatus || 'PAID'}]`,
+            description: `Finished goods sale [${saleType}] - ${validData.productName || 'Product'} (${validData.companyName || 'Company'}) [${validData.paymentMode || 'CASH'}:${validData.paymentStatus || 'PAID'}]`,
             businessId: validData.businessId,
             entries: [
                 receiptLine,
-                { accountCode: '4-4010-01', accountName: 'Sales Revenue', debit: 0, credit: amount }
+                { accountCode: '4-4010-01', accountName: 'Sales Revenue', debit: 0, credit: amount },
+                { ...acc.COGS, debit: cogsAmount, credit: 0 },
+                { ...acc.FG_INVENTORY, debit: 0, credit: cogsAmount }
             ],
-            totalDebit: amount,
-            totalCredit: amount,
+            totalDebit: amount + cogsAmount,
+            totalCredit: amount + cogsAmount,
             reference: validData.saleId,
             referenceType: 'MANUFACTURING_FINISHED_GOOD_SALE',
+            saleType,
             paymentMode: validData.paymentMode || 'CASH',
             paymentStatus: validData.paymentStatus || 'PAID',
             dueDate: validData.dueDate || null,
             chequeClearanceDate: validData.chequeClearanceDate || null
         };
         await this.saveJournalEntry(journalEntry);
+    }
+
+    async handleManufacturingProductionRecorded(data) {
+        const validData = this.validateEventData('MANUFACTURING_PRODUCTION_RECORDED', data);
+        if (!validData) return;
+        const acc = this.getManufacturingAccountMap();
+        const rawCost = Number(validData.rawCost) || 0;
+        const laborCost = Number(validData.laborCost) || 0;
+        const overheadCost = Number(validData.overheadCost) || 0;
+        const totalCost = Number(validData.totalCost) || 0;
+        if (totalCost <= 0) return;
+
+        const wipLoadEntry = {
+            date: new Date(),
+            description: `Production run started - ${validData.rawMaterial || 'Raw'} to ${validData.finishedProduct || 'FG'}`,
+            businessId: validData.businessId,
+            entries: [
+                { ...acc.WIP, debit: totalCost, credit: 0 },
+                { ...acc.RAW_INVENTORY, debit: 0, credit: rawCost },
+                { ...acc.AP, accountName: 'Accrued Production Cost', debit: 0, credit: laborCost + overheadCost }
+            ],
+            totalDebit: totalCost,
+            totalCredit: totalCost,
+            reference: validData.runId,
+            referenceType: 'MANUFACTURING_PRODUCTION_WIP'
+        };
+        await this.saveJournalEntry(wipLoadEntry);
+
+        const fgCompletionEntry = {
+            date: new Date(),
+            description: `Production run completed - ${validData.finishedProduct || 'FG'}`,
+            businessId: validData.businessId,
+            entries: [
+                { ...acc.FG_INVENTORY, debit: totalCost, credit: 0 },
+                { ...acc.WIP, debit: 0, credit: totalCost }
+            ],
+            totalDebit: totalCost,
+            totalCredit: totalCost,
+            reference: validData.runId,
+            referenceType: 'MANUFACTURING_PRODUCTION_FG'
+        };
+        await this.saveJournalEntry(fgCompletionEntry);
     }
 
     async handleManufacturingSideIncome(data) {
@@ -432,7 +499,7 @@ class AccountsCore {
             businessId: validData.businessId,
             entries: [
                 { accountCode: '4-4010-02', accountName: 'Sales Returns', debit: amount, credit: 0 },
-                { accountCode: '1-1030-01', accountName: 'Accounts Receivable', debit: 0, credit: amount, customerId: validData.customerId }
+                { accountCode: '1-1060-01', accountName: 'Accounts Receivable', debit: 0, credit: amount, customerId: validData.customerId }
             ],
             totalDebit: amount,
             totalCredit: amount,
@@ -463,7 +530,7 @@ class AccountsCore {
                 { ...cashOrBankLine, debit: 0, credit: amount }
             ] : [
                 { ...cashOrBankLine, debit: amount, credit: 0 },
-                { accountCode: '1-1030-01', accountName: 'Accounts Receivable', debit: 0, credit: amount, customerId: validData.customerId }
+                { accountCode: '1-1060-01', accountName: 'Accounts Receivable', debit: 0, credit: amount, customerId: validData.customerId }
             ],
             totalDebit: amount,
             totalCredit: amount,

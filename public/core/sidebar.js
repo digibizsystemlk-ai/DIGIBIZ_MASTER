@@ -166,6 +166,7 @@ class Sidebar {
     constructor() {
         preReserveSidebarSpace();
         this.mwBusinessId = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        this.kduTeaBusinessId = 'tea_4eab5f4098a473b9';
         this.scrapOwnerUid = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
         if (SHOULD_RESERVE_SIDEBAR_SPACE) {
             // Paint cached sidebar immediately at bootstrap (no auth/db wait).
@@ -175,7 +176,22 @@ class Sidebar {
     }
 
     getStoredBusinessType() {
-        return String(localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase();
+        return this.normalizeBusinessType(localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '');
+    }
+
+    normalizeBusinessType(typeRaw) {
+        const raw = String(typeRaw || '').trim().toLowerCase();
+        if (!raw) return '';
+        const compact = raw.replace(/[\s\-_]+/g, '');
+        if (compact === 'teafactory') return 'manufacturer';
+        if (compact === 'scrapcollectioncenter') return 'scrap_collection_center';
+        if (compact === 'distributor') return 'distributor';
+        if (compact === 'manufacturer') return 'manufacturer';
+        if (compact === 'pharmacy') return 'pharmacy';
+        if (compact === 'hardware') return 'hardware';
+        if (compact === 'service') return 'service';
+        if (compact === 'retail') return 'retail';
+        return raw;
     }
 
     shouldForceManufacturerMode() {
@@ -344,12 +360,23 @@ class Sidebar {
         try {
             this.currentUserId = userId;
             const userDoc = await db.collection('users').doc(userId).get();
-            this.currentRole = userDoc.exists ? userDoc.data().role : 'VIEWER';
-            this.ownerName = userDoc.exists ? (userDoc.data().ownerName || userDoc.data().name || '') : '';
-            this.businessId = userDoc.exists ? (userDoc.data().businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId')) : null;
+            const userData = userDoc.exists ? (userDoc.data() || {}) : {};
+            this.currentRole = userData.role || 'VIEWER';
+            this.ownerName = userData.ownerName || userData.name || '';
+            this.businessId = userData.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || null;
+            if (!this.businessId && window.dashboardCore && typeof window.dashboardCore.getContext === 'function' && firebase.auth().currentUser) {
+                try {
+                    const ctx = await window.dashboardCore.getContext(firebase.auth().currentUser);
+                    this.businessId = ctx && ctx.businessId ? ctx.businessId : this.businessId;
+                } catch (ctxErr) { /* ignore */ }
+            }
             if (this.businessId) {
                 const businessDoc = await db.collection('businesses').doc(this.businessId).get();
-                this.businessType = businessDoc.exists ? (businessDoc.data().businessType || 'retail') : 'retail';
+                if (businessDoc.exists) {
+                    this.businessType = this.normalizeBusinessType(businessDoc.data().businessType || userData.businessType || 'retail');
+                } else {
+                    this.businessType = this.normalizeBusinessType(userData.businessType || 'retail');
+                }
                 this.businessName = businessDoc.exists ? businessDoc.data().name : 'My Business';
                 if (businessDoc.exists && businessDoc.data().ownerName) this.ownerName = businessDoc.data().ownerName;
                 if (businessDoc.exists) {
@@ -566,9 +593,10 @@ class Sidebar {
     getMenus() {
         const pathLower = String(window.location.pathname || '').toLowerCase();
         const onManufacturerModule = pathLower.includes('/modules/manufacturer/');
+        const normalizedBusinessType = this.normalizeBusinessType(this.businessType || '');
         const menuBusinessType = (onManufacturerModule && this.businessType !== 'scrap_collection_center')
             ? 'manufacturer'
-            : this.businessType;
+            : normalizedBusinessType;
 
         if (this.isScrapSuiteContext()) {
             const scrapCore = [
@@ -597,7 +625,7 @@ class Sidebar {
             ];
         }
 
-        if (!onManufacturerModule && (this.isMwTradingContext() || this.businessType === 'distributor')) {
+        if (!onManufacturerModule && (this.isMwTradingContext() || normalizedBusinessType === 'distributor')) {
             return this.buildDistributorMenusForCurrentRole();
         }
 
@@ -614,13 +642,17 @@ class Sidebar {
             ];
         } else if (menuBusinessType === 'manufacturer') {
             menus = [
-                { icon: '📥', name: 'Inbound', link: '/modules/manufacturer/inbound.html' },
-                { icon: '📤', name: 'Outbound', link: '/modules/manufacturer/outbound.html' },
-                { icon: '📦', name: 'Stock 360', link: '/modules/manufacturer/stock.html' },
+                { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
+                { icon: '🏭', name: 'Production / Manufacturing', link: '/modules/manufacturer/outbound.html' },
+                { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
+                { icon: '🚛', name: 'Supplier Management', link: '/modules/manufacturer/inbound.html' },
                 { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
                 { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
                 { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
             ];
+            if (this.businessId !== this.kduTeaBusinessId) {
+                menus.splice(3, 0, { icon: '🧪', name: 'Quality Control', link: '/modules/manufacturer/stock.html' });
+            }
         } else {
             menus = [
                 { icon: '🛒', name: 'Point of Sale', link: '/modules/retail/pos.html' },

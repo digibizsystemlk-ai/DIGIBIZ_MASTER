@@ -6,7 +6,9 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 
-admin.initializeApp();
+admin.initializeApp({
+    databaseURL: "https://digibiz-sys-default-rtdb.firebaseio.com/",
+});
 const db = admin.firestore();
 
 let rtdb = null;
@@ -38,16 +40,22 @@ function colomboCalendarDaysBetween(lastIso, now) {
 
 async function queueSms(businessId, mobile, message, createdBy = "cloudfunctions.dailyInterestLoanAccrualColombo") {
     const id = `loan_cf_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-    await db.collection("pending_sms").doc(id).set({
+    const payload = {
         businessId,
         mobile,
         message,
         status: "pending",
         createdBy,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    await db.collection("pending_sms").doc(id).set({
+        ...payload,
     });
     if (rtdb) {
-        await rtdb.ref(`sms_gateway/${businessId}/pending_sms/${id}`).set({ businessId, mobile, message });
+        await rtdb.ref(`sms_gateway/${businessId}/pending_sms/${id}`).set({
+            ...payload,
+            createdAt: Date.now(),
+        });
     }
 }
 

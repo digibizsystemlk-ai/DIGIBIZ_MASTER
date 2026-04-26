@@ -687,6 +687,10 @@
         let currentBusinessData = null;
         const MW_TRADING_OWNER_EMAIL = 'mwtradingsolutions@gmail.com';
         const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        let ordersUnsub = null;
+        let pendingOrdersUnsub = null;
+        let businessWatchdogTimer = null;
+        let lastSeenBusinessId = '';
 
         function escapeBillHtml(s) {
             return String(s ?? '')
@@ -1448,11 +1452,114 @@ ${meta}
             loadOrders();
         }
 
+        function getBusinessIdFromStorage() {
+            return localStorage.getItem('selectedBusinessId')
+                || sessionStorage.getItem('selectedBusinessId')
+                || localStorage.getItem('currentBusinessId')
+                || sessionStorage.getItem('currentBusinessId')
+                || '';
+        }
+
+        function clearDashboardRealtimeListeners() {
+            if (typeof ordersUnsub === 'function') {
+                try { ordersUnsub(); } catch (e) {}
+            }
+            if (typeof pendingOrdersUnsub === 'function') {
+                try { pendingOrdersUnsub(); } catch (e2) {}
+            }
+            ordersUnsub = null;
+            pendingOrdersUnsub = null;
+        }
+
+        function attachDashboardRealtimeListeners() {
+            clearDashboardRealtimeListeners();
+            ordersUnsub = db.collection('orders').where('businessId', '==', currentBusinessId).onSnapshot(() => {
+                loadStats();
+                loadOrders();
+                loadRepSummary();
+            });
+            pendingOrdersUnsub = db.collection('pendingOrders').where('businessId', '==', currentBusinessId).onSnapshot(() => {
+                loadStats();
+                loadOrders();
+                loadRepSummary();
+            });
+        }
+
+        async function reloadDashboardForBusinessChange(nextBusinessId) {
+            const next = String(nextBusinessId || '').trim();
+            if (!next || !currentUser || next === currentBusinessId) return;
+            currentBusinessId = next;
+            lastSeenBusinessId = next;
+            localStorage.setItem('currentBusinessId', currentBusinessId);
+            sessionStorage.setItem('currentBusinessId', currentBusinessId);
+            localStorage.setItem('currentBusinessType', 'distributor');
+            sessionStorage.setItem('currentBusinessType', 'distributor');
+            try {
+                const roleInfo = window.getUserRole ? await window.getUserRole(currentUser.uid, currentBusinessId) : null;
+                let userRole = String(roleInfo && roleInfo.role || '').toUpperCase();
+                try {
+                    const bu = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(currentUser.uid).get();
+                    if (bu.exists && bu.data().role) userRole = String(bu.data().role).toUpperCase();
+                } catch (e) { /* ignore */ }
+                __ORDER_STATUS_ROLE__ = userRole;
+                __REP_DOC_ID__ = null;
+                if (userRole === 'REP') {
+                    try {
+                        let rs = await db.collection('reps').where('userId', '==', currentUser.uid).where('businessId', '==', currentBusinessId).limit(1).get();
+                        if (rs.empty) rs = await db.collection('reps').where('userId', '==', currentUser.uid).limit(1).get();
+                        if (rs.empty && currentUser.email) {
+                            rs = await db.collection('reps').where('email', '==', currentUser.email).where('businessId', '==', currentBusinessId).limit(1).get();
+                        }
+                        if (!rs.empty) __REP_DOC_ID__ = rs.docs[0].id;
+                    } catch (e3) { console.warn('Rep profile lookup failed', e3); }
+                }
+                const bdSnap = await db.collection('businesses').doc(currentBusinessId).get();
+                currentBusinessData = bdSnap.exists ? bdSnap.data() : null;
+                currentBusinessName = currentBusinessData ? String(currentBusinessData.name || '') : '';
+                window.__DIGIBIZ_IS_MW_TRADING__ = !!(window.DigibizMwDslConfig
+                    && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
+            } catch (err) {
+                console.warn('Business switch reload failed', err);
+            }
+            clearDashboardRealtimeListeners();
+            await loadStats();
+            await loadOrders();
+            await loadRepSummary();
+            attachDashboardRealtimeListeners();
+        }
+
+        function bindBusinessSwitchWatchers() {
+            if (window.__DIGIBIZ_DASHBOARD_BID_WATCHER_BOUND__) return;
+            window.__DIGIBIZ_DASHBOARD_BID_WATCHER_BOUND__ = true;
+            window.addEventListener('storage', function (ev) {
+                if (!ev) return;
+                if (ev.key !== 'selectedBusinessId' && ev.key !== 'currentBusinessId') return;
+                reloadDashboardForBusinessChange(getBusinessIdFromStorage());
+            });
+            window.addEventListener('digibiz:business-changed', function () {
+                reloadDashboardForBusinessChange(getBusinessIdFromStorage());
+            });
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') {
+                    reloadDashboardForBusinessChange(getBusinessIdFromStorage());
+                }
+            });
+            window.addEventListener('focus', function () {
+                reloadDashboardForBusinessChange(getBusinessIdFromStorage());
+            });
+            businessWatchdogTimer = setInterval(function () {
+                const nowBid = getBusinessIdFromStorage();
+                if (nowBid && nowBid !== lastSeenBusinessId) {
+                    reloadDashboardForBusinessChange(nowBid);
+                }
+            }, 1200);
+        }
+
         firebase.auth().onAuthStateChanged(async (user) => {
             if (user) {
                 currentUser = user;
-                currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
-                if (String(user.email || '').trim().toLowerCase() === MW_TRADING_OWNER_EMAIL) {
+                currentBusinessId = getBusinessIdFromStorage();
+                if (!currentBusinessId && String(user.email || '').trim().toLowerCase() === MW_TRADING_OWNER_EMAIL) {
                     // Keep MW owner pinned to canonical MW business so dashboard listeners always target correct tenant.
                     currentBusinessId = MW_TRADING_BUSINESS_ID;
                 }
@@ -1467,8 +1574,11 @@ ${meta}
                 }
                 localStorage.setItem('currentBusinessId', currentBusinessId);
                 sessionStorage.setItem('currentBusinessId', currentBusinessId);
+                localStorage.setItem('selectedBusinessId', currentBusinessId);
+                sessionStorage.setItem('selectedBusinessId', currentBusinessId);
                 localStorage.setItem('currentBusinessType', 'distributor');
                 sessionStorage.setItem('currentBusinessType', 'distributor');
+                lastSeenBusinessId = currentBusinessId;
                 const roleInfo = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
                 let userRole = String(roleInfo?.role || '').toUpperCase();
                 try {
@@ -1528,18 +1638,15 @@ ${meta}
                 await loadOrders();
                 await loadRepSummary();
                 document.getElementById('repFilter').addEventListener('change', renderRepSummaryTable);
-                
-                db.collection('orders').where('businessId', '==', currentBusinessId).onSnapshot(() => {
-                    loadStats();
-                    loadOrders();
-                    loadRepSummary();
-                });
-                db.collection('pendingOrders').where('businessId', '==', currentBusinessId).onSnapshot(() => {
-                    loadStats();
-                    loadOrders();
-                    loadRepSummary();
-                });
+                attachDashboardRealtimeListeners();
+                bindBusinessSwitchWatchers();
             } else {
+                clearDashboardRealtimeListeners();
+                if (businessWatchdogTimer) {
+                    clearInterval(businessWatchdogTimer);
+                    businessWatchdogTimer = null;
+                }
+                window.__DIGIBIZ_DASHBOARD_BID_WATCHER_BOUND__ = false;
                 window.location.href = '/auth/login.html';
             }
         });

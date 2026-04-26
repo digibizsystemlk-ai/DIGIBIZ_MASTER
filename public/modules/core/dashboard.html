@@ -551,13 +551,13 @@
                 ];
             } else if (t === 'scrap_collection_center') {
                 blocks = [
-                    { title: 'Stock value (KPI)', value: formatLKR(metrics.stockValue || 0), sub: 'Items: qty×cost. If no cost, falls back to GL 1-1030-01 (same code mixes AR + inventory in ledger).' },
+                    { title: 'Stock value (KPI)', value: formatLKR(metrics.stockValue || 0), sub: 'Items: qty x cost. If no cost, falls back to GL 1-1030-01 (same code mixes AR + inventory in ledger).' },
                     { title: 'Cash + bank (GL)', value: formatLKR(metrics.cashFlow || 0), sub: '1-1010 / 1-1020 from opening + ledger + loan journals' },
-                    { title: 'Supplier advances', value: formatLKR(metrics.advanceOutstanding || 0), sub: `From scrap_advances. GL 1-1060-01 also includes external settlements: net ${formatLKR(metrics.scrapGlNet1060 || 0)}` },
-                    { title: 'GL revenue / COGS (cumulative)', value: formatLKR(metrics.scrapGlRevenue || 0), sub: `COGS ${formatLKR(metrics.scrapGlCogs || 0)} · 1-1030 GL net ${formatLKR(metrics.scrapGlNet1030 || 0)}` },
-                    { title: 'Stock movement (today, kg)', value: `${(Number(metrics.todayStockIn) || 0).toFixed(2)} / ${(Number(metrics.todayStockOut) || 0).toFixed(2)}`, sub: 'IN / OUT' },
-                    { title: 'MTD margin (ops)', value: formatLKR(metrics.monthProfit || 0), sub: `Sales ${formatLKR(metrics.monthSales || 0)} − Buys ${formatLKR(metrics.monthBuying || 0)}` },
-                    { title: 'Loans (balances) vs GL 1-1050', value: `${formatLKR(metrics.outstandingLoans || 0)} · ${formatLKR(metrics.scrapGlLoansGiven || 0)}`, sub: 'Positive balances on all loan docs · GL loans given' },
+                    { title: 'Supplier advances', value: formatLKR(metrics.advanceOutstanding || 0), sub: 'From scrap_advances. GL 1-1060-01 also includes external settlements: net ' + formatLKR(metrics.scrapGlNet1060 || 0) },
+                    { title: 'GL revenue / COGS (cumulative)', value: formatLKR(metrics.scrapGlRevenue || 0), sub: 'COGS ' + formatLKR(metrics.scrapGlCogs || 0) + ' | 1-1030 GL net ' + formatLKR(metrics.scrapGlNet1030 || 0) },
+                    { title: 'Stock movement (today, kg)', value: ((Number(metrics.todayStockIn) || 0).toFixed(2)) + ' / ' + ((Number(metrics.todayStockOut) || 0).toFixed(2)), sub: 'IN / OUT' },
+                    { title: 'MTD margin (ops)', value: formatLKR(metrics.monthProfit || 0), sub: 'Sales ' + formatLKR(metrics.monthSales || 0) + ' - Buys ' + formatLKR(metrics.monthBuying || 0) },
+                    { title: 'Loans (balances) vs GL 1-1050', value: formatLKR(metrics.outstandingLoans || 0) + ' | ' + formatLKR(metrics.scrapGlLoansGiven || 0), sub: 'Positive balances on all loan docs | GL loans given' },
                     { title: 'External settlement (MTD)', value: formatLKR(metrics.externalSettlementNet || 0), sub: 'From settlement list (this month)' }
                 ];
             }
@@ -704,17 +704,78 @@
             });
         });
 
-        auth.onAuthStateChanged(async (user) => {
-            if (!user) { window.location.href = '../../auth/login.html'; return; }
+        function getPreferredBusinessId() {
+            return localStorage.getItem('selectedBusinessId')
+                || sessionStorage.getItem('selectedBusinessId')
+                || localStorage.getItem('currentBusinessId')
+                || sessionStorage.getItem('currentBusinessId')
+                || '';
+        }
+
+        async function refreshDashboardContextAndRender(user) {
+            if (!user) return;
+            const preferred = getPreferredBusinessId();
+            if (preferred) {
+                localStorage.setItem('currentBusinessId', preferred);
+                sessionStorage.setItem('currentBusinessId', preferred);
+            }
             dashboardContext = await window.dashboardCore.getContext(user);
-            if (!dashboardContext.businessId) {
+            if (!dashboardContext || !dashboardContext.businessId) {
                 window.location.href = '../../index.html';
                 return;
             }
+            // Keep both keys in sync so old/new pages read same business context.
+            localStorage.setItem('selectedBusinessId', dashboardContext.businessId);
+            sessionStorage.setItem('selectedBusinessId', dashboardContext.businessId);
+            localStorage.setItem('currentBusinessId', dashboardContext.businessId);
+            sessionStorage.setItem('currentBusinessId', dashboardContext.businessId);
             await renderDashboard();
-            setInterval(() => {
-                if (document.visibilityState === 'visible') renderDashboard();
-            }, 30000);
+        }
+
+        async function startDashboardForUser(user) {
+            if (!user) return;
+            await refreshDashboardContextAndRender(user);
+            if (!window.__DIGIBIZ_CORE_DASHBOARD_POLL_BOUND__) {
+                window.__DIGIBIZ_CORE_DASHBOARD_POLL_BOUND__ = true;
+                setInterval(() => {
+                    if (document.visibilityState === 'visible') renderDashboard();
+                }, 30000);
+            }
+            if (!window.__DIGIBIZ_CORE_DASHBOARD_WATCHERS_BOUND__) {
+                window.__DIGIBIZ_CORE_DASHBOARD_WATCHERS_BOUND__ = true;
+                window.addEventListener('storage', (ev) => {
+                    if (!ev) return;
+                    if (ev.key !== 'selectedBusinessId' && ev.key !== 'currentBusinessId') return;
+                    refreshDashboardContextAndRender(firebase.auth().currentUser || user);
+                });
+                window.addEventListener('digibiz:business-changed', () => {
+                    refreshDashboardContextAndRender(firebase.auth().currentUser || user);
+                });
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') {
+                        const selected = getPreferredBusinessId();
+                        if (selected && (!dashboardContext || selected !== dashboardContext.businessId)) {
+                            refreshDashboardContextAndRender(firebase.auth().currentUser || user);
+                        }
+                    }
+                });
+            }
+        }
+
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                await startDashboardForUser(user);
+                return;
+            }
+            // Auth state can be briefly null during token restore; avoid false redirect.
+            setTimeout(async () => {
+                const restored = auth.currentUser;
+                if (restored) {
+                    await startDashboardForUser(restored);
+                    return;
+                }
+                window.location.href = '../../auth/login.html';
+            }, 1500);
         });
     </script>
 </body>

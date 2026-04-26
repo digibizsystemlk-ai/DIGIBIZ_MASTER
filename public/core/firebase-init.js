@@ -134,6 +134,14 @@ const auth = window.auth;
                 localStorage.removeItem('digibizMwBusinessId');
                 localStorage.removeItem('digibizMwSyncEmail');
                 localStorage.removeItem('digibizMwDisplayName');
+                const curBid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                if (curBid === MW_TRADING_BUSINESS_ID) {
+                    // Prevent stale MW business context leaking into non-MW user sessions.
+                    localStorage.removeItem('currentBusinessId');
+                    sessionStorage.removeItem('currentBusinessId');
+                    localStorage.removeItem('selectedBusinessId');
+                    sessionStorage.removeItem('selectedBusinessId');
+                }
             } catch (e) { /* ignore */ }
         }
     });

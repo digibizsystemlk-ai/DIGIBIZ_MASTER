@@ -1,6 +1,21 @@
 // Universal Dashboard Core - business-aware metrics aggregator
 
 class DashboardCore {
+    normalizeBusinessType(typeRaw) {
+        const raw = String(typeRaw || '').trim().toLowerCase();
+        if (!raw) return 'retail';
+        const compact = raw.replace(/[\s\-_]+/g, '');
+        if (compact === 'teafactory') return 'manufacturer';
+        if (compact === 'scrapcollectioncenter') return 'scrap_collection_center';
+        if (compact === 'distributor') return 'distributor';
+        if (compact === 'manufacturer') return 'manufacturer';
+        if (compact === 'pharmacy') return 'pharmacy';
+        if (compact === 'hardware') return 'hardware';
+        if (compact === 'service') return 'service';
+        if (compact === 'retail') return 'retail';
+        return raw;
+    }
+
     getMwTradingCanonicalBusinessId() {
         return 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
     }
@@ -40,6 +55,61 @@ class DashboardCore {
         }
     }
 
+    async canAccessBusiness(user, businessId, userDocData) {
+        const bid = String(businessId || '').trim();
+        if (!user || !bid) return false;
+        if (this.isSuperAdminRole(userDocData)) return true;
+        if (String(userDocData && userDocData.businessId || '') === bid) return true;
+        try {
+            const bizDoc = await window.db.collection('businesses').doc(bid).get();
+            if (!bizDoc.exists) return false;
+            const bizData = bizDoc.data() || {};
+            if (String(bizData.ownerId || '') === String(user.uid || '')) return true;
+        } catch (e) { /* ignore */ }
+        try {
+            const bizUserDoc = await window.db.collection('businesses').doc(bid).collection('users').doc(user.uid).get();
+            if (bizUserDoc.exists) return true;
+        } catch (e2) { /* ignore */ }
+        return false;
+    }
+
+    isSuperAdminRole(userDocData) {
+        return String(userDocData && userDocData.role || '').toUpperCase() === 'SUPER_ADMIN';
+    }
+
+    async resolveFallbackBusinessId(user, userDocData) {
+        if (!user) return null;
+        const userBusinessId = String(userDocData && userDocData.businessId || '').trim();
+        if (userBusinessId && await this.canAccessBusiness(user, userBusinessId, userDocData)) {
+            return userBusinessId;
+        }
+        // Membership-based fallback: businesses/{bid}/users/{uid}
+        try {
+            if (window.db && window.db.collectionGroup && typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldPath) {
+                const memberSnap = await window.db.collectionGroup('users')
+                    .where(firebase.firestore.FieldPath.documentId(), '==', user.uid)
+                    .limit(1)
+                    .get();
+                if (!memberSnap.empty) {
+                    const doc = memberSnap.docs[0];
+                    const parentBusinessRef = doc.ref && doc.ref.parent && doc.ref.parent.parent;
+                    const memberBusinessId = parentBusinessRef ? String(parentBusinessRef.id || '').trim() : '';
+                    if (memberBusinessId && await this.canAccessBusiness(user, memberBusinessId, userDocData)) {
+                        try {
+                            await window.db.collection('users').doc(user.uid).set({ businessId: memberBusinessId }, { merge: true });
+                        } catch (ePersist) { /* ignore */ }
+                        return memberBusinessId;
+                    }
+                }
+            }
+        } catch (eM) { /* ignore */ }
+        try {
+            const owned = await window.db.collection('businesses').where('ownerId', '==', user.uid).limit(1).get();
+            if (!owned.empty) return owned.docs[0].id;
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+
     async getContext(user) {
         if (!user) return null;
 
@@ -49,27 +119,30 @@ class DashboardCore {
         }
 
         const userDoc = await window.db.collection('users').doc(user.uid).get();
+        const userDocData = userDoc.exists ? (userDoc.data() || {}) : {};
         const storedBusinessId = this.getStoredBusinessId();
-        let businessId = userDoc.exists
-            ? (userDoc.data().businessId || storedBusinessId || user.uid)
-            : (storedBusinessId || user.uid);
-        if (storedBusinessId === this.getMwTradingCanonicalBusinessId()) {
-            businessId = this.getMwTradingCanonicalBusinessId();
+        // Prefer selected business only if caller can actually access it.
+        let businessId = '';
+        if (storedBusinessId && await this.canAccessBusiness(user, storedBusinessId, userDocData)) {
+            businessId = storedBusinessId;
+        } else {
+            const fallbackBusinessId = await this.resolveFallbackBusinessId(user, userDocData);
+            businessId = fallbackBusinessId || user.uid;
         }
         if (this.isMwTradingOwner(user)) {
             businessId = this.getMwTradingCanonicalBusinessId();
         }
 
-        const storedBusinessType = this.getStoredBusinessType();
+        const storedBusinessType = this.normalizeBusinessType(this.getStoredBusinessType());
         const shouldPreferManufacturer = storedBusinessType === 'manufacturer' || String(window.location.pathname || '').toLowerCase().includes('/modules/manufacturer/');
         let businessType = shouldPreferManufacturer ? 'manufacturer' : 'retail';
         let businessName = 'Business';
         const businessDoc = await window.db.collection('businesses').doc(businessId).get();
         if (businessDoc.exists) {
-            businessType = businessDoc.data().businessType || businessType;
+            businessType = this.normalizeBusinessType(businessDoc.data().businessType || businessType);
             businessName = businessDoc.data().name || businessName;
         } else {
-            businessType = storedBusinessType || businessType;
+            businessType = this.normalizeBusinessType(storedBusinessType || businessType);
         }
         if (businessId === this.getMwTradingCanonicalBusinessId()) {
             businessType = 'distributor';
@@ -81,6 +154,7 @@ class DashboardCore {
             businessType = 'manufacturer';
         }
 
+        businessType = this.normalizeBusinessType(businessType);
         const context = { userId: user.uid, businessId, businessType, businessName };
         this.persistContext(context);
         return context;
@@ -1123,6 +1197,7 @@ class DashboardCore {
     }
 
     getDashboardStructure(businessType) {
+        businessType = this.normalizeBusinessType(businessType);
         const structures = {
             retail: ['todaySales', 'monthSales', 'pendingOrders', 'lowStock', 'cashFlow'],
             distributor: [
@@ -1142,6 +1217,8 @@ class DashboardCore {
 
     async getMetrics(context) {
         if (!context) return null;
+        const normalizedType = this.normalizeBusinessType(context.businessType);
+        context = { ...context, businessType: normalizedType };
         if (context.businessType === 'distributor') return this.getDistributorMetrics(context);
         if (context.businessType === 'pharmacy') return this.getPharmacyMetrics(context);
         if (context.businessType === 'hardware') return this.getHardwareMetrics(context);

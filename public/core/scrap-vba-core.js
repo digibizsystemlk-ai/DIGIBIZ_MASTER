@@ -60,6 +60,28 @@
         return c === "resource-exhausted" || m.includes("quota exceeded") || m.includes("resource exhausted");
     }
 
+    let digibizRtdbLoadPromise = null;
+    async function ensureFirebaseDatabaseLoaded() {
+        if (typeof firebase !== "undefined" && typeof firebase.database === "function") return;
+        if (!digibizRtdbLoadPromise) {
+            digibizRtdbLoadPromise = new Promise((resolve) => {
+                const existing = document.querySelector("script[data-digibiz-rtdb-compat]");
+                if (existing) {
+                    resolve();
+                    return;
+                }
+                const s = document.createElement("script");
+                s.src = "https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js";
+                s.async = true;
+                s.setAttribute("data-digibiz-rtdb-compat", "1");
+                s.onload = () => resolve();
+                s.onerror = () => resolve();
+                document.head.appendChild(s);
+            });
+        }
+        await digibizRtdbLoadPromise;
+    }
+
     /** Same balance rules as inside the Firestore transaction (uses last settings read). */
     function smsBalanceFromSettingsData(liveData) {
         const d = liveData && typeof liveData === "object" ? liveData : {};
@@ -84,6 +106,7 @@
         const opt = options && typeof options === "object" ? options : {};
         const strict = Boolean(opt.rethrow);
         try {
+            await ensureFirebaseDatabaseLoaded();
             if (typeof firebase === "undefined" || typeof firebase.database !== "function") {
                 if (strict) throw new Error("Realtime Database SDK not available");
                 return false;

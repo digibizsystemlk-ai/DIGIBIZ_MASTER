@@ -230,10 +230,12 @@
             journalCollectionBusinessId: null,
             expandedEntries: [],
             ledger: {},
+            salesBreakdown: { shop: 0, showroom: 0 },
             journalUnsub: null,
             scrapOpeningNote: ''
         };
         const SCRAP_OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+        const KDU_TEA_BID = 'tea_4eab5f4098a473b9';
 
         function formatLKR(amount) {
             const val = Number(amount) || 0;
@@ -272,11 +274,24 @@
             return 'EXPENSE';
         }
 
+        function canonicalizeAccount(code = '', name = '') {
+            const c = String(code || '').trim();
+            const n = String(name || '').toLowerCase();
+            // Backward-compatible AR consolidation: legacy and new AR codes show as one ledger line.
+            if ((c === '1-1030-01' || c === '1-1060-01') && n.includes('receivable')) {
+                return { code: '1-1060-01', name: 'Accounts Receivable' };
+            }
+            return { code: c, name: String(name || '').trim() || c || 'Unknown' };
+        }
+
         function buildDerivedState(entries) {
             const ledger = {};
             entries.forEach((e) => {
-                const code = String(e.accountCode || '').trim() || 'UNKNOWN';
-                const name = String(e.accountName || e.account || 'Unknown');
+                const rawCode = String(e.accountCode || '').trim();
+                const rawName = String(e.accountName || e.account || 'Unknown');
+                const canonical = canonicalizeAccount(rawCode, rawName);
+                const code = canonical.code || 'UNKNOWN';
+                const name = canonical.name;
                 const key = `${code} | ${name}`;
                 if (!ledger[key]) ledger[key] = { debit: 0, credit: 0, type: normalizeAccountType(code, name), code, name };
                 ledger[key].debit += e.debit || 0;
@@ -510,8 +525,16 @@
             const revenue = Object.entries(state.ledger).filter(([, v]) => v.type === 'INCOME').reduce((s, [, v]) => s + v.credit - v.debit, 0);
             const expense = Object.entries(state.ledger).filter(([, v]) => v.type === 'EXPENSE').reduce((s, [, v]) => s + v.debit - v.credit, 0);
             const net = revenue - expense;
+            const isKduTea = String(state.context?.businessId || '') === KDU_TEA_BID;
+            const breakdownHtml = isKduTea
+                ? `
+                <div class="statement-row"><span>Shop Sales Revenue</span><span>${formatLKR(state.salesBreakdown.shop)}</span></div>
+                <div class="statement-row"><span>Showroom Sales Revenue</span><span>${formatLKR(state.salesBreakdown.showroom)}</span></div>
+                `
+                : '';
             document.getElementById('incomeContent').innerHTML = `
                 <div class="statement-row"><span>Revenue</span><span>${formatLKR(revenue)}</span></div>
+                ${breakdownHtml}
                 <div class="statement-row"><span>Expenses</span><span>${formatLKR(expense)}</span></div>
                 <div class="statement-total"><span>NET PROFIT</span><span>${formatLKR(net)}</span></div>
             `;
@@ -574,12 +597,27 @@
                         accountCode: line.accountCode || '',
                         accountName: line.accountName || line.accountCode || 'Unknown',
                         account: line.accountName || line.accountCode || 'Unknown',
+                        referenceType: e.referenceType || '',
+                        saleType: e.saleType || '',
                         debit: Number(line.debit) || 0,
                         credit: Number(line.credit) || 0
                     });
                 });
             });
             return rows;
+        }
+
+        function computeSalesBreakdown(rows) {
+            const out = { shop: 0, showroom: 0 };
+            (rows || []).forEach((r) => {
+                const isSaleRevenue = String(r.referenceType || '') === 'MANUFACTURING_FINISHED_GOOD_SALE' && String(r.accountCode || '') === '4-4010-01';
+                if (!isSaleRevenue) return;
+                const t = String(r.saleType || '').toUpperCase();
+                const val = Number(r.credit || 0) - Number(r.debit || 0);
+                if (t === 'SHOP') out.shop += val;
+                if (t === 'SHOWROOM') out.showroom += val;
+            });
+            return out;
         }
 
         /** Merged running balances (opening + account_ledger + loan journals for scrap) — drives Trial / Ledger / BS. */
@@ -609,6 +647,7 @@
         function applyJournalSnapshot(snap) {
             const raw = buildRawJournalTableRows(snap);
             state.expandedEntries = raw;
+            state.salesBreakdown = computeSalesBreakdown(raw);
             buildDerivedState(raw);
             updateStats();
             renderJournal();
@@ -626,6 +665,7 @@
                 state.scrapOpeningNote = String(openingSnap.data().note || '').trim();
             }
             const rawTableRows = buildRawJournalTableRows(entriesSnap);
+            state.salesBreakdown = computeSalesBreakdown(rawTableRows);
             const mergedRows = buildMergedLedgerRows(entriesSnap, ledgerSnap, openingSnap, isScrap);
             const forLedger = mergedRows.length ? mergedRows : rawTableRows;
             buildDerivedState(forLedger);
@@ -727,7 +767,10 @@
 
         const DEFAULT_SCRAP_OPENING_ROWS = [
             { accountCode: '1-1030-01', accountName: 'Scrap Inventory', debit: '', credit: '' },
-            { accountCode: '1-1060-01', accountName: 'Supplier Advances (Scrap)', debit: '', credit: '' },
+            { accountCode: '1-1060-01', accountName: 'Accounts Receivable', debit: '', credit: '' },
+            { accountCode: '1-1070-01', accountName: 'Raw Material Inventory', debit: '', credit: '' },
+            { accountCode: '1-1080-01', accountName: 'Finished Goods Inventory', debit: '', credit: '' },
+            { accountCode: '1-1090-01', accountName: 'Work In Progress Inventory', debit: '', credit: '' },
             { accountCode: '1-1010-01', accountName: 'Cash - Main', debit: '', credit: '' },
             { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: '', credit: '' }
         ];

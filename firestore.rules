@@ -64,6 +64,10 @@ service cloud.firestore {
     function isBusinessMember(bid) {
       return signedIn() && bid != null && (
         isSuperAdmin() ||
+        (
+          exists(/databases/$(database)/documents/businesses/$(bid)) &&
+          get(/databases/$(database)/documents/businesses/$(bid)).data.ownerId == uid()
+        ) ||
         myPrimaryBusinessId() == bid ||
         hasBizUserDoc(bid)
       );
@@ -796,9 +800,37 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ----- Safe default: deny anything not declared above -----
+    // ----- Safe default for remaining collections -----
+    // Uses existing business membership model (users/{uid}.businessId and businesses/{bid}/users/{uid}).
     match /{document=**} {
-      allow read, write: if signedIn() && (isSuperAdmin() || hasGlobalOwnerAccessRole());
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        (resource.data.keys().hasAll(['businessId']) &&
+          isBusinessMember(resource.data.businessId)) ||
+        hasGlobalOwnerAccessRole()
+      );
+      allow create: if signedIn() && (
+        isSuperAdmin() ||
+        (request.resource.data.keys().hasAll(['businessId']) &&
+          isBusinessMember(request.resource.data.businessId)) ||
+        hasGlobalOwnerAccessRole()
+      );
+      allow update: if signedIn() && (
+        isSuperAdmin() ||
+        (
+          resource.data.keys().hasAll(['businessId']) &&
+          request.resource.data.keys().hasAll(['businessId']) &&
+          resource.data.businessId == request.resource.data.businessId &&
+          isBusinessMember(resource.data.businessId)
+        ) ||
+        hasGlobalOwnerAccessRole()
+      );
+      allow delete: if signedIn() && (
+        isSuperAdmin() ||
+        (resource.data.keys().hasAll(['businessId']) &&
+          isBusinessMember(resource.data.businessId)) ||
+        hasGlobalOwnerAccessRole()
+      );
     }
   }
 }

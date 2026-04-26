@@ -48,12 +48,63 @@
             <h3>Transformation Maps</h3>
             <table><thead><tr><th>Raw</th><th>Finished</th><th>Ratio</th></tr></thead><tbody id="mapRows"></tbody></table>
         </div>
+        <div class="mfg-card">
+            <h3>Production Run Entry</h3>
+            <div class="mfg-row">
+                <div><label>Raw Material</label><input id="prRawMaterial" placeholder="Tea Leaf / Raw item"></div>
+                <div><label>Finished Product</label><input id="prFinishedProduct" placeholder="Packed Tea"></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Raw Qty Used</label><input type="number" id="prRawQty" min="0" step="0.01"></div>
+                <div><label>Finished Qty Produced</label><input type="number" id="prFinishedQty" min="0" step="0.01"></div>
+                <div><label>Raw Unit Cost (auto)</label><input type="number" id="prRawUnitCost" min="0" step="0.01" readonly></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Raw Material Cost (auto)</label><input type="number" id="prRawCost" min="0" step="0.01" readonly></div>
+                <div><label>Labor Cost</label><input type="number" id="prLaborCost" min="0" step="0.01"></div>
+                <div><label>Overhead Cost</label><input type="number" id="prOverheadCost" min="0" step="0.01"></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Total Production Cost (auto)</label><input type="number" id="prTotalCost" min="0" step="0.01" readonly></div>
+                <div><label>FG Unit Cost (auto)</label><input type="number" id="prFgUnitCost" min="0" step="0.01" readonly></div>
+                <div><label>Notes</label><input id="prNotes" placeholder="Batch / remarks"></div>
+            </div>
+            <button id="recordProductionBtn" style="margin-top:10px;">Record Production Run</button>
+            <div class="mfg-msg" id="productionMsg"></div>
+        </div>
     </div>
 </div>
 <script>
 document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
 function v(id){ return document.getElementById(id).value; }
 function n(id){ return Number(v(id)) || 0; }
+function normalizeKey(name){ return String(name || '').trim().toUpperCase(); }
+function calcProductionCosts(){
+    const rawQty = n('prRawQty');
+    const rawUnitCost = n('prRawUnitCost');
+    const rawCost = rawQty * rawUnitCost;
+    const labor = n('prLaborCost');
+    const overhead = n('prOverheadCost');
+    const totalCost = rawCost + labor + overhead;
+    const fgQty = n('prFinishedQty');
+    const fgUnitCost = fgQty > 0 ? (totalCost / fgQty) : 0;
+    document.getElementById('prRawCost').value = rawCost.toFixed(2);
+    document.getElementById('prTotalCost').value = totalCost.toFixed(2);
+    document.getElementById('prFgUnitCost').value = fgUnitCost.toFixed(4);
+}
+async function loadRawCostHint(){
+    const bid = ManufacturerModule.businessId;
+    const rawKey = normalizeKey(v('prRawMaterial'));
+    if (!bid || !rawKey) {
+        document.getElementById('prRawUnitCost').value = '0.00';
+        calcProductionCosts();
+        return;
+    }
+    const doc = await db.collection('manufacturer_raw_materials').doc(`${bid}_${rawKey}`).get().catch(() => null);
+    const x = doc && doc.exists ? (doc.data() || {}) : {};
+    document.getElementById('prRawUnitCost').value = (Number(x.lastUnitCost) || 0).toFixed(2);
+    calcProductionCosts();
+}
 async function refresh(){
     const bid = ManufacturerModule.businessId;
     const [rm, fg, maps] = await Promise.all([
@@ -98,9 +149,116 @@ async function saveMap(){
     document.getElementById('mapMsg').textContent = 'Transformation map saved.';
     refresh();
 }
+async function recordProductionRun(){
+    const bid = ManufacturerModule.businessId;
+    const msg = document.getElementById('productionMsg');
+    msg.className = 'mfg-msg';
+    msg.textContent = '';
+    const rawMaterial = v('prRawMaterial').trim();
+    const finishedProduct = v('prFinishedProduct').trim();
+    const rawQty = n('prRawQty');
+    const finishedQty = n('prFinishedQty');
+    const laborCost = n('prLaborCost');
+    const overheadCost = n('prOverheadCost');
+    const rawUnitCost = n('prRawUnitCost');
+    if (!rawMaterial || !finishedProduct || rawQty <= 0 || finishedQty <= 0) {
+        msg.classList.add('err');
+        msg.textContent = 'Enter raw material, finished product, raw qty, and finished qty.';
+        return;
+    }
+    const runId = ManufacturerModule.uuid('MPR');
+    const rawCost = rawQty * rawUnitCost;
+    const totalCost = rawCost + laborCost + overheadCost;
+    const fgUnitCost = finishedQty > 0 ? (totalCost / finishedQty) : 0;
+    const rawKey = normalizeKey(rawMaterial);
+    const fgKey = normalizeKey(finishedProduct);
+    const rawRef = db.collection('manufacturer_raw_materials').doc(`${bid}_${rawKey}`);
+    const fgRef = db.collection('manufacturer_finished_products').doc(`${bid}_${fgKey}`);
+    try {
+        await db.runTransaction(async (tx) => {
+            const rawDoc = await tx.get(rawRef);
+            const rawData = rawDoc.exists ? (rawDoc.data() || {}) : {};
+            const currentRawQty = Number(rawData.stockQty) || 0;
+            if (currentRawQty < rawQty) {
+                throw new Error(`Insufficient raw stock. Available ${currentRawQty}, required ${rawQty}.`);
+            }
+            const fgDoc = await tx.get(fgRef);
+            const fgData = fgDoc.exists ? (fgDoc.data() || {}) : {};
+            const oldFgQty = Number(fgData.stockQty) || 0;
+            const oldFgUnitCost = Number(fgData.unitCost) || 0;
+            const newFgQty = oldFgQty + finishedQty;
+            const newFgUnitCost = newFgQty > 0
+                ? (((oldFgQty * oldFgUnitCost) + totalCost) / newFgQty)
+                : fgUnitCost;
+            tx.set(rawRef, {
+                businessId: bid,
+                name: rawMaterial,
+                stockQty: currentRawQty - rawQty,
+                updatedAt: new Date()
+            }, { merge: true });
+            tx.set(fgRef, {
+                businessId: bid,
+                name: finishedProduct,
+                stockQty: newFgQty,
+                unitCost: Number(newFgUnitCost.toFixed(4)),
+                updatedAt: new Date()
+            }, { merge: true });
+            tx.set(db.collection('manufacturer_production_runs').doc(runId), {
+                businessId: bid,
+                runId,
+                rawMaterial,
+                finishedProduct,
+                rawQty,
+                finishedQty,
+                rawUnitCost,
+                rawCost,
+                laborCost,
+                overheadCost,
+                processingCost: laborCost + overheadCost,
+                totalCost,
+                fgUnitCost: Number(fgUnitCost.toFixed(4)),
+                notes: v('prNotes').trim(),
+                createdAt: new Date()
+            });
+        });
+        ManufacturerModule.publishEvent('MANUFACTURING_PRODUCTION_RECORDED', {
+            businessId: bid,
+            runId,
+            rawMaterial,
+            finishedProduct,
+            rawQty,
+            finishedQty,
+            rawCost,
+            laborCost,
+            overheadCost,
+            totalCost
+        });
+        msg.textContent = 'Production run recorded. Raw stock consumed and finished stock updated.';
+        ['prRawMaterial','prFinishedProduct','prRawQty','prFinishedQty','prLaborCost','prOverheadCost','prRawUnitCost','prRawCost','prTotalCost','prFgUnitCost','prNotes']
+            .forEach((id) => { document.getElementById(id).value = ''; });
+        document.getElementById('prRawUnitCost').value = '0.00';
+        document.getElementById('prRawCost').value = '0.00';
+        document.getElementById('prTotalCost').value = '0.00';
+        document.getElementById('prFgUnitCost').value = '0.0000';
+        await refresh();
+    } catch (err) {
+        console.error(err);
+        msg.classList.add('err');
+        msg.textContent = err.message || 'Failed to record production run.';
+    }
+}
 (async function(){
     await ManufacturerModule.init('stock');
     document.getElementById('saveMapBtn').onclick = saveMap;
+    ['prRawQty','prLaborCost','prOverheadCost','prFinishedQty'].forEach((id)=>{
+        document.getElementById(id).addEventListener('input', calcProductionCosts);
+    });
+    document.getElementById('prRawMaterial').addEventListener('blur', loadRawCostHint);
+    document.getElementById('recordProductionBtn').onclick = recordProductionRun;
+    document.getElementById('prRawUnitCost').value = '0.00';
+    document.getElementById('prRawCost').value = '0.00';
+    document.getElementById('prTotalCost').value = '0.00';
+    document.getElementById('prFgUnitCost').value = '0.0000';
     refresh();
 })();
 </script>

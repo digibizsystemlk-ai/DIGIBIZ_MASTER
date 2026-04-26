@@ -96,11 +96,30 @@ const EVENT_PAYLOAD_SCHEMAS = {
         },
         optional: {
             productName: 'string',
+            qty: 'positiveNumber',
             paymentMode: 'string',
             paymentStatus: 'string',
             dueDate: 'string',
             chequeClearanceDate: 'string',
-            companyName: 'string'
+            companyName: 'string',
+            cogsAmount: 'number',
+            fgUnitCost: 'number'
+        }
+    },
+    MANUFACTURING_PRODUCTION_RECORDED: {
+        required: {
+            businessId: 'nonEmptyString',
+            runId: 'nonEmptyString',
+            rawMaterial: 'nonEmptyString',
+            finishedProduct: 'nonEmptyString',
+            rawQty: 'positiveNumber',
+            finishedQty: 'positiveNumber',
+            totalCost: 'positiveNumber'
+        },
+        optional: {
+            rawCost: 'number',
+            laborCost: 'number',
+            overheadCost: 'number'
         }
     },
     MANUFACTURING_SIDE_INCOME: {
@@ -185,6 +204,12 @@ function runValidator(type, value) {
     if (type === 'string') {
         if (value === undefined || value === null) return { valid: false };
         return { valid: typeof value === 'string', normalized: value };
+    }
+
+    if (type === 'number') {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return { valid: false };
+        return { valid: true, normalized: num };
     }
 
     if (type === 'nonEmptyString') {
