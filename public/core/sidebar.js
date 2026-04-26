@@ -673,7 +673,6 @@ class Sidebar {
                     { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
                     { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
                     { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
-                    { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
                     { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
                 ];
             } else {
@@ -695,7 +694,13 @@ class Sidebar {
                 { icon: '📥', name: 'Purchases', link: '/modules/retail/purchases.html' }
             ];
         }
-        menus = this.assembleSidebarMenus(menus);
+        const isKduManufacturer = menuBusinessType === 'manufacturer' && this.businessId === this.kduTeaBusinessId;
+        if (isKduManufacturer) {
+            const kduTail = this.getSharedCrosscutMenus().filter((m) => m.name !== 'Finance');
+            menus = this.assembleSidebarMenus(menus, kduTail);
+        } else {
+            menus = this.assembleSidebarMenus(menus);
+        }
 
         if (this.isSuperAdminUser()) {
             menus.push(

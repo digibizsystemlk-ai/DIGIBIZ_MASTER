@@ -6,6 +6,8 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
     let products = [];
     let showroomCart = [];
     let shopCreditOutstanding = 0;
+    let savedShopProfiles = {};
+    const SHOP_PROFILE_KEY = `kdu_shop_profiles_${KDU_TEA_BUSINESS_ID}`;
 
     function byId(id) { return document.getElementById(id); }
     function money(v) { return `Rs ${Number(v || 0).toFixed(2)}`; }
@@ -20,6 +22,92 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
     function todayStr() {
         const d = new Date();
         return d.toISOString().slice(0, 10);
+    }
+
+    function normalizeShopName(v) {
+        return String(v || '').trim().toLowerCase();
+    }
+
+    function loadSavedShopProfiles() {
+        try {
+            const raw = localStorage.getItem(SHOP_PROFILE_KEY);
+            const parsed = raw ? JSON.parse(raw) : {};
+            savedShopProfiles = parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) {
+            savedShopProfiles = {};
+        }
+    }
+
+    function persistShopProfiles() {
+        try {
+            localStorage.setItem(SHOP_PROFILE_KEY, JSON.stringify(savedShopProfiles));
+        } catch (e) {
+            // ignore localStorage quota errors
+        }
+    }
+
+    function getShopProfileByName(name) {
+        return savedShopProfiles[normalizeShopName(name)] || null;
+    }
+
+    function saveShopProfile(profile) {
+        const name = String(profile?.name || '').trim();
+        if (!name) return;
+        savedShopProfiles[normalizeShopName(name)] = {
+            name,
+            contact: String(profile?.contact || '').trim(),
+            address: String(profile?.address || '').trim(),
+            creditLimit: num(profile?.creditLimit || 0)
+        };
+        persistShopProfiles();
+    }
+
+    function renderShopNameSuggestions() {
+        const names = new Map();
+        customers.forEach((c) => {
+            const n = String(c.fullName || '').trim();
+            if (!n) return;
+            names.set(normalizeShopName(n), n);
+        });
+        Object.values(savedShopProfiles).forEach((p) => {
+            const n = String(p?.name || '').trim();
+            if (!n) return;
+            names.set(normalizeShopName(n), n);
+        });
+        byId('shopNameSuggestions').innerHTML = Array.from(names.values())
+            .sort((a, b) => a.localeCompare(b))
+            .map((n) => `<option value="${n}"></option>`)
+            .join('');
+    }
+
+    async function applyShopProfileByName(name) {
+        const typed = String(name || '').trim();
+        if (!typed) return;
+        const customer = customers.find((c) => normalizeShopName(c.fullName) === normalizeShopName(typed));
+        if (customer) {
+            byId('shopCustomerId').value = customer.id;
+            await renderCustomerDetails();
+            return;
+        }
+        const saved = getShopProfileByName(typed);
+        byId('shopName').value = typed;
+        byId('shopContact').value = saved?.contact || '';
+        byId('shopAddress').value = saved?.address || '';
+        byId('shopCreditLimit').value = num(saved?.creditLimit || 0).toFixed(2);
+        byId('shopOutstanding').value = '0.00';
+        shopCreditOutstanding = 0;
+        byId('shopCustomerId').value = '';
+        recalcShopTotals();
+    }
+
+    function captureShopProfileFromInputs() {
+        saveShopProfile({
+            name: byId('shopName').value,
+            contact: byId('shopContact').value,
+            address: byId('shopAddress').value,
+            creditLimit: byId('shopCreditLimit').value
+        });
+        renderShopNameSuggestions();
     }
 
     function switchTab(tab) {
@@ -45,6 +133,15 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
         byId('shopContact').value = c.mobile || '';
         byId('shopAddress').value = c.address || '';
         byId('shopCreditLimit').value = Number(c.creditLimit || 0).toFixed(2);
+        if (c.fullName) {
+            saveShopProfile({
+                name: c.fullName,
+                contact: c.mobile || '',
+                address: c.address || '',
+                creditLimit: c.creditLimit || 0
+            });
+            renderShopNameSuggestions();
+        }
         const snap = await db.collection('manufacturer_sales')
             .where('businessId', '==', bid)
             .where('customerId', '==', cid)
@@ -190,7 +287,8 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
     async function saveShopSale() {
         const cid = byId('shopCustomerId').value;
         const pid = byId('shopProductId').value;
-        if (!cid || !pid) { toast('Select customer and product', 'err'); return; }
+        const shopName = String(byId('shopName').value || '').trim();
+        if (!shopName || !pid) { toast('Shop name and product are required', 'err'); return; }
         const product = products.find((x) => x.id === pid);
         if (!product) { toast('Invalid product', 'err'); return; }
         const qty = num(byId('shopQty').value);
@@ -201,15 +299,17 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
         const credit = total - paid;
         const saleId = `KDU-SHOP-${Date.now()}`;
         const c = customers.find((x) => x.id === cid) || {};
+        const contact = String(byId('shopContact').value || c.mobile || '').trim();
+        const address = String(byId('shopAddress').value || c.address || '').trim();
         const unitCost = num(product.unitCost);
         const payload = {
             businessId: bid,
             saleId,
             saleType: 'SHOP',
-            companyName: c.fullName || '',
-            customerId: cid,
-            customerMobile: c.mobile || '',
-            customerAddress: c.address || '',
+            companyName: shopName,
+            customerId: cid || null,
+            customerMobile: contact,
+            customerAddress: address,
             productName: product.name,
             qty,
             unitPrice: num(byId('shopUnitPrice').value),
@@ -224,11 +324,18 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
             paidAmount: paid,
             creditAmount: credit,
             deliveryDate: byId('shopDeliveryDate').value || null,
-            deliveryAddress: byId('shopDeliveryAddress').value || c.address || '',
+            deliveryAddress: byId('shopDeliveryAddress').value || address || '',
             fgUnitCost: unitCost,
             cogsAmount: Number((qty * unitCost).toFixed(4)),
             createdAt: new Date()
         };
+        saveShopProfile({
+            name: shopName,
+            contact,
+            address,
+            creditLimit: byId('shopCreditLimit').value
+        });
+        renderShopNameSuggestions();
         await db.collection('manufacturer_sales').doc(saleId).set(payload);
         await reduceStock(payload.productName, qty, payload.unitPrice);
         ManufacturerModule.publishEvent('MANUFACTURING_FINISHED_GOOD_SALE', payload);
@@ -292,7 +399,17 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
         ]);
         customers = cs.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
         products = ps.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+        customers.forEach((c) => {
+            if (!c.fullName) return;
+            saveShopProfile({
+                name: c.fullName,
+                contact: c.mobile || '',
+                address: c.address || '',
+                creditLimit: c.creditLimit || 0
+            });
+        });
         renderCustomerOptions();
+        renderShopNameSuggestions();
         renderProductOptions();
         renderShowroomProducts();
     }
@@ -304,11 +421,16 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
             window.location.href = '/modules/manufacturer/outbound.html';
             return;
         }
+        loadSavedShopProfiles();
         byId('shopDeliveryDate').value = todayStr();
         byId('tabShop').onclick = () => switchTab('SHOP');
         byId('tabShowroom').onclick = () => switchTab('SHOWROOM');
         byId('shopCustomerSearch').oninput = renderCustomerOptions;
         byId('shopCustomerId').onchange = renderCustomerDetails;
+        byId('shopName').onchange = () => { void applyShopProfileByName(byId('shopName').value); };
+        byId('shopName').onblur = () => { captureShopProfileFromInputs(); };
+        byId('shopContact').onblur = captureShopProfileFromInputs;
+        byId('shopAddress').onblur = captureShopProfileFromInputs;
         byId('shopProductId').onchange = onShopProductSelect;
         ['shopQty', 'shopUnitPrice', 'shopDiscount', 'shopTaxPct', 'shopPaymentTerms', 'shopPaidNow'].forEach((id) => byId(id).oninput = recalcShopTotals);
         byId('btnConfirmShopSale').onclick = async () => {
