@@ -713,6 +713,52 @@
             return arr.length > 4 ? `${shown}…` : shown;
         }
 
+        function isMwTradingBusiness() {
+            return String(currentBusinessId || '') === MW_TRADING_BUSINESS_ID;
+        }
+
+        async function attachMwFreeIssuesAndReturns(rows) {
+            if (!isMwTradingBusiness() || !Array.isArray(rows) || !rows.length) return rows;
+            const enriched = await Promise.all(rows.map(async (order) => {
+                const orderId = String(order.id || '').trim();
+                if (!orderId) {
+                    order.mwFreeIssuesQty = 0;
+                    order.mwReturnsQty = 0;
+                    return order;
+                }
+                try {
+                    const [freeSnap, returnSnap] = await Promise.all([
+                        db.collection('free_issues')
+                            .where('businessId', '==', MW_TRADING_BUSINESS_ID)
+                            .where('orderId', '==', orderId)
+                            .get()
+                            .catch(() => ({ docs: [] })),
+                        db.collection('returns')
+                            .where('businessId', '==', MW_TRADING_BUSINESS_ID)
+                            .where('orderId', '==', orderId)
+                            .get()
+                            .catch(() => ({ docs: [] }))
+                    ]);
+                    const freeQty = (freeSnap.docs || []).reduce((sum, d) => {
+                        const x = d.data() || {};
+                        return sum + (Number(x.freeQty ?? x.freeQuantity ?? x.qty) || 0);
+                    }, 0);
+                    const returnQty = (returnSnap.docs || []).reduce((sum, d) => {
+                        const x = d.data() || {};
+                        const q = Number(x.returnQty ?? x.returnResellQty ?? x.returnCompanyQty ?? x.qty) || 0;
+                        return sum + q;
+                    }, 0);
+                    order.mwFreeIssuesQty = freeQty;
+                    order.mwReturnsQty = returnQty;
+                } catch (_e) {
+                    order.mwFreeIssuesQty = 0;
+                    order.mwReturnsQty = 0;
+                }
+                return order;
+            }));
+            return enriched;
+        }
+
         function formatBillMoney(n) {
             const v = Number(n) || 0;
             return `Rs ${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1012,6 +1058,7 @@ ${meta}
                 allOrders = isRepOrderView()
                     ? orders.filter((o) => orderVisibleForCurrentRole(o))
                     : orders;
+                allOrders = await attachMwFreeIssuesAndReturns(allOrders);
                 displayOrders();
                 
             } catch (error) {
@@ -1080,6 +1127,9 @@ ${meta}
             
             tbody.innerHTML = allOrders.map(order => {
                 const itemCount = order.items?.reduce((sum, i) => sum + (i.orderedQty || 0) + (i.freeQty || 0), 0) || 0;
+                const mwLine = isMwTradingBusiness()
+                    ? `<div style="font-size:11px;color:#475569;margin-top:2px;">Free: ${Number(order.mwFreeIssuesQty || 0)} | Returns: ${Number(order.mwReturnsQty || 0)}</div>`
+                    : '';
                 const brands = summarizeLineBrands(order);
                 return `
                     <tr>
@@ -1088,7 +1138,7 @@ ${meta}
                         <td>${order.repName}</td>
                         <td>${order.shopName}</td>
                         <td style="max-width:180px;font-size:12px;color:#475569;">${brands}</td>
-                        <td>${itemCount} items</td>
+                        <td>${itemCount} items${mwLine}</td>
                         <td>Rs ${(order.totalAmount || 0).toLocaleString()}</td>
                         <td><span class="status status-${order.status}">${order.status}</span></td>
                         <td>${getActionButtons(order)}</td>

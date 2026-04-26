@@ -42,6 +42,11 @@
         <div id="out">Sign in…</div>
     </div>
     <script>
+        const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        const storageBusinessId = localStorage.getItem('currentBusinessId') ||
+            sessionStorage.getItem('selectedBusinessId');
+        const isMW = (storageBusinessId === MW_TRADING_BUSINESS_ID);
+
         function esc(s) {
             return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
         }
@@ -65,37 +70,74 @@
         }
         let currentBusinessId = null;
         async function load() {
-            const bid = currentBusinessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            const bid = isMW
+                ? MW_TRADING_BUSINESS_ID
+                : (currentBusinessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId'));
             if (!bid) { document.getElementById('out').textContent = 'No business selected.'; return; }
             const sd = document.getElementById('startDate').value;
             const ed = document.getElementById('endDate').value;
             const start = new Date(sd); start.setHours(0, 0, 0, 0);
             const end = new Date(ed); end.setHours(23, 59, 59, 999);
             document.getElementById('out').innerHTML = '<p>Loading…</p>';
-            const snap = await db.collection('orders')
-                .where('businessId', '==', bid)
-                .where('orderDate', '>=', start)
-                .where('orderDate', '<=', end)
-                .get();
             const rows = [];
-            for (const doc of snap.docs) {
-                const { o, rep, shop, dt } = await enrich(doc);
-                (o.items || []).forEach((it) => {
-                    const fq = Number(it.freeQty) || 0;
-                    if (fq <= 0) return;
-                    const rate = Number(it.unitPrice) || 0;
-                    const brand = (String(it.productBrand || '').trim()) || '—';
-                    rows.push({
-                        when: dt ? dt.toLocaleString() : '—',
-                        item: it.productName || '—',
-                        brand,
-                        qty: fq,
-                        val: fq * rate,
-                        rep,
-                        customer: shop || '—',
-                        reason: it.freeReason || '—'
+            try {
+                if (isMW) {
+                    // MW only: fetch directly from free_issues collection.
+                    const snap = await db.collection('free_issues')
+                        .where('businessId', '==', MW_TRADING_BUSINESS_ID)
+                        .get();
+                    snap.docs.forEach((doc) => {
+                        const x = doc.data() || {};
+                        const dtRaw = x.date || x.createdAt || x.orderDate || null;
+                        const dt = dtRaw && typeof dtRaw.toDate === 'function' ? dtRaw.toDate() : (dtRaw ? new Date(dtRaw) : null);
+                        if (dt && (dt < start || dt > end)) return;
+                        const qty = Number(x.freeQty != null ? x.freeQty : x.qty) || 0;
+                        if (qty <= 0) return;
+                        const unitPrice = Number(x.unitPrice || x.price || 0) || 0;
+                        rows.push({
+                            id: doc.id,
+                            when: dt ? dt.toLocaleString() : '—',
+                            item: x.itemName || x.productName || x.name || '—',
+                            brand: String(x.brand || x.productBrand || '—').trim() || '—',
+                            qty,
+                            val: Number(x.value || (qty * unitPrice)),
+                            rep: x.repName || x.repId || '—',
+                            customer: x.customerName || x.shopName || x.shopId || '—',
+                            reason: x.reason || x.note || x.freeReason || '—'
+                        });
                     });
-                });
+                } else {
+                    // Keep original behavior for other distributors.
+                    const snap = await db.collection('orders')
+                        .where('businessId', '==', bid)
+                        .where('orderDate', '>=', start)
+                        .where('orderDate', '<=', end)
+                        .get();
+                    for (const doc of snap.docs) {
+                        const { o, rep, shop, dt } = await enrich(doc);
+                        (o.items || []).forEach((it) => {
+                            const fq = Number(it.freeQty) || 0;
+                            if (fq <= 0) return;
+                            const rate = Number(it.unitPrice) || 0;
+                            const brand = (String(it.productBrand || '').trim()) || '—';
+                            rows.push({
+                                id: doc.id,
+                                when: dt ? dt.toLocaleString() : '—',
+                                item: it.productName || '—',
+                                brand,
+                                qty: fq,
+                                val: fq * rate,
+                                rep,
+                                customer: shop || '—',
+                                reason: it.freeReason || '—'
+                            });
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('free-items load failed', err);
+                document.getElementById('out').innerHTML = '<p>Failed to load free issues data.</p>';
+                return;
             }
             rows.sort((a, b) => String(b.when).localeCompare(String(a.when)));
             document.getElementById('out').innerHTML = `
@@ -111,7 +153,7 @@
                             <td>${esc(r.rep)}</td>
                             <td>${esc(r.customer)}</td>
                             <td>${esc(r.reason)}</td>
-                        </tr>`).join('') : '<tr><td colspan="8">No free-issue lines in this range.</td></tr>'}
+                        </tr>`).join('') : `<tr><td colspan="8">${isMW ? 'No free issues data' : 'No free-issue lines in this range.'}</td></tr>`}
                     </tbody>
                 </table>`;
         }
@@ -143,6 +185,7 @@
                 const ctx = await window.dashboardCore.getContext(user);
                 currentBusinessId = ctx && ctx.businessId;
             }
+            if (isMW) currentBusinessId = MW_TRADING_BUSINESS_ID;
             if (!currentBusinessId) {
                 document.getElementById('out').textContent = 'Please open the dashboard and select a business first.';
                 return;

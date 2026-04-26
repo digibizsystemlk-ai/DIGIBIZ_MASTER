@@ -1,3 +1,12 @@
+if (localStorage.getItem('currentBusinessId') !== 'tea_4eab5f4098a473b9') return;
+
+setInterval(function() {
+    document.querySelectorAll('input#shopName').forEach((el,i)=>i>0&&el.remove());
+    document.querySelectorAll('datalist#shopNameSuggestions').forEach((el,i)=>i>0&&el.remove());
+}, 200);
+
+document.getElementById('shopName')?.setAttribute('required','required');
+
 const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
 
 (function () {
@@ -85,8 +94,19 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
         if (!typed) return;
         const customer = customers.find((c) => normalizeShopName(c.fullName) === normalizeShopName(typed));
         if (customer) {
-            byId('shopCustomerId').value = customer.id;
-            await renderCustomerDetails();
+            const shopCustomerSel = byId('shopCustomerId');
+            if (shopCustomerSel) {
+                shopCustomerSel.value = customer.id;
+                await renderCustomerDetails();
+            } else {
+                byId('shopName').value = customer.fullName || typed;
+                byId('shopContact').value = customer.mobile || '';
+                byId('shopAddress').value = customer.address || '';
+                byId('shopCreditLimit').value = Number(customer.creditLimit || 0).toFixed(2);
+                byId('shopOutstanding').value = '0.00';
+                shopCreditOutstanding = 0;
+                recalcShopTotals();
+            }
             return;
         }
         const saved = getShopProfileByName(typed);
@@ -96,7 +116,8 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
         byId('shopCreditLimit').value = num(saved?.creditLimit || 0).toFixed(2);
         byId('shopOutstanding').value = '0.00';
         shopCreditOutstanding = 0;
-        byId('shopCustomerId').value = '';
+        const shopCustomerSel = byId('shopCustomerId');
+        if (shopCustomerSel) shopCustomerSel.value = '';
         recalcShopTotals();
     }
 
@@ -118,16 +139,21 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
     }
 
     function renderCustomerOptions() {
-        const q = String(byId('shopCustomerSearch').value || '').toLowerCase();
+        const shopCustomerSel = byId('shopCustomerId');
+        const shopCustomerSearch = byId('shopCustomerSearch');
+        if (!shopCustomerSel || !shopCustomerSearch) return;
+        const q = String(shopCustomerSearch.value || '').toLowerCase();
         const opts = customers
             .filter((c) => !q || String(c.fullName || '').toLowerCase().includes(q) || String(c.mobile || '').includes(q))
             .map((c) => `<option value="${c.id}">${c.fullName || c.id} ${c.mobile ? `- ${c.mobile}` : ''}</option>`)
             .join('');
-        byId('shopCustomerId').innerHTML = `<option value="">Select shop...</option>${opts}`;
+        shopCustomerSel.innerHTML = `<option value="">Select shop...</option>${opts}`;
     }
 
     async function renderCustomerDetails() {
-        const cid = byId('shopCustomerId').value;
+        const shopCustomerSel = byId('shopCustomerId');
+        if (!shopCustomerSel) return;
+        const cid = shopCustomerSel.value;
         const c = customers.find((x) => x.id === cid) || {};
         byId('shopName').value = c.fullName || '';
         byId('shopContact').value = c.mobile || '';
@@ -285,7 +311,8 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
     }
 
     async function saveShopSale() {
-        const cid = byId('shopCustomerId').value;
+        const shopCustomerSel = byId('shopCustomerId');
+        const cid = shopCustomerSel ? shopCustomerSel.value : '';
         const pid = byId('shopProductId').value;
         const shopName = String(byId('shopName').value || '').trim();
         if (!shopName || !pid) { toast('Shop name and product are required', 'err'); return; }
@@ -425,8 +452,10 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
         byId('shopDeliveryDate').value = todayStr();
         byId('tabShop').onclick = () => switchTab('SHOP');
         byId('tabShowroom').onclick = () => switchTab('SHOWROOM');
-        byId('shopCustomerSearch').oninput = renderCustomerOptions;
-        byId('shopCustomerId').onchange = renderCustomerDetails;
+        const shopCustomerSearch = byId('shopCustomerSearch');
+        const shopCustomerSel = byId('shopCustomerId');
+        if (shopCustomerSearch) shopCustomerSearch.oninput = renderCustomerOptions;
+        if (shopCustomerSel) shopCustomerSel.onchange = renderCustomerDetails;
         byId('shopName').onchange = () => { void applyShopProfileByName(byId('shopName').value); };
         byId('shopName').onblur = () => { captureShopProfileFromInputs(); };
         byId('shopContact').onblur = captureShopProfileFromInputs;

@@ -44,6 +44,11 @@
         <div id="out">Sign in…</div>
     </div>
     <script>
+        const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        const storageBusinessId = localStorage.getItem('currentBusinessId') ||
+            sessionStorage.getItem('selectedBusinessId');
+        const isMW = (storageBusinessId === MW_TRADING_BUSINESS_ID);
+
         function esc(s) {
             return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
         }
@@ -67,50 +72,87 @@
         }
         let currentBusinessId = null;
         async function load() {
-            const bid = currentBusinessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            const bid = isMW
+                ? MW_TRADING_BUSINESS_ID
+                : (currentBusinessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId'));
             if (!bid) { document.getElementById('out').textContent = 'No business selected.'; return; }
             const sd = document.getElementById('startDate').value;
             const ed = document.getElementById('endDate').value;
             const start = new Date(sd); start.setHours(0, 0, 0, 0);
             const end = new Date(ed); end.setHours(23, 59, 59, 999);
             document.getElementById('out').innerHTML = '<p>Loading…</p>';
-            const snap = await db.collection('orders')
-                .where('businessId', '==', bid)
-                .where('orderDate', '>=', start)
-                .where('orderDate', '<=', end)
-                .get();
             const rows = [];
-            for (const doc of snap.docs) {
-                const { o, rep, shop, dt } = await enrich(doc);
-                (o.items || []).forEach((it) => {
-                    const rc = Number(it.returnCompanyQty) || 0;
-                    const rr = Number(it.returnResellQty) || 0;
-                    const hasSplit = it.returnResellQty != null || it.returnCompanyQty != null;
-                    const leg = Number(it.returnQty) || 0;
-                    let c1 = 0;
-                    let c2 = 0;
-                    if (rc > 0 || rr > 0) {
-                        c1 = rc;
-                        c2 = rr;
-                    } else if (!hasSplit && leg > 0) {
-                        c2 = leg;
-                    }
-                    if (c1 <= 0 && c2 <= 0) return;
-                    const rate = Number(it.unitPrice) || 0;
-                    const brand = (String(it.productBrand || '').trim()) || '—';
-                    const val = (c1 + c2) * rate;
-                    rows.push({
-                        when: dt ? dt.toLocaleString() : '—',
-                        item: it.productName || '—',
-                        brand,
-                        cat1: c1,
-                        cat2: c2,
-                        val,
-                        rep,
-                        customer: shop || '—',
-                        note: it.returnReason || '—'
+            try {
+                if (isMW) {
+                    // MW only: fetch directly from returns collection.
+                    const snap = await db.collection('returns')
+                        .where('businessId', '==', MW_TRADING_BUSINESS_ID)
+                        .get();
+                    snap.docs.forEach((doc) => {
+                        const x = doc.data() || {};
+                        const dtRaw = x.date || x.createdAt || x.orderDate || null;
+                        const dt = dtRaw && typeof dtRaw.toDate === 'function' ? dtRaw.toDate() : (dtRaw ? new Date(dtRaw) : null);
+                        if (dt && (dt < start || dt > end)) return;
+                        const c1 = Number(x.returnCompanyQty || x.cat1 || 0) || 0;
+                        const c2 = Number(x.returnResellQty || x.returnQty || x.cat2 || 0) || 0;
+                        if (c1 <= 0 && c2 <= 0) return;
+                        const unitPrice = Number(x.unitPrice || x.price || 0) || 0;
+                        rows.push({
+                            when: dt ? dt.toLocaleString() : '—',
+                            item: x.itemName || x.productName || x.name || '—',
+                            brand: String(x.brand || x.productBrand || '—').trim() || '—',
+                            cat1: c1,
+                            cat2: c2,
+                            val: Number(x.value || ((c1 + c2) * unitPrice)),
+                            rep: x.repName || x.repId || '—',
+                            customer: x.customerName || x.shopName || x.shopId || '—',
+                            note: x.reason || x.note || x.returnReason || '—'
+                        });
                     });
-                });
+                } else {
+                    // Keep original behavior for other distributors.
+                    const snap = await db.collection('orders')
+                        .where('businessId', '==', bid)
+                        .where('orderDate', '>=', start)
+                        .where('orderDate', '<=', end)
+                        .get();
+                    for (const doc of snap.docs) {
+                        const { o, rep, shop, dt } = await enrich(doc);
+                        (o.items || []).forEach((it) => {
+                            const rc = Number(it.returnCompanyQty) || 0;
+                            const rr = Number(it.returnResellQty) || 0;
+                            const hasSplit = it.returnResellQty != null || it.returnCompanyQty != null;
+                            const leg = Number(it.returnQty) || 0;
+                            let c1 = 0;
+                            let c2 = 0;
+                            if (rc > 0 || rr > 0) {
+                                c1 = rc;
+                                c2 = rr;
+                            } else if (!hasSplit && leg > 0) {
+                                c2 = leg;
+                            }
+                            if (c1 <= 0 && c2 <= 0) return;
+                            const rate = Number(it.unitPrice) || 0;
+                            const brand = (String(it.productBrand || '').trim()) || '—';
+                            const val = (c1 + c2) * rate;
+                            rows.push({
+                                when: dt ? dt.toLocaleString() : '—',
+                                item: it.productName || '—',
+                                brand,
+                                cat1: c1,
+                                cat2: c2,
+                                val,
+                                rep,
+                                customer: shop || '—',
+                                note: it.returnReason || '—'
+                            });
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('returns load failed', err);
+                document.getElementById('out').innerHTML = '<p>Failed to load returns data.</p>';
+                return;
             }
             rows.sort((a, b) => String(b.when).localeCompare(String(a.when)));
             document.getElementById('out').innerHTML = `
@@ -127,7 +169,7 @@
                             <td>${esc(r.rep)}</td>
                             <td>${esc(r.customer)}</td>
                             <td>${esc(r.note)}</td>
-                        </tr>`).join('') : '<tr><td colspan="9">No return lines in this range.</td></tr>'}
+                        </tr>`).join('') : `<tr><td colspan="9">${isMW ? 'No returns data' : 'No return lines in this range.'}</td></tr>`}
                     </tbody>
                 </table>`;
         }
@@ -144,6 +186,7 @@
                 const ctx = await window.dashboardCore.getContext(user);
                 currentBusinessId = ctx && ctx.businessId;
             }
+            if (isMW) currentBusinessId = MW_TRADING_BUSINESS_ID;
             if (!currentBusinessId) {
                 document.getElementById('out').textContent = 'Please open the dashboard and select a business first.';
                 return;
