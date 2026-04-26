@@ -207,6 +207,19 @@ async function getUserRole(userId, businessId = null) {
     }
 }
 
+async function shouldForcePasswordChange(userId) {
+    if (!userId) return false;
+    try {
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (!userDoc.exists) return false;
+        const data = userDoc.data() || {};
+        return data.mustChangePassword === true;
+    } catch (error) {
+        console.warn('Password-change check failed:', error);
+        return false;
+    }
+}
+
 // Export to window
 window.ROLES = ROLES;
 window.PERMISSIONS = PERMISSIONS;
@@ -214,6 +227,7 @@ window.MENU_BY_ROLE = MENU_BY_ROLE;
 window.hasPermission = hasPermission;
 window.getMenuForRole = getMenuForRole;
 window.getUserRole = getUserRole;
+window.shouldForcePasswordChange = shouldForcePasswordChange;
 
 /**
  * Distributor (MW-style) web RBAC: Owner, Sales Coordinator, Area Manager, Rep.

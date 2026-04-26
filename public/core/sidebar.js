@@ -168,6 +168,7 @@ class Sidebar {
         this.mwBusinessId = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
         this.kduTeaBusinessId = 'tea_4eab5f4098a473b9';
         this.scrapOwnerUid = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+        this.superAdmin = false;
         if (SHOULD_RESERVE_SIDEBAR_SPACE) {
             // Paint cached sidebar immediately at bootstrap (no auth/db wait).
             this.bootCachedSidebarNow();
@@ -252,6 +253,15 @@ class Sidebar {
                 this.attachEvents();
 
                 await this.loadUserData(user.uid);
+                try {
+                    const token = await user.getIdTokenResult(true);
+                    this.superAdmin = !!(token && token.claims && (token.claims.admin === true || token.claims.superAdmin === true));
+                } catch (e) {
+                    this.superAdmin = false;
+                }
+                if (!this.superAdmin && String(this.currentRole || '').toUpperCase() === 'SUPER_ADMIN') {
+                    this.superAdmin = true;
+                }
                 if (this.businessType === 'manufacturer') {
                     const reloadKey = 'digibiz_sidebar_mfg_reload_once';
                     if (cachedTypeBeforeLoad && cachedTypeBeforeLoad !== 'manufacturer' && sessionStorage.getItem(reloadKey) !== '1') {
@@ -363,6 +373,7 @@ class Sidebar {
             const userData = userDoc.exists ? (userDoc.data() || {}) : {};
             this.currentRole = userData.role || 'VIEWER';
             this.ownerName = userData.ownerName || userData.name || '';
+            const mustChangePassword = userData.mustChangePassword === true;
             this.businessId = userData.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || null;
             if (!this.businessId && window.dashboardCore && typeof window.dashboardCore.getContext === 'function' && firebase.auth().currentUser) {
                 try {
@@ -391,6 +402,15 @@ class Sidebar {
             } else {
                 this.businessType = storedType || (this.shouldForceManufacturerMode() ? 'manufacturer' : 'retail');
                 this.businessName = 'No Business Connected';
+            }
+            const p = String(window.location.pathname || '').toLowerCase();
+            if (mustChangePassword && !p.includes('/modules/core/change-password.html') && !p.includes('/auth/login.html')) {
+                try {
+                    localStorage.setItem('forcePasswordChangeNotice', 'Please change your password before continuing');
+                    sessionStorage.setItem('forcePasswordChangeNotice', 'Please change your password before continuing');
+                } catch (e) { /* ignore */ }
+                window.location.href = '/modules/core/change-password.html';
+                return;
             }
         } catch (error) {
             console.error('Error loading user data:', error);
@@ -489,6 +509,10 @@ class Sidebar {
         return ['SUPER_ADMIN', 'ADMIN'].includes(this.currentRole) || String(this.currentRole || '').includes('ADMIN');
     }
 
+    isSuperAdminUser() {
+        return this.superAdmin === true || String(this.currentRole || '').toUpperCase() === 'SUPER_ADMIN';
+    }
+
     isRepRole() {
         return String(this.currentRole || '').toUpperCase() === 'REP';
     }
@@ -563,13 +587,16 @@ class Sidebar {
 
     /** Customers + Accounting + Reports — always last block after business-specific links. */
     getSharedCrosscutMenus() {
-        return [
+        const menus = [
             { icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
-            { icon: '💸', name: 'Loans', link: '/modules/core/loans.html' },
             { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
             { icon: '📁', name: 'Accounting', link: '/modules/accounts/advanced-accounting-dashboard.html' },
             { icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
         ];
+        if (this.isSuperAdminUser()) {
+            menus.splice(1, 0, { icon: '💸', name: 'Loans', link: '/modules/core/loans.html' });
+        }
+        return menus;
     }
 
     getSharedModuleMenus() {
@@ -641,17 +668,25 @@ class Sidebar {
                 { icon: '🔧', name: 'Inventory', link: '/modules/hardware/inventory.html' }
             ];
         } else if (menuBusinessType === 'manufacturer') {
-            menus = [
-                { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
-                { icon: '🏭', name: 'Production / Manufacturing', link: '/modules/manufacturer/outbound.html' },
-                { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
-                { icon: '🚛', name: 'Supplier Management', link: '/modules/manufacturer/inbound.html' },
-                { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
-                { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
-                { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
-            ];
-            if (this.businessId !== this.kduTeaBusinessId) {
-                menus.splice(3, 0, { icon: '🧪', name: 'Quality Control', link: '/modules/manufacturer/stock.html' });
+            if (this.businessId === this.kduTeaBusinessId) {
+                menus = [
+                    { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
+                    { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
+                    { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
+                    { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+                    { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
+                ];
+            } else {
+                menus = [
+                    { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
+                    { icon: '🏭', name: 'Production / Manufacturing', link: '/modules/manufacturer/outbound.html' },
+                    { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
+                    { icon: '🧪', name: 'Quality Control', link: '/modules/manufacturer/stock.html' },
+                    { icon: '🚛', name: 'Supplier Management', link: '/modules/manufacturer/inbound.html' },
+                    { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
+                    { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+                    { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
+                ];
             }
         } else {
             menus = [
@@ -662,9 +697,9 @@ class Sidebar {
         }
         menus = this.assembleSidebarMenus(menus);
 
-        if (this.isAdminRole()) {
+        if (this.isSuperAdminUser()) {
             menus.push(
-                { icon: '👑', name: 'Admin Dashboard', link: '/admin/super-dashboard.html' },
+                { icon: '👑', name: 'Super Admin', link: '/admin/super-dashboard.html' },
                 { icon: '👥', name: 'User Management', link: '/admin/super-dashboard.html#tab-users' }
             );
         }
@@ -777,6 +812,7 @@ class Sidebar {
         const settingsItemsBase = [
             { icon: '🏢', name: 'Business Profile', link: '/modules/company/profile.html' },
             { icon: '👥', name: 'Staff', link: '/modules/company/staff.html' },
+            { icon: '🔐', name: 'Change Password', link: '/modules/core/change-password.html' },
             { icon: '⚙️', name: 'Settings', link: '/modules/company/settings.html' },
             { icon: '📲', name: 'SMS Settings', link: '/modules/company/sms-settings.html' },
             { icon: '🧾', name: 'SMS Log', link: '/modules/company/sms-log.html' },
@@ -807,7 +843,7 @@ class Sidebar {
             { icon: '👤', name: 'Investor', link: '/modules/core/investor.html' }
         ];
         const loansActive = loanItems.some((item) => this.isMenuActive(item.link, pathname));
-        const menuItems = this.getMenus().filter((item) => !['Admin Dashboard', 'User Management', 'Loans'].includes(item.name));
+        const menuItems = this.getMenus().filter((item) => !['Super Admin', 'User Management', 'Loans'].includes(item.name));
         const html = `
             <div class="retail-navbar digibiz-sidebar">
                 <div>
@@ -826,14 +862,14 @@ class Sidebar {
                     </div>
                     <div class="nav-links" id="sidebarNavLinks">
                         ${menuItems.map((item) => `<a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
-                        <div class="menu-dropdown ${loansActive ? 'open' : ''}" id="loansDropdown">
+                        ${this.isSuperAdminUser() ? `<div class="menu-dropdown ${loansActive ? 'open' : ''}" id="loansDropdown">
                             <button type="button" class="menu-dropdown-toggle ${loansActive ? 'active' : ''}" id="loansDropdownToggle">
                                 <span><span class="menu-icon">💸</span><span>Loans</span></span><span>${loansActive ? '▾' : '▸'}</span>
                             </button>
                             <div class="menu-dropdown-items">
                                 ${loanItems.map((item) => `<a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
                             </div>
-                        </div>
+                        </div>` : ''}
                         ${settingsItems.length ? `<div class="menu-dropdown ${settingsActive ? 'open' : ''}" id="settingsDropdown">
                             <button type="button" class="menu-dropdown-toggle ${settingsActive ? 'active' : ''}" id="settingsDropdownToggle">
                                 <span><span class="menu-icon">⚙️</span><span>Settings</span></span><span>${settingsActive ? '▾' : '▸'}</span>
@@ -842,8 +878,8 @@ class Sidebar {
                                 ${settingsItems.map((item) => `<a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
                             </div>
                         </div>` : ''}
-                        ${this.isAdminRole() ? `<div class="menu-section-label">Admin Tools</div>
-                        <a href="/admin/super-dashboard.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${pathname === '/admin/super-dashboard.html' ? 'active' : ''}"><span class="menu-icon">👑</span><span>Admin Dashboard</span></a>
+                        ${this.isSuperAdminUser() ? `<div class="menu-section-label">Super Admin</div>
+                        <a href="/admin/super-dashboard.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${pathname === '/admin/super-dashboard.html' ? 'active' : ''}"><span class="menu-icon">👑</span><span>Super Admin</span></a>
                         <a href="/admin/super-dashboard.html#tab-users" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item"><span class="menu-icon">👥</span><span>User Management</span></a>` : ''}
                     </div>
                 </div>

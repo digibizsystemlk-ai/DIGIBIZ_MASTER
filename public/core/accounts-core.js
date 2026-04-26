@@ -320,13 +320,19 @@ class AccountsCore {
         const mode = String(validData.paymentMode || 'CASH').toUpperCase();
         const status = String(validData.paymentStatus || 'PAID').toUpperCase();
         const acc = this.getManufacturingAccountMap();
-        let receiptLine;
-        if (status === 'PENDING' || status === 'PENDING_CLEARANCE' || mode === 'CREDIT' || mode === 'CHEQUE') {
-            receiptLine = { ...acc.AR, debit: amount, credit: 0 };
+        const paidAmount = Number(validData.paidAmount);
+        const creditAmount = Number(validData.creditAmount);
+        const hasPartial = Number.isFinite(paidAmount) && Number.isFinite(creditAmount) && paidAmount > 0 && creditAmount > 0;
+        const settlementLines = [];
+        if (hasPartial || mode === 'PARTIAL') {
+            if (paidAmount > 0) settlementLines.push({ ...acc.CASH, debit: paidAmount, credit: 0 });
+            if (creditAmount > 0) settlementLines.push({ ...acc.AR, debit: creditAmount, credit: 0 });
+        } else if (status === 'PENDING' || status === 'PENDING_CLEARANCE' || mode === 'CREDIT' || mode === 'CHEQUE') {
+            settlementLines.push({ ...acc.AR, debit: amount, credit: 0 });
         } else if (mode === 'BANK' || mode === 'BANK_TRANSFER') {
-            receiptLine = { ...acc.BANK, debit: amount, credit: 0 };
+            settlementLines.push({ ...acc.BANK, debit: amount, credit: 0 });
         } else {
-            receiptLine = { ...acc.CASH, debit: amount, credit: 0 };
+            settlementLines.push({ ...acc.CASH, debit: amount, credit: 0 });
         }
         const cogsAmount = Number(validData.cogsAmount) || 0;
         const journalEntry = {
@@ -334,7 +340,7 @@ class AccountsCore {
             description: `Finished goods sale [${saleType}] - ${validData.productName || 'Product'} (${validData.companyName || 'Company'}) [${validData.paymentMode || 'CASH'}:${validData.paymentStatus || 'PAID'}]`,
             businessId: validData.businessId,
             entries: [
-                receiptLine,
+                ...settlementLines,
                 { accountCode: '4-4010-01', accountName: 'Sales Revenue', debit: 0, credit: amount },
                 { ...acc.COGS, debit: cogsAmount, credit: 0 },
                 { ...acc.FG_INVENTORY, debit: 0, credit: cogsAmount }

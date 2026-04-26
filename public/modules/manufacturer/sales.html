@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KDU Tea Factory Sales</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:900px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/sidebar.js?v=64"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=7"></script>
+    <style>
+        body{font-family:Inter,system-ui,sans-serif;background:#f3f4f6;margin:0;color:#0f172a;}
+        .wrap{padding:20px;}
+        .head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;}
+        .head h2{margin:0;}
+        .tabs{display:flex;gap:8px;margin-bottom:14px;}
+        .tab{padding:10px 14px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;font-weight:600;}
+        .tab.active{background:#0f766e;color:#fff;border-color:#0f766e;}
+        .panel{background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+        .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+        .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+        label{font-size:12px;color:#334155;display:block;margin-bottom:4px;}
+        input,select,textarea,button{width:100%;box-sizing:border-box;padding:8px;border:1px solid #cbd5e1;border-radius:8px;}
+        button{background:#0f766e;color:#fff;border:none;cursor:pointer;}
+        button.alt{background:#334155;}
+        .warn{background:#fff7ed;border:1px solid #fed7aa;padding:8px;border-radius:8px;color:#9a3412;font-size:12px;display:none;}
+        .sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+        .sum input{background:#f8fafc;}
+        .grid{display:grid;grid-template-columns:2fr 1fr;gap:12px;}
+        .prod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;}
+        .prod-card{border:1px solid #e2e8f0;border-radius:10px;padding:8px;background:#fff;}
+        .prod-card .img{height:80px;background:#f1f5f9;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#64748b;overflow:hidden;}
+        .prod-card img{width:100%;height:100%;object-fit:cover;}
+        .prod-card .nm{font-weight:600;font-size:12px;margin-top:6px;}
+        .prod-card .st,.prod-card .pr{font-size:11px;color:#475569;}
+        .prod-card button{margin-top:6px;padding:6px;font-size:12px;}
+        table{width:100%;border-collapse:collapse;font-size:12px;}
+        th,td{border-bottom:1px solid #e2e8f0;padding:6px;text-align:left;}
+        td.tr{text-align:right;}
+        .empty{color:#64748b;text-align:center;padding:12px;}
+        .sales-toast{position:fixed;right:20px;bottom:20px;background:#0f766e;color:#fff;padding:10px 14px;border-radius:10px;display:none;z-index:9999;}
+        .sales-toast.show{display:block;}
+        .sales-toast.err{background:#b91c1c;}
+        @media (max-width:1000px){.grid{grid-template-columns:1fr;} .g3,.sum{grid-template-columns:1fr 1fr;} }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="head">
+        <h2>KDU Tea Factory - Sales Center</h2>
+        <div id="salesToast" class="sales-toast"></div>
+    </div>
+    <div class="tabs">
+        <button id="tabShop" class="tab active">Shop Sales</button>
+        <button id="tabShowroom" class="tab">Showroom Sales</button>
+    </div>
+
+    <div id="shopPanel" class="panel">
+        <h3>Shop Sales (Wholesale)</h3>
+        <div class="g2">
+            <div><label>Search Shop</label><input id="shopCustomerSearch" placeholder="Search by name or mobile"></div>
+            <div><label>Select Shop</label><select id="shopCustomerId"><option value="">Select...</option></select></div>
+        </div>
+        <div class="g3" style="margin-top:8px;">
+            <div><label>Shop Name</label><input id="shopName" readonly></div>
+            <div><label>Contact</label><input id="shopContact" readonly></div>
+            <div><label>Address</label><input id="shopAddress" readonly></div>
+        </div>
+        <div class="g3" style="margin-top:8px;">
+            <div><label>Credit Limit</label><input id="shopCreditLimit" readonly></div>
+            <div><label>Outstanding Credit</label><input id="shopOutstanding" readonly></div>
+            <div><label>Delivery Date</label><input type="date" id="shopDeliveryDate"></div>
+        </div>
+        <div class="g2" style="margin-top:8px;">
+            <div><label>Delivery Address</label><textarea id="shopDeliveryAddress" rows="2"></textarea></div>
+            <div></div>
+        </div>
+        <div class="g3" style="margin-top:8px;">
+            <div><label>Product</label><select id="shopProductId"><option value="">Select...</option></select></div>
+            <div><label>Available Stock</label><input id="shopStockView" readonly></div>
+            <div><label>Qty</label><input type="number" id="shopQty" min="0" step="0.01"></div>
+        </div>
+        <div class="g3" style="margin-top:8px;">
+            <div><label>Unit Price (Negotiable)</label><input type="number" id="shopUnitPrice" min="0" step="0.01"></div>
+            <div><label>Discount</label><input type="number" id="shopDiscount" min="0" step="0.01" value="0"></div>
+            <div><label>Tax %</label><input type="number" id="shopTaxPct" min="0" step="0.01" value="0"></div>
+        </div>
+        <div class="sum" style="margin-top:8px;">
+            <div><label>Subtotal</label><input id="shopSubtotal" readonly></div>
+            <div><label>Tax Amount</label><input id="shopTax" readonly></div>
+            <div><label>Total</label><input id="shopTotal" readonly></div>
+            <div><label>Credit Amount</label><input id="shopCreditAmount" readonly></div>
+        </div>
+        <div class="g3" style="margin-top:8px;">
+            <div>
+                <label>Payment Terms</label>
+                <select id="shopPaymentTerms">
+                    <option value="CASH">Cash</option>
+                    <option value="CREDIT">Credit</option>
+                    <option value="PARTIAL">Partial</option>
+                </select>
+            </div>
+            <div><label>Paid Now (Partial)</label><input type="number" id="shopPaidNow" min="0" step="0.01" value="0"></div>
+            <div></div>
+        </div>
+        <div id="creditLimitWarn" class="warn" style="margin-top:8px;"></div>
+        <div class="g2" style="margin-top:10px;">
+            <button id="btnConfirmShopSale">Confirm Shop Sale + Print Invoice</button>
+            <button class="alt" type="button" onclick="window.print()">Print Page</button>
+        </div>
+    </div>
+
+    <div id="showroomPanel" class="panel" style="display:none;">
+        <h3>Showroom Sales (Walk-in)</h3>
+        <div class="g3">
+            <div><label>Walk-in Name</label><input id="walkInName"></div>
+            <div><label>Phone</label><input id="walkInPhone"></div>
+            <div><label>Payment</label><select id="showroomPayMode"><option value="CASH">Cash</option><option value="CARD">Card</option></select></div>
+        </div>
+        <div class="grid" style="margin-top:10px;">
+            <div>
+                <div class="g2">
+                    <div><label>Search Product</label><input id="showroomSearch"></div>
+                    <div><label>Quick Add Product</label><select id="showroomProductId"><option value="">Select...</option></select></div>
+                </div>
+                <div id="showroomGrid" class="prod-grid" style="margin-top:10px;"></div>
+            </div>
+            <div>
+                <table>
+                    <thead><tr><th>Item</th><th>Qty</th><th>U.Price</th><th class="tr">Amt</th><th></th></tr></thead>
+                    <tbody id="showroomCartRows"></tbody>
+                </table>
+                <div class="sum" style="margin-top:8px;">
+                    <div><label>Subtotal</label><input id="showroomSubtotal" readonly></div>
+                    <div><label>Tax</label><input id="showroomTax" readonly></div>
+                    <div><label>Total</label><input id="showroomTotal" readonly></div>
+                    <div><label>Change</label><input id="showroomChange" readonly></div>
+                </div>
+                <div class="g3" style="margin-top:8px;">
+                    <div><label>Discount</label><input type="number" id="showroomDiscount" value="0" min="0" step="0.01"></div>
+                    <div><label>Tax %</label><input type="number" id="showroomTaxPct" value="0" min="0" step="0.01"></div>
+                    <div><label>Paid</label><input type="number" id="showroomPaid" min="0" step="0.01"></div>
+                </div>
+                <button id="btnConfirmShowroomSale" style="margin-top:10px;">Confirm Showroom Sale + Print Receipt</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="/modules/manufacturer/sales.js?v=1"></script>
+</body>
+</html>
