@@ -72,6 +72,7 @@
         .modal-card { width: min(92vw, 420px); background:#fff; border-radius:14px; padding:20px; box-shadow:0 10px 30px rgba(0,0,0,.25); }
         .modal-card h4 { margin:0 0 8px; font-size:18px; color:#0f172a; }
         .modal-card p { margin:0 0 14px; font-size:14px; color:#334155; }
+        .row-actions { display:flex; gap:6px; flex-wrap:wrap; }
         .grn-search-wrap{position:relative;}
         .dark-engine-input{background:#ffffff!important;color:#0f172a!important;border:1px solid #cbd5e1!important;border-radius:8px;}
         .grn-suggest{position:absolute;left:0;right:0;top:calc(100% + 2px);background:#0f172a;border:1px solid rgba(250,204,21,.35);border-radius:10px;max-height:220px;overflow:auto;z-index:80;box-shadow:0 12px 40px rgba(0,0,0,.45);display:none;}
@@ -231,6 +232,23 @@
             <button class="btn-primary" id="closeMobileEditBlockModal">OK</button>
         </div>
     </div>
+    <div class="modal-mask" id="productEditModal">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <h4>Edit Product</h4>
+            <p>Update details and save changes.</p>
+            <div class="form-group"><label>Name</label><input type="text" id="editProductName"></div>
+            <div class="form-group"><label>Category</label><input type="text" id="editProductCategory"></div>
+            <div class="form-group"><label>Brand</label><input type="text" id="editProductBrand"></div>
+            <div class="form-group"><label>Barcode</label><input type="text" id="editProductBarcode"></div>
+            <div class="form-group"><label>Selling Price (Rs)</label><input type="number" step="0.01" id="editProductPrice"></div>
+            <div class="form-group"><label>Buying Price (Rs)</label><input type="number" step="0.01" id="editProductBuyingPrice"></div>
+            <div class="form-group"><label>Current Stock</label><input type="number" min="0" id="editProductStock"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button class="btn-outline" type="button" id="cancelProductEditBtn">Cancel</button>
+                <button class="btn-primary" type="button" id="saveProductEditBtn">Save</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         // Use existing global 'db' from firebase-init.js
@@ -248,6 +266,7 @@
         var selectedCategoryFilter = '';
         var selectedBrandFilter = '';
         var selectedProductFilter = '';
+        var activeProductEdit = null;
 
         function isMwTradingBusiness() {
             return !!(window.DigibizMwDslConfig && currentBusinessId
@@ -959,7 +978,9 @@
                         '<td>' + stockCell + '</td>' +
                         '<td style="font-size:12px;color:#b45309;">' + fb + '</td>' +
                         '<td>' + (isLow ? '<span class="status-low">⚠️ Low Stock</span>' : '<span class="status-ok">✅ OK</span>') + '</td>' +
-                        (showDel ? '<td><button class="btn-danger" onclick="deleteProduct(\'' + p.id + '\')">🗑️ Delete</button></td>' : '<td>—</td>') +
+                        (showDel
+                            ? '<td><div class="row-actions"><button class="btn-warning" onclick="openEditProductModal(\'' + p.id + '\')">✏️ Edit</button><button class="btn-danger" onclick="deleteProduct(\'' + p.id + '\')">🗑️ Delete</button></div></td>'
+                            : '<td>—</td>') +
                     '</tr>';
                 }
                 html += '</tbody></table></div>';
@@ -1179,7 +1200,7 @@
                 showMessage('Only the owner can delete products.', 'error');
                 return;
             }
-            if (!confirm('Delete this product?')) return;
+            if (!confirm('Are you sure?')) return;
             var product = allProducts.find(function(p) { return p.id === id; });
                     if (product && product.source === 'nested') {
                 await db.collection('products').doc(currentBusinessId).collection('list').doc(id).delete();
@@ -1189,6 +1210,93 @@
                 await db.collection('products').doc(id).delete();
             }
             showMessage('Product deleted', 'success');
+            await loadProducts();
+        };
+
+        function applyProductPatchFields(basePatch, stockValue) {
+            var patch = Object.assign({}, basePatch);
+            var stockPatch = stockFieldsFromQty(stockValue);
+            Object.keys(stockPatch).forEach(function (k) { patch[k] = stockPatch[k]; });
+            patch.updatedAt = new Date();
+            return patch;
+        }
+
+        async function updateProductBySource(product, patch) {
+            if (!product) throw new Error('Product not found');
+            if (product.source === 'nested') {
+                await db.collection('products').doc(currentBusinessId).collection('list').doc(product.id).set(patch, { merge: true });
+                return;
+            }
+            if (product.source === 'businessScoped') {
+                await db.collection('businesses').doc(currentBusinessId).collection('products').doc(product.id).set(patch, { merge: true });
+                return;
+            }
+            await db.collection('products').doc(product.id).set(patch, { merge: true });
+        }
+
+        window.openEditProductModal = function(id) {
+            var pEdit = getDistributorProductPerms();
+            if (pEdit && !pEdit.canProductEditDelete) {
+                showMessage('Only the owner can edit products.', 'error');
+                return;
+            }
+            var product = allProducts.find(function (p) { return p.id === id; });
+            if (!product) {
+                showMessage('Product not found', 'error');
+                return;
+            }
+            activeProductEdit = product;
+            document.getElementById('editProductName').value = product.name || '';
+            document.getElementById('editProductCategory').value = product.category || '';
+            document.getElementById('editProductBrand').value = product.brand || '';
+            document.getElementById('editProductBarcode').value = product.barcode || '';
+            document.getElementById('editProductPrice').value = Number(product.unitPrice || 0);
+            document.getElementById('editProductBuyingPrice').value = product.buyingPrice != null ? Number(product.buyingPrice) : '';
+            document.getElementById('editProductStock').value = displayStockUnits(product);
+            document.getElementById('productEditModal').style.display = 'flex';
+        };
+
+        function closeEditProductModal() {
+            activeProductEdit = null;
+            var m = document.getElementById('productEditModal');
+            if (m) m.style.display = 'none';
+        }
+        window.closeEditProductModal = closeEditProductModal;
+
+        window.saveProductEdit = async function() {
+            var pEdit = getDistributorProductPerms();
+            if (pEdit && !pEdit.canProductEditDelete) {
+                showMessage('Only the owner can edit products.', 'error');
+                return;
+            }
+            if (!activeProductEdit) return;
+            var name = String(document.getElementById('editProductName').value || '').trim();
+            var category = String(document.getElementById('editProductCategory').value || '').trim();
+            var brand = String(document.getElementById('editProductBrand').value || '').trim();
+            var barcode = String(document.getElementById('editProductBarcode').value || '').trim();
+            var unitPrice = Number(document.getElementById('editProductPrice').value || 0);
+            var buyingPriceRaw = document.getElementById('editProductBuyingPrice').value;
+            var buyingPrice = buyingPriceRaw === '' ? '' : Number(buyingPriceRaw);
+            var stock = Math.max(0, Number(document.getElementById('editProductStock').value || 0));
+            if (!name) {
+                showMessage('Product name is required.', 'error');
+                return;
+            }
+            if (!unitPrice || unitPrice <= 0) {
+                showMessage('Valid selling price is required.', 'error');
+                return;
+            }
+            var patch = applyProductPatchFields({
+                name: name,
+                category: category,
+                brand: brand,
+                barcode: barcode,
+                unitPrice: unitPrice,
+                buyingPrice: buyingPrice === '' || isNaN(buyingPrice) ? null : buyingPrice
+            }, stock);
+            await updateProductBySource(activeProductEdit, patch);
+            closeEditProductModal();
+            showMessage('Product updated successfully', 'success');
             await loadProducts();
         };
 
@@ -1379,7 +1487,9 @@
                     '<td>' + stockCell + '</td>' +
                     '<td style="font-size:12px;color:#b45309;">' + fb + '</td>' +
                     '<td>' + (isLow ? '<span class="status-low">⚠️ Low Stock</span>' : '<span class="status-ok">✅ OK</span>') + '</td>' +
-                    (showDel2 ? '<td><button class="btn-danger" onclick="deleteProduct(\'' + p.id + '\')">🗑️ Delete</button></td>' : '<td>—</td>') +
+                    (showDel2
+                        ? '<td><div class="row-actions"><button class="btn-warning" onclick="openEditProductModal(\'' + p.id + '\')">✏️ Edit</button><button class="btn-danger" onclick="deleteProduct(\'' + p.id + '\')">🗑️ Delete</button></div></td>'
+                        : '<td>—</td>') +
                 '</tr>';
             }
             html += '</tbody></table></div>';
@@ -1658,8 +1768,17 @@
                     sessionStorage.setItem('currentBusinessId', currentBusinessId);
                     localStorage.setItem('currentBusinessType', 'distributor');
                     sessionStorage.setItem('currentBusinessType', 'distributor');
-            var roleInfo = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
-            var resolvedRole = String((roleInfo && roleInfo.role) || '').toUpperCase();
+                    var roleInfo = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
+                    var resolvedRole = String((roleInfo && roleInfo.role) || '').toUpperCase();
+                    try {
+                        // Fallback: when business-role resolution is missing, use users/{uid}.role.
+                        if (!resolvedRole || resolvedRole === 'VIEWER') {
+                            var userData = userDoc && userDoc.exists ? (userDoc.data() || {}) : {};
+                            if (userData.role) resolvedRole = String(userData.role).toUpperCase();
+                        }
+                    } catch (roleFallbackErr) {
+                        console.warn('User role fallback failed:', roleFallbackErr && (roleFallbackErr.message || roleFallbackErr));
+                    }
                     try {
                         var bizUserDoc = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(user.uid).get();
                         if (bizUserDoc.exists && bizUserDoc.data().role) {
@@ -1767,6 +1886,10 @@
             var m = document.getElementById('mobileEditBlockModal');
             if (m) m.style.display = 'none';
         };
+        document.getElementById('saveProductEditBtn').onclick = window.saveProductEdit;
+        document.getElementById('cancelProductEditBtn').onclick = closeEditProductModal;
+        document.getElementById('productEditModal').onclick = closeEditProductModal;
     </script>
+    <script src="/modules/distributor/web/products.js?v=1"></script>
 </body>
 </html>

@@ -76,10 +76,6 @@
         
         footer{text-align:center;padding:25px;color:#adb5bd;font-size:12px;border-top:1px solid #e9ecef;margin-top:20px;}
         
-        .business-selector{background:white;border-radius:16px;padding:15px 20px;margin-bottom:25px;display:flex;align-items:center;gap:15px;border:1px solid #e9ecef;}
-        .business-selector label{font-weight:500;font-size:14px;}
-        .business-selector select{flex:1;padding:10px;border:1px solid #e9ecef;border-radius:8px;}
-        .business-selector button{background:#10b981;color:white;border:none;padding:8px 20px;border-radius:8px;cursor:pointer;}
     </style>
 </head>
 <body>
@@ -89,13 +85,6 @@
             <p>Manage your business information and settings</p>
         </div>
         
-        <!-- Business Selector for Super Admin -->
-        <div id="businessSelector" class="business-selector" style="display:none;">
-            <label><i class="fas fa-building"></i> Switch Business:</label>
-            <select id="businessSelect"></select>
-            <button id="switchBusinessBtn">Switch</button>
-        </div>
-
         <div class="two-column">
             <div>
                 <div class="card">
@@ -159,8 +148,11 @@
         let isProfileLocked = false;
         let canChangeBusinessType = false;
         let originalBusinessType = 'retail';
-        let allBusinesses = [];
         const SUPER_ADMIN_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+        const SUPER_ADMIN_EMAILS = [
+            'bdkariyapperuma@gmail.com',
+            'mwtradingsolutions@gmail.com'
+        ];
         
         function showMessage(message, isSuccess, isAdminMsg = false) {
             const msgDiv = document.getElementById('alertMessage');
@@ -179,6 +171,23 @@
         
         function canUseScrapBusinessType() {
             return currentUserRole === 'SUPER_ADMIN' && currentUserId === SUPER_ADMIN_UID;
+        }
+
+        function isSuperAdminByEmail(user) {
+            const email = String(user && user.email || '').trim().toLowerCase();
+            return SUPER_ADMIN_EMAILS.includes(email);
+        }
+
+        async function resolveSuperAdminAccess(user, userData) {
+            const role = String(userData && userData.role || '').toUpperCase();
+            if (role === 'SUPER_ADMIN') return true;
+            if (currentUserId === SUPER_ADMIN_UID) return true;
+            if (isSuperAdminByEmail(user)) return true;
+            try {
+                const adminDoc = await db.collection('admins').doc(currentUserId).get();
+                if (adminDoc.exists && adminDoc.data() && adminDoc.data().isActive !== false) return true;
+            } catch (e) { /* ignore */ }
+            return false;
         }
 
         async function resolveBusinessNavRoleForDistributor() {
@@ -245,35 +254,6 @@
             typeEl.disabled = true;
             const lockNotice = document.getElementById('businessTypeLockNotice');
             if (lockNotice) lockNotice.textContent = '🔒 Business type is locked';
-        }
-        
-        async function loadBusinessesForSuperAdmin() {
-            if (currentUserRole !== 'SUPER_ADMIN') return;
-            
-            const snapshot = await db.collection('businesses').get();
-            allBusinesses = [];
-            snapshot.forEach(doc => allBusinesses.push({ id: doc.id, ...doc.data() }));
-            
-            const select = document.getElementById('businessSelect');
-            select.innerHTML = '<option value="">-- Select Business --</option>';
-            allBusinesses.forEach(biz => {
-                select.innerHTML += `<option value="${biz.id}" ${biz.id === currentCompanyId ? 'selected' : ''}>${biz.name || biz.id} (${biz.businessType || 'retail'})</option>`;
-            });
-            
-            document.getElementById('businessSelector').style.display = 'flex';
-        }
-        
-        async function switchBusiness() {
-            const newBusinessId = document.getElementById('businessSelect').value;
-            if (!newBusinessId) return;
-            
-            currentCompanyId = newBusinessId;
-            try {
-                localStorage.setItem('currentBusinessId', String(currentCompanyId));
-                sessionStorage.setItem('currentBusinessId', String(currentCompanyId));
-            } catch (e) { /* ignore */ }
-            await loadBusinessProfile();
-            showMessage(`Switched to business: ${currentCompanyId.substring(0,12)}...`, true, true);
         }
         
         async function loadBusinessProfile() {
@@ -488,8 +468,6 @@
         
         document.getElementById('saveProfileBtn').onclick = saveBusinessProfile;
         document.getElementById('cancelBtn').onclick = cancelEdit;
-        document.getElementById('switchBusinessBtn').onclick = switchBusiness;
-        
         const uploadArea = document.getElementById('logoUploadArea');
         const fileInput = document.getElementById('logoFile');
         uploadArea.onclick = () => fileInput.click();
@@ -500,7 +478,9 @@
             currentUserId = user.uid;
             
             const userDoc = await db.collection('users').doc(currentUserId).get();
-            currentUserRole = userDoc.exists ? userDoc.data().role : 'VIEWER';
+            const userData = userDoc.exists ? (userDoc.data() || {}) : {};
+            const hasSuperAdminAccess = await resolveSuperAdminAccess(user, userData);
+            currentUserRole = hasSuperAdminAccess ? 'SUPER_ADMIN' : (userData.role || 'VIEWER');
             syncBusinessTypeOptionVisibility();
             if (String(currentUserRole || '').toUpperCase() === 'REP') {
                 window.location.href = '../distributor/mobile/order.html';
@@ -562,11 +542,6 @@
                 localStorage.setItem('currentBusinessId', String(currentCompanyId));
                 sessionStorage.setItem('currentBusinessId', String(currentCompanyId));
             } catch (e) { /* ignore */ }
-            
-            // Load businesses for Super Admin selector
-            if (currentUserRole === 'SUPER_ADMIN') {
-                await loadBusinessesForSuperAdmin();
-            }
             
             await loadBusinessProfile();
         });

@@ -3,7 +3,7 @@
 const SIDEBAR_WIDTH = 260;
 const DIGIBIZ_UPDATE_VERSION = '2026.04.17.2';
 /** Open primary nav links in a new tab (product default). */
-const SIDEBAR_NAV_LINK_TARGET = '_blank';
+const SIDEBAR_NAV_LINK_TARGET = '_self';
 const SIDEBAR_NAV_LINK_REL = 'noopener noreferrer';
 const DIGIBIZ_UPDATE_TITLE = "What's New";
 const DIGIBIZ_UPDATE_POINTS = [
@@ -521,6 +521,33 @@ class Sidebar {
         return this.businessId === this.mwBusinessId;
     }
 
+    isPilotTenant(email, businessId) {
+        const em = String(email || '').trim().toLowerCase();
+        // Pilot gate requested by product owner: email-scoped.
+        return em === 'bdkariyapperuma@gmail.com';
+    }
+
+    isCommissionPilotEnabled() {
+        const authEmail = (firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || '';
+        const fromStorage = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
+        const email = String(authEmail || fromStorage || '').trim().toLowerCase();
+        const bid = String(this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '').trim();
+        const activeResult = !!(window.DigiBizDistributorLorryStock
+            && window.DigiBizDistributorLorryStock.activeForSession(email, bid));
+        const pilotByEmail = this.isPilotTenant(email, bid);
+        console.log('isPilotTenant:', pilotByEmail);
+        console.log('activeForSession result:', activeResult);
+        return pilotByEmail || activeResult;
+    }
+
+    isWarehouseDisabledForCurrentTenant() {
+        const authEmail = (firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || '';
+        const fromStorage = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
+        const email = String(authEmail || fromStorage || '').trim().toLowerCase();
+        const bid = String(this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '').trim();
+        return this.isPilotTenant(email, bid);
+    }
+
     getDistributorPermissionProfile() {
         const P = window.DigibizDistributorPermissions;
         const roleRaw = this.businessNavRole || this.currentRole || '';
@@ -537,7 +564,7 @@ class Sidebar {
     }
 
     getDistributorWebMenuBase() {
-        return [
+        const base = [
             { icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
             { icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
             { icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
@@ -550,12 +577,20 @@ class Sidebar {
             { icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
             { icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
             { icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
-            { icon: '🏦', name: 'Cheques', link: '/modules/distributor/web/cheques.html' },
-            { icon: '📉', name: 'Credit Aging', link: '/modules/distributor/web/credit-aging.html' },
-            { icon: '⚙️', name: 'Commission Config', link: '/modules/distributor/web/commission-config.html' },
-            { icon: '💸', name: 'Rep Commission', link: '/modules/distributor/web/rep-commission-report.html' },
             { icon: '📈', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' }
         ];
+        if (this.isWarehouseDisabledForCurrentTenant()) {
+            return base.filter((item) => item.link !== '/modules/distributor/web/warehouse.html');
+        }
+        if (this.isCommissionPilotEnabled()) {
+            base.splice(base.length - 1, 0,
+                { icon: '🏦', name: 'Cheques', link: '/modules/distributor/web/cheques.html' },
+                { icon: '📉', name: 'Credit Aging', link: '/modules/distributor/web/credit-aging.html' },
+                { icon: '⚙️', name: 'Commission Config', link: '/modules/distributor/web/commission-config.html' },
+                { icon: '💸', name: 'Rep Commission', link: '/modules/distributor/web/rep-commission-report.html' }
+            );
+        }
+        return base;
     }
 
     buildDistributorMenusForCurrentRole() {
@@ -646,7 +681,7 @@ class Sidebar {
         }
 
         if (this.isRepRole()) {
-            return [
+            const repMenus = [
                 ...this.getDashboardMenu(),
                 { icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
                 { icon: '📝', name: 'Rep order (phone)', link: '/modules/distributor/mobile/order.html' },
@@ -654,6 +689,14 @@ class Sidebar {
                 { icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
                 { icon: '📑', name: 'HQ orders', link: '/modules/distributor/web/index.html?tab=pending' }
             ];
+            if (this.isCommissionPilotEnabled()) {
+                repMenus.push(
+                    { icon: '🏦', name: 'Cheques', link: '/modules/distributor/web/cheques.html' },
+                    { icon: '📉', name: 'Credit Aging', link: '/modules/distributor/web/credit-aging.html' },
+                    { icon: '💸', name: 'Rep Commission', link: '/modules/distributor/web/rep-commission-report.html' }
+                );
+            }
+            return repMenus;
         }
 
         if (!onManufacturerModule && (this.isMwTradingContext() || normalizedBusinessType === 'distributor')) {

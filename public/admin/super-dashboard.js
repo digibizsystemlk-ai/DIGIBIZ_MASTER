@@ -24,6 +24,18 @@
         return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString();
     };
     const BUSINESS_TYPES = ['retail', 'manufacturer', 'distributor', 'hardware', 'pharmacy', 'restaurant', 'garment', 'service', 'tea_factory', 'scrap_collection_center'];
+    const LABEL_BY_BTYPE = {
+        retail: 'Retail',
+        manufacturer: 'Manufacturing',
+        distributor: 'FMCG',
+        hardware: 'Hardware',
+        pharmacy: 'Pharmacy',
+        restaurant: 'Restaurant',
+        garment: 'Garment',
+        service: 'Service',
+        tea_factory: 'Tea Factory',
+        scrap_collection_center: 'Scrap Collection Center'
+    };
 
     function setTab(tab) {
         document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
@@ -96,6 +108,113 @@
         $('bizBody').innerHTML = rows || '<tr><td colspan="7" class="small">No businesses</td></tr>';
         $('stBusinesses').textContent = String(state.businesses.length);
         renderAssignableBusinesses();
+    }
+
+    function dashboardPathForBusinessType(typeRaw) {
+        const t = String(typeRaw || '').trim().toLowerCase();
+        if (t === 'distributor') return '/modules/distributor/web/index.html';
+        return '/modules/core/dashboard.html';
+    }
+
+    function toBusinessTypeLabel(typeRaw) {
+        const key = String(typeRaw || '').trim().toLowerCase();
+        return LABEL_BY_BTYPE[key] || (typeRaw ? String(typeRaw) : 'General');
+    }
+
+    async function loadSuperBusinessSwitcher() {
+        if (!state.superAdmin) return;
+        const wrap = $('superBizSwitchWrap');
+        const select = $('superBizSwitchSelect');
+        if (!wrap || !select) return;
+        wrap.style.display = 'flex';
+        select.innerHTML = '<option value="">Loading businesses...</option>';
+        let rows = [];
+        try {
+            const snap = await db.collection('businesses').where('status', '==', 'active').get();
+            rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+        } catch (e) {
+            console.warn('Switch business active query failed, using loaded businesses:', e);
+        }
+        if (!rows.length) {
+            rows = (state.businesses || []).filter((b) => String(b.status || 'active').toLowerCase() !== 'deleted');
+        }
+        rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+        if (!rows.length) {
+            select.innerHTML = '<option value="">No businesses found</option>';
+            return;
+        }
+        select.innerHTML = '<option value="">Select business</option>' + rows.map((b) => {
+            const typeLabel = toBusinessTypeLabel(b.businessType);
+            const nameLabel = String(b.name || b.id);
+            return `<option value="${safe(b.id)}" data-btype="${safe(b.businessType || '')}">${safe(nameLabel)} (${safe(typeLabel)})</option>`;
+        }).join('');
+        const currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '';
+        if (currentBusinessId && rows.some((b) => b.id === currentBusinessId)) {
+            select.value = currentBusinessId;
+        }
+    }
+
+    async function loadUserBusinessSwitcherOptions() {
+        const select = $('targetUserBusinessSelect');
+        if (!select) return;
+        const rows = (state.businesses || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+        if (!rows.length) {
+            select.innerHTML = '<option value="">No businesses found</option>';
+            return;
+        }
+        select.innerHTML = '<option value="">Select business</option>' + rows.map((b) => {
+            const typeLabel = toBusinessTypeLabel(b.businessType);
+            const nameLabel = String(b.name || b.id);
+            return `<option value="${safe(b.id)}" data-btype="${safe(b.businessType || '')}">${safe(nameLabel)} (${safe(typeLabel)})</option>`;
+        }).join('');
+    }
+
+    async function switchTargetUserBusiness() {
+        if (!state.superAdmin) return toast('Only Super Admin can switch user business');
+        const email = String($('targetUserEmail')?.value || '').trim().toLowerCase();
+        const businessId = String($('targetUserBusinessSelect')?.value || '').trim();
+        if (!email) return toast('User email is required');
+        if (!businessId) return toast('Select a business');
+
+        const targetSnap = await db.collection('users').where('email', '==', email).limit(1).get();
+        if (targetSnap.empty) return toast('User not found for this email');
+        const targetDoc = targetSnap.docs[0];
+        const targetUid = targetDoc.id;
+        const biz = (state.businesses || []).find((b) => b.id === businessId) || {};
+        const businessType = String(biz.businessType || '');
+
+        await db.collection('users').doc(targetUid).set({
+            currentBusinessId: businessId,
+            businessId: businessId,
+            businessType: businessType || null,
+            updatedAt: new Date(),
+            updatedBy: state.user.uid
+        }, { merge: true });
+
+        await db.collection('business_overrides').doc(targetUid).set({
+            userId: targetUid,
+            email: email,
+            businessId: businessId,
+            businessType: businessType || null,
+            isActive: true,
+            updatedAt: new Date(),
+            updatedBy: state.user.uid
+        }, { merge: true });
+
+        toast(`Switched ${email} to ${businessId}`);
+    }
+
+    function switchBusinessFromSuperAdmin() {
+        if (!state.superAdmin) return toast('Only Super Admin can switch business');
+        const select = $('superBizSwitchSelect');
+        if (!select) return;
+        const businessId = String(select.value || '').trim();
+        if (!businessId) return toast('Select a business first');
+        const bType = String(select.options[select.selectedIndex]?.dataset?.btype || '').trim().toLowerCase();
+        localStorage.setItem('currentBusinessId', businessId);
+        sessionStorage.setItem('currentBusinessId', businessId);
+        const out = dashboardPathForBusinessType(bType);
+        window.location.href = out;
     }
 
     function renderAssignableUsers() {
@@ -372,6 +491,14 @@
         $('assignCreateBusinessName').oninput = updateAssignPreview;
         $('btnRefreshAll').onclick = async () => { await bootstrapData(); toast('Refreshed'); };
         $('btnTheme').onclick = () => document.documentElement.classList.toggle('light');
+        $('btnSuperBizSwitch').onclick = switchBusinessFromSuperAdmin;
+        $('btnSwitchUserBusiness').onclick = switchTargetUserBusiness;
+        $('superBizSwitchSelect').onchange = () => {
+            const bid = String($('superBizSwitchSelect').value || '').trim();
+            if (!bid) return;
+            localStorage.setItem('currentBusinessId', bid);
+            sessionStorage.setItem('currentBusinessId', bid);
+        };
         $('btnCloseModal').onclick = () => $('editModal').classList.remove('show');
         $('btnSaveModal').onclick = saveEditModal;
 
@@ -489,11 +616,15 @@
             state.user = user;
             const ok = await guardSuperAdmin(user);
             if (!ok) return;
+            const switchWrap = $('superBizSwitchWrap');
+            if (switchWrap) switchWrap.style.display = 'flex';
             const resetCard = $('passwordResetCard');
             if (resetCard) resetCard.style.display = state.superAdmin ? 'block' : 'none';
             bindUi();
             bindTableActions();
             await bootstrapData();
+            await loadSuperBusinessSwitcher();
+            await loadUserBusinessSwitcherOptions();
             setTab('users');
         });
     }

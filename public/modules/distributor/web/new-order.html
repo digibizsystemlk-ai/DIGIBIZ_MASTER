@@ -471,7 +471,10 @@
         function recalcCartLine(item) {
             var pr = products.find(function (x) { return x.id === item.productId; });
             var fifo = pr ? fifoBatchInfo(pr) : null;
-            var up = fifo ? fifo.sellingPrice : (pr ? (Number(pr.unitPrice) || 0) : (Number(item.unitPrice) || 0));
+            var existingUp = Number(item.unitPrice) || 0;
+            var up = isMwTradingBiz && existingUp > 0
+                ? existingUp
+                : (fifo ? fifo.sellingPrice : (pr ? (Number(pr.unitPrice) || 0) : existingUp));
             item.unitPrice = up;
             var rr = Math.max(0, parseInt(item.returnResellQty, 10) || 0);
             var rc = Math.max(0, parseInt(item.returnCompanyQty, 10) || 0);
@@ -1250,6 +1253,15 @@
 
             var ri = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
             userRole = String(ri && ri.role || '').toUpperCase();
+            try {
+                // Fallback: if business-membership role lookup fails, use users/{uid}.role.
+                if (!normalizeRole(userRole) || normalizeRole(userRole) === 'VIEWER') {
+                    var udoc = await db.collection('users').doc(user.uid).get();
+                    if (udoc.exists && udoc.data() && udoc.data().role) {
+                        userRole = String(udoc.data().role).toUpperCase();
+                    }
+                }
+            } catch (e0) { /* ignore */ }
             try {
                 var bu = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(user.uid).get();
                 if (bu.exists && bu.data().role) userRole = String(bu.data().role).toUpperCase();
