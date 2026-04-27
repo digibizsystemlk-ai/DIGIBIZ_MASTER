@@ -3,6 +3,7 @@
  * Deploy: cd functions && npm install && firebase deploy --only functions
  */
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 
@@ -10,6 +11,10 @@ admin.initializeApp({
     databaseURL: "https://digibiz-sys-default-rtdb.firebaseio.com/",
 });
 const db = admin.firestore();
+const SUPER_ADMIN_UIDS = (process.env.SUPER_ADMIN_UIDS || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 
 let rtdb = null;
 try {
@@ -237,3 +242,30 @@ exports.dailyInvestorPortfolioAccrualColombo = onSchedule(
         );
     }
 );
+
+exports.adminResetPassword = onCall(async (request) => {
+    if (!request.auth || !request.auth.uid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+    }
+    const callerUid = String(request.auth.uid || "");
+    if (!SUPER_ADMIN_UIDS.includes(callerUid)) {
+        throw new HttpsError("permission-denied", "Only Super Admin can reset passwords.");
+    }
+    const email = String((request.data && request.data.email) || "").trim().toLowerCase();
+    const newPassword = String((request.data && request.data.newPassword) || "");
+    if (!email) {
+        throw new HttpsError("invalid-argument", "Email is required.");
+    }
+    if (newPassword.length < 6) {
+        throw new HttpsError("invalid-argument", "Password must be at least 6 characters.");
+    }
+    const targetUser = await admin.auth().getUserByEmail(email).catch((e) => {
+        logger.error("adminResetPassword getUserByEmail failed", { email, error: e && e.message });
+        throw new HttpsError("not-found", "Target user not found.");
+    });
+    await admin.auth().updateUser(targetUser.uid, { password: newPassword }).catch((e) => {
+        logger.error("adminResetPassword updateUser failed", { uid: targetUser.uid, error: e && e.message });
+        throw new HttpsError("internal", "Password reset failed.");
+    });
+    return { success: true, message: "Password reset successful" };
+});

@@ -405,6 +405,62 @@
             await db.collection('system_health').doc('ping').set({ ts: new Date(), by: state.user.uid }, { merge: true });
             $('healthOutput').textContent = `Firestore write/read path healthy (${Date.now() - start}ms).`;
         };
+        const btnResetPassword = $('btnResetPassword');
+        if (btnResetPassword) btnResetPassword.onclick = resetUserPassword;
+    }
+
+    function setResetPasswordMessage(msg, isError = false) {
+        const el = $('resetPasswordMsg');
+        if (!el) return;
+        el.textContent = msg || '';
+        el.style.color = isError ? '#b91c1c' : '#065f46';
+    }
+
+    async function resetUserPassword() {
+        if (!state.superAdmin) {
+            setResetPasswordMessage('Unauthorized: only Super Admin can reset passwords.', true);
+            return;
+        }
+        const email = String($('resetEmail')?.value || '').trim();
+        const newPassword = String($('resetNewPassword')?.value || '');
+        const confirmPassword = String($('resetConfirmPassword')?.value || '');
+        if (!email) {
+            setResetPasswordMessage('Email is required.', true);
+            return;
+        }
+        if (newPassword.length < 6) {
+            setResetPasswordMessage('Password must be at least 6 characters.', true);
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            setResetPasswordMessage('Confirm password does not match.', true);
+            return;
+        }
+        const btn = $('btnResetPassword');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Resetting...';
+        }
+        setResetPasswordMessage('Processing password reset...');
+        try {
+            const resetPassword = firebase.functions().httpsCallable('adminResetPassword');
+            const res = await resetPassword({ email, newPassword });
+            const message = res?.data?.message || 'Password reset successful';
+            setResetPasswordMessage(message);
+            toast(message);
+            $('resetNewPassword').value = '';
+            $('resetConfirmPassword').value = '';
+        } catch (err) {
+            console.error(err);
+            const message = err?.message || 'Password reset failed';
+            setResetPasswordMessage(message, true);
+            toast(message);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Reset Password';
+            }
+        }
     }
 
     function exportJson(filename, data) {
@@ -433,6 +489,8 @@
             state.user = user;
             const ok = await guardSuperAdmin(user);
             if (!ok) return;
+            const resetCard = $('passwordResetCard');
+            if (resetCard) resetCard.style.display = state.superAdmin ? 'block' : 'none';
             bindUi();
             bindTableActions();
             await bootstrapData();
