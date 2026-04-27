@@ -193,6 +193,10 @@
                             <option value="CHEQUE">Cheque</option>
                         </select>
                     </div>
+                    <div class="row">
+                        <label for="orderDate">Order date</label>
+                        <input type="date" id="orderDate" class="form-control">
+                    </div>
                 </aside>
 
                 <section class="card lines-card oe-main">
@@ -1015,13 +1019,24 @@
             var totalAmount = activeLines.reduce(function (s, i) { return s + (Number(i.total) || 0); }, 0);
             var paymentMethod = document.getElementById('paymentMethod').value;
             var orderNumber = 'ORD-' + Date.now();
+            var businessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || currentBusinessId;
+            var isMwDateScoped = (
+                businessId === 'mw_trading_business_id' ||
+                businessId === 'MW_TRADING' ||
+                isMwTradingBiz === true
+            );
+            var orderDate = '';
+            if (isMwDateScoped) {
+                var orderDateInput = document.getElementById('orderDate');
+                orderDate = (orderDateInput && orderDateInput.value) || new Date().toISOString().split('T')[0];
+            }
             var orderData = {
                 businessId: currentBusinessId,
                 repId: repId,
                 repName: repName || '',
                 shopId: shopId,
                 orderNumber: orderNumber,
-                orderDate: new Date(),
+                orderDate: isMwDateScoped ? orderDate : new Date(),
                 status: 'pending',
                 items: activeLines.map(function (item) {
                     var pc = String(item.productCode || '').trim();
@@ -1051,7 +1066,7 @@
                 freeIssuesTotal: activeLines.reduce(function (sum, item) { return sum + (item.freeQty || 0); }, 0),
                 collectionAmount: 0,
                 paymentMethod: paymentMethod,
-                createdAt: new Date(),
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 createdVia: 'distributor_web_new_order_v4'
             };
             var btn = document.getElementById('submitBtn');
@@ -1124,6 +1139,10 @@
                 return;
             }
             setupMwNewOrderUiHints();
+            var orderDateEl = document.getElementById('orderDate');
+            if (orderDateEl && !orderDateEl.value) {
+                orderDateEl.value = new Date().toISOString().split('T')[0];
+            }
             await loadRepsIntoSelect();
             applyRepOnlyOrderHeader();
             await refreshMwShopNameDatalist();
