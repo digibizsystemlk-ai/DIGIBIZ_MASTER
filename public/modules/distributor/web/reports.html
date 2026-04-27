@@ -196,6 +196,8 @@
     <script>
         let currentBusinessId = null;
         let currentReport = 'sales';
+        const BDK_EMAIL = 'bdkariyapperuma@gmail.com';
+        let currentUserEmail = '';
         window.__digibizOrdersEnriched = [];
         window.__digibizPendingEnriched = [];
 
@@ -223,7 +225,8 @@
         function switchReport(report) {
             currentReport = report;
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelector(`.tab[data-report="${report}"]`).classList.add('active');
+            const tab = document.querySelector(`.tab[data-report="${report}"]`);
+            if (tab) tab.classList.add('active');
             loadReports();
         }
 
@@ -308,6 +311,8 @@
                 displayReturnsReport(filtered);
             } else if (currentReport === 'rep') {
                 displayRepPerformance(filtered);
+            } else if (currentReport === 'accounting') {
+                displayAccountingReport();
             }
         }
 
@@ -357,6 +362,10 @@
                         .where('businessId', '==', currentBusinessId)
                         .get();
                     displayStockByBrandReport(container, productsSnap);
+                    return;
+                }
+                if (currentReport === 'accounting') {
+                    await displayAccountingReport();
                     return;
                 }
 
@@ -772,8 +781,101 @@
             `;
         }
 
+        function parseDateKey(v) {
+            if (!v) return null;
+            if (typeof v.toDate === 'function') {
+                const d0 = v.toDate();
+                if (isNaN(d0.getTime())) return null;
+                return d0.toISOString().slice(0, 10);
+            }
+            const d = new Date(v);
+            if (isNaN(d.getTime())) return null;
+            return d.toISOString().slice(0, 10);
+        }
+
+        async function displayAccountingReport() {
+            const container = document.getElementById('reportContainer');
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const from = startDate ? new Date(startDate) : null;
+            const to = endDate ? new Date(endDate) : null;
+            if (from) from.setHours(0, 0, 0, 0);
+            if (to) to.setHours(23, 59, 59, 999);
+            container.innerHTML = '<div class="loading">Loading accounting report...</div>';
+            try {
+                const [supplierLedgerSnap, purchasesSnap] = await Promise.all([
+                    db.collection('supplier_ledger')
+                        .where('businessId', '==', currentBusinessId)
+                        .get(),
+                    db.collection('journal_entries')
+                        .where('businessId', '==', currentBusinessId)
+                        .where('account', '==', 'Purchases')
+                        .get()
+                ]);
+                const supplierOutstandingMap = {};
+                const purchaseRows = [];
+                supplierLedgerSnap.forEach((doc) => {
+                    const x = doc.data() || {};
+                    const dt = new Date(parseDateKey(x.date || x.createdAt) || '');
+                    if (from && dt < from) return;
+                    if (to && dt > to) return;
+                    const sname = String(x.supplierName || x.supplierId || 'Unknown');
+                    const amt = Number(x.amount) || 0;
+                    const sign = String(x.type || '').toLowerCase() === 'debit' ? -1 : 1;
+                    supplierOutstandingMap[sname] = (supplierOutstandingMap[sname] || 0) + (sign * amt);
+                });
+                purchasesSnap.forEach((doc) => {
+                    const x = doc.data() || {};
+                    const dtKey = parseDateKey(x.date || x.createdAt);
+                    const dt = dtKey ? new Date(dtKey) : null;
+                    if (from && dt && dt < from) return;
+                    if (to && dt && dt > to) return;
+                    purchaseRows.push({
+                        date: dtKey || '-',
+                        reference: x.reference || doc.id,
+                        amount: Number(x.amount) || 0
+                    });
+                });
+                purchaseRows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+                const supplierRows = Object.entries(supplierOutstandingMap).sort((a, b) => b[1] - a[1]);
+                const totalPurchases = purchaseRows.reduce((s, r) => s + r.amount, 0);
+                const totalOutstanding = supplierRows.reduce((s, r) => s + (Number(r[1]) || 0), 0);
+                container.innerHTML = `
+                    <div class="report-card">
+                        <div class="report-title">📒 Accounting Summary</div>
+                        <div style="display:grid;grid-template-columns:repeat(2, minmax(240px, 1fr));gap:16px;">
+                            <div><div style="font-size:12px;color:#6b7280;">Total Purchases</div><div style="font-size:26px;font-weight:700;color:#10b981;">Rs ${totalPurchases.toLocaleString()}</div></div>
+                            <div><div style="font-size:12px;color:#6b7280;">Supplier Outstanding</div><div style="font-size:26px;font-weight:700;">Rs ${totalOutstanding.toLocaleString()}</div></div>
+                        </div>
+                    </div>
+                    <div class="report-card">
+                        <div class="report-title">🏪 Supplier Outstanding Report</div>
+                        <table>
+                            <thead><tr><th>Supplier</th><th>Outstanding (Rs)</th></tr></thead>
+                            <tbody>
+                                ${supplierRows.map(([name, amount]) => `<tr><td>${escapeReportHtml(name)}</td><td>Rs ${(Number(amount) || 0).toLocaleString()}</td></tr>`).join('') || '<tr><td colspan="2">No supplier ledger rows in range</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="report-card">
+                        <div class="report-title">🧾 Purchase Ledger Report</div>
+                        <table>
+                            <thead><tr><th>Date</th><th>Reference</th><th>Amount (Rs)</th></tr></thead>
+                            <tbody>
+                                ${purchaseRows.map((r) => `<tr><td>${escapeReportHtml(r.date)}</td><td>${escapeReportHtml(r.reference)}</td><td>Rs ${r.amount.toLocaleString()}</td></tr>`).join('') || '<tr><td colspan="3">No purchase ledger rows in range</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } catch (e) {
+                console.error('Accounting report load failed', e);
+                container.innerHTML = '<div class="loading">Error loading accounting report</div>';
+            }
+        }
+
         firebase.auth().onAuthStateChanged(async (user) => {
             if (user) {
+                currentUserEmail = String(user.email || '').trim().toLowerCase();
                 currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
                 if (!currentBusinessId) {
                     const context = window.dashboardCore ? await window.dashboardCore.getContext(user) : null;
@@ -811,6 +913,24 @@
                 lastMonth.setMonth(lastMonth.getMonth() - 1);
                 document.getElementById('startDate').value = lastMonth.toISOString().split('T')[0];
                 document.getElementById('endDate').value = today.toISOString().split('T')[0];
+                if (currentUserEmail === BDK_EMAIL) {
+                    const tabHost = document.querySelector('.tabs');
+                    if (tabHost && !document.querySelector('.tab[data-report="accounting"]')) {
+                        const acc = document.createElement('div');
+                        acc.className = 'tab';
+                        acc.setAttribute('data-report', 'accounting');
+                        acc.textContent = '📒 Accounting';
+                        acc.onclick = function () { switchReport('accounting'); };
+                        tabHost.appendChild(acc);
+                    }
+                    try {
+                        const sp = new URLSearchParams(window.location.search);
+                        if ((sp.get('report') || '').toLowerCase() === 'accounting') currentReport = 'accounting';
+                    } catch (eQ) { /* ignore */ }
+                }
+                document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+                const activeTab = document.querySelector(`.tab[data-report="${currentReport}"]`);
+                if (activeTab) activeTab.classList.add('active');
                 
                 await loadReports();
             } else {

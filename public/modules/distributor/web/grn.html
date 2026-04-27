@@ -334,6 +334,72 @@
             outstandingBalance: next,
             updatedAt: new Date()
         }, { merge: true });
+        return { supplierId: hit.id, outstandingBalance: next };
+    }
+
+    async function upsertAccountBalance(accountName, delta, when) {
+        var id = String(accountName || '').trim();
+        if (!id) return;
+        var ref = db.collection('account_balances').doc(currentBusinessId + '__' + id.replace(/\s+/g, '_').toUpperCase());
+        await db.runTransaction(async function (tx) {
+            var snap = await tx.get(ref);
+            var cur = snap.exists ? (Number((snap.data() || {}).balance) || 0) : 0;
+            var next = cur + (Number(delta) || 0);
+            tx.set(ref, {
+                businessId: currentBusinessId,
+                account: id,
+                balance: next,
+                updatedAt: when || new Date()
+            }, { merge: true });
+        });
+    }
+
+    async function createAccountingEntries(grnId, grnDate, supplierName, supplierId, amount, qty, buyingPrice, productId, productName, when) {
+        var refText = 'GRN/' + String(grnId || '').trim();
+        var postingDate = grnDate || new Date().toISOString().slice(0, 10);
+        var now = when || new Date();
+        await Promise.all([
+            db.collection('supplier_ledger').add({
+                supplierId: supplierId || '',
+                supplierName: supplierName || '',
+                amount: Number(amount) || 0,
+                type: 'credit',
+                reference: refText,
+                date: postingDate,
+                businessId: currentBusinessId,
+                createdAt: now
+            }),
+            db.collection('journal_entries').add({
+                account: 'Purchases',
+                amount: Number(amount) || 0,
+                reference: refText,
+                date: postingDate,
+                businessId: currentBusinessId,
+                entryType: 'debit',
+                createdAt: now,
+                meta: {
+                    productId: productId || '',
+                    productName: productName || '',
+                    quantity: Number(qty) || 0,
+                    buyingPrice: Number(buyingPrice) || 0
+                }
+            }),
+            db.collection('journal_entries').add({
+                account: 'Inventory',
+                amount: Number(amount) || 0,
+                reference: refText,
+                date: postingDate,
+                businessId: currentBusinessId,
+                entryType: 'debit',
+                createdAt: now
+            })
+        ]);
+        await Promise.all([
+            upsertAccountBalance('Purchases', amount, now),
+            upsertAccountBalance('Inventory', amount, now),
+            upsertAccountBalance('SupplierOutstanding', amount, now),
+            upsertAccountBalance('StockValue', amount, now)
+        ]);
     }
 
     async function saveGrn() {
@@ -408,7 +474,21 @@
                 createdBy: currentUser ? currentUser.uid : ''
             });
 
-            await updateSupplierBalanceIfExists(supplierName, lineTotal);
+            var supplierUpdate = await updateSupplierBalanceIfExists(supplierName, lineTotal);
+            if (isBdkTenant()) {
+                await createAccountingEntries(
+                    grnDocRef.id,
+                    grnDate,
+                    supplierName,
+                    supplierUpdate && supplierUpdate.supplierId ? supplierUpdate.supplierId : '',
+                    lineTotal,
+                    receivedQty,
+                    buyingPrice,
+                    productId,
+                    productName,
+                    now
+                );
+            }
             showMsg('GRN saved. Product created/updated successfully.', 'ok');
             document.getElementById('currentStock').value = String(newStock);
             document.getElementById('receivedQty').value = '0';

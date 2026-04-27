@@ -141,6 +141,21 @@
         .commission-widget{
             background:#fff;border-radius:16px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:none;
         }
+        .accounting-widget{
+            background:#fff;border-radius:16px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:none;
+        }
+        .accounting-grid{
+            display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:10px;
+        }
+        .accounting-kpi{
+            border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#f9fafb;
+        }
+        .accounting-kpi .k{
+            font-size:12px;color:#6b7280;margin-bottom:4px;
+        }
+        .accounting-kpi .v{
+            font-size:20px;font-weight:700;color:#111827;
+        }
         .rep-summary-head {
             display: flex;
             justify-content: space-between;
@@ -393,6 +408,17 @@
             </div>
             <div id="commissionWidgetMeta" style="font-size:13px;color:#374151;"></div>
         </div>
+        <div class="accounting-widget" id="accountingSummaryWidget">
+            <div class="rep-summary-head">
+                <h3>📒 Accounting Summary</h3>
+                <a href="/modules/distributor/web/reports.html?report=accounting" class="btn btn-view" style="text-decoration:none;">Open Accounting Report</a>
+            </div>
+            <div class="accounting-grid">
+                <div class="accounting-kpi"><div class="k">Total Purchases</div><div class="v" id="accTotalPurchases">Rs 0.00</div></div>
+                <div class="accounting-kpi"><div class="k">Supplier Outstanding</div><div class="v" id="accSupplierOutstanding">Rs 0.00</div></div>
+                <div class="accounting-kpi"><div class="k">Stock Value</div><div class="v" id="accStockValue">Rs 0.00</div></div>
+            </div>
+        </div>
 
         <div class="tabs">
             <div class="tab active" data-status="pending" onclick="switchTab('pending')">⏳ Pending</div>
@@ -471,6 +497,7 @@
         let __ORDER_STATUS_ROLE__ = '';
         let __REP_DOC_ID__ = null;
         let adminEditState = { collection: '', id: '', order: null };
+        const BDK_EMAIL = 'bdkariyapperuma@gmail.com';
 
         function isRepOrderView() {
             return normalizeRole(__ORDER_STATUS_ROLE__) === 'REP';
@@ -1036,6 +1063,43 @@ ${meta}
                 
             } catch (error) {
                 console.error('Error loading stats:', error);
+            }
+        }
+
+        function formatWidgetMoney(n) {
+            const v = Number(n) || 0;
+            return 'Rs ' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        async function loadAccountingSummaryWidget() {
+            const card = document.getElementById('accountingSummaryWidget');
+            if (!card) return;
+            const email = String((currentUser && currentUser.email) || '').trim().toLowerCase();
+            if (email !== BDK_EMAIL) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            try {
+                const balancesSnap = await db.collection('account_balances')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                let purchases = 0;
+                let supplierOutstanding = 0;
+                let stockValue = 0;
+                balancesSnap.forEach((doc) => {
+                    const x = doc.data() || {};
+                    const account = String(x.account || '').toLowerCase();
+                    const bal = Number(x.balance) || 0;
+                    if (account === 'purchases') purchases = bal;
+                    if (account === 'supplieroutstanding') supplierOutstanding = bal;
+                    if (account === 'stockvalue' || account === 'inventory') stockValue = bal;
+                });
+                document.getElementById('accTotalPurchases').textContent = formatWidgetMoney(purchases);
+                document.getElementById('accSupplierOutstanding').textContent = formatWidgetMoney(supplierOutstanding);
+                document.getElementById('accStockValue').textContent = formatWidgetMoney(stockValue);
+            } catch (e) {
+                console.warn('Accounting summary load failed', e);
             }
         }
 
@@ -2014,6 +2078,7 @@ ${meta}
                 await loadRepSummary();
                 await loadUpcomingChequesWidget();
                 await loadCommissionWidget();
+                await loadAccountingSummaryWidget();
                 document.getElementById('repFilter').addEventListener('change', renderRepSummaryTable);
                 const hs = document.getElementById('chequeHorizonSelect');
                 if (hs) hs.addEventListener('change', renderChequeWidget);
