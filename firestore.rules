@@ -586,6 +586,77 @@ service cloud.firestore {
         isOwnerClassInBusiness(request.resource.data.businessId);
     }
 
+    match /cheques/{chequeId} {
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isDistributorOpsInBusiness(resource.data.businessId);
+
+      allow create: if signedIn() &&
+        request.resource.data.businessId is string &&
+        isDistributorOpsInBusiness(request.resource.data.businessId) &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        request.resource.data.issueDate is timestamp &&
+        request.resource.data.depositDueDate is timestamp &&
+        request.resource.data.depositDueDate >= request.resource.data.issueDate &&
+        request.resource.data.status in ['pending_deposit', 'deposited', 'cleared', 'bounced'] &&
+        (
+          request.resource.data.status != 'bounced' ||
+          (request.resource.data.bounceReason is string && request.resource.data.bounceReason.size() > 0)
+        );
+
+      allow update: if signedIn() &&
+        resource.data.businessId is string &&
+        request.resource.data.businessId == resource.data.businessId &&
+        isDistributorOpsInBusiness(resource.data.businessId) &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        request.resource.data.issueDate is timestamp &&
+        request.resource.data.depositDueDate is timestamp &&
+        request.resource.data.depositDueDate >= request.resource.data.issueDate &&
+        request.resource.data.status in ['pending_deposit', 'deposited', 'cleared', 'bounced'] &&
+        (
+          request.resource.data.status != 'bounced' ||
+          (request.resource.data.bounceReason is string && request.resource.data.bounceReason.size() > 0)
+        ) &&
+        (
+          (resource.data.status == 'pending_deposit' && request.resource.data.status in ['pending_deposit', 'deposited', 'bounced']) ||
+          (resource.data.status == 'deposited' && request.resource.data.status in ['deposited', 'cleared']) ||
+          (resource.data.status == 'cleared' && request.resource.data.status == 'cleared') ||
+          (resource.data.status == 'bounced' && request.resource.data.status in ['bounced', 'pending_deposit'])
+        ) &&
+        (
+          request.resource.data.isActive == true ||
+          (request.resource.data.isActive == false && resource.data.status != 'cleared')
+        );
+
+      allow delete: if false;
+    }
+
+    match /commissionConfig/{configId} {
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isDistributorOpsInBusiness(resource.data.businessId);
+      allow create, update: if signedIn() &&
+        request.resource.data.businessId is string &&
+        isOwnerClassInBusiness(request.resource.data.businessId) &&
+        request.resource.data.repId is string &&
+        request.resource.data.commissionType in ['percentage', 'tiered'];
+      allow delete: if signedIn() &&
+        resource.data.businessId is string &&
+        isOwnerClassInBusiness(resource.data.businessId);
+    }
+
+    match /commissionTransactions/{txId} {
+      allow read: if signedIn() &&
+        resource.data.businessId is string &&
+        isDistributorOpsInBusiness(resource.data.businessId);
+      allow create, update: if signedIn() &&
+        request.resource.data.businessId is string &&
+        isDistributorOpsInBusiness(request.resource.data.businessId);
+      allow delete: if false;
+    }
+
     // ----- Web loan modules (journal entries + SMS from loan pages) -----
     match /hand_loans/{loanId} {
       allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);

@@ -550,6 +550,10 @@ class Sidebar {
             { icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
             { icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
             { icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
+            { icon: '🏦', name: 'Cheques', link: '/modules/distributor/web/cheques.html' },
+            { icon: '📉', name: 'Credit Aging', link: '/modules/distributor/web/credit-aging.html' },
+            { icon: '⚙️', name: 'Commission Config', link: '/modules/distributor/web/commission-config.html' },
+            { icon: '💸', name: 'Rep Commission', link: '/modules/distributor/web/rep-commission-report.html' },
             { icon: '📈', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' }
         ];
     }

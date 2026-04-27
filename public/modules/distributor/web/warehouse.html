@@ -12,6 +12,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/core/firebase-init.js?v=30"></script>
     <script src="/core/distributor-inventory.js?v=30"></script>
+    <script src="/core/distributor-lorry-stock.js?v=1"></script>
     <script src="/core/event-validation.js?v=2"></script>
     <script src="/core/event-bus.js?v=2"></script>
     <script src="/core/accounts-core.js?v=2"></script>
@@ -257,6 +258,7 @@
         let currentPickingOrder = null;
         let pickedItems = [];
         let __WAREHOUSE_MW_ROLE__=''; // SALES_COORDINATOR / AREA_MANAGER / etc.
+        let __LORRY_PILOT_ENABLED__ = false;
 
         function normalizeRole(r){
             return String(r || '')
@@ -521,6 +523,125 @@
             loadStats();
         }
 
+        function canUseLorryPilot() {
+            const user = firebase.auth().currentUser;
+            if (!user || !window.DigiBizDistributorLorryStock) return false;
+            return window.DigiBizDistributorLorryStock.activeForSession(user.email, currentBusinessId);
+        }
+
+        async function ensureDefaultLorries() {
+            const cfg = window.DigiBizDistributorLorryStock;
+            if (!cfg || !currentBusinessId) return;
+            const col = db.collection(cfg.COLLECTIONS.LORRIES);
+            const snap = await col.where('businessId', '==', currentBusinessId).limit(1).get();
+            if (!snap.empty) return;
+            const now = new Date();
+            const defaults = [
+                { lorryCode: 'LORRY-01', name: 'Lorry 1' },
+                { lorryCode: 'LORRY-02', name: 'Lorry 2' },
+                { lorryCode: 'LORRY-03', name: 'Lorry 3' }
+            ];
+            const batch = db.batch();
+            defaults.forEach((x) => {
+                const ref = col.doc();
+                batch.set(ref, {
+                    businessId: currentBusinessId,
+                    lorryCode: x.lorryCode,
+                    name: x.name,
+                    isActive: true,
+                    repId: '',
+                    repName: '',
+                    createdAt: now,
+                    createdBy: firebase.auth().currentUser?.uid || ''
+                }, { merge: true });
+            });
+            await batch.commit();
+        }
+
+        async function transferMainToLorry() {
+            if(!canFinalizeStockAdjustments()){
+                alert('Stock transfer is restricted to Area Manager / Account Owner.');
+                return;
+            }
+            if (!canUseLorryPilot()) {
+                alert('Lorry stock transfer is enabled only for the configured distribution pilot business.');
+                return;
+            }
+            const cfg = window.DigiBizDistributorLorryStock;
+            const inv = window.DigiBizDistributorInventory;
+            const lorryId = document.getElementById('transferLorryId').value;
+            const productId = document.getElementById('transferProductId').value;
+            const qty = cfg.normalizeQty(document.getElementById('transferQty').value);
+            const note = String(document.getElementById('transferNote').value || '').trim();
+            if (!lorryId || !productId) {
+                alert('Please select lorry and product.');
+                return;
+            }
+            if (!qty || qty < 1) {
+                alert('Please enter a valid quantity.');
+                return;
+            }
+            const user = firebase.auth().currentUser;
+            const productRef = db.collection('products').doc(productId);
+            const lorryStockRef = db.collection(cfg.COLLECTIONS.LORRY_STOCK).doc(cfg.lorryStockDocId(currentBusinessId, lorryId, productId));
+            const lorryRef = db.collection(cfg.COLLECTIONS.LORRIES).doc(lorryId);
+            await db.runTransaction(async (tx) => {
+                const [productSnap, lorrySnap, lorryStockSnap] = await Promise.all([
+                    tx.get(productRef),
+                    tx.get(lorryRef),
+                    tx.get(lorryStockRef)
+                ]);
+                if (!productSnap.exists) throw new Error('Product not found.');
+                if (!lorrySnap.exists) throw new Error('Lorry not found.');
+                const product = productSnap.data() || {};
+                const lorry = lorrySnap.data() || {};
+                const mainStock = inv.numericStock(product);
+                if (mainStock < qty) {
+                    throw new Error('Not enough main stock. Available: ' + mainStock);
+                }
+                const nextMain = mainStock - qty;
+                const currentLorryQty = Number((lorryStockSnap.exists ? lorryStockSnap.data().qty : 0) || 0);
+                const nextLorryQty = currentLorryQty + qty;
+                tx.update(productRef, {
+                    ...inv.syncStockPayload(nextMain),
+                    lastStockUpdate: new Date(),
+                    lastStockNote: '[MAIN_TO_LORRY] ' + note
+                });
+                tx.set(lorryStockRef, {
+                    businessId: currentBusinessId,
+                    lorryId: lorryId,
+                    lorryCode: lorry.lorryCode || '',
+                    lorryName: lorry.name || '',
+                    productId: productId,
+                    productName: product.name || '',
+                    qty: nextLorryQty,
+                    minStockLevel: Number(product.minStockLevel || 10),
+                    updatedAt: new Date(),
+                    updatedBy: user?.uid || ''
+                }, { merge: true });
+                tx.set(db.collection(cfg.COLLECTIONS.STOCK_TRANSFERS).doc(), {
+                    businessId: currentBusinessId,
+                    transferType: 'MAIN_TO_LORRY',
+                    fromStock: 'MAIN',
+                    toLorryId: lorryId,
+                    toLorryCode: lorry.lorryCode || '',
+                    productId: productId,
+                    productName: product.name || '',
+                    qty: qty,
+                    note: note,
+                    performedBy: user?.uid || '',
+                    performedAt: new Date(),
+                    oldMainStock: mainStock,
+                    newMainStock: nextMain,
+                    oldLorryStock: currentLorryQty,
+                    newLorryStock: nextLorryQty
+                });
+            });
+            alert('✅ Stock transferred to lorry.');
+            await loadStockPage();
+            loadStats();
+        }
+
         async function loadStockPage() {
             const container = document.getElementById('ordersContainer');
             
@@ -550,7 +671,46 @@
                 return `<option value="${doc.id}">${nm}</option>`;
             }).join('');
 
+            let lorryTransferCard = '';
+            if (__LORRY_PILOT_ENABLED__) {
+                await ensureDefaultLorries();
+                const lorrySnap = await db.collection(window.DigiBizDistributorLorryStock.COLLECTIONS.LORRIES)
+                    .where('businessId', '==', currentBusinessId)
+                    .where('isActive', '==', true)
+                    .get();
+                const lorryOpts = lorrySnap.docs.map((d) => {
+                    const l = d.data() || {};
+                    const label = (l.lorryCode || d.id) + (l.name ? ' - ' + l.name : '');
+                    return `<option value="${d.id}">${label}</option>`;
+                }).join('');
+                lorryTransferCard = `
+                <div style="background:white;border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);border:1px solid #d1fae5;">
+                    <h3 style="margin-bottom:12px;font-size:16px;">🚚 Main → Lorry stock transfer</h3>
+                    <p style="font-size:12px;color:#6b7280;margin-bottom:12px;">Pilot data model: <code>lorries</code>, <code>lorryStock</code>, <code>stockTransfers</code>. This section is enabled only for the configured distribution pilot business.</p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end;">
+                        <div>
+                            <label style="font-size:12px;">Lorry</label>
+                            <select id="transferLorryId" style="width:100%;padding:8px;border-radius:8px;border:1px solid #e5e7eb;">${lorryOpts || '<option value="">No active lorries</option>'}</select>
+                        </div>
+                        <div>
+                            <label style="font-size:12px;">Product</label>
+                            <select id="transferProductId" style="width:100%;padding:8px;border-radius:8px;border:1px solid #e5e7eb;">${productOpts}</select>
+                        </div>
+                        <div>
+                            <label style="font-size:12px;">Transfer quantity</label>
+                            <input type="number" min="1" id="transferQty" value="1" style="width:100%;padding:8px;border-radius:8px;border:1px solid #e5e7eb;">
+                        </div>
+                        <div>
+                            <label style="font-size:12px;">Note / reference</label>
+                            <input type="text" id="transferNote" placeholder="e.g. Morning load" style="width:100%;padding:8px;border-radius:8px;border:1px solid #e5e7eb;">
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-primary" style="margin-top:12px;" onclick="transferMainToLorry()">Transfer to lorry</button>
+                </div>`;
+            }
+
             container.innerHTML = `
+                ${lorryTransferCard}
                 <div style="background:white;border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
                     <h3 style="margin-bottom:12px;font-size:16px;">📥 Record stock movement</h3>
                     <p style="font-size:12px;color:#6b7280;margin-bottom:12px;">Current stock model: <strong>(Initial + GRN + Cat 2 returns)</strong> − <strong>(sales from orders + Cat 1 returns)</strong>, plus warehouse entries for replacement in/out. Order approvals apply sales and return splits automatically.</p>
@@ -711,6 +871,7 @@
                     __WAREHOUSE_MW_ROLE__ = '';
                 }
 
+                __LORRY_PILOT_ENABLED__ = canUseLorryPilot();
                 await loadStats();
                 await loadOrders();
             } else {

@@ -34,6 +34,7 @@
     <script src="/core/dashboard-core.js?v=46"></script>
     <script src="/core/subscription-manager.js?v=2"></script>
     <script src="/core/distributor-inventory.js?v=46"></script>
+    <script src="/core/distributor-lorry-stock.js?v=1"></script>
     <script src="/core/mw-trading-dsl-config.js?v=46"></script>
     <script src="/core/sidebar.js?v=49"></script>
     <style>
@@ -90,6 +91,20 @@
             margin-bottom: 20px;
             flex-wrap: wrap;
         }
+        .order-filters {
+            margin-bottom: 12px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .order-filters select {
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 12px;
+            background: #fff;
+        }
         .tab {
             padding: 8px 20px;
             border-radius: 20px;
@@ -113,6 +128,18 @@
             padding: 16px;
             margin-bottom: 20px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .cheque-widget {
+            background: #fff;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: none;
+        }
+        .cheque-widget table { min-width: 100%; }
+        .commission-widget{
+            background:#fff;border-radius:16px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:none;
         }
         .rep-summary-head {
             display: flex;
@@ -340,6 +367,32 @@
                 </tbody>
             </table>
         </div>
+        <div class="cheque-widget" id="chequeWidget">
+            <div class="rep-summary-head">
+                <h3>🏦 Upcoming Cheques to Deposit</h3>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <a href="/modules/distributor/web/credit-aging.html" class="btn btn-reject" style="text-decoration:none;">View Aging Report</a>
+                    <select id="chequeHorizonSelect" class="rep-filter">
+                        <option value="7">Next 7 days</option>
+                        <option value="14">Next 14 days</option>
+                        <option value="30">Next 30 days</option>
+                    </select>
+                </div>
+            </div>
+            <div id="chequeWidgetMeta" style="margin-bottom:8px;font-size:12px;color:#374151;"></div>
+            <div id="creditOverLimitAlert" style="display:none;margin-bottom:8px;padding:8px 10px;border-radius:8px;background:#fee2e2;color:#991b1b;font-size:12px;font-weight:700;"></div>
+            <table class="rep-table">
+                <thead><tr><th>Customer</th><th>Amount</th><th>Due date</th><th>Days left</th></tr></thead>
+                <tbody id="chequeWidgetRows"><tr><td colspan="4" class="loading">Loading cheques...</td></tr></tbody>
+            </table>
+        </div>
+        <div class="commission-widget" id="commissionWidget">
+            <div class="rep-summary-head">
+                <h3>💸 Commission Overview</h3>
+                <a href="/modules/distributor/web/rep-commission-report.html" class="btn btn-dispatch" style="text-decoration:none;">Open Commission Report</a>
+            </div>
+            <div id="commissionWidgetMeta" style="font-size:13px;color:#374151;"></div>
+        </div>
 
         <div class="tabs">
             <div class="tab active" data-status="pending" onclick="switchTab('pending')">⏳ Pending</div>
@@ -348,6 +401,12 @@
             <div class="tab" data-status="dispatched" onclick="switchTab('dispatched')">🚚 Dispatched</div>
             <div class="tab" data-status="delivered" onclick="switchTab('delivered')">📬 Delivered</div>
             <div class="tab" data-status="all" onclick="switchTab('all')">📋 All</div>
+        </div>
+        <div class="order-filters" id="lorryFilterWrap" style="display:none;">
+            <label for="lorryFilterSelect" style="font-size:12px;color:#4b5563;">Filter by lorry</label>
+            <select id="lorryFilterSelect">
+                <option value="ALL">All Lorries</option>
+            </select>
         </div>
         <script>
             (function () {
@@ -369,6 +428,7 @@
                         <th>Date</th>
                         <th>Rep</th>
                         <th>Shop</th>
+                        <th>Lorry</th>
                         <th>Brands</th>
                         <th>Items</th>
                         <th>Amount</th>
@@ -377,7 +437,7 @@
                     </tr>
                 </thead>
                 <tbody id="ordersList">
-                    <tr><td colspan="9" class="loading">Loading orders...</td></tr>
+                    <tr><td colspan="10" class="loading">Loading orders...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -678,10 +738,15 @@
         const urlTabParam = (typeof URLSearchParams !== 'undefined')
             ? new URLSearchParams(window.location.search).get('tab')
             : null;
+        const urlLorryParam = (typeof URLSearchParams !== 'undefined')
+            ? (new URLSearchParams(window.location.search).get('lorry') || 'ALL')
+            : 'ALL';
         let currentStatus = ORDER_TABS.includes(urlTabParam)
             ? urlTabParam
             : 'pending';
+        let currentLorryFilter = String(urlLorryParam || 'ALL');
         let allOrders = [];
+        let chequeRows = [];
         let repSummaryRows = [];
         let currentBusinessName = '';
         let currentBusinessData = null;
@@ -691,6 +756,8 @@
         let pendingOrdersUnsub = null;
         let businessWatchdogTimer = null;
         let lastSeenBusinessId = '';
+        let __CHEQUE_PILOT_ENABLED__ = false;
+        let commissionRows = [];
 
         function escapeBillHtml(s) {
             return String(s ?? '')
@@ -972,6 +1039,207 @@ ${meta}
             }
         }
 
+        function msToDaysLeft(ms) {
+            const now = new Date(); now.setHours(0,0,0,0);
+            return Math.ceil((ms - now.getTime()) / 86400000);
+        }
+
+        function renderChequeWidget() {
+            const body = document.getElementById('chequeWidgetRows');
+            const meta = document.getElementById('chequeWidgetMeta');
+            if (!body) return;
+            const horizon = Number(document.getElementById('chequeHorizonSelect')?.value || 7);
+            const now = new Date(); now.setHours(0,0,0,0);
+            const end = now.getTime() + horizon * 86400000;
+            const pendingTotal = (chequeRows || [])
+                .filter((r) => String(r.status || '') === 'pending_deposit' && r.isActive !== false)
+                .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+            if (meta) meta.textContent = 'Total Pending Cheques Amount: Rs ' + pendingTotal.toLocaleString();
+            const rows = (chequeRows || [])
+                .filter((r) => String(r.status || '') === 'pending_deposit' && r.isActive !== false)
+                .filter((r) => {
+                    const due = r.depositDueDate?.toMillis ? r.depositDueDate.toMillis() : 0;
+                    return due >= now.getTime() && due <= end;
+                })
+                .sort((a,b)=> (a.depositDueDate?.toMillis?.()||0) - (b.depositDueDate?.toMillis?.()||0));
+            if (!rows.length) {
+                body.innerHTML = '<tr><td colspan="4" class="loading">No upcoming cheques</td></tr>';
+                return;
+            }
+            body.innerHTML = rows.map((r) => {
+                const dueMs = r.depositDueDate?.toMillis ? r.depositDueDate.toMillis() : 0;
+                const dueDate = dueMs ? new Date(dueMs).toLocaleDateString() : '-';
+                const left = dueMs ? msToDaysLeft(dueMs) : '-';
+                return `<tr style="cursor:pointer;" onclick="window.location.href='/modules/distributor/web/cheques.html'">
+                    <td>${r.customerName || r.customerId || '-'}</td>
+                    <td>Rs ${(Number(r.amount)||0).toLocaleString()}</td>
+                    <td>${dueDate}</td>
+                    <td>${left}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function extractOutstanding(order) {
+            const total = Number(order.totalAmount || order.subtotal || 0) || 0;
+            const paid = Number(order.collectionAmount || order.collectedAmount || 0) || 0;
+            const explicit = Number(order.outstandingBalance);
+            const out = Number.isFinite(explicit) ? explicit : (total - paid);
+            return Math.max(0, out);
+        }
+
+        async function loadCreditOverLimitAlert() {
+            const box = document.getElementById('creditOverLimitAlert');
+            if (!box || !__CHEQUE_PILOT_ENABLED__) {
+                if (box) box.style.display = 'none';
+                return;
+            }
+            try {
+                const [shopsSnap, ordersSnap] = await Promise.all([
+                    db.collection('shops').where('businessId', '==', currentBusinessId).get(),
+                    db.collection('orders').where('businessId', '==', currentBusinessId).get()
+                ]);
+                const shops = {};
+                shopsSnap.docs.forEach((d) => {
+                    const x = d.data() || {};
+                    shops[d.id] = { creditLimit: Number(x.creditLimit || 0) || 0, name: x.name || d.id };
+                });
+                const outstandingByShop = {};
+                ordersSnap.docs.forEach((d) => {
+                    const o = d.data() || {};
+                    const sid = String(o.shopId || '').trim();
+                    if (!sid) return;
+                    const out = extractOutstanding(o);
+                    if (out <= 0) return;
+                    outstandingByShop[sid] = (outstandingByShop[sid] || 0) + out;
+                });
+                const overRows = Object.keys(outstandingByShop).filter((sid) => {
+                    const lim = Number((shops[sid] && shops[sid].creditLimit) || 0);
+                    return lim > 0 && outstandingByShop[sid] > lim;
+                });
+                if (!overRows.length) {
+                    box.style.display = 'none';
+                    box.textContent = '';
+                    return;
+                }
+                box.style.display = 'block';
+                box.textContent = 'Overdue Credit Alert: ' + overRows.length + ' customer(s) exceed credit limit.';
+            } catch (e) {
+                console.warn('Credit over-limit alert load failed', e);
+                box.style.display = 'none';
+            }
+        }
+
+        async function loadUpcomingChequesWidget() {
+            const card = document.getElementById('chequeWidget');
+            if (!card) return;
+            if (!__CHEQUE_PILOT_ENABLED__) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            try {
+                const snap = await db.collection('cheques')
+                    .where('businessId', '==', currentBusinessId)
+                    .where('isActive', '==', true)
+                    .get();
+                chequeRows = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+                renderChequeWidget();
+                await loadCreditOverLimitAlert();
+            } catch (e) {
+                console.error('Cheque widget load failed', e);
+                const body = document.getElementById('chequeWidgetRows');
+                if (body) body.innerHTML = '<tr><td colspan="4" class="loading">Could not load cheques</td></tr>';
+            }
+        }
+
+        function startOfMonthTs() {
+            const d = new Date();
+            d.setDate(1);
+            d.setHours(0,0,0,0);
+            return d.getTime();
+        }
+
+        async function loadCommissionWidget() {
+            const card = document.getElementById('commissionWidget');
+            const meta = document.getElementById('commissionWidgetMeta');
+            if (!card || !meta) return;
+            if (!__CHEQUE_PILOT_ENABLED__) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            try {
+                const snap = await db.collection('commissionTransactions')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                commissionRows = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+                const monthStart = startOfMonthTs();
+                const monthRows = commissionRows.filter((r) => {
+                    const ms = r.calculatedAt?.toMillis ? r.calculatedAt.toMillis() : 0;
+                    return ms >= monthStart;
+                });
+                const byRep = {};
+                monthRows.forEach((r) => {
+                    const k = r.repId || 'UNASSIGNED';
+                    if (!byRep[k]) byRep[k] = { repName: r.repName || k, total: 0 };
+                    byRep[k].total += Number(r.commissionAmount || 0);
+                });
+                const top = Object.values(byRep).sort((a,b)=>b.total-a.total)[0] || null;
+                const pending = commissionRows
+                    .filter((r) => String(r.status || 'pending') !== 'paid')
+                    .reduce((sum, r) => sum + (Number(r.commissionAmount) || 0), 0);
+                const topText = top ? (top.repName + ' (Rs ' + Number(top.total || 0).toLocaleString() + ')') : 'No commission yet';
+                meta.textContent = 'Top Rep by Commission (current month): ' + topText + ' | Total commission pending to pay: Rs ' + pending.toLocaleString();
+            } catch (e) {
+                meta.textContent = 'Could not load commission data.';
+            }
+        }
+
+        async function resolveCommissionRateForOrder(order) {
+            const repId = String(order && order.repId || '').trim();
+            if (!repId) return { rate: 0, amount: 0 };
+            const total = Number(order.totalAmount || order.subtotal || 0) || 0;
+            const cfgDoc = await db.collection('commissionConfig').doc(repId).get();
+            if (!cfgDoc.exists) return { rate: 0, amount: 0 };
+            const cfg = cfgDoc.data() || {};
+            if (cfg.commissionType === 'tiered') {
+                const tiers = Array.isArray(cfg.tiers) ? cfg.tiers.slice().sort((a,b)=>Number(a.threshold||0)-Number(b.threshold||0)) : [];
+                let rate = 0;
+                for (let i = 0; i < tiers.length; i++) {
+                    if (total >= Number(tiers[i].threshold || 0)) rate = Number(tiers[i].rate || 0);
+                }
+                return { rate, amount: (total * rate / 100) };
+            }
+            const rate = Number(cfg.percentageValue || 0);
+            return { rate, amount: (total * rate / 100) };
+        }
+
+        async function upsertCommissionForOrder(orderId, order) {
+            if (!__CHEQUE_PILOT_ENABLED__) return;
+            if (!order || !order.repId) return;
+            const calc = await resolveCommissionRateForOrder(order);
+            const amount = Number(calc.amount || 0);
+            const rate = Number(calc.rate || 0);
+            const orderRef = db.collection('orders').doc(orderId);
+            await orderRef.set({
+                commissionAmount: amount,
+                commissionRate: rate,
+                commissionCalculatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            const txId = String(orderId) + '__' + String(order.repId);
+            await db.collection('commissionTransactions').doc(txId).set({
+                businessId: currentBusinessId,
+                orderId: orderId,
+                repId: order.repId,
+                repName: order.repName || '',
+                orderTotal: Number(order.totalAmount || 0),
+                commissionRate: rate,
+                commissionAmount: amount,
+                calculatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                status: 'pending'
+            }, { merge: true });
+        }
+
         function orderDateMs(order) {
             if (!order) return 0;
             const od = order.orderDate;
@@ -1059,12 +1327,42 @@ ${meta}
                     ? orders.filter((o) => orderVisibleForCurrentRole(o))
                     : orders;
                 allOrders = await attachMwFreeIssuesAndReturns(allOrders);
+                populateLorryFilter(allOrders);
                 displayOrders();
                 
             } catch (error) {
                 console.error('Error loading orders:', error);
-                document.getElementById('ordersList').innerHTML = '<tr><td colspan="9" class="loading">Error loading orders</td></tr>';
+                document.getElementById('ordersList').innerHTML = '<tr><td colspan="10" class="loading">Error loading orders</td></tr>';
             }
+        }
+
+        function getLorryLabel(order) {
+            const id = String(order && order.lorryId || '').trim();
+            if (!id) return '—';
+            return id;
+        }
+
+        function populateLorryFilter(rows) {
+            const sel = document.getElementById('lorryFilterSelect');
+            const wrap = document.getElementById('lorryFilterWrap');
+            const enabled = !!(window.DigiBizDistributorLorryStock
+                && currentUser
+                && window.DigiBizDistributorLorryStock.activeForSession(currentUser.email, currentBusinessId));
+            if (!sel || !wrap || !enabled) {
+                if (wrap) wrap.style.display = 'none';
+                currentLorryFilter = 'ALL';
+                return;
+            }
+            const set = new Set();
+            (rows || []).forEach((o) => {
+                const lid = String(o.lorryId || '').trim();
+                if (lid) set.add(lid);
+            });
+            const options = Array.from(set).sort().map((id) => `<option value="${id}">${id}</option>`).join('');
+            sel.innerHTML = '<option value="ALL">All Lorries</option>' + options;
+            if (!set.has(currentLorryFilter)) currentLorryFilter = 'ALL';
+            sel.value = currentLorryFilter;
+            wrap.style.display = 'flex';
         }
 
         function renderRepSummaryTable() {
@@ -1119,13 +1417,17 @@ ${meta}
 
         function displayOrders() {
             const tbody = document.getElementById('ordersList');
-            
-            if (allOrders.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="loading">No orders found</td></tr>';
+            const visible = allOrders.filter((o) => {
+                if (currentLorryFilter === 'ALL') return true;
+                return String(o.lorryId || '').trim() === String(currentLorryFilter || '').trim();
+            });
+
+            if (visible.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" class="loading">No orders found</td></tr>';
                 return;
             }
-            
-            tbody.innerHTML = allOrders.map(order => {
+
+            tbody.innerHTML = visible.map(order => {
                 const itemCount = order.items?.reduce((sum, i) => sum + (i.orderedQty || 0) + (i.freeQty || 0), 0) || 0;
                 const mwLine = isMwTradingBusiness()
                     ? `<div style="font-size:11px;color:#475569;margin-top:2px;">Free: ${Number(order.mwFreeIssuesQty || 0)} | Returns: ${Number(order.mwReturnsQty || 0)}</div>`
@@ -1137,6 +1439,7 @@ ${meta}
                         <td>${order.orderDate?.toDate ? new Date(order.orderDate.toDate()).toLocaleDateString() : '-'}</td>
                         <td>${order.repName}</td>
                         <td>${order.shopName}</td>
+                        <td>${getLorryLabel(order)}</td>
                         <td style="max-width:180px;font-size:12px;color:#475569;">${brands}</td>
                         <td>${itemCount} items${mwLine}</td>
                         <td>Rs ${(order.totalAmount || 0).toLocaleString()}</td>
@@ -1271,7 +1574,9 @@ ${meta}
                 const order = allOrders.find(o => o.id === orderId);
                 if (!order) return;
                 const pendingRef = db.collection('pendingOrders').doc(orderId);
-                await adjustInventoryForApprovedOrder(order);
+                if (!order.lorryId) {
+                    await adjustInventoryForApprovedOrder(order);
+                }
                 const approvedPayload = {
                     ...order,
                     status: 'approved',
@@ -1280,6 +1585,7 @@ ${meta}
                     source: 'pendingOrders'
                 };
                 await db.collection('orders').doc(orderId).set(approvedPayload);
+                await upsertCommissionForOrder(orderId, approvedPayload);
                 await pendingRef.delete();
                 if (window.eventBus && order) {
                     window.eventBus.publish('DISTRIBUTOR_ORDER_APPROVED', {
@@ -1384,6 +1690,13 @@ ${meta}
                     status: 'delivered',
                     deliveredAt: new Date()
                 });
+                const od = await db.collection('orders').doc(orderId).get();
+                if (od.exists) {
+                    const ox = od.data() || {};
+                    if (!(Number(ox.commissionAmount || 0) > 0) || !(Number(ox.commissionRate || 0) > 0)) {
+                        await upsertCommissionForOrder(orderId, ox);
+                    }
+                }
                 alert('Marked as delivered.');
                 loadStats();
                 loadOrders();
@@ -1448,6 +1761,7 @@ ${meta}
             modalBody.innerHTML = `
                 <div><strong>Shop:</strong> ${order.shopName}</div>
                 <div><strong>Rep:</strong> ${order.repName}</div>
+                <div><strong>Lorry:</strong> ${getLorryLabel(order)}</div>
                 <div><strong>Date:</strong> ${order.orderDate?.toDate ? new Date(order.orderDate.toDate()).toLocaleString() : '-'}</div>
                 <div style="margin: 12px 0;"><strong>Status:</strong> <span class="status status-${order.status}">${order.status}</span></div>
                 ${itemsHtml}
@@ -1527,11 +1841,15 @@ ${meta}
                 loadStats();
                 loadOrders();
                 loadRepSummary();
+                loadUpcomingChequesWidget();
+                loadCommissionWidget();
             });
             pendingOrdersUnsub = db.collection('pendingOrders').where('businessId', '==', currentBusinessId).onSnapshot(() => {
                 loadStats();
                 loadOrders();
                 loadRepSummary();
+                loadUpcomingChequesWidget();
+                loadCommissionWidget();
             });
         }
 
@@ -1568,6 +1886,8 @@ ${meta}
                 currentBusinessName = currentBusinessData ? String(currentBusinessData.name || '') : '';
                 window.__DIGIBIZ_IS_MW_TRADING__ = !!(window.DigibizMwDslConfig
                     && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
+                __CHEQUE_PILOT_ENABLED__ = !!(window.DigiBizDistributorLorryStock
+                    && window.DigiBizDistributorLorryStock.activeForSession(currentUser && currentUser.email, currentBusinessId));
             } catch (err) {
                 console.warn('Business switch reload failed', err);
             }
@@ -1575,6 +1895,8 @@ ${meta}
             await loadStats();
             await loadOrders();
             await loadRepSummary();
+            await loadUpcomingChequesWidget();
+                await loadCommissionWidget();
             attachDashboardRealtimeListeners();
         }
 
@@ -1676,10 +1998,13 @@ ${meta}
                     }
                     window.__DIGIBIZ_IS_MW_TRADING__ = !!(window.DigibizMwDslConfig
                         && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
+                    __CHEQUE_PILOT_ENABLED__ = !!(window.DigiBizDistributorLorryStock
+                        && window.DigiBizDistributorLorryStock.activeForSession(user.email, currentBusinessId));
                 } catch (e) {
                     currentBusinessData = null;
                     currentBusinessName = '';
                     window.__DIGIBIZ_IS_MW_TRADING__ = false;
+                    __CHEQUE_PILOT_ENABLED__ = false;
                 }
                 document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
                 const activeTabEl = document.querySelector(`.tab[data-status="${currentStatus}"]`);
@@ -1687,7 +2012,24 @@ ${meta}
                 await loadStats();
                 await loadOrders();
                 await loadRepSummary();
+                await loadUpcomingChequesWidget();
+                await loadCommissionWidget();
                 document.getElementById('repFilter').addEventListener('change', renderRepSummaryTable);
+                const hs = document.getElementById('chequeHorizonSelect');
+                if (hs) hs.addEventListener('change', renderChequeWidget);
+                const lf = document.getElementById('lorryFilterSelect');
+                if (lf) {
+                    lf.addEventListener('change', function () {
+                        currentLorryFilter = String(lf.value || 'ALL');
+                        try {
+                            const u = new URL(window.location.href);
+                            if (currentLorryFilter === 'ALL') u.searchParams.delete('lorry');
+                            else u.searchParams.set('lorry', currentLorryFilter);
+                            history.replaceState(null, '', u.pathname + '?' + u.searchParams.toString());
+                        } catch (e) { /* ignore */ }
+                        displayOrders();
+                    });
+                }
                 attachDashboardRealtimeListeners();
                 bindBusinessSwitchWatchers();
             } else {

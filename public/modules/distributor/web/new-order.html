@@ -145,6 +145,7 @@
     <script src="/core/auth-roles.js?v=47"></script>
     <script src="/core/dashboard-core.js?v=46"></script>
     <script src="/core/distributor-inventory.js?v=46"></script>
+    <script src="/core/distributor-lorry-stock.js?v=1"></script>
     <script src="/core/sidebar.js?v=49"></script>
     <script src="/core/mw-trading-dsl-config.js?v=2"></script>
 </head>
@@ -192,6 +193,13 @@
                             <option value="CREDIT">Credit</option>
                             <option value="CHEQUE">Cheque</option>
                         </select>
+                    </div>
+                    <div class="row" id="lorrySelectRow" style="display:none;">
+                        <label for="lorrySelect">Select Lorry</label>
+                        <select id="lorrySelect"><option value="">Loading lorries…</option></select>
+                    </div>
+                    <div class="row" id="lorryStockHintRow" style="display:none;">
+                        <p id="lorryStockHint" class="hint">Select a lorry to view stock availability.</p>
                     </div>
                     <div class="row">
                         <label for="orderDate">Order date</label>
@@ -282,6 +290,7 @@
         var catalogLoaded = false;
         var currentBusinessData = null;
         var isMwTradingBiz = false;
+        var isLorryPilotBiz = false;
         var webLineEditPid = '';
         var MAX_CART_LINES = 500;
         var SUGGEST_MAX_HITS = 42;
@@ -775,6 +784,7 @@
                     '<td><button type="button" class="btn-icon" data-remove="' + esc(item.productId) + '">Remove</button></td></tr>';
             }).join('');
             updateCartTotalFooter();
+            refreshLorryStockHint();
         }
 
         function bindLinesTableDelegation() {
@@ -962,6 +972,93 @@
             });
         }
 
+        function lorryStockDocRef(lorryId, productId) {
+            var cfg = window.DigiBizDistributorLorryStock;
+            if (!cfg) return null;
+            return db.collection(cfg.COLLECTIONS.LORRY_STOCK).doc(cfg.lorryStockDocId(currentBusinessId, lorryId, productId));
+        }
+
+        function calculateLineLorryNeed(item) {
+            var ordered = Number(item.orderedQty != null ? item.orderedQty : item.qty) || 0;
+            var free = Number(item.freeQty) || 0;
+            var returnResell = Number(item.returnResellQty != null ? item.returnResellQty : item.returnQty) || 0;
+            return Math.max(0, ordered + free - returnResell);
+        }
+
+        async function loadLorryOptionsForPilot() {
+            var row = document.getElementById('lorrySelectRow');
+            var hintRow = document.getElementById('lorryStockHintRow');
+            var sel = document.getElementById('lorrySelect');
+            if (!isLorryPilotBiz || !window.DigiBizDistributorLorryStock || !sel) {
+                if (row) row.style.display = 'none';
+                if (hintRow) hintRow.style.display = 'none';
+                return;
+            }
+            if (row) row.style.display = 'block';
+            if (hintRow) hintRow.style.display = 'block';
+            sel.innerHTML = '<option value="">Loading lorries…</option>';
+            var snap = await db.collection(window.DigiBizDistributorLorryStock.COLLECTIONS.LORRIES)
+                .where('businessId', '==', currentBusinessId)
+                .where('isActive', '==', true)
+                .get()
+                .catch(function () { return { docs: [] }; });
+            var options = snap.docs.map(function (d) {
+                var x = d.data() || {};
+                var label = (x.lorryCode || d.id) + (x.name ? (' - ' + x.name) : '');
+                return '<option value="' + esc(d.id) + '">' + esc(label) + '</option>';
+            }).join('');
+            sel.innerHTML = '<option value="">Select lorry…</option>' + options;
+            sel.onchange = function () { refreshLorryStockHint(); };
+            refreshLorryStockHint();
+        }
+
+        async function refreshLorryStockHint() {
+            var hint = document.getElementById('lorryStockHint');
+            var sel = document.getElementById('lorrySelect');
+            if (!hint) return;
+            if (!isLorryPilotBiz || !sel) {
+                hint.textContent = 'Lorry stock feature is disabled for this business.';
+                return;
+            }
+            var lorryId = String(sel.value || '').trim();
+            if (!lorryId) {
+                hint.textContent = 'Select a lorry to view stock availability.';
+                return;
+            }
+            var activeLines = cart.filter(function (i) {
+                return calculateLineLorryNeed(i) > 0;
+            });
+            if (!activeLines.length) {
+                hint.textContent = 'No sale qty in cart yet. Add item quantities to check lorry stock.';
+                return;
+            }
+            var needByProduct = {};
+            activeLines.forEach(function (i) {
+                var key = String(i.productId || '').trim();
+                if (!key) return;
+                needByProduct[key] = (needByProduct[key] || 0) + calculateLineLorryNeed(i);
+            });
+            var productIds = Object.keys(needByProduct);
+            var refs = productIds.map(function (pid) { return lorryStockDocRef(lorryId, pid); }).filter(Boolean);
+            if (!refs.length) {
+                hint.textContent = 'No lorry stock rows found.';
+                return;
+            }
+            var snaps = await db.getAll.apply(db, refs).catch(function () { return []; });
+            var byPid = {};
+            for (var i = 0; i < productIds.length; i++) {
+                var s = snaps[i];
+                byPid[productIds[i]] = s && s.exists ? (Number((s.data() || {}).qty) || 0) : 0;
+            }
+            var lines = activeLines.slice(0, 5).map(function (i) {
+                var need = calculateLineLorryNeed(i);
+                var av = Number(byPid[i.productId] || 0);
+                return (i.productName || i.productId) + ': need ' + need + ', available ' + av;
+            });
+            var more = activeLines.length > 5 ? (' +' + (activeLines.length - 5) + ' more') : '';
+            hint.textContent = 'Lorry availability -> ' + lines.join(' | ') + more;
+        }
+
         function applyRepOnlyOrderHeader() {
             if (normalizeRole(userRole) !== 'REP' || !myRepDocId) return;
             var sel = document.getElementById('repSelect');
@@ -1020,6 +1117,11 @@
             var paymentMethod = document.getElementById('paymentMethod').value;
             var orderNumber = 'ORD-' + Date.now();
             var businessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || currentBusinessId;
+            var lorryId = '';
+            if (isLorryPilotBiz) {
+                lorryId = String(document.getElementById('lorrySelect')?.value || '').trim();
+                if (!lorryId) { showFormMsg('Select a lorry for this order.', 'err'); return; }
+            }
             var isMwDateScoped = (
                 businessId === 'mw_trading_business_id' ||
                 businessId === 'MW_TRADING' ||
@@ -1066,6 +1168,9 @@
                 freeIssuesTotal: activeLines.reduce(function (sum, item) { return sum + (item.freeQty || 0); }, 0),
                 collectionAmount: 0,
                 paymentMethod: paymentMethod,
+                lorryId: lorryId || '',
+                commissionAmount: 0,
+                commissionRate: 0,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 createdVia: 'distributor_web_new_order_v4'
             };
@@ -1073,7 +1178,45 @@
             btn.disabled = true;
             showFormMsg('Submitting…', '');
             try {
-                await db.collection('pendingOrders').add(orderData);
+                if (isLorryPilotBiz && lorryId && window.DigiBizDistributorLorryStock) {
+                    var cfg = window.DigiBizDistributorLorryStock;
+                    var needByProduct = {};
+                    activeLines.forEach(function (item) {
+                        var pid = String(item.productId || '').trim();
+                        if (!pid) return;
+                        needByProduct[pid] = (needByProduct[pid] || 0) + calculateLineLorryNeed(item);
+                    });
+                    await db.runTransaction(async function (tx) {
+                        var rows = Object.keys(needByProduct).map(function (pid) {
+                            return {
+                                pid: pid,
+                                need: needByProduct[pid],
+                                ref: db.collection(cfg.COLLECTIONS.LORRY_STOCK).doc(cfg.lorryStockDocId(currentBusinessId, lorryId, pid))
+                            };
+                        }).filter(function (r) { return r.need > 0; });
+                        for (var i = 0; i < rows.length; i++) {
+                            var row = rows[i];
+                            var snap = await tx.get(row.ref);
+                            var available = snap.exists ? (Number((snap.data() || {}).qty) || 0) : 0;
+                            if (available < row.need) {
+                                throw new Error('Insufficient stock in Lorry ' + lorryId + '. Available: ' + available);
+                            }
+                        }
+                        rows.forEach(function (row) {
+                            tx.set(row.ref, {
+                                businessId: currentBusinessId,
+                                lorryId: lorryId,
+                                productId: row.pid,
+                                qty: firebase.firestore.FieldValue.increment(-row.need),
+                                updatedAt: new Date(),
+                                updatedBy: firebase.auth().currentUser?.uid || ''
+                            }, { merge: true });
+                        });
+                        tx.set(db.collection('pendingOrders').doc(), orderData);
+                    });
+                } else {
+                    await db.collection('pendingOrders').add(orderData);
+                }
                 showFormMsg('Saved to pending queue.', 'ok');
                 cart = [];
                 renderLines();
@@ -1127,10 +1270,12 @@
                 var bdoc = await db.collection('businesses').doc(currentBusinessId).get();
                 currentBusinessData = bdoc.exists ? bdoc.data() : null;
                 isMwTradingBiz = !!(window.DigibizMwDslConfig && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
+                isLorryPilotBiz = !!(window.DigiBizDistributorLorryStock && window.DigiBizDistributorLorryStock.activeForSession(user.email, currentBusinessId));
             } catch (eMw) {
                 console.warn(eMw);
                 isMwTradingBiz = false;
                 currentBusinessData = null;
+                isLorryPilotBiz = false;
             }
 
             if (!canCreateOrder()) {
@@ -1147,6 +1292,7 @@
             applyRepOnlyOrderHeader();
             await refreshMwShopNameDatalist();
             await refreshProductCatalog();
+            await loadLorryOptionsForPilot();
             bindShopQuickAdd();
             bindLineSearch();
             bindLinesTableDelegation();
