@@ -253,7 +253,7 @@
             <div class="line-modal">
                 <h3 id="webLineModalTitle">Edit line</h3>
                 <p id="webLineModalProduct" style="margin:0 0 10px;font-size:0.85rem;color:#475569;"></p>
-                <p class="hint-sm">Line Rs = (sales qty + free qty − agent return − company return) × unit price — same as the rep phone app.</p>
+                <p class="hint-sm">Line Rs = sales qty × unit price. Free qty is not billed (MW Trading invoice rule).</p>
                 <label for="webLineSalesQty">Sales qty</label>
                 <input type="text" inputmode="numeric" id="webLineSalesQty" autocomplete="off">
                 <div class="row2">
@@ -290,6 +290,7 @@
         var catalogLoaded = false;
         var currentBusinessData = null;
         var isMwTradingBiz = false;
+        var MW_TRADING_BILLING_BID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
         var isLorryPilotBiz = false;
         var webLineEditPid = '';
         var MAX_CART_LINES = 500;
@@ -298,6 +299,26 @@
 
         function normalizeRole(r) {
             return String(r || '').toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '').trim();
+        }
+        function currentBizFromStorage() {
+            return String(
+                localStorage.getItem('currentBusinessId') ||
+                sessionStorage.getItem('currentBusinessId') ||
+                localStorage.getItem('selectedBusinessId') ||
+                sessionStorage.getItem('selectedBusinessId') ||
+                currentBusinessId ||
+                ''
+            ).trim();
+        }
+        function isMwBillingTenant() {
+            var bid = currentBizFromStorage();
+            return !!(isMwTradingBiz || bid === MW_TRADING_BILLING_BID);
+        }
+        function orderedQtyOf(item) {
+            return Math.max(0, Number(item && (item.orderedQty != null ? item.orderedQty : item.qty)) || 0);
+        }
+        function linePaidTotal(item) {
+            return orderedQtyOf(item) * (Number(item && item.unitPrice) || 0);
         }
         function distributorPerms() {
             if (window.DigibizDistributorPermissions) return window.DigibizDistributorPermissions.permissionsForRole(userRole);
@@ -437,9 +458,10 @@
         }
 
         function updateCartTotalFooter() {
+            var mwBilling = isMwBillingTenant();
             var tot = cart.reduce(function (s, i) {
                 recalcCartLine(i);
-                return s + (Number(i.total) || 0);
+                return s + (mwBilling ? linePaidTotal(i) : (Number(i.total) || 0));
             }, 0);
             var ct = document.getElementById('cartTotal');
             if (ct) ct.textContent = 'Total Rs ' + tot.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -481,7 +503,18 @@
             item.returnResellQty = rr;
             item.returnCompanyQty = rc;
             item.returnQty = rr + rc;
-            item.total = (((Number(item.qty) || 0) + (Number(item.freeQty) || 0) - item.returnQty) * up);
+            var salesQty = Math.max(0, Number(item.qty) || 0);
+            var freeQty = Math.max(0, Number(item.freeQty) || 0);
+            var returnQty = Math.max(0, Number(item.returnQty) || 0);
+            // MW Trading only: freeQty must never be billed.
+            if (isMwBillingTenant()) {
+                var billedQtyMw = Math.max(0, salesQty - returnQty);
+                item.total = billedQtyMw * up;
+                item.freeUnitPrice = 0;
+                item.freeLineTotal = 0;
+            } else {
+                item.total = ((salesQty + freeQty - returnQty) * up);
+            }
         }
 
         async function loadRepsIntoSelect() {
@@ -1111,12 +1144,19 @@
                     }
                 } catch (eRn) { /* ignore */ }
             }
+            var mwBilling = isMwBillingTenant();
             var subtotal = 0;
             activeLines.forEach(function (i) {
                 recalcCartLine(i);
-                subtotal += (Number(i.qty) || 0) * (Number(i.unitPrice) || 0);
+                subtotal += linePaidTotal(i);
             });
-            var totalAmount = activeLines.reduce(function (s, i) { return s + (Number(i.total) || 0); }, 0);
+            var totalAmount = activeLines.reduce(function (s, i) {
+                if (mwBilling) {
+                    // MW billing rule: freeQty must not be charged.
+                    return s + linePaidTotal(i);
+                }
+                return s + (Number(i.total) || 0);
+            }, 0);
             var paymentMethod = document.getElementById('paymentMethod').value;
             var orderNumber = 'ORD-' + Date.now();
             var businessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || currentBusinessId;
@@ -1163,7 +1203,11 @@
                         returnCompanyQty: item.returnCompanyQty || 0,
                         returnReason: item.returnReason || '',
                         unitPrice: item.unitPrice,
-                        totalPrice: item.total || 0
+                        totalPrice: mwBilling
+                            ? linePaidTotal(item)
+                            : (item.total || 0),
+                        freeUnitPrice: mwBilling ? 0 : (Number(item.unitPrice) || 0),
+                        freeLineTotal: 0
                     };
                 }),
                 subtotal: subtotal,

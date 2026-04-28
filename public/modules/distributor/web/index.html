@@ -142,7 +142,7 @@
             background:#fff;border-radius:16px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:none;
         }
         .accounting-widget{
-            background:#fff;border-radius:16px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:none;
+            background:#fff;border-radius:16px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:block;
         }
         .accounting-grid{
             display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:10px;
@@ -408,15 +408,16 @@
             </div>
             <div id="commissionWidgetMeta" style="font-size:13px;color:#374151;"></div>
         </div>
-        <div class="accounting-widget" id="accountingSummaryWidget">
+        <div class="accounting-widget" id="accountingSummaryWidget" style="display:block;">
             <div class="rep-summary-head">
                 <h3>📒 Accounting Summary</h3>
-                <a href="/modules/distributor/web/reports.html?report=accounting" class="btn btn-view" style="text-decoration:none;">Open Accounting Report</a>
+                <a id="accountingWidgetLink" href="/modules/distributor/web/accounting.html" class="btn btn-view" style="text-decoration:none;">Open Accounting Report</a>
             </div>
             <div class="accounting-grid">
                 <div class="accounting-kpi"><div class="k">Total Purchases</div><div class="v" id="accTotalPurchases">Rs 0.00</div></div>
                 <div class="accounting-kpi"><div class="k">Supplier Outstanding</div><div class="v" id="accSupplierOutstanding">Rs 0.00</div></div>
                 <div class="accounting-kpi"><div class="k">Stock Value</div><div class="v" id="accStockValue">Rs 0.00</div></div>
+                <div class="accounting-kpi"><div class="k">Net Profit</div><div class="v" id="accNetProfit">Rs 0.00</div></div>
             </div>
         </div>
 
@@ -779,8 +780,12 @@
         let currentBusinessData = null;
         const MW_TRADING_OWNER_EMAIL = 'mwtradingsolutions@gmail.com';
         const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        const BDK_ACCOUNTING_BUSINESS_ID = '3slrMTT9dVNlIETKbozzIsVZjjQ2';
         let ordersUnsub = null;
         let pendingOrdersUnsub = null;
+        let supplierLedgerUnsub = null;
+        let journalEntriesUnsub = null;
+        let accountBalancesUnsub = null;
         let businessWatchdogTimer = null;
         let lastSeenBusinessId = '';
         let __CHEQUE_PILOT_ENABLED__ = false;
@@ -815,37 +820,35 @@
             if (!isMwTradingBusiness() || !Array.isArray(rows) || !rows.length) return rows;
             const enriched = await Promise.all(rows.map(async (order) => {
                 const orderId = String(order.id || '').trim();
-                if (!orderId) {
+                // Prefer stored order-level values written during save/backfill.
+                const storedFree = Number(order.mwFreeIssuesQty);
+                if (!Number.isNaN(storedFree)) {
+                    order.mwFreeIssuesQty = storedFree;
+                } else {
                     order.mwFreeIssuesQty = 0;
+                }
+                const storedReturns = Number(order.mwReturnsQty);
+                if (!Number.isNaN(storedReturns)) {
+                    order.mwReturnsQty = storedReturns;
+                    return order;
+                }
+                if (!orderId) {
                     order.mwReturnsQty = 0;
                     return order;
                 }
                 try {
-                    const [freeSnap, returnSnap] = await Promise.all([
-                        db.collection('free_issues')
+                    const returnSnap = await db.collection('returns')
                             .where('businessId', '==', MW_TRADING_BUSINESS_ID)
                             .where('orderId', '==', orderId)
                             .get()
-                            .catch(() => ({ docs: [] })),
-                        db.collection('returns')
-                            .where('businessId', '==', MW_TRADING_BUSINESS_ID)
-                            .where('orderId', '==', orderId)
-                            .get()
-                            .catch(() => ({ docs: [] }))
-                    ]);
-                    const freeQty = (freeSnap.docs || []).reduce((sum, d) => {
-                        const x = d.data() || {};
-                        return sum + (Number(x.freeQty ?? x.freeQuantity ?? x.qty) || 0);
-                    }, 0);
+                            .catch(() => ({ docs: [] }));
                     const returnQty = (returnSnap.docs || []).reduce((sum, d) => {
                         const x = d.data() || {};
                         const q = Number(x.returnQty ?? x.returnResellQty ?? x.returnCompanyQty ?? x.qty) || 0;
                         return sum + q;
                     }, 0);
-                    order.mwFreeIssuesQty = freeQty;
                     order.mwReturnsQty = returnQty;
                 } catch (_e) {
-                    order.mwFreeIssuesQty = 0;
                     order.mwReturnsQty = 0;
                 }
                 return order;
@@ -1070,37 +1073,12 @@ ${meta}
             const v = Number(n) || 0;
             return 'Rs ' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
-
-        async function loadAccountingSummaryWidget() {
-            const card = document.getElementById('accountingSummaryWidget');
-            if (!card) return;
-            const email = String((currentUser && currentUser.email) || '').trim().toLowerCase();
-            if (email !== BDK_EMAIL) {
-                card.style.display = 'none';
-                return;
-            }
-            card.style.display = 'block';
-            try {
-                const balancesSnap = await db.collection('account_balances')
-                    .where('businessId', '==', currentBusinessId)
-                    .get();
-                let purchases = 0;
-                let supplierOutstanding = 0;
-                let stockValue = 0;
-                balancesSnap.forEach((doc) => {
-                    const x = doc.data() || {};
-                    const account = String(x.account || '').toLowerCase();
-                    const bal = Number(x.balance) || 0;
-                    if (account === 'purchases') purchases = bal;
-                    if (account === 'supplieroutstanding') supplierOutstanding = bal;
-                    if (account === 'stockvalue' || account === 'inventory') stockValue = bal;
-                });
-                document.getElementById('accTotalPurchases').textContent = formatWidgetMoney(purchases);
-                document.getElementById('accSupplierOutstanding').textContent = formatWidgetMoney(supplierOutstanding);
-                document.getElementById('accStockValue').textContent = formatWidgetMoney(stockValue);
-            } catch (e) {
-                console.warn('Accounting summary load failed', e);
-            }
+        function toWidgetAmount(v) {
+            if (v == null) return 0;
+            if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+            const raw = String(v).replace(/,/g, '').trim();
+            const n = Number(raw);
+            return Number.isFinite(n) ? n : 0;
         }
 
         function msToDaysLeft(ms) {
@@ -1895,8 +1873,20 @@ ${meta}
             if (typeof pendingOrdersUnsub === 'function') {
                 try { pendingOrdersUnsub(); } catch (e2) {}
             }
+            if (typeof supplierLedgerUnsub === 'function') {
+                try { supplierLedgerUnsub(); } catch (e3) {}
+            }
+            if (typeof journalEntriesUnsub === 'function') {
+                try { journalEntriesUnsub(); } catch (e4) {}
+            }
+            if (typeof accountBalancesUnsub === 'function') {
+                try { accountBalancesUnsub(); } catch (e5) {}
+            }
             ordersUnsub = null;
             pendingOrdersUnsub = null;
+            supplierLedgerUnsub = null;
+            journalEntriesUnsub = null;
+            accountBalancesUnsub = null;
         }
 
         function attachDashboardRealtimeListeners() {
@@ -1915,6 +1905,19 @@ ${meta}
                 loadUpcomingChequesWidget();
                 loadCommissionWidget();
             });
+            const email = String((currentUser && currentUser.email) || '').trim().toLowerCase();
+            if (email === BDK_EMAIL) {
+                const accountingBid = BDK_ACCOUNTING_BUSINESS_ID || currentBusinessId;
+                supplierLedgerUnsub = db.collection('supplier_ledger').where('businessId', '==', accountingBid).onSnapshot(() => {
+                    loadAccountingSummaryWidget();
+                });
+                journalEntriesUnsub = db.collection('journal_entries').where('businessId', '==', accountingBid).onSnapshot(() => {
+                    loadAccountingSummaryWidget();
+                });
+                accountBalancesUnsub = db.collection('account_balances').where('businessId', '==', accountingBid).onSnapshot(() => {
+                    loadAccountingSummaryWidget();
+                });
+            }
         }
 
         async function reloadDashboardForBusinessChange(nextBusinessId) {
@@ -1990,6 +1993,62 @@ ${meta}
                 }
             }, 1200);
         }
+
+        async function loadAccountingSummaryWidget() {
+            console.log('[DEBUG] loadAccountingSummaryWidget called');
+            const card = document.getElementById('accountingSummaryWidget');
+            if (!card) {
+                console.log('[DEBUG] Widget element not found');
+                return;
+            }
+            const email = firebase.auth().currentUser?.email?.toLowerCase();
+            const BDK_EMAIL = 'bdkariyapperuma@gmail.com';
+            const BDK_BID = '3slrMTT9dVNlIETKbozzIsVZjjQ2';
+            
+            if (email !== BDK_EMAIL) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            
+            try {
+                const [jeSnap, slSnap, abSnap] = await Promise.all([
+                    db.collection('journal_entries').where('businessId', '==', BDK_BID).get(),
+                    db.collection('supplier_ledger').where('businessId', '==', BDK_BID).get(),
+                    db.collection('account_balances').where('businessId', '==', BDK_BID).get()
+                ]);
+                
+                let purchases = 0;
+                jeSnap.forEach(d => {
+                    if (d.data().account === 'Purchases') purchases += Number(d.data().amount) || 0;
+                });
+                
+                let outstanding = 0;
+                slSnap.forEach(d => {
+                    const amt = Number(d.data().amount) || 0;
+                    if (d.data().type === 'credit') outstanding += amt;
+                    else outstanding -= amt;
+                });
+                
+                let stockVal = 0;
+                abSnap.forEach(d => {
+                    if (d.data().account === 'StockValue') stockVal = Number(d.data().balance) || 0;
+                });
+                
+                document.getElementById('accTotalPurchases').innerText = 'Rs ' + purchases.toLocaleString();
+                document.getElementById('accSupplierOutstanding').innerText = 'Rs ' + outstanding.toLocaleString();
+                document.getElementById('accStockValue').innerText = 'Rs ' + stockVal.toLocaleString();
+                document.getElementById('accNetProfit').innerText = 'Rs 0';
+                
+                console.log('[DEBUG] Widget updated:', {purchases, outstanding, stockVal});
+            } catch (err) {
+                console.error('[DEBUG] Widget error:', err);
+            }
+        }
+        window.loadAccountingSummaryWidget = loadAccountingSummaryWidget;
+        document.addEventListener('DOMContentLoaded', () => {
+            Promise.resolve(window.loadAccountingSummaryWidget && window.loadAccountingSummaryWidget()).catch(() => {});
+        });
 
         firebase.auth().onAuthStateChanged(async (user) => {
             if (user) {

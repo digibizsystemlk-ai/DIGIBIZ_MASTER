@@ -6,6 +6,7 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
+const crypto = require("crypto");
 
 admin.initializeApp({
     databaseURL: "https://digibiz-sys-default-rtdb.firebaseio.com/",
@@ -269,3 +270,252 @@ exports.adminResetPassword = onCall(async (request) => {
     });
     return { success: true, message: "Password reset successful" };
 });
+
+function testLabelToGrepToken(label) {
+    const x = String(label || "").trim().toLowerCase();
+    const map = {
+        "grn": "GRN flow",
+        "grn-flow": "GRN flow",
+        "grnflow": "GRN flow",
+        "stock-transfer": "stock transfer",
+        "stocktransfer": "stock transfer",
+        "order-with-lorry": "order with lorry",
+        "orderwithlorry": "order with lorry",
+        "cheque-management": "cheque management",
+        "chequemanagement": "cheque management",
+        "accounting-dashboard": "accounting dashboard",
+        "accountingdashboard": "accounting dashboard",
+        "grnflow_ui": "GRN flow",
+        "stocktransfer_ui": "stock transfer",
+        "orderwithlorry_ui": "order with lorry",
+        "chequemanagement_ui": "cheque management",
+        "accountingdashboard_ui": "accounting dashboard",
+        "grnflow": "GRN flow",
+        "stocktransfer": "stock transfer",
+        "orderwithlorry": "order with lorry",
+        "chequemanagement": "cheque management",
+        "accountingdashboard": "accounting dashboard",
+        "grn flow": "GRN flow",
+        "stock transfer": "stock transfer",
+        "order with lorry": "order with lorry",
+        "cheque management": "cheque management",
+        "accounting dashboard": "accounting dashboard",
+    };
+    // Handle UI keys from super-dashboard panel.
+    if (x === "grnflow") return "GRN flow";
+    if (x === "stocktransfer") return "stock transfer";
+    if (x === "orderwithlorry") return "order with lorry";
+    if (x === "chequemanagement") return "cheque management";
+    if (x === "accountingdashboard") return "accounting dashboard";
+    return map[x] || "";
+}
+
+async function assertSuperAdmin(request) {
+    if (!request.auth || !request.auth.uid) {
+        throw new HttpsError("unauthenticated", "Authentication required.");
+    }
+    const callerUid = String(request.auth.uid || "");
+    if (SUPER_ADMIN_UIDS.includes(callerUid)) return callerUid;
+    const callerDoc = await db.collection("users").doc(callerUid).get();
+    const role = String((callerDoc.exists ? (callerDoc.data().role || "") : "")).toUpperCase();
+    if (role !== "SUPER_ADMIN") {
+        throw new HttpsError("permission-denied", "Only SUPER_ADMIN users can run E2E tests.");
+    }
+    return callerUid;
+}
+
+async function getMetadataAccessToken() {
+    const r = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", {
+        headers: { "Metadata-Flavor": "Google" },
+    });
+    if (!r.ok) {
+        throw new Error(`metadata token request failed: ${r.status}`);
+    }
+    const data = await r.json();
+    return String(data.access_token || "");
+}
+
+async function triggerCloudRunJobRun({
+    projectId,
+    region,
+    jobName,
+    runId,
+    selectedTests,
+    targetEmail,
+    targetBusinessId,
+    resultsBucket,
+}) {
+    const token = await getMetadataAccessToken();
+    const url = `https://run.googleapis.com/v2/projects/${projectId}/locations/${region}/jobs/${jobName}:run`;
+    const env = [
+        { name: "RUN_ID", value: runId },
+        { name: "E2E_SELECTED_TESTS", value: selectedTests.join(",") },
+        { name: "E2E_TARGET_EMAIL", value: targetEmail || "" },
+        { name: "E2E_TARGET_BUSINESS_ID", value: targetBusinessId || "" },
+        { name: "E2E_BDK_EMAIL", value: targetEmail || "" },
+        { name: "E2E_BDK_BUSINESS_ID", value: targetBusinessId || "" },
+        { name: "E2E_RESULTS_BUCKET", value: resultsBucket },
+    ];
+
+    const body = {
+        overrides: {
+            containerOverrides: [
+                {
+                    env,
+                },
+            ],
+        },
+    };
+
+    const res = await fetch(url, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        throw new Error(`Cloud Run job trigger failed: ${res.status} ${msg}`);
+    }
+    return res.json();
+}
+
+exports.runE2ETests = onCall(
+    {
+        timeoutSeconds: 120,
+        memory: "512MiB",
+    },
+    async (request) => {
+        const callerUid = await assertSuperAdmin(request);
+
+        const selectedTests = Array.isArray(request.data && request.data.selectedTests)
+            ? request.data.selectedTests
+            : [];
+        const targetEmail = String((request.data && request.data.targetEmail) || "").trim();
+        const targetBusinessId = String((request.data && request.data.targetBusinessId) || "").trim();
+        if (!selectedTests.length) {
+            throw new HttpsError("invalid-argument", "selectedTests must contain at least one item.");
+        }
+        if (!targetEmail && !targetBusinessId) {
+            throw new HttpsError("invalid-argument", "targetEmail or targetBusinessId is required.");
+        }
+
+        const grepTokens = selectedTests
+            .map((x) => testLabelToGrepToken(x))
+            .filter(Boolean);
+        if (!grepTokens.length) {
+            throw new HttpsError("invalid-argument", "No valid test identifiers found in selectedTests.");
+        }
+        const projectId = String(process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || "").trim();
+        const region = String(process.env.E2E_RUN_REGION || "asia-south1").trim();
+        const jobName = String(process.env.E2E_RUN_JOB_NAME || "digibiz-e2e-runner").trim();
+        const resultsBucket = String(process.env.E2E_RESULTS_BUCKET || "").trim();
+        if (!projectId) throw new HttpsError("failed-precondition", "Missing GCLOUD_PROJECT.");
+        if (!resultsBucket) throw new HttpsError("failed-precondition", "Missing E2E_RESULTS_BUCKET env.");
+
+        const runId = (crypto.randomUUID ? crypto.randomUUID() : `run_${Date.now()}`).replace(/-/g, "");
+        const grepPattern = grepTokens.join("|");
+
+        const op = await triggerCloudRunJobRun({
+            projectId,
+            region,
+            jobName,
+            runId,
+            selectedTests: grepTokens,
+            targetEmail,
+            targetBusinessId,
+            resultsBucket,
+        });
+
+        await db.collection("e2e_test_runs").doc(runId).set({
+            runId,
+            operationName: String((op && op.name) || ""),
+            status: "queued",
+            selectedTests: grepTokens,
+            grepPattern,
+            targetEmail,
+            targetBusinessId,
+            resultsBucket,
+            triggeredBy: callerUid,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        logger.info("runE2ETests finished", {
+            callerUid,
+            targetEmail,
+            targetBusinessId,
+            selectedTests: grepTokens,
+            runId,
+            operationName: op && op.name,
+        });
+
+        return {
+            success: true,
+            queued: true,
+            runId,
+            jobId: runId,
+            operationName: op && op.name ? op.name : null,
+            pollFunction: "getE2ETestRunResult",
+        };
+    }
+);
+
+exports.getE2ETestRunResult = onCall(
+    {
+        timeoutSeconds: 60,
+        memory: "256MiB",
+    },
+    async (request) => {
+        await assertSuperAdmin(request);
+        const runId = String((request.data && request.data.runId) || "").trim();
+        if (!runId) {
+            throw new HttpsError("invalid-argument", "runId is required.");
+        }
+
+        const runRef = db.collection("e2e_test_runs").doc(runId);
+        const runSnap = await runRef.get();
+        const runData = runSnap.exists ? (runSnap.data() || {}) : {};
+        const bucketName = String(runData.resultsBucket || process.env.E2E_RESULTS_BUCKET || "").trim();
+        if (!bucketName) {
+            throw new HttpsError("failed-precondition", "Missing results bucket.");
+        }
+
+        const resultFile = admin.storage().bucket(bucketName).file(`e2e-results/${runId}.json`);
+        const logFile = admin.storage().bucket(bucketName).file(`e2e-results/${runId}.log`);
+        const [exists] = await resultFile.exists();
+        if (!exists) {
+            return {
+                success: false,
+                runId,
+                status: String(runData.status || "running"),
+                ready: false,
+                message: "Result file not available yet. Poll again.",
+                operationName: runData.operationName || null,
+            };
+        }
+
+        const [jsonBuf] = await resultFile.download();
+        const [logExists] = await logFile.exists();
+        let logs = "";
+        if (logExists) {
+            const [logBuf] = await logFile.download();
+            logs = String(logBuf || "");
+        }
+        const parsed = JSON.parse(String(jsonBuf || "{}"));
+        await runRef.set({
+            status: parsed.success ? "passed" : "failed",
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        return {
+            success: !!parsed.success,
+            ready: true,
+            runId,
+            results: Array.isArray(parsed.results) ? parsed.results : [],
+            durationMs: Number(parsed.durationMs || 0),
+            logs,
+        };
+    }
+);

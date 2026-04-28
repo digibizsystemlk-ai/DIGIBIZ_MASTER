@@ -95,6 +95,18 @@ service cloud.firestore {
       );
     }
 
+    // Flat customers/{docId} and nested list: owner / super admin, plus distributor-style sales coordinator.
+    function canDeleteOrUpdateCustomerDoc(bid) {
+      return bid is string && (
+        isSuperAdmin() ||
+        isOwnerClassInBusiness(bid) ||
+        (
+          isBusinessMember(bid) &&
+          roleForBusiness(bid) in ['SALES_COORDINATOR', 'sales_coordinator']
+        )
+      );
+    }
+
     function isDistributorOpsInBusiness(bid) {
       return isOwnerClassInBusiness(bid) || (
         isBusinessMember(bid) &&
@@ -544,7 +556,9 @@ service cloud.firestore {
     }
 
     match /customers/{bid}/list/{cid} {
-      allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+      allow read: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+      allow create: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+      allow update, delete: if signedIn() && canDeleteOrUpdateCustomerDoc(bid);
     }
 
     match /suppliers/{bid}/list/{sid} {
@@ -553,6 +567,13 @@ service cloud.firestore {
 
     match /purchases/{bid}/orders/{oid} {
       allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
+    }
+
+    match /account_balances/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        (request.auth.uid == resource.data.businessId ||
+         request.auth.token.email == 'bdkariyapperuma@gmail.com');
     }
 
     match /customerTransactions/{bid}/list/{tid} {
@@ -869,6 +890,44 @@ service cloud.firestore {
         resource.data.businessId is string &&
         isBusinessMember(resource.data.businessId);
       allow update, delete: if false;
+    }
+
+    // ----- Flat customers/{docId} (e.g. {businessId}_{mobile}) — overrides /{document=**} below -----
+    match /customers/{customerId} {
+      allow read: if signedIn() && (
+        isSuperAdmin() ||
+        (
+          resource.data.keys().hasAll(['businessId']) &&
+          resource.data.businessId is string &&
+          isBusinessMember(resource.data.businessId)
+        )
+      );
+      allow create: if signedIn() && (
+        isSuperAdmin() ||
+        (
+          request.resource.data.keys().hasAll(['businessId']) &&
+          request.resource.data.businessId is string &&
+          isBusinessMember(request.resource.data.businessId)
+        )
+      );
+      allow update: if signedIn() && (
+        isSuperAdmin() ||
+        (
+          resource.data.keys().hasAll(['businessId']) &&
+          request.resource.data.keys().hasAll(['businessId']) &&
+          resource.data.businessId == request.resource.data.businessId &&
+          resource.data.businessId is string &&
+          canDeleteOrUpdateCustomerDoc(resource.data.businessId)
+        )
+      );
+      allow delete: if signedIn() && (
+        isSuperAdmin() ||
+        (
+          resource.data.keys().hasAll(['businessId']) &&
+          resource.data.businessId is string &&
+          canDeleteOrUpdateCustomerDoc(resource.data.businessId)
+        )
+      );
     }
 
     // ----- Safe default for remaining collections -----

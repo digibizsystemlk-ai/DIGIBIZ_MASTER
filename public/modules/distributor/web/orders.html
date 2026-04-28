@@ -8,6 +8,7 @@
     <script>
         (function () {
             const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+            const BACKFILL_PARAM = 'mwBackfill';
             const businessId =
                 localStorage.getItem('currentBusinessId') ||
                 sessionStorage.getItem('currentBusinessId') ||
@@ -15,6 +16,65 @@
                 sessionStorage.getItem('selectedBusinessId') ||
                 '';
             const isMWTrading = (businessId === MW_TRADING_BUSINESS_ID);
+            const sp = new URLSearchParams(window.location.search || '');
+            const shouldRunBackfill = sp.get(BACKFILL_PARAM) === '1';
+
+            async function runMwTradingOrderTotalsBackfill() {
+                const root = document.getElementById('backfillStatus');
+                function log(msg) {
+                    if (root) root.textContent += msg + '\n';
+                    console.log('[MW-BACKFILL]', msg);
+                }
+                try {
+                    if (!window.db) throw new Error('Firestore db instance is not available.');
+                    log('Scanning pendingOrders for MW Trading...');
+                    const pendingSnap = await db.collection('pendingOrders')
+                        .where('businessId', '==', MW_TRADING_BUSINESS_ID)
+                        .get();
+                    log('Scanning approved orders for MW Trading...');
+                    const orderSnap = await db.collection('orders')
+                        .where('businessId', '==', MW_TRADING_BUSINESS_ID)
+                        .get();
+                    const docs = [];
+                    pendingSnap.forEach((d) => docs.push({ ref: d.ref, id: d.id, data: d.data(), source: 'pendingOrders' }));
+                    orderSnap.forEach((d) => docs.push({ ref: d.ref, id: d.id, data: d.data(), source: 'orders' }));
+                    log('Found ' + docs.length + ' order docs.');
+
+                    let fixed = 0;
+                    for (const row of docs) {
+                        const items = Array.isArray(row.data.items) ? row.data.items : [];
+                        const corrected = items.reduce((sum, item) => {
+                            const orderedQty = Number(item.orderedQty != null ? item.orderedQty : item.qty) || 0;
+                            const unitPrice = Number(item.unitPrice) || 0;
+                            return sum + (orderedQty * unitPrice);
+                        }, 0);
+                        const freeQty = items.reduce((sum, item) => {
+                            return sum + (Number(item.freeQty) || 0);
+                        }, 0);
+                        const current = Number(row.data.totalAmount) || 0;
+                        const currentFree = Number(row.data.mwFreeIssuesQty);
+                        const freeChanged = Number.isNaN(currentFree) || Math.abs(currentFree - freeQty) > 0.0001;
+                        if (Math.abs(corrected - current) < 0.0001 && !freeChanged) continue;
+                        await row.ref.set({
+                            totalAmount: corrected,
+                            subtotal: corrected,
+                            mwFreeIssuesQty: freeQty,
+                            billingRule: 'mw_free_qty_excluded',
+                            correctedAt: new Date(),
+                            correctedBy: 'orders.html.backfill'
+                        }, { merge: true });
+                        fixed += 1;
+                        log('Fixed ' + row.source + '/' + row.id + ' -> total ' + corrected.toFixed(2) + ', free ' + freeQty);
+                    }
+                    log('Backfill complete. Updated docs: ' + fixed);
+                    return { success: true, scanned: docs.length, fixed };
+                } catch (err) {
+                    log('Backfill failed: ' + (err && err.message ? err.message : String(err)));
+                    return { success: false, error: String(err && err.message ? err.message : err) };
+                }
+            }
+
+            window.runMwTradingOrderTotalsBackfill = runMwTradingOrderTotalsBackfill;
             if (!isMWTrading) {
                 // other distributors unchanged
                 window.location.replace('/modules/distributor/web/index.html?tab=approved');
@@ -27,9 +87,14 @@
             localStorage.setItem('selectedBusinessId', MW_TRADING_BUSINESS_ID);
             sessionStorage.setItem('selectedBusinessId', MW_TRADING_BUSINESS_ID);
 
-            const sp = new URLSearchParams(window.location.search || '');
             const tab = sp.get('tab') || 'approved';
             const lorry = sp.get('lorry') || '';
+            if (shouldRunBackfill) {
+                window.addEventListener('load', function () {
+                    runMwTradingOrderTotalsBackfill();
+                });
+                return;
+            }
             const out = new URL('/modules/distributor/web/index.html', window.location.origin);
             out.searchParams.set('tab', tab);
             out.searchParams.set('mwFix', '1');
@@ -40,5 +105,6 @@
 </head>
 <body>
     <p style="font-family: system-ui, sans-serif; padding: 24px; color: #374151;">Redirecting to orders…</p>
+    <pre id="backfillStatus" style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 0 24px 24px; color: #111827;"></pre>
 </body>
 </html>

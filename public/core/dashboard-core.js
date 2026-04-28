@@ -155,7 +155,24 @@ class DashboardCore {
         }
 
         businessType = this.normalizeBusinessType(businessType);
-        const context = { userId: user.uid, businessId, businessType, businessName };
+
+        let userRole = '';
+        try {
+            if (typeof window.getUserRole === 'function' && user && businessId) {
+                const ri = await window.getUserRole(user.uid, businessId);
+                userRole = String((ri && ri.role) || '');
+            }
+        } catch (eRole) { /* ignore */ }
+        try {
+            if (String(businessType || '').toLowerCase() === 'distributor' && user && businessId) {
+                const bud = await window.db.collection('businesses').doc(businessId).collection('users').doc(user.uid).get();
+                if (bud.exists && bud.data().role != null && String(bud.data().role).trim() !== '') {
+                    userRole = String(bud.data().role);
+                }
+            }
+        } catch (eBud) { /* ignore */ }
+
+        const context = { userId: user.uid, businessId, businessType, businessName, userRole };
         this.persistContext(context);
         return context;
     }

@@ -69,6 +69,11 @@
         .rep-summary-table{width:100%;border-collapse:collapse;font-size:12px;}
         .rep-summary-table th,.rep-summary-table td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left;}
         .rep-summary-table th{background:#f8fafc;}
+        .accounting-widget{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px;display:none;}
+        .accounting-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:10px;}
+        .accounting-kpi{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f9fafb;}
+        .accounting-kpi .k{font-size:11px;color:#6b7280;font-weight:600;}
+        .accounting-kpi .v{font-size:18px;font-weight:700;color:#111827;margin-top:3px;}
         .install-prompt{position:fixed;bottom:20px;left:20px;right:20px;background:#fff;border-radius:14px;padding:12px 16px;box-shadow:0 12px 28px rgba(0,0,0,.15);z-index:2000;display:none;align-items:center;justify-content:space-between;gap:10px;border:1px solid #e2e8f0;}
         .install-prompt.show{display:flex;}
         .install-text{font-size:13px;color:#0f3b2c;font-weight:600;}
@@ -97,6 +102,18 @@
             </div>
             <div class="kpi-grid" id="kpiGrid"></div>
             <div class="dynamic-widgets" id="dynamicWidgets"></div>
+            <div class="accounting-widget" id="coreAccountingSummaryWidget">
+                <div class="rep-summary-head">
+                    <div class="rep-summary-title">📒 Accounting Summary</div>
+                    <a href="/modules/distributor/web/accounting.html" class="apply-btn" style="text-decoration:none;padding:7px 12px;">Open Accounting Report</a>
+                </div>
+                <div class="accounting-grid">
+                    <div class="accounting-kpi"><div class="k">Total Purchases</div><div class="v" id="coreAccTotalPurchases">Rs 0.00</div></div>
+                    <div class="accounting-kpi"><div class="k">Supplier Outstanding</div><div class="v" id="coreAccSupplierOutstanding">Rs 0.00</div></div>
+                    <div class="accounting-kpi"><div class="k">Stock Value</div><div class="v" id="coreAccStockValue">Rs 0.00</div></div>
+                    <div class="accounting-kpi"><div class="k">Net Profit</div><div class="v" id="coreAccNetProfit">Rs 0.00</div></div>
+                </div>
+            </div>
             <div class="rep-summary-card" id="repSummaryCard">
                 <div class="rep-summary-head">
                     <div class="rep-summary-title">Rep Summary</div>
@@ -253,6 +270,9 @@
         function formatLKR(value) {
             return `LKR ${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         }
+        function formatRs(value) {
+            return `Rs ${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
 
         function resolveKpiDefinitions(structure) {
             return structure.map((id) => ({ id, ...(metricMeta[id] || { label: id }) }));
@@ -269,6 +289,14 @@
             const target = document.getElementById(`kpi-${id}`);
             if (!target) return;
             target.textContent = currency ? formatLKR(value) : `${value || 0}${suffix}`;
+        }
+        function setKpiByCandidateIds(ids, value, currency = false, suffix = '') {
+            if (!Array.isArray(ids)) return;
+            const txt = currency ? formatLKR(value) : `${value || 0}${suffix}`;
+            ids.forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = txt;
+            });
         }
 
         function renderCharts(metrics) {
@@ -605,6 +633,73 @@
             selector.style.display = allowed ? 'flex' : 'none';
         }
 
+        async function loadCoreAccountingWidget() {
+            const card = document.getElementById('coreAccountingSummaryWidget');
+            if (!card) return;
+            const email = String((auth && auth.currentUser && auth.currentUser.email) || '').trim().toLowerCase();
+            const BDK_EMAIL = 'bdkariyapperuma@gmail.com';
+            const BDK_BID = '3slrMTT9dVNlIETKbozzIsVZjjQ2';
+            if (email !== BDK_EMAIL) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            try {
+                const [jeSnap, slSnap, abSnap] = await Promise.all([
+                    db.collection('journal_entries').where('businessId', '==', BDK_BID).get(),
+                    db.collection('supplier_ledger').where('businessId', '==', BDK_BID).get(),
+                    db.collection('account_balances').where('businessId', '==', BDK_BID).get()
+                ]);
+                let purchases = 0;
+                let supplierOutstanding = 0;
+                let stockValue = 0;
+                let cashFlow = 0;
+                let revenue = 0;
+                let expenses = 0;
+                jeSnap.forEach((doc) => {
+                    const x = doc.data() || {};
+                    const account = String(x.account || '').toLowerCase();
+                    const amount = Number(x.amount) || 0;
+                    const entryType = String(x.entryType || '').toLowerCase() || 'debit';
+                    if (account === 'purchases') purchases += amount;
+                    if (account.includes('cash') || account.includes('bank')) {
+                        cashFlow += (entryType === 'debit' ? amount : -amount);
+                    }
+                    if (account.includes('revenue') || account.includes('sales') || account.includes('income')) {
+                        revenue += (entryType === 'credit' ? amount : -amount);
+                    }
+                    if (account.includes('expense') || account.includes('purchase') || account.includes('cost')) {
+                        expenses += (entryType === 'debit' ? amount : -amount);
+                    }
+                });
+                slSnap.forEach((doc) => {
+                    const x = doc.data() || {};
+                    const amt = Number(x.amount) || 0;
+                    const type = String(x.type || '').toLowerCase();
+                    supplierOutstanding += (type === 'credit' ? amt : -amt);
+                });
+                abSnap.forEach((doc) => {
+                    const x = doc.data() || {};
+                    const account = String(x.account || '').toLowerCase();
+                    if (account === 'stockvalue') stockValue = Number(x.balance) || 0;
+                    if (!stockValue && account === 'inventory') stockValue = Number(x.balance) || 0;
+                });
+                const netProfit = revenue - expenses;
+                document.getElementById('coreAccTotalPurchases').textContent = formatRs(purchases);
+                document.getElementById('coreAccSupplierOutstanding').textContent = formatRs(supplierOutstanding);
+                document.getElementById('coreAccStockValue').textContent = formatRs(stockValue);
+                document.getElementById('coreAccNetProfit').textContent = formatRs(netProfit);
+                // Stock value KPI id varies by dashboard structure; update all known candidates.
+                setKpiByCandidateIds(['kpi-stockValue', 'kpi-totalStockValue', 'stockValue'], stockValue, true);
+                // Cash flow KPI id can vary by case/legacy naming.
+                setKpiByCandidateIds(['kpi-cashFlow', 'kpi-cashflow', 'cashFlow'], cashFlow, true);
+                const dueCash = document.getElementById('cashFlowCount');
+                if (dueCash) dueCash.textContent = formatLKR(cashFlow);
+            } catch (e) {
+                console.warn('Core dashboard accounting widget failed', e);
+            }
+        }
+
         async function renderDashboard() {
             if (!finalizationChecked && window.FinalizationEngine && window.FinalizationEngine.runAutoFinalizationForCurrentUser) {
                 finalizationChecked = true;
@@ -654,6 +749,7 @@
             renderCharts(metrics);
             renderDynamicWidgets(metrics);
             renderRepSummary(metrics);
+            await loadCoreAccountingWidget();
 
             const distIds = ['distributorQuickSection', 'distributorTopProducts', 'distributorRecentOrders', 'distributorExtraCharts', 'distributorExtraCharts2'];
             if (dashboardContext.businessType === 'distributor') {

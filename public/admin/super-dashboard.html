@@ -40,6 +40,9 @@
             </select>
             <button id="btnSwitchUserBusiness" class="btn" type="button">Switch</button>
         </div>
+        <div style="margin-top:8px;">
+            <button id="btnOpenE2EModalFromSwitch" class="btn alt" type="button">🧪 Run E2E Tests</button>
+        </div>
         <p class="small" style="margin-top:8px;">Updates selected user default business for next login session.</p>
     </div>
 
@@ -322,6 +325,55 @@
             </div>
         </div>
     </section>
+
+    <section id="e2eTestRunnerSection" class="panel active" style="margin-top:16px;display:none;">
+        <div class="card">
+            <h3>🧪 E2E Test Runner</h3>
+            <p class="small">Run selected E2E scenarios for a target business (Super Admin only).</p>
+
+            <div class="row" style="grid-template-columns:1fr 1fr;">
+                <div class="card" style="margin:0;">
+                    <h4 style="margin-top:0;">Test Selection</h4>
+                    <label style="display:block;margin:6px 0;"><input type="checkbox" class="e2e-test" value="grnFlow" checked> GRN Flow</label>
+                    <label style="display:block;margin:6px 0;"><input type="checkbox" class="e2e-test" value="stockTransfer" checked> Stock Transfer</label>
+                    <label style="display:block;margin:6px 0;"><input type="checkbox" class="e2e-test" value="orderWithLorry" checked> Order with Lorry</label>
+                    <label style="display:block;margin:6px 0;"><input type="checkbox" class="e2e-test" value="chequeManagement" checked> Cheque Management</label>
+                    <label style="display:block;margin:6px 0;"><input type="checkbox" class="e2e-test" value="accountingDashboard" checked> Accounting Dashboard</label>
+                </div>
+
+                <div class="card" style="margin:0;">
+                    <h4 style="margin-top:0;">Target Business</h4>
+                    <div class="two">
+                        <input id="e2eTargetEmail" type="email" placeholder="User Email (e.g., bdkariyapperuma@gmail.com)">
+                        <select id="e2eTargetBusiness">
+                            <option value="">Select business from list...</option>
+                        </select>
+                    </div>
+                    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                        <button id="btnRunE2ETests" class="btn" type="button">Run Selected Tests</button>
+                        <span id="e2eRunnerStatus" class="small"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row" style="grid-template-columns:1fr 1fr;margin-top:12px;">
+                <div class="card" style="margin:0;">
+                    <h4 style="margin-top:0;">Results</h4>
+                    <div id="e2eResultSummary" class="small">No runs yet.</div>
+                    <table style="margin-top:8px;">
+                        <thead><tr><th>Test</th><th>Status</th><th>Duration</th></tr></thead>
+                        <tbody id="e2eResultsBody">
+                            <tr><td colspan="3" class="small">No test execution data.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card" style="margin:0;">
+                    <h4 style="margin-top:0;">Console Output</h4>
+                    <pre id="e2eConsoleLog" class="small" style="min-height:180px;max-height:260px;overflow:auto;background:#0b1220;border:1px solid #23324d;border-radius:8px;padding:10px;">Waiting for test run...</pre>
+                </div>
+            </div>
+        </div>
+    </section>
 </div>
 
 <div id="editModal" class="modal">
@@ -355,7 +407,288 @@
     </div>
 </div>
 
+<div id="e2eQuickRunModal" class="modal">
+    <div class="modal-body">
+        <h3>🧪 Run E2E Tests</h3>
+        <p class="small">Use below command locally, or trigger Cloud Function runner if available.</p>
+        <div class="two">
+            <input id="e2eModalTargetEmail" placeholder="Target email" readonly>
+            <input id="e2eModalTargetBusiness" placeholder="Target business ID" readonly>
+        </div>
+        <label class="small" style="display:block;margin:8px 0 4px;">Test command</label>
+        <textarea id="e2eModalCommand" rows="3" readonly>cd N:\DIGIBIZ\DIGIBIZ_MASTER
+npm run test:e2e:distributor</textarea>
+        <div style="margin:8px 0;">
+            <label style="display:block;margin:4px 0;"><input type="checkbox" class="e2e-modal-test" value="grn-flow" checked> GRN</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" class="e2e-modal-test" value="stock-transfer" checked> Stock Transfer</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" class="e2e-modal-test" value="order-with-lorry" checked> Order</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" class="e2e-modal-test" value="cheque-management" checked> Cheque</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" class="e2e-modal-test" value="accounting-dashboard" checked> Accounting</label>
+        </div>
+        <p id="e2eModalStatus" class="small"></p>
+        <div class="two">
+            <button id="btnE2EModalClose" class="btn alt" type="button">Close</button>
+            <button id="btnE2ECopyCommand" class="btn alt" type="button">Copy Command</button>
+        </div>
+        <div class="two" style="margin-top:8px;">
+            <button id="btnE2ERunViaFunction" class="btn" type="button">Run via Cloud Function</button>
+            <button id="btnE2EModalOpenPanel" class="btn alt" type="button">Open Full Test Panel</button>
+        </div>
+    </div>
+</div>
+
 <div id="toast" class="toast"></div>
+<script>
+(function () {
+    const SUPER_ADMIN_EMAILS = ['bdkariyapperuma@gmail.com'];
+    const section = document.getElementById('e2eTestRunnerSection');
+    const emailInput = document.getElementById('e2eTargetEmail');
+    const bizSelect = document.getElementById('e2eTargetBusiness');
+    const runBtn = document.getElementById('btnRunE2ETests');
+    const statusEl = document.getElementById('e2eRunnerStatus');
+    const summaryEl = document.getElementById('e2eResultSummary');
+    const bodyEl = document.getElementById('e2eResultsBody');
+    const logEl = document.getElementById('e2eConsoleLog');
+    const quickBtn = document.getElementById('btnOpenE2EModalFromSwitch');
+    const quickModal = document.getElementById('e2eQuickRunModal');
+    const quickStatus = document.getElementById('e2eModalStatus');
+
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function formatMs(ms) {
+        const n = Number(ms) || 0;
+        if (n < 1000) return n + ' ms';
+        return (n / 1000).toFixed(2) + ' s';
+    }
+
+    async function isSuperAdmin() {
+        const user = firebase.auth().currentUser;
+        if (!user) return false;
+        const email = String(user.email || '').toLowerCase();
+        if (SUPER_ADMIN_EMAILS.includes(email)) return true;
+        try {
+            const doc = await db.collection('users').doc(user.uid).get();
+            const role = String((doc.exists ? (doc.data().role || '') : '')).toUpperCase();
+            return role === 'SUPER_ADMIN';
+        } catch (_e) {
+            return false;
+        }
+    }
+
+    async function loadBusinessesToRunner() {
+        try {
+            const snap = await db.collection('businesses').limit(500).get();
+            const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+            rows.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+            bizSelect.innerHTML = '<option value="">Select business from list...</option>' +
+                rows.map((x) => '<option value="' + esc(x.id) + '">' + esc((x.name || x.id) + ' (' + x.id + ')') + '</option>').join('');
+        } catch (e) {
+            bizSelect.innerHTML = '<option value="">Failed to load businesses</option>';
+        }
+    }
+
+    function getSelectedTests() {
+        return Array.from(document.querySelectorAll('.e2e-test:checked')).map((el) => el.value);
+    }
+
+    function renderResults(result) {
+        const tests = Array.isArray(result.tests)
+            ? result.tests
+            : (Array.isArray(result.results) ? result.results : []);
+        if (!tests.length) {
+            bodyEl.innerHTML = '<tr><td colspan="3" class="small">No per-test output returned.</td></tr>';
+        } else {
+            bodyEl.innerHTML = tests.map((t) => {
+                const ok = (String(t.status || '').toLowerCase() === 'passed') || t.passed === true;
+                return '<tr>' +
+                    '<td>' + esc(t.name || t.id || t.testName || '-') + '</td>' +
+                    '<td>' + (ok ? '✅ Passed' : '❌ Failed') + '</td>' +
+                    '<td>' + esc(formatMs(t.durationMs || t.duration)) + '</td>' +
+                    '</tr>';
+            }).join('');
+        }
+
+        const passed = tests.filter((t) => (String(t.status || '').toLowerCase() === 'passed') || t.passed === true).length;
+        const failed = tests.length - passed;
+        summaryEl.textContent = 'Execution time: ' + formatMs(result.durationMs || 0) + ' | Passed: ' + passed + ' | Failed: ' + failed;
+        logEl.textContent = Array.isArray(result.logs) ? result.logs.join('\n') : (result.logs || result.log || 'No logs returned.');
+    }
+
+    async function pollE2EResult(runId) {
+        const pollFn = firebase.functions && firebase.functions().httpsCallable
+            ? firebase.functions().httpsCallable('getE2ETestRunResult')
+            : null;
+        if (!pollFn) throw new Error('getE2ETestRunResult callable is unavailable.');
+
+        const maxPolls = 120; // up to ~10 minutes
+        for (let i = 0; i < maxPolls; i += 1) {
+            const res = await pollFn({ runId });
+            const data = res && res.data ? res.data : {};
+            if (data.ready) return data;
+            statusEl.textContent = 'Queued... waiting for Cloud Run job result (' + (i + 1) + '/' + maxPolls + ')';
+            await new Promise((r) => setTimeout(r, 5000));
+        }
+        throw new Error('Timed out waiting for E2E result.');
+    }
+
+    async function runE2ETests() {
+        const selectedTests = getSelectedTests();
+        if (!selectedTests.length) {
+            statusEl.textContent = 'Select at least one test.';
+            return;
+        }
+        const targetEmail = String(emailInput.value || '').trim();
+        const targetBusinessId = String(bizSelect.value || '').trim();
+        if (!targetEmail && !targetBusinessId) {
+            statusEl.textContent = 'Enter target email or select business.';
+            return;
+        }
+
+        runBtn.disabled = true;
+        statusEl.textContent = 'Running tests...';
+        logEl.textContent = 'Triggering E2E runner...';
+        bodyEl.innerHTML = '<tr><td colspan="3" class="small">Running...</td></tr>';
+        const startedAt = Date.now();
+
+        try {
+            const payload = { selectedTests, targetEmail, targetBusinessId };
+            let responseData = null;
+
+            if (firebase.functions) {
+                try {
+                    const fn = firebase.functions().httpsCallable('runE2ETests');
+                    const res = await fn(payload);
+                    responseData = res && res.data ? res.data : null;
+                } catch (_fnErr) {
+                    // Fallback fetch endpoint if callable function is not configured.
+                }
+            }
+            if (!responseData) {
+                const r = await fetch('/api/admin/run-e2e-tests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!r.ok) throw new Error('E2E API failed: ' + r.status);
+                responseData = await r.json();
+            }
+
+            if (responseData && responseData.queued && responseData.runId) {
+                statusEl.textContent = 'Queued as ' + responseData.runId + '. Polling...';
+                const finalResult = await pollE2EResult(responseData.runId);
+                renderResults({
+                    results: finalResult.results || [],
+                    logs: finalResult.logs || '',
+                    durationMs: finalResult.durationMs || (Date.now() - startedAt)
+                });
+                statusEl.textContent = finalResult.success ? 'Completed.' : 'Completed with failures.';
+            } else {
+                renderResults({
+                    tests: responseData.tests || [],
+                    results: responseData.results || [],
+                    logs: responseData.logs || [],
+                    durationMs: responseData.durationMs || (Date.now() - startedAt)
+                });
+                statusEl.textContent = 'Completed.';
+            }
+        } catch (e) {
+            const msg = (e && e.message) ? e.message : String(e);
+            statusEl.textContent = 'Run failed.';
+            summaryEl.textContent = 'Execution time: ' + formatMs(Date.now() - startedAt) + ' | Failed';
+            bodyEl.innerHTML = '<tr><td colspan="3" class="small">❌ Test trigger failed</td></tr>';
+            logEl.textContent = 'Runner error:\n' + msg;
+        } finally {
+            runBtn.disabled = false;
+        }
+    }
+
+    runBtn.addEventListener('click', runE2ETests);
+
+    function openQuickModal() {
+        const srcEmail = document.getElementById('targetUserEmail');
+        const srcBiz = document.getElementById('targetUserBusinessSelect');
+        const qEmail = document.getElementById('e2eModalTargetEmail');
+        const qBiz = document.getElementById('e2eModalTargetBusiness');
+        const cmd = document.getElementById('e2eModalCommand');
+        qEmail.value = String((srcEmail && srcEmail.value) || '').trim();
+        qBiz.value = String((srcBiz && srcBiz.value) || '').trim();
+        cmd.value = 'cd N:\\DIGIBIZ\\DIGIBIZ_MASTER\nnpm run test:e2e:distributor';
+        quickStatus.textContent = 'Target: ' + (qEmail.value || '(no email)') + ' | ' + (qBiz.value || '(no business selected)');
+        quickModal.classList.add('show');
+    }
+
+    function closeQuickModal() {
+        quickModal.classList.remove('show');
+    }
+
+    async function copyQuickCommand() {
+        const cmd = document.getElementById('e2eModalCommand');
+        try {
+            await navigator.clipboard.writeText(cmd.value);
+            quickStatus.textContent = 'Command copied.';
+        } catch (_e) {
+            quickStatus.textContent = 'Copy failed. Manually copy command.';
+        }
+    }
+
+    async function runViaFunctionFromQuickModal() {
+        const targetEmail = String(document.getElementById('e2eModalTargetEmail').value || '').trim();
+        const targetBusinessId = String(document.getElementById('e2eModalTargetBusiness').value || '').trim();
+        const selectedTests = Array.from(document.querySelectorAll('.e2e-modal-test:checked')).map((el) => el.value);
+        if (!selectedTests.length) {
+            quickStatus.textContent = 'Select at least one test.';
+            return;
+        }
+        if (!targetEmail && !targetBusinessId) {
+            quickStatus.textContent = 'Provide email or business target first.';
+            return;
+        }
+        quickStatus.textContent = 'Triggering Cloud Function...';
+        try {
+            const fn = firebase.functions().httpsCallable('runE2ETests');
+            const res = await fn({ selectedTests, targetEmail, targetBusinessId });
+            const data = res && res.data ? res.data : {};
+            quickStatus.textContent = data.runId
+                ? ('Queued. Run ID: ' + data.runId)
+                : 'Triggered successfully.';
+        } catch (e) {
+            quickStatus.textContent = 'Cloud Function trigger failed: ' + ((e && e.message) ? e.message : String(e));
+        }
+    }
+
+    function openFullPanelFromModal() {
+        closeQuickModal();
+        const e2eSection = document.getElementById('e2eTestRunnerSection');
+        if (e2eSection) {
+            e2eSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    if (quickBtn) quickBtn.addEventListener('click', openQuickModal);
+    document.getElementById('btnE2EModalClose').addEventListener('click', closeQuickModal);
+    document.getElementById('btnE2ECopyCommand').addEventListener('click', copyQuickCommand);
+    document.getElementById('btnE2ERunViaFunction').addEventListener('click', runViaFunctionFromQuickModal);
+    document.getElementById('btnE2EModalOpenPanel').addEventListener('click', openFullPanelFromModal);
+    quickModal.addEventListener('click', function (e) {
+        if (e.target === quickModal) closeQuickModal();
+    });
+
+    firebase.auth().onAuthStateChanged(async function (u) {
+        if (!u) {
+            section.style.display = 'none';
+            return;
+        }
+        const allowed = await isSuperAdmin();
+        section.style.display = allowed ? 'block' : 'none';
+        if (allowed) await loadBusinessesToRunner();
+    });
+})();
+</script>
 <script src="/admin/super-dashboard.js?v=4"></script>
 </body>
 </html>

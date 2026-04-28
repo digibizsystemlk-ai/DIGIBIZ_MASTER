@@ -372,6 +372,7 @@ class Sidebar {
             const userDoc = await db.collection('users').doc(userId).get();
             const userData = userDoc.exists ? (userDoc.data() || {}) : {};
             this.currentRole = userData.role || 'VIEWER';
+            this.currentUserEmail = String((userData.email || (firebase.auth().currentUser && firebase.auth().currentUser.email) || '')).trim().toLowerCase();
             this.ownerName = userData.ownerName || userData.name || '';
             const mustChangePassword = userData.mustChangePassword === true;
             this.businessId = userData.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || null;
@@ -502,6 +503,10 @@ class Sidebar {
                 localStorage.setItem('currentBusinessName', String(this.businessName));
                 sessionStorage.setItem('currentBusinessName', String(this.businessName));
             }
+            if (this.currentUserEmail) {
+                localStorage.setItem('digibizSidebarUserEmail', this.currentUserEmail);
+                sessionStorage.setItem('digibizSidebarUserEmail', this.currentUserEmail);
+            }
         } catch (e) { /* ignore */ }
     }
 
@@ -525,6 +530,14 @@ class Sidebar {
         const em = String(email || '').trim().toLowerCase();
         // Pilot gate requested by product owner: email-scoped.
         return em === 'bdkariyapperuma@gmail.com';
+    }
+
+    isBdkAccountingTenant() {
+        const authEmail = (firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || '';
+        const fromStorage = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
+        const cached = localStorage.getItem('digibizSidebarUserEmail') || sessionStorage.getItem('digibizSidebarUserEmail') || '';
+        const email = String(authEmail || fromStorage || cached || this.currentUserEmail || '').trim().toLowerCase();
+        return email === 'bdkariyapperuma@gmail.com';
     }
 
     isCommissionPilotEnabled() {
@@ -579,6 +592,9 @@ class Sidebar {
             { icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
             { icon: '📈', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' }
         ];
+        if (this.isBdkAccountingTenant()) {
+            base.splice(base.length - 1, 0, { icon: '📊', name: 'Accounting', link: '/modules/distributor/web/accounting.html' });
+        }
         if (this.isWarehouseDisabledForCurrentTenant()) {
             return base.filter((item) => item.link !== '/modules/distributor/web/warehouse.html');
         }
@@ -626,10 +642,13 @@ class Sidebar {
 
     /** Customers + Accounting + Reports — always last block after business-specific links. */
     getSharedCrosscutMenus() {
+        const accountingLink = this.isBdkAccountingTenant()
+            ? '/modules/distributor/web/accounting.html'
+            : '/modules/accounts/advanced-accounting-dashboard.html';
         const menus = [
             { icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
             { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
-            { icon: '📁', name: 'Accounting', link: '/modules/accounts/advanced-accounting-dashboard.html' },
+            { icon: '📁', name: 'Accounting', link: accountingLink },
             { icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
         ];
         if (this.isSuperAdminUser()) {

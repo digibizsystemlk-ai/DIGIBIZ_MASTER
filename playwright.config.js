@@ -1,5 +1,6 @@
 // @ts-check
 const { defineConfig, devices } = require('@playwright/test');
+require('dotenv').config();
 
 module.exports = defineConfig({
   testDir: './tests',
@@ -10,7 +11,7 @@ module.exports = defineConfig({
   reporter: 'html',
   
   use: {
-    baseURL: 'https://digibiz-sys.web.app',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'https://digibiz-sys.web.app',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
