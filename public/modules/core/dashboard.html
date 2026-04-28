@@ -17,17 +17,20 @@
     <script src="../../core/accounts-core.js?v=58"></script>
     <script src="../../core/auth-roles.js?v=58"></script>
     <script src="../../core/business-types.js?v=58"></script>
-    <script src="../../core/dashboard-core.js?v=68"></script>
+    <script src="../../core/dashboard-core.js?v=69"></script>
     <script src="../../core/finalization-engine.js?v=1"></script>
     <script src="../../core/subscription-manager.js?v=58"></script>
-    <script src="/core/sidebar.js?v=62"></script>
+    <script src="/core/sidebar.js?v=67"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css?v=55">
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
         body{font-family:'Inter','Segoe UI',sans-serif;background:linear-gradient(135deg,#0f3b2c 0%,#114d39 100%);min-height:100vh;overflow-x:hidden;}
         .main-content{min-height:100vh;}
-        .top-bar{background:#fff;padding:10px 24px;display:flex;justify-content:center;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.1);position:sticky;top:0;z-index:99;gap:20px;}
-        .dashboard-headline{font-size:15px;font-weight:800;color:#0f3b2c;letter-spacing:.6px;text-transform:uppercase;text-align:center;width:100%;}
+        .top-bar{background:#fff;padding:10px 24px;display:flex;justify-content:flex-start;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.1);position:sticky;top:0;z-index:99;gap:14px;}
+        .dashboard-logo-slot{width:44px;height:44px;flex-shrink:0;display:none;align-items:center;justify-content:center;}
+        .dashboard-logo-slot.show{display:flex;}
+        .dashboard-business-logo{width:40px;height:40px;object-fit:contain;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;}
+        .dashboard-headline{font-size:15px;font-weight:800;color:#0f3b2c;letter-spacing:.6px;text-transform:uppercase;text-align:center;flex:1;min-width:0;}
         .container{padding:15px;}
         .business-type-selector,.filter-bar,.due-payments-widget,.data-table,.chart-card,.kpi-card{background:#fff;border-radius:12px;}
         .business-type-selector{padding:10px 20px;margin-bottom:15px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
@@ -87,6 +90,9 @@
 <body>
     <div class="main-content">
         <div class="top-bar">
+            <div class="dashboard-logo-slot" id="dashboardLogoSlot" aria-hidden="true">
+                <img id="dashboardBusinessLogoImg" class="dashboard-business-logo" alt="" width="40" height="40" decoding="async" />
+            </div>
             <div class="dashboard-headline" id="dashboardHeadline">REAL-TIME BUSINESS DASHBOARD</div>
         </div>
         <div class="container">
@@ -266,6 +272,24 @@
         let charts = {};
         let deferredInstallPrompt = null;
         let finalizationChecked = false;
+        let manufacturerSnapshotUnsubs = [];
+        let dashboardPollTimer = null;
+
+        function updateDashboardBusinessLogo() {
+            const slot = document.getElementById('dashboardLogoSlot');
+            const img = document.getElementById('dashboardBusinessLogoImg');
+            if (!slot || !img) return;
+            const url = dashboardContext && String(dashboardContext.logoUrl || '').trim();
+            if (url) {
+                img.src = url;
+                img.alt = 'Business logo';
+                slot.classList.add('show');
+            } else {
+                img.removeAttribute('src');
+                img.alt = '';
+                slot.classList.remove('show');
+            }
+        }
 
         function formatLKR(value) {
             return `LKR ${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -717,6 +741,7 @@
                     ? 'REAL-TIME DISTRIBUTOR BUSINESS DASHBOARD'
                     : `REAL-TIME ${String(dashboardContext.businessType || 'business').toUpperCase()} BUSINESS DASHBOARD`;
             }
+            updateDashboardBusinessLogo();
             syncLegacyViewModeVisibility();
 
             resolveKpiDefinitions(structure).forEach((kpi) => {
@@ -808,6 +833,53 @@
                 || '';
         }
 
+        function tearDownManufacturerDashboardRealtime() {
+            (manufacturerSnapshotUnsubs || []).forEach((u) => {
+                try { if (typeof u === 'function') u(); } catch (_) {}
+            });
+            manufacturerSnapshotUnsubs = [];
+        }
+
+        function scheduleDebouncedRenderDashboard() {
+            if (window.__DIGIBIZ_DASH_DEB__) clearTimeout(window.__DIGIBIZ_DASH_DEB__);
+            window.__DIGIBIZ_DASH_DEB__ = setTimeout(() => {
+                if (document.visibilityState === 'visible') void renderDashboard();
+            }, 500);
+        }
+
+        function bindManufacturerDashboardRealtime() {
+            tearDownManufacturerDashboardRealtime();
+            if (!dashboardContext || dashboardContext.businessType !== 'manufacturer') return;
+            const bid = dashboardContext.businessId;
+            const fs = (typeof db !== 'undefined' && db) ? db : (window.db || (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore()));
+            if (!bid || !fs || !fs.collection) return;
+            const cols = [
+                'manufacturer_raw_material_history',
+                'manufacturer_sales',
+                'manufacturer_production_runs',
+                'manufacturer_expenses'
+            ];
+            cols.forEach((col) => {
+                try {
+                    const unsub = fs.collection(col).where('businessId', '==', bid).onSnapshot(
+                        () => { scheduleDebouncedRenderDashboard(); },
+                        (err) => console.warn('Manufacturer dashboard snapshot', col, err)
+                    );
+                    manufacturerSnapshotUnsubs.push(unsub);
+                } catch (e) {
+                    console.warn('Manufacturer dashboard snapshot bind failed', col, e);
+                }
+            });
+        }
+
+        function bindDashboardPollInterval() {
+            if (dashboardPollTimer) clearInterval(dashboardPollTimer);
+            const ms = (dashboardContext && dashboardContext.businessType === 'manufacturer') ? 10000 : 30000;
+            dashboardPollTimer = setInterval(() => {
+                if (document.visibilityState === 'visible') void renderDashboard();
+            }, ms);
+        }
+
         async function refreshDashboardContextAndRender(user) {
             if (!user) return;
             const preferred = getPreferredBusinessId();
@@ -826,17 +898,14 @@
             localStorage.setItem('currentBusinessId', dashboardContext.businessId);
             sessionStorage.setItem('currentBusinessId', dashboardContext.businessId);
             await renderDashboard();
+            tearDownManufacturerDashboardRealtime();
+            bindManufacturerDashboardRealtime();
+            bindDashboardPollInterval();
         }
 
         async function startDashboardForUser(user) {
             if (!user) return;
             await refreshDashboardContextAndRender(user);
-            if (!window.__DIGIBIZ_CORE_DASHBOARD_POLL_BOUND__) {
-                window.__DIGIBIZ_CORE_DASHBOARD_POLL_BOUND__ = true;
-                setInterval(() => {
-                    if (document.visibilityState === 'visible') renderDashboard();
-                }, 30000);
-            }
             if (!window.__DIGIBIZ_CORE_DASHBOARD_WATCHERS_BOUND__) {
                 window.__DIGIBIZ_CORE_DASHBOARD_WATCHERS_BOUND__ = true;
                 window.addEventListener('storage', (ev) => {

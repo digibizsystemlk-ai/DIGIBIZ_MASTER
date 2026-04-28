@@ -14,10 +14,10 @@
     <script src="/core/event-validation.js?v=2"></script>
     <script src="/core/event-bus.js?v=2"></script>
     <script src="/core/accounts-core.js?v=2"></script>
-    <script src="/core/dashboard-core.js?v=62"></script>
-    <script src="/core/sidebar.js?v=64"></script>
+    <script src="/core/dashboard-core.js?v=70"></script>
+    <script src="/core/sidebar.js?v=67"></script>
     <script src="/core/sms-wallet-core.js?v=4"></script>
-    <script src="/modules/manufacturer/manufacturer-common.js?v=7"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=9"></script>
     <style id="mfgStyle"></style>
 </head>
 <body>
@@ -56,24 +56,117 @@
                 <div><label>Payment Status</label><select id="filterStatus"><option value="">All</option><option value="PAID">Paid</option><option value="PENDING">Pending</option><option value="PENDING_CLEARANCE">Pending Clearance</option></select></div>
             </div>
             <table style="margin-top:8px;">
-                <thead><tr><th>Category</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+                <thead><tr><th>Category</th><th>Amount</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
                 <tbody id="rows"></tbody>
             </table>
+        </div>
+    </div>
+</div>
+<div id="editModal" class="mfg-modal" style="display:none;">
+    <div class="mfg-modal-box">
+        <h3>Edit Expense</h3>
+        <div class="mfg-row">
+            <div><label>Category</label><input id="editCategory"></div>
+            <div><label>Amount</label><input type="number" id="editAmount" min="0" step="0.01"></div>
+        </div>
+        <div class="mfg-row3" style="margin-top:8px;">
+            <div><label>Payment Mode</label><input id="editPaymentMode"></div>
+            <div><label>Due Date</label><input type="date" id="editDueDate"></div>
+            <div><label>Cheque Clearance Date</label><input type="date" id="editChequeClearanceDate"></div>
+        </div>
+        <div style="margin-top:8px;"><label>Notes</label><input id="editNotes"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+            <button type="button" id="editCancelBtn">Cancel</button>
+            <button type="button" id="editSaveBtn">Update</button>
         </div>
     </div>
 </div>
 <script>
 document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
 let allRows = [];
+let editingRowId = '';
+const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+const modalStyle = document.createElement('style');
+modalStyle.textContent = `.mfg-modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:12000;padding:14px}.mfg-modal-box{max-width:760px;width:100%;background:#fff;border-radius:12px;padding:14px}`;
+document.head.appendChild(modalStyle);
 function v(id){ return document.getElementById(id).value; }
 function n(id){ return Number(v(id)) || 0; }
 function payStatus(mode){ return mode === 'CREDIT' ? 'PENDING' : (mode === 'CHEQUE' ? 'PENDING_CLEARANCE' : 'PAID'); }
+function isKubuka(){ return ManufacturerModule.businessId === KUBUKA_BID; }
+async function saveInvoiceDoc(invoice){
+    if (!isKubuka()) return null;
+    const id = invoice.invoiceNo || (`INV-${Date.now()}`);
+    await db.collection('invoices').doc(id).set({
+        ...invoice,
+        businessId: ManufacturerModule.businessId,
+        printHistory: [{ printedAt: new Date(), channel: 'browser-print' }],
+        createdAt: new Date(),
+        isActive: true
+    }, { merge: true });
+    return id;
+}
+function printThermalExpenseVoucher(voucher){
+    if (!isKubuka()) return;
+    const w = window.open('', '_blank', 'width=420,height=760');
+    if (!w) return;
+    w.document.write(`
+        <html><head><title>${voucher.invoiceNo}</title><style>
+            @page{size:80mm auto;margin:2mm;}
+            body{font-family:Arial,sans-serif;width:76mm;margin:0 auto;padding:2mm;color:#111}
+            h2{font-size:13px;text-align:center;margin:0 0 6px}
+            p{font-size:11px;line-height:1.35;margin:0 0 6px}
+        </style></head><body>
+            <h2>KUBUKA TEA FACTORY<br>Expense Voucher</h2>
+            <p>No: ${voucher.invoiceNo}<br>Date: ${voucher.date || ''}</p>
+            <p>Category: ${voucher.expenseCategory || '-'}<br>Amount: Rs ${ManufacturerModule.money(voucher.totalAmount || 0)}<br>Payment: ${voucher.paymentMethod || '-'}<br>Notes: ${voucher.notes || '-'}</p>
+        </body></html>
+    `);
+    w.document.close(); w.focus(); w.print();
+}
 function renderRows(){
     const cat = v('filterCategory');
     const st = v('filterStatus');
-    const rows = allRows.filter((x)=> (!cat || x.category===cat) && (!st || x.paymentStatus===st));
-    document.getElementById('rows').innerHTML = rows.map((x)=>`<tr><td>${x.category}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td><span class="pill ${x.paymentStatus==='PAID'?'paid':'pending'}">${x.paymentStatus}</span></td><td>${ManufacturerModule.formatDate(x.createdAt)}</td></tr>`).join('');
+    const rows = allRows.filter((x)=> x.isActive !== false && (!cat || x.category===cat) && (!st || x.paymentStatus===st));
+    document.getElementById('rows').innerHTML = rows.map((x)=>`<tr><td>${x.category}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td><span class="pill ${x.paymentStatus==='PAID'?'paid':'pending'}">${x.paymentStatus}</span></td><td>${ManufacturerModule.formatDate(x.createdAt)}</td><td><button type="button" onclick="openEditExpense('${x.id}')">✏️</button> <button type="button" onclick="deleteExpense('${x.id}')">🗑️</button></td></tr>`).join('');
 }
+function openEditExpense(id){
+    editingRowId = id;
+    const x = allRows.find((r) => r.id === id) || {};
+    document.getElementById('editCategory').value = x.category || '';
+    document.getElementById('editAmount').value = Number(x.amount || 0);
+    document.getElementById('editPaymentMode').value = x.paymentMode || '';
+    document.getElementById('editDueDate').value = x.dueDate || '';
+    document.getElementById('editChequeClearanceDate').value = x.chequeClearanceDate || '';
+    document.getElementById('editNotes').value = x.notes || '';
+    document.getElementById('editModal').style.display = 'flex';
+}
+function closeEditExpense(){
+    editingRowId = '';
+    document.getElementById('editModal').style.display = 'none';
+}
+async function saveEditExpense(){
+    if (!editingRowId) return;
+    const mode = String(v('editPaymentMode') || '').toUpperCase();
+    await db.collection('manufacturer_expenses').doc(editingRowId).update({
+        category: v('editCategory').trim(),
+        amount: Number(v('editAmount')) || 0,
+        paymentMode: mode,
+        paymentStatus: payStatus(mode),
+        dueDate: v('editDueDate') || null,
+        chequeClearanceDate: v('editChequeClearanceDate') || null,
+        notes: v('editNotes') || '',
+        updatedAt: new Date()
+    });
+    closeEditExpense();
+    await refresh();
+}
+async function deleteExpense(id){
+    if (!confirm('Are you sure you want to delete this record?')) return;
+    await db.collection('manufacturer_expenses').doc(id).update({ isActive: false, deletedAt: new Date() });
+    await refresh();
+}
+window.openEditExpense = openEditExpense;
+window.deleteExpense = deleteExpense;
 async function refresh(){
     const bid = ManufacturerModule.businessId;
     const snap = await db.collection('manufacturer_expenses').where('businessId','==',bid).limit(200).get().catch(()=>({docs:[]}));
@@ -106,12 +199,33 @@ async function save(){
         paymentStatus: payStatus(mode),
         dueDate: v('dueDate') || null,
         chequeClearanceDate: v('chequeClearanceDate') || null,
-        createdAt: new Date()
+        createdAt: new Date(),
+        flatAccountingSyncedV1: false
     };
     await db.collection('manufacturer_expenses').doc(id).set(data);
     await ManufacturerModule.saveCategory('EXPENSE', data.category);
     ManufacturerModule.publishEvent('MANUFACTURING_OPERATIONAL_EXPENSE', data);
+    try {
+        await ManufacturerModule.syncFlatAccountingOperationalExpense(data);
+        await db.collection('manufacturer_expenses').doc(id).update({ flatAccountingSyncedV1: true });
+    } catch (eFlat) {
+        console.warn('[Expenses] Flat accounting mirror failed', eFlat);
+    }
     await ManufacturerModule.enqueueSms('EXPENSE_POSTED', `Expense posted: ${data.category} Rs ${ManufacturerModule.money(data.amount)} (${data.paymentMode})`);
+    if (isKubuka()) {
+        const voucher = {
+            invoiceNo: `EXPV-${Date.now()}`,
+            invoiceType: 'EXPENSE_VOUCHER',
+            referenceId: data.expenseId,
+            expenseCategory: data.category,
+            totalAmount: data.amount,
+            paymentMethod: data.paymentMode,
+            notes: data.notes || '',
+            date: new Date().toISOString().slice(0, 10)
+        };
+        await saveInvoiceDoc(voucher);
+        printThermalExpenseVoucher(voucher);
+    }
     document.getElementById('msg').textContent = 'Expense saved with category + payment status, synced to ledger.';
     await loadCategoryOptions();
     refresh();
@@ -119,6 +233,8 @@ async function save(){
 (async function(){
     await ManufacturerModule.init('expenses');
     document.getElementById('saveBtn').onclick = save;
+    document.getElementById('editSaveBtn').onclick = saveEditExpense;
+    document.getElementById('editCancelBtn').onclick = closeEditExpense;
     document.getElementById('filterCategory').onchange = renderRows;
     document.getElementById('filterStatus').onchange = renderRows;
     await loadCategoryOptions();

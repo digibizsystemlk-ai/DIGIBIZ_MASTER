@@ -1,21 +1,21 @@
-if (localStorage.getItem('currentBusinessId') !== 'tea_4eab5f4098a473b9') return;
-
-setInterval(function() {
-    document.querySelectorAll('input#shopName').forEach((el,i)=>i>0&&el.remove());
-    document.querySelectorAll('datalist#shopNameSuggestions').forEach((el,i)=>i>0&&el.remove());
-}, 200);
-
-document.getElementById('shopName')?.setAttribute('required','required');
-
-const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
+const KDU_TEA_BUSINESS_ID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+const KUBUKA_NAME = 'KUBUKA TEA FACTORY';
 
 (function () {
+    setInterval(function() {
+        document.querySelectorAll('input#shopName').forEach((el,i)=>i>0&&el.remove());
+        document.querySelectorAll('datalist#shopNameSuggestions').forEach((el,i)=>i>0&&el.remove());
+    }, 200);
+
+    document.getElementById('shopName')?.setAttribute('required','required');
+
     let bid = null;
     let customers = [];
     let products = [];
     let showroomCart = [];
     let shopCreditOutstanding = 0;
     let savedShopProfiles = {};
+    let editingSaleId = '';
     const SHOP_PROFILE_KEY = `kdu_shop_profiles_${KDU_TEA_BUSINESS_ID}`;
 
     function byId(id) { return document.getElementById(id); }
@@ -293,13 +293,22 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
     }
 
     function printDoc(title, payload, lines) {
-        const w = window.open('', '_blank', 'width=900,height=700');
+        const w = window.open('', '_blank', 'width=420,height=720');
         if (!w) return;
         const bodyRows = lines.map((l) => `<tr><td>${l.name}</td><td style="text-align:right">${l.qty}</td><td style="text-align:right">${money(l.unitPrice)}</td><td style="text-align:right">${money(l.qty * l.unitPrice)}</td></tr>`).join('');
         w.document.write(`
-            <html><head><title>${title}</title><style>body{font-family:Arial;padding:20px;} table{width:100%;border-collapse:collapse;margin-top:12px;} th,td{border:1px solid #ddd;padding:8px;} .tr{text-align:right;}</style></head>
+            <html><head><title>${title}</title><style>
+            @page{size:80mm auto;margin:2mm;}
+            body{font-family:Arial,sans-serif;width:76mm;margin:0 auto;padding:2mm;color:#111;}
+            h2{font-size:14px;margin:0 0 4px;text-align:center;}
+            p{font-size:11px;line-height:1.4;margin:0 0 6px;}
+            table{width:100%;border-collapse:collapse;margin-top:6px;font-size:11px;}
+            th,td{border:1px solid #ddd;padding:4px;}
+            .tr{text-align:right;}
+            h3{font-size:13px;text-align:right;margin:8px 0 0;}
+            </style></head>
             <body>
-                <h2>KDU Tea Factory - ${title}</h2>
+                <h2>${KUBUKA_NAME} - ${title}</h2>
                 <p>No: ${payload.saleId}<br>Date: ${new Date().toLocaleString()}<br>Customer: ${payload.companyName || 'Walk-in Customer'}</p>
                 <table><thead><tr><th>Item</th><th class="tr">Qty</th><th class="tr">Unit Price</th><th class="tr">Amount</th></tr></thead><tbody>${bodyRows}</tbody></table>
                 <h3 style="text-align:right">Total ${money(payload.amount)}</h3>
@@ -308,6 +317,117 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
         w.document.close();
         w.focus();
         w.print();
+    }
+    async function saveInvoiceDoc(invoice){
+        const id = invoice.invoiceNo || (`INV-${Date.now()}`);
+        await db.collection('invoices').doc(id).set({
+            ...invoice,
+            businessId: bid,
+            printHistory: [{ printedAt: new Date(), channel: 'browser-print' }],
+            createdAt: new Date(),
+            isActive: true
+        }, { merge: true });
+        return id;
+    }
+    async function createAndPrintSalesInvoice(payload, lines){
+        const invoice = {
+            invoiceNo: `SINV-${Date.now()}`,
+            invoiceType: 'SALES_INVOICE',
+            referenceId: payload.saleId,
+            saleType: payload.saleType || 'SALE',
+            customerName: payload.companyName || 'Walk-in Customer',
+            paymentMethod: payload.paymentMode || '',
+            totalAmount: Number(payload.amount || 0),
+            date: new Date().toISOString().slice(0, 10),
+            items: (lines || []).map((l) => ({
+                name: l.name || '',
+                qty: Number(l.qty || 0),
+                unitPrice: Number(l.unitPrice || 0),
+                lineTotal: Number((Number(l.qty || 0) * Number(l.unitPrice || 0)).toFixed(2))
+            }))
+        };
+        await saveInvoiceDoc(invoice);
+        printDoc('Invoice', payload, lines || []);
+    }
+
+    async function loadSalesHistory() {
+        const body = byId('salesHistoryRows');
+        if (!body || !bid) return;
+        const snap = await db.collection('manufacturer_sales')
+            .where('businessId', '==', bid)
+            .limit(300)
+            .get()
+            .catch(() => ({ docs: [] }));
+        const rows = snap.docs
+            .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+            .filter((x) => x.isActive !== false)
+            .sort((a, b) => {
+                const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+                const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+                return tb - ta;
+            })
+            .slice(0, 80);
+        body.innerHTML = rows.length ? rows.map((x) => {
+            const dt = x.createdAt?.toDate ? x.createdAt.toDate().toLocaleDateString() : '-';
+            return `<tr>
+                <td>${dt}</td>
+                <td>${x.saleType || '-'}</td>
+                <td>${x.companyName || '-'}</td>
+                <td>${x.productName || '-'}</td>
+                <td>${money(x.amount || 0)}</td>
+                <td>${x.paymentMode || '-'} / ${x.paymentStatus || '-'}</td>
+                <td><button type="button" onclick="window.__openEditSale('${x.id}')">✏️</button> <button type="button" onclick="window.__deleteSale('${x.id}')">🗑️</button></td>
+            </tr>`;
+        }).join('') : '<tr><td colspan="7" class="empty">No sales history</td></tr>';
+    }
+
+    async function openEditSale(id) {
+        const doc = await db.collection('manufacturer_sales').doc(id).get().catch(() => null);
+        const x = doc && doc.exists ? (doc.data() || {}) : null;
+        if (!x) return;
+        editingSaleId = id;
+        byId('editSaleCustomer').value = x.companyName || '';
+        byId('editSaleProduct').value = x.productName || '';
+        byId('editSaleAmount').value = num(x.amount);
+        byId('editSaleQty').value = num(x.qty);
+        byId('editSaleUnitPrice').value = num(x.unitPrice);
+        byId('editSalePaymentMode').value = x.paymentMode || '';
+        byId('editSalePaymentStatus').value = x.paymentStatus || '';
+        byId('editSaleDueDate').value = x.dueDate || '';
+        byId('editSaleChequeDate').value = x.chequeClearanceDate || '';
+        byId('salesEditModal').style.display = 'flex';
+    }
+
+    function closeEditSale() {
+        editingSaleId = '';
+        byId('salesEditModal').style.display = 'none';
+    }
+
+    async function saveEditSale() {
+        if (!editingSaleId) return;
+        await db.collection('manufacturer_sales').doc(editingSaleId).update({
+            companyName: String(byId('editSaleCustomer').value || '').trim(),
+            productName: String(byId('editSaleProduct').value || '').trim(),
+            amount: num(byId('editSaleAmount').value),
+            qty: num(byId('editSaleQty').value),
+            unitPrice: num(byId('editSaleUnitPrice').value),
+            paymentMode: String(byId('editSalePaymentMode').value || '').toUpperCase(),
+            paymentStatus: String(byId('editSalePaymentStatus').value || '').toUpperCase(),
+            dueDate: byId('editSaleDueDate').value || null,
+            chequeClearanceDate: byId('editSaleChequeDate').value || null,
+            updatedAt: new Date()
+        });
+        closeEditSale();
+        await loadSalesHistory();
+    }
+
+    async function deleteSale(id) {
+        if (!confirm('Are you sure you want to delete this sale?')) return;
+        await db.collection('manufacturer_sales').doc(id).update({
+            isActive: false,
+            deletedAt: new Date()
+        });
+        await loadSalesHistory();
     }
 
     async function saveShopSale() {
@@ -354,7 +474,8 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
             deliveryAddress: byId('shopDeliveryAddress').value || address || '',
             fgUnitCost: unitCost,
             cogsAmount: Number((qty * unitCost).toFixed(4)),
-            createdAt: new Date()
+            createdAt: new Date(),
+            flatAccountingSyncedV1: false
         };
         saveShopProfile({
             name: shopName,
@@ -366,8 +487,15 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
         await db.collection('manufacturer_sales').doc(saleId).set(payload);
         await reduceStock(payload.productName, qty, payload.unitPrice);
         ManufacturerModule.publishEvent('MANUFACTURING_FINISHED_GOOD_SALE', payload);
-        printDoc('Invoice', payload, [{ name: payload.productName, qty: payload.qty, unitPrice: payload.unitPrice }]);
+        try {
+            await ManufacturerModule.syncFlatAccountingFinishedGoodSale(payload);
+            await db.collection('manufacturer_sales').doc(saleId).update({ flatAccountingSyncedV1: true });
+        } catch (eFlat) {
+            console.warn('[Sales shop] Flat accounting mirror failed', eFlat);
+        }
+        await createAndPrintSalesInvoice(payload, [{ name: payload.productName, qty: payload.qty, unitPrice: payload.unitPrice }]);
         toast('Shop sale saved');
+        await loadSalesHistory();
     }
 
     async function saveShowroomSale() {
@@ -406,17 +534,25 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
             fgUnitCost: 0,
             cogsAmount: Number(cogsAmount.toFixed(4)),
             lines: showroomCart.map((l) => ({ name: l.name, qty: num(l.qty), unitPrice: num(l.unitPrice), unitCost: num(l.unitCost || 0) })),
-            createdAt: new Date()
+            createdAt: new Date(),
+            flatAccountingSyncedV1: false
         };
         await db.collection('manufacturer_sales').doc(saleId).set(payload);
         for (const l of showroomCart) {
             await reduceStock(l.name, l.qty, l.unitPrice);
         }
         ManufacturerModule.publishEvent('MANUFACTURING_FINISHED_GOOD_SALE', payload);
-        printDoc('Receipt', payload, showroomCart);
+        try {
+            await ManufacturerModule.syncFlatAccountingFinishedGoodSale(payload);
+            await db.collection('manufacturer_sales').doc(saleId).update({ flatAccountingSyncedV1: true });
+        } catch (eFlat) {
+            console.warn('[Sales showroom] Flat accounting mirror failed', eFlat);
+        }
+        await createAndPrintSalesInvoice(payload, showroomCart);
         showroomCart = [];
         renderShowroomCart();
         toast('Showroom sale saved');
+        await loadSalesHistory();
     }
 
     async function loadMasterData() {
@@ -444,10 +580,7 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
     async function init() {
         await ManufacturerModule.init('sales');
         bid = ManufacturerModule.businessId;
-        if (bid !== KDU_TEA_BUSINESS_ID) {
-            window.location.href = '/modules/manufacturer/outbound.html';
-            return;
-        }
+        // KDU sales page remains standalone; do not redirect away.
         loadSavedShopProfiles();
         byId('shopDeliveryDate').value = todayStr();
         byId('tabShop').onclick = () => switchTab('SHOP');
@@ -476,9 +609,14 @@ const KDU_TEA_BUSINESS_ID = 'tea_4eab5f4098a473b9';
             await loadMasterData();
         };
         await loadMasterData();
+        await loadSalesHistory();
         switchTab('SHOP');
         recalcShopTotals();
         recalcShowroom();
+        byId('saveEditSaleBtn').onclick = saveEditSale;
+        byId('cancelEditSaleBtn').onclick = closeEditSale;
+        window.__openEditSale = openEditSale;
+        window.__deleteSale = deleteSale;
     }
 
     document.addEventListener('DOMContentLoaded', init);

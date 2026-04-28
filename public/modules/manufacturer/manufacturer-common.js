@@ -440,5 +440,83 @@ window.ManufacturerModule = (function () {
     API.saveCategory = (group, name) => API.saveFieldSuggestion(group, name);
     API.loadCategories = (group) => API.loadFieldSuggestions(group);
 
+    /**
+     * Flat accounting mirrors (supplier_ledger + account_balances) for distributor-style KPIs.
+     * Journal double-entry remains in journal/{businessId}/entries via accounts-core events.
+     */
+    API.upsertFlatAccountBalance = async function (businessId, accountName, delta, when) {
+        const idPart = String(accountName || '').trim();
+        if (!businessId || !idPart || !window.db) return;
+        const ref = window.db.collection('account_balances').doc(String(businessId) + '__' + idPart.replace(/\s+/g, '_').toUpperCase());
+        await window.db.runTransaction(async (tx) => {
+            const snap = await tx.get(ref);
+            const cur = snap.exists ? (Number((snap.data() || {}).balance) || 0) : 0;
+            const next = cur + (Number(delta) || 0);
+            tx.set(ref, {
+                businessId,
+                account: idPart,
+                balance: next,
+                updatedAt: when || new Date()
+            }, { merge: true });
+        });
+    };
+
+    API.addSupplierLedgerRow = async function ({ businessId, supplierId, supplierName, amount, type, reference, date }) {
+        if (!businessId || !window.db) return;
+        const amt = Number(amount) || 0;
+        if (amt <= 0) return;
+        const d = date instanceof Date ? date.toISOString().slice(0, 10) : (typeof date === 'string' ? date.slice(0, 10) : new Date().toISOString().slice(0, 10));
+        await window.db.collection('supplier_ledger').add({
+            supplierId: supplierId || '',
+            supplierName: String(supplierName || '').trim() || 'Supplier',
+            amount: amt,
+            type: String(type || 'credit').toLowerCase(),
+            reference: String(reference || ''),
+            date: d,
+            businessId,
+            createdAt: new Date()
+        });
+    };
+
+    API.syncFlatAccountingRawMaterialPurchase = async function (data) {
+        const bid = data.businessId;
+        const amt = Number(data.amount) || 0;
+        if (!bid || amt <= 0) return;
+        const refText = 'MFG_RM/' + String(data.purchaseId || '');
+        const postingDate = data.createdAt && data.createdAt.toDate
+            ? data.createdAt.toDate().toISOString().slice(0, 10)
+            : new Date().toISOString().slice(0, 10);
+        await API.addSupplierLedgerRow({
+            businessId: bid,
+            supplierId: data.customerId || '',
+            supplierName: data.supplierName,
+            amount: amt,
+            type: 'credit',
+            reference: refText,
+            date: postingDate
+        });
+        const now = new Date();
+        await Promise.all([
+            API.upsertFlatAccountBalance(bid, 'Purchases', amt, now),
+            API.upsertFlatAccountBalance(bid, 'Inventory', amt, now),
+            API.upsertFlatAccountBalance(bid, 'SupplierOutstanding', amt, now),
+            API.upsertFlatAccountBalance(bid, 'StockValue', amt, now)
+        ]);
+    };
+
+    API.syncFlatAccountingFinishedGoodSale = async function (data) {
+        const bid = data.businessId;
+        const cogs = Number(data.cogsAmount) || 0;
+        if (!bid || cogs <= 0) return;
+        await API.upsertFlatAccountBalance(bid, 'StockValue', -cogs, new Date());
+    };
+
+    API.syncFlatAccountingOperationalExpense = async function (data) {
+        const bid = data.businessId;
+        const amt = Number(data.amount) || 0;
+        if (!bid || amt <= 0) return;
+        await API.upsertFlatAccountBalance(bid, 'OperatingExpenses', amt, new Date());
+    };
+
     return API;
 })();

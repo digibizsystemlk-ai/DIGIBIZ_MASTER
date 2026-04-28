@@ -10,9 +10,9 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/core/firebase-init.js?v=60"></script>
-    <script src="/core/dashboard-core.js?v=60"></script>
-    <script src="/core/sidebar.js?v=60"></script>
+    <script src="/core/firebase-init.js?v=61"></script>
+    <script src="/core/dashboard-core.js?v=61"></script>
+    <script src="/core/sidebar.js?v=61"></script>
     <style>
         *{box-sizing:border-box}
         body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f3f4f6}
@@ -146,6 +146,7 @@
                         <th class="num">Buying Price</th>
                         <th class="num">Selling Price</th>
                         <th class="num">Total</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="historyBody"></tbody>
@@ -173,6 +174,7 @@
     var visibleRows = [];
     var bdkTenantEmail = 'bdkariyapperuma@gmail.com';
     var grnHistoryUnsub = null;
+    var editingGrnId = '';
 
     function showMsg(text, kind) {
         var el = document.getElementById('msg');
@@ -253,9 +255,35 @@
                 '<td class="num">' + fmtMoney(r.buyingPrice) + '</td>' +
                 '<td class="num">' + fmtMoney(r.sellingPrice) + '</td>' +
                 '<td class="num">' + fmtMoney(r.total != null ? r.total : r.lineTotal) + '</td>' +
+                '<td><button class="btn btn-ghost" type="button" data-action="edit" data-id="' + esc(r.id || '') + '">Edit</button> <button class="btn btn-ghost" type="button" data-action="delete" data-id="' + esc(r.id || '') + '">Delete</button></td>' +
                 '</tr>';
         }).join('');
         renderHistoryMeta(String(visibleRows.length) + ' records', 'ok');
+    }
+    function startEditGrn(id) {
+        var row = visibleRows.find(function (x) { return x.id === id; }) || historyRows.find(function (x) { return x.id === id; });
+        if (!row) return;
+        editingGrnId = id;
+        document.getElementById('supplierName').value = normalizeText(row.supplier || row.supplierName);
+        document.getElementById('grnDate').value = fmtDate(row.date || row.dateText || (row.createdAt && row.createdAt.toDate ? row.createdAt.toDate() : row.createdAt));
+        document.getElementById('productName').value = normalizeText(row.productName);
+        document.getElementById('category').value = normalizeText(row.category);
+        document.getElementById('brand').value = normalizeText(row.brand);
+        document.getElementById('barcode').value = normalizeText(row.barcode);
+        document.getElementById('sellingPrice').value = String(toNum(row.sellingPrice));
+        document.getElementById('buyingPrice').value = String(toNum(row.buyingPrice));
+        document.getElementById('receivedQty').value = String(toNum(row.quantity));
+        showMsg('Editing GRN row. Click Save GRN to update.', '');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    async function softDeleteGrn(id) {
+        if (!confirm('Soft delete this GRN record?')) return;
+        await db.collection('grn_history').doc(id).set({
+            isActive: false,
+            deletedAt: new Date(),
+            updatedAt: new Date()
+        }, { merge: true });
+        await loadGrnList();
     }
     function openGrnDetailsModal(row) {
         var modal = document.getElementById('grnDetailModal');
@@ -295,7 +323,7 @@
                 var d = doc.data() || {};
                 d.id = doc.id;
                 return d;
-            });
+            }).filter(function (d) { return d.isActive !== false; });
             historyRows.sort(function (a, b) {
                 var ad = new Date(a.date || a.dateText || (a.createdAt && a.createdAt.toDate ? a.createdAt.toDate() : a.createdAt) || 0).getTime();
                 var bd = new Date(b.date || b.dateText || (b.createdAt && b.createdAt.toDate ? b.createdAt.toDate() : b.createdAt) || 0).getTime();
@@ -322,7 +350,7 @@
                     var d = doc.data() || {};
                     d.id = doc.id;
                     return d;
-                });
+                }).filter(function (d) { return d.isActive !== false; });
                 historyRows.sort(function (a, b) {
                     var ad = new Date(a.date || a.dateText || (a.createdAt && a.createdAt.toDate ? a.createdAt.toDate() : a.createdAt) || 0).getTime();
                     var bd = new Date(b.date || b.dateText || (b.createdAt && b.createdAt.toDate ? b.createdAt.toDate() : b.createdAt) || 0).getTime();
@@ -482,7 +510,7 @@
             await db.collection('products').doc(productId).set(productPayload, { merge: true });
 
             var lineTotal = buyingPrice * receivedQty;
-            var grnDocRef = db.collection('grn_history').doc();
+            var grnDocRef = editingGrnId ? db.collection('grn_history').doc(editingGrnId) : db.collection('grn_history').doc();
             await grnDocRef.set({
                 grnId: grnDocRef.id,
                 businessId: currentBusinessId,
@@ -505,6 +533,7 @@
                 createdAt: now,
                 createdBy: currentUser ? currentUser.uid : ''
             });
+            editingGrnId = '';
 
             var supplierUpdate = await updateSupplierBalanceIfExists(supplierName, lineTotal);
             await createAccountingEntries(
@@ -573,6 +602,13 @@
         applyHistoryFilter();
     });
     document.getElementById('historyBody').addEventListener('click', function (ev) {
+        var actionBtn = ev.target && ev.target.closest ? ev.target.closest('button[data-action]') : null;
+        if (actionBtn) {
+            var act = actionBtn.getAttribute('data-action');
+            var id = actionBtn.getAttribute('data-id');
+            if (act === 'edit') { startEditGrn(id); return; }
+            if (act === 'delete') { softDeleteGrn(id); return; }
+        }
         var tr = ev.target && ev.target.closest ? ev.target.closest('tr[data-row]') : null;
         if (!tr) return;
         var idx = parseInt(tr.getAttribute('data-row'), 10);

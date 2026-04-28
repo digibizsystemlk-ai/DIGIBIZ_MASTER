@@ -11,10 +11,10 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
     <script src="/core/firebase-init.js?v=2"></script>
-    <script src="/core/dashboard-core.js?v=62"></script>
-    <script src="/core/sidebar.js?v=64"></script>
+    <script src="/core/dashboard-core.js?v=70"></script>
+    <script src="/core/sidebar.js?v=67"></script>
     <script src="/core/sms-wallet-core.js?v=4"></script>
-    <script src="/modules/manufacturer/manufacturer-common.js?v=7"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=9"></script>
     <style id="mfgStyle"></style>
 </head>
 <body>
@@ -148,7 +148,7 @@
             <div style="overflow-x:auto;margin-top:8px;">
                 <table>
                     <thead>
-                        <tr><th>Date</th><th>Name</th><th>Type</th><th>Method</th><th>Amount</th><th>Balance Before</th><th>Balance After</th><th>Note</th></tr>
+                        <tr><th>Date</th><th>Name</th><th>Type</th><th>Method</th><th>Amount</th><th>Balance Before</th><th>Balance After</th><th>Note</th><th>Actions</th></tr>
                     </thead>
                     <tbody id="historyRows"></tbody>
                 </table>
@@ -162,6 +162,7 @@ const financeCustomerById = {};
 let selectedOutstanding = 0;
 let selectedSnapshot = null;
 let allFinanceTransactions = [];
+let editingFinanceId = '';
 
 async function loadFinanceCustomers(){
     const bid = ManufacturerModule.businessId;
@@ -293,7 +294,16 @@ document.getElementById('financeForm').onsubmit = async function(e){
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         };
 
-        const docRef = await db.collection('finance_transactions').add(payload);
+        let docRef = null;
+        if (editingFinanceId) {
+            await db.collection('finance_transactions').doc(editingFinanceId).set({
+                ...payload,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            docRef = { id: editingFinanceId };
+        } else {
+            docRef = await db.collection('finance_transactions').add(payload);
+        }
 
         if(window.eventBus){
             window.eventBus.publish('FINANCE_TRANSACTION_RECORDED', { ...payload, transactionId: docRef.id });
@@ -309,9 +319,11 @@ document.getElementById('financeForm').onsubmit = async function(e){
             applyDelta: false
         });
 
-        msg.textContent = 'Transaction saved and SMS queued!';
+        msg.textContent = editingFinanceId ? 'Transaction updated and SMS queued!' : 'Transaction saved and SMS queued!';
         msg.className = 'mfg-msg ok';
         this.reset();
+        editingFinanceId = '';
+        document.getElementById('saveFinanceBtn').textContent = 'තහවුරු කර සුරකින්න (Confirm & Save)';
         document.getElementById('chequeDetails').style.display = 'none';
         document.getElementById('linkedRows').innerHTML = '';
         document.getElementById('financeLinkedInfo').textContent = '';
@@ -406,7 +418,7 @@ function renderHistoryRows(){
     const rows = getFilteredHistory();
     const tbody = document.getElementById('historyRows');
     if(!rows.length){
-        tbody.innerHTML = '<tr><td colspan="8">No transactions for selected filters.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9">No transactions for selected filters.</td></tr>';
     } else {
         tbody.innerHTML = rows.map((x)=>{
             const typeLabel = x.type === 'PAYMENT_GIVEN' ? 'Given' : 'Received';
@@ -419,6 +431,7 @@ function renderHistoryRows(){
                 <td>Rs ${ManufacturerModule.money(x.balanceBefore)}</td>
                 <td>Rs ${ManufacturerModule.money(x.balanceAfter)}</td>
                 <td class="wrap-name">${safeCell(x.note || '-')}</td>
+                <td><button type="button" onclick="openEditFinanceTx('${x.id}')">✏️</button> <button type="button" onclick="deleteFinanceTx('${x.id}')">🗑️</button></td>
             </tr>`;
         }).join('');
     }
@@ -428,6 +441,33 @@ function renderHistoryRows(){
     const received = rows.reduce((sum, x)=>x.type === 'PAYMENT_RECEIVED' ? sum + (Number(x.amount) || 0) : sum, 0);
     document.getElementById('historySummary').textContent = `Records: ${rows.length} | Total: Rs ${ManufacturerModule.money(totalAmount)} | Given: Rs ${ManufacturerModule.money(given)} | Received: Rs ${ManufacturerModule.money(received)}`;
 }
+
+function openEditFinanceTx(id){
+    const x = allFinanceTransactions.find((r) => r.id === id);
+    if (!x) return;
+    editingFinanceId = id;
+    document.getElementById('financeCustomerId').value = x.customerId || '';
+    document.getElementById('financeType').value = x.type || 'PAYMENT_GIVEN';
+    document.getElementById('financeAmount').value = Number(x.amount || 0);
+    document.getElementById('financeMethod').value = x.method || 'CASH';
+    document.getElementById('financeDate').value = x.date || '';
+    document.getElementById('financeNote').value = x.note || '';
+    document.getElementById('saveFinanceBtn').textContent = 'Update Transaction';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function deleteFinanceTx(id){
+    if(!confirm('Soft delete this transaction?')) return;
+    await db.collection('finance_transactions').doc(id).set({
+        isActive: false,
+        deletedAt: new Date(),
+        updatedAt: new Date()
+    }, { merge: true });
+    await loadTransactionHistory();
+}
+
+window.openEditFinanceTx = openEditFinanceTx;
+window.deleteFinanceTx = deleteFinanceTx;
 
 function csvEscape(value){
     const s = String(value == null ? '' : value);
@@ -520,6 +560,7 @@ async function loadTransactionHistory(){
         .catch(()=>({docs:[]}));
     allFinanceTransactions = snap.docs
         .map((d)=>({ id: d.id, ...(d.data() || {}) }))
+        .filter((x) => x.isActive !== false)
         .sort((a,b)=>{
             const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || a.date || 0).getTime();
             const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || b.date || 0).getTime();

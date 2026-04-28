@@ -65,7 +65,9 @@ function ensureSidebarStyles() {
         .retail-navbar{position:fixed;left:0;top:0;width:${SIDEBAR_WIDTH}px;height:100vh;background:linear-gradient(135deg,#0a2a44 0%,#1e3c72 100%);color:#fff;z-index:9999 !important;overflow-y:auto;display:flex;flex-direction:column;justify-content:space-between;font-family:'Inter',sans-serif;pointer-events:auto;}
         .retail-navbar *{pointer-events:auto;}
         .digibiz-mobile-menu-toggle{position:fixed;top:15px;left:15px;z-index:10001;width:46px;height:46px;border:none;border-radius:12px;background:rgba(15,59,44,.95);color:#fff;display:none;align-items:center;justify-content:center;box-shadow:0 10px 24px rgba(0,0,0,.35);cursor:pointer;font-size:20px;padding:0;margin:0;backdrop-filter:blur(2px);}
-        .digibiz-mobile-topbar{position:fixed;top:15px;left:70px;right:15px;height:46px;background:rgba(10,42,68,.96);border-radius:12px;z-index:10000;display:none;align-items:center;padding:0 12px;box-shadow:0 10px 24px rgba(0,0,0,.28);}
+        .digibiz-mobile-topbar{position:fixed;top:15px;left:70px;right:15px;height:46px;background:rgba(10,42,68,.96);border-radius:12px;z-index:10000;display:none;align-items:center;padding:0 12px;box-shadow:0 10px 24px rgba(0,0,0,.28);gap:10px;}
+        .digibiz-mobile-biz-logo{width:34px;height:34px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,.2);flex-shrink:0;display:none;background:rgba(0,0,0,.15);}
+        .digibiz-mobile-biz-logo.is-visible{display:block;}
         .digibiz-mobile-brand-wrap{position:relative;display:inline-flex;align-items:center;padding-right:6px;}
         .digibiz-mobile-brand{font-size:16px;font-weight:900;letter-spacing:.55px;color:#ffd966;white-space:nowrap;line-height:1;}
         .digibiz-mobile-business-name{font-size:12px;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;text-transform:uppercase;font-weight:700;letter-spacing:.35px;text-align:center;}
@@ -76,9 +78,14 @@ function ensureSidebarStyles() {
         .trial-sidebar-banner{background:#dc2626;color:#fff;text-align:center;padding:6px 8px;font-size:11px;font-weight:700;letter-spacing:.5px;animation:pulseRed 1s infinite;border-bottom:1px solid rgba(255,255,255,.2);}
         @keyframes pulseRed{0%{background:#dc2626;}50%{background:#b91c1c;}100%{background:#dc2626;}}
         .sidebar-header{padding:16px 24px;border-bottom:1px solid rgba(255,255,255,.15);}
-        .logo{font-size:24px;font-weight:700;text-align:center;margin-bottom:20px;}
+        .logo{font-size:24px;font-weight:700;text-align:center;margin-bottom:12px;}
         .logo span{color:#ffd966;}
-        .sidebar-business-name{font-size:13px;font-weight:800;text-align:center;color:#e5f3ff;margin:-12px 0 14px;text-transform:uppercase !important;letter-spacing:.4px;min-height:18px;display:block !important;visibility:visible !important;}
+        .sidebar-business-logo-wrap{display:flex;justify-content:center;align-items:center;min-height:48px;margin:0 0 10px;}
+        .sidebar-business-logo-img{max-height:52px;max-width:200px;width:auto;object-fit:contain;border-radius:12px;border:1px solid rgba(255,255,255,.22);background:rgba(0,0,0,.12);display:none;}
+        .sidebar-business-logo-img.is-visible{display:block;}
+        .sidebar-business-logo-icon{font-size:38px;line-height:1;display:none;}
+        .sidebar-business-logo-icon.is-visible{display:block;}
+        .sidebar-business-name{font-size:13px;font-weight:800;text-align:center;color:#e5f3ff;margin:0 0 14px;text-transform:uppercase !important;letter-spacing:.4px;min-height:18px;display:block !important;visibility:visible !important;}
         .user-info-sidebar{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.1);padding:12px 14px;border-radius:12px;}
         .user-avatar-sidebar{font-size:30px;}
         .user-name-sidebar{font-size:14px;font-weight:600;}
@@ -134,6 +141,7 @@ function ensureMobileSidebarControls() {
         topbar.id = 'digibizMobileTopbar';
         topbar.className = 'digibiz-mobile-topbar';
         topbar.innerHTML = `
+            <img id="digibizMobileBusinessLogoImg" class="digibiz-mobile-biz-logo" alt="" decoding="async" />
             <div class="digibiz-mobile-brand-wrap"><div class="digibiz-mobile-brand">DIGIBIZ</div></div>
             <div class="digibiz-mobile-business-name biz-name" id="digibizMobileBusinessName"></div>
             <div class="digibiz-mobile-right-spacer"></div>
@@ -166,9 +174,10 @@ class Sidebar {
     constructor() {
         preReserveSidebarSpace();
         this.mwBusinessId = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
-        this.kduTeaBusinessId = 'tea_4eab5f4098a473b9';
+        this.kduTeaBusinessId = '0Uled5estVeQVN8cChmMTNRDNIE3';
         this.scrapOwnerUid = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
         this.superAdmin = false;
+        this.businessLogoUrl = '';
         if (SHOULD_RESERVE_SIDEBAR_SPACE) {
             // Paint cached sidebar immediately at bootstrap (no auth/db wait).
             this.bootCachedSidebarNow();
@@ -223,6 +232,7 @@ class Sidebar {
             this.businessType = storedType || (this.shouldForceManufacturerMode() ? 'manufacturer' : 'retail');
         }
         this.businessName = storedBusinessName || 'Business';
+        this.businessLogoUrl = localStorage.getItem('digibizBusinessLogoUrl') || sessionStorage.getItem('digibizBusinessLogoUrl') || '';
         this.ownerName = this.ownerName || '';
         this.manufacturerDueAlert = null;
         this.smsLowBalanceAlert = null;
@@ -391,6 +401,17 @@ class Sidebar {
                 }
                 this.businessName = businessDoc.exists ? businessDoc.data().name : 'My Business';
                 if (businessDoc.exists && businessDoc.data().ownerName) this.ownerName = businessDoc.data().ownerName;
+                const logoFromDoc = businessDoc.exists ? String((businessDoc.data() || {}).logoUrl || '').trim() : '';
+                this.businessLogoUrl = logoFromDoc;
+                try {
+                    if (logoFromDoc) {
+                        localStorage.setItem('digibizBusinessLogoUrl', logoFromDoc);
+                        sessionStorage.setItem('digibizBusinessLogoUrl', logoFromDoc);
+                    } else {
+                        localStorage.removeItem('digibizBusinessLogoUrl');
+                        sessionStorage.removeItem('digibizBusinessLogoUrl');
+                    }
+                } catch (e) { /* ignore */ }
                 if (businessDoc.exists) {
                     localStorage.setItem('currentBusinessType', this.businessType);
                     sessionStorage.setItem('currentBusinessType', this.businessType);
@@ -403,6 +424,11 @@ class Sidebar {
             } else {
                 this.businessType = storedType || (this.shouldForceManufacturerMode() ? 'manufacturer' : 'retail');
                 this.businessName = 'No Business Connected';
+                this.businessLogoUrl = '';
+                try {
+                    localStorage.removeItem('digibizBusinessLogoUrl');
+                    sessionStorage.removeItem('digibizBusinessLogoUrl');
+                } catch (e) { /* ignore */ }
             }
             const p = String(window.location.pathname || '').toLowerCase();
             if (mustChangePassword && !p.includes('/modules/core/change-password.html') && !p.includes('/auth/login.html')) {
@@ -419,6 +445,7 @@ class Sidebar {
             this.ownerName = '';
             this.businessType = storedType || (this.shouldForceManufacturerMode() ? 'manufacturer' : 'retail');
             this.businessName = 'No Business Connected';
+            this.businessLogoUrl = '';
         }
         if (this.shouldForceManufacturerMode()) {
             this.businessType = 'manufacturer';
@@ -675,6 +702,31 @@ class Sidebar {
         return [...dash, ...core, ...tail];
     }
 
+    /**
+     * Keep only first occurrence of exact same menu (name+link).
+     * This removes accidental duplicate blocks while preserving top-first order.
+     */
+    dedupeMenus(menuItems) {
+        const seen = new Set();
+        const seenLinks = new Set();
+        const out = [];
+        (menuItems || []).forEach((m) => {
+            const k = `${String((m && m.name) || '')}|${String((m && m.link) || '')}`;
+            if (seen.has(k)) return;
+            // KUBUKA manufacturer: keep only first menu per canonical link (prevents duplicate Raw Materials/inbound entry).
+            if (this.businessId === this.kduTeaBusinessId) {
+                const canonicalLink = String((m && m.link) || '').split('?')[0].replace(/\/+$/, '');
+                if (canonicalLink) {
+                    if (seenLinks.has(canonicalLink)) return;
+                    seenLinks.add(canonicalLink);
+                }
+            }
+            seen.add(k);
+            out.push(m);
+        });
+        return out;
+    }
+
     getMenus() {
         const pathLower = String(window.location.pathname || '').toLowerCase();
         const onManufacturerModule = pathLower.includes('/modules/manufacturer/');
@@ -738,12 +790,17 @@ class Sidebar {
                 menus = [
                     { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
                     { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
+                    { icon: '🏭', name: 'Production / Manufacturing', link: '/modules/manufacturer/outbound.html' },
+                    { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
+                    { icon: '🧪', name: 'Quality Control', link: '/modules/manufacturer/stock.html' },
                     { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
+                    { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
                     { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
                 ];
             } else {
                 menus = [
                     { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
+                    { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
                     { icon: '🏭', name: 'Production / Manufacturing', link: '/modules/manufacturer/outbound.html' },
                     { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
                     { icon: '🧪', name: 'Quality Control', link: '/modules/manufacturer/stock.html' },
@@ -764,6 +821,14 @@ class Sidebar {
         if (isKduManufacturer) {
             const kduTail = this.getSharedCrosscutMenus().filter((m) => m.name !== 'Finance');
             menus = this.assembleSidebarMenus(menus, kduTail);
+            menus = menus.filter((m) => {
+                const name = String((m && (m.name || m.text)) || '').trim().toLowerCase();
+                const link = String((m && m.link) || '').toLowerCase();
+                if (name === 'supplier management' || name.includes('supplier')) return false;
+                if (link && link.includes('supplier')) return false;
+                return true;
+            });
+            menus = this.dedupeMenus(menus);
         } else {
             menus = this.assembleSidebarMenus(menus);
         }
@@ -775,7 +840,17 @@ class Sidebar {
             );
         }
 
-        return menus;
+        // Final KUBUKA hard guard: never show supplier menu entries.
+        if (this.businessId === this.kduTeaBusinessId) {
+            menus = (menus || []).filter((m) => {
+                const text = String((m && (m.text || m.name)) || '').toLowerCase();
+                const link = String((m && m.link) || '').toLowerCase();
+                if (text.includes('supplier')) return false;
+                if (link.includes('supplier')) return false;
+                return true;
+            });
+        }
+        return this.dedupeMenus(menus);
     }
 
     isMenuActive(link, pathname) {
@@ -845,6 +920,40 @@ class Sidebar {
             mobileBizEl.textContent = businessNameUpper;
             mobileBizEl.title = businessNameUpper;
         }
+        this.renderBusinessLogo();
+    }
+
+    renderBusinessLogo() {
+        const url = String(this.businessLogoUrl || '').trim();
+        const img = document.getElementById('sidebarBusinessLogoImg');
+        const icon = document.getElementById('sidebarBusinessLogoIcon');
+        const mimg = document.getElementById('digibizMobileBusinessLogoImg');
+        if (img) {
+            if (url) {
+                img.src = url;
+                img.alt = 'Business logo';
+                img.classList.add('is-visible');
+            } else {
+                img.removeAttribute('src');
+                img.alt = '';
+                img.classList.remove('is-visible');
+            }
+        }
+        if (icon) {
+            if (url) icon.classList.remove('is-visible');
+            else icon.classList.add('is-visible');
+        }
+        if (mimg) {
+            if (url) {
+                mimg.src = url;
+                mimg.alt = 'Business logo';
+                mimg.classList.add('is-visible');
+            } else {
+                mimg.removeAttribute('src');
+                mimg.alt = '';
+                mimg.classList.remove('is-visible');
+            }
+        }
     }
 
     async refreshBusinessNameFromProfile() {
@@ -859,8 +968,20 @@ class Sidebar {
             if (resolvedBusinessId) {
                 const businessDoc = await db.collection('businesses').doc(resolvedBusinessId).get();
                 if (businessDoc.exists) {
-                    resolvedName = String(businessDoc.data().name || '').trim();
-                    if (businessDoc.data().ownerName) this.ownerName = String(businessDoc.data().ownerName || '').trim();
+                    const bd = businessDoc.data() || {};
+                    resolvedName = String(bd.name || '').trim();
+                    if (bd.ownerName) this.ownerName = String(bd.ownerName || '').trim();
+                    const logo = String(bd.logoUrl || '').trim();
+                    this.businessLogoUrl = logo;
+                    try {
+                        if (logo) {
+                            localStorage.setItem('digibizBusinessLogoUrl', logo);
+                            sessionStorage.setItem('digibizBusinessLogoUrl', logo);
+                        } else {
+                            localStorage.removeItem('digibizBusinessLogoUrl');
+                            sessionStorage.removeItem('digibizBusinessLogoUrl');
+                        }
+                    } catch (e) { /* ignore */ }
                 }
             }
             if (!resolvedName) {
@@ -871,9 +992,11 @@ class Sidebar {
             const ownerEl = document.getElementById('sidebarUserName');
             if (ownerEl) ownerEl.textContent = this.ownerName;
             this.renderBusinessName(resolvedName);
+            this.renderBusinessLogo();
         } catch (error) {
             console.warn('Business name refresh failed:', error?.message || error);
             this.renderBusinessName(this.businessName || '');
+            this.renderBusinessLogo();
         }
     }
 
@@ -921,6 +1044,10 @@ class Sidebar {
                     <div id="sidebarTrialBanner" style="display:none;" class="trial-sidebar-banner">TRIAL MODE ACTIVE</div>
                     <div class="sidebar-header">
                         <div class="logo">DIGIBIZ<span>™</span></div>
+                        <div class="sidebar-business-logo-wrap">
+                            <img id="sidebarBusinessLogoImg" class="sidebar-business-logo-img" alt="" decoding="async" />
+                            <span id="sidebarBusinessLogoIcon" class="sidebar-business-logo-icon is-visible" aria-hidden="true">🏢</span>
+                        </div>
                         <div class="sidebar-business-name biz-name" id="sidebarBusinessName"></div>
                         <div class="user-info-sidebar">
                             <span class="user-avatar-sidebar">👤</span>

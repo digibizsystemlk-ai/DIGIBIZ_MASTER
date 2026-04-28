@@ -69,8 +69,51 @@
         });
         return Object.values(merged)
             .map((o) => ({ ...o, __outstanding: extractOutstanding(o) }))
+            .filter((o) => o.isActive !== false)
             .filter((o) => o.__outstanding > 0)
             .sort((a, b) => dateMs(b.orderDate || b.createdAt) - dateMs(a.orderDate || a.createdAt));
+    }
+
+    async function editUnderlyingOrder(orderId) {
+        if (!state.db || !orderId) return;
+        const ref = state.db.collection('orders').doc(orderId);
+        const doc = await ref.get().catch(() => null);
+        if (!doc || !doc.exists) return alert('Order not found');
+        const d = doc.data() || {};
+        const totalNow = Number(d.totalAmount || d.subtotal || 0) || 0;
+        const paidNow = Number(d.collectionAmount || d.collectedAmount || 0) || 0;
+        const outNow = extractOutstanding(d);
+        const totalIn = prompt('Edit total amount:', String(totalNow));
+        if (totalIn === null) return;
+        const paidIn = prompt('Edit paid/collection amount:', String(paidNow));
+        if (paidIn === null) return;
+        const statusIn = prompt('Edit status:', String(d.status || ''));
+        if (statusIn === null) return;
+        const total = Number(totalIn);
+        const paid = Number(paidIn);
+        if (!Number.isFinite(total) || total < 0 || !Number.isFinite(paid) || paid < 0) return alert('Invalid number values.');
+        const patch = {
+            totalAmount: total,
+            subtotal: total,
+            collectionAmount: paid,
+            collectedAmount: paid,
+            outstandingBalance: Math.max(0, total - paid),
+            status: String(statusIn || '').trim() || d.status || '',
+            updatedAt: new Date(),
+            lastEditedAt: new Date()
+        };
+        await ref.set(patch, { merge: true });
+        alert(`Order updated. Outstanding: Rs ${money(outNow)} -> Rs ${money(patch.outstandingBalance)}`);
+    }
+
+    async function softDeleteUnderlyingOrder(orderId) {
+        if (!state.db || !orderId) return;
+        if (!confirm('Soft delete this underlying order?')) return;
+        await state.db.collection('orders').doc(orderId).set({
+            isActive: false,
+            deletedAt: new Date(),
+            updatedAt: new Date()
+        }, { merge: true });
     }
 
     async function openForShop(shopId, shopName, contact) {
@@ -88,7 +131,7 @@
 
         title.textContent = 'Outstanding Orders - ' + String(shopName || shopId || 'Shop');
         sub.textContent = 'Contact: ' + String(contact || '-') + ' | Shop ID: ' + String(shopId || '-');
-        rowsEl.innerHTML = '<tr><td colspan="7">Loading...</td></tr>';
+        rowsEl.innerHTML = '<tr><td colspan="8">Loading...</td></tr>';
         totalEl.textContent = 'Rs 0.00';
         modal.classList.add('open');
 
@@ -96,7 +139,7 @@
         now.setHours(0, 0, 0, 0);
         const rows = await fetchOutstandingOrdersForShop(shopId);
         if (!rows.length) {
-            rowsEl.innerHTML = '<tr><td colspan="7">No outstanding invoices/orders for this shop.</td></tr>';
+            rowsEl.innerHTML = '<tr><td colspan="8">No outstanding invoices/orders for this shop.</td></tr>';
             return;
         }
         const totalOutstanding = rows.reduce((sum, r) => sum + (Number(r.__outstanding) || 0), 0);
@@ -116,6 +159,7 @@
                 <td class="num">Rs ${money(out)}</td>
                 <td class="num">${overdue}</td>
                 <td>${esc(status)}</td>
+                <td><button type="button" onclick="window.CreditAgingDrilldown.editOrder('${esc(r.id)}','${esc(shopId)}','${esc(shopName || '')}','${esc(contact || '')}')">✏️</button> <button type="button" onclick="window.CreditAgingDrilldown.deleteOrder('${esc(r.id)}','${esc(shopId)}','${esc(shopName || '')}','${esc(contact || '')}')">🗑️</button></td>
             </tr>`;
         }).join('');
         totalEl.textContent = 'Rs ' + money(totalOutstanding);
@@ -130,6 +174,14 @@
 
     global.CreditAgingDrilldown = {
         init: init,
-        openForShop: openForShop
+        openForShop: openForShop,
+        editOrder: async function (orderId, shopId, shopName, contact) {
+            await editUnderlyingOrder(orderId);
+            await openForShop(shopId, shopName, contact);
+        },
+        deleteOrder: async function (orderId, shopId, shopName, contact) {
+            await softDeleteUnderlyingOrder(orderId);
+            await openForShop(shopId, shopName, contact);
+        }
     };
 })(window);

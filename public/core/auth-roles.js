@@ -153,12 +153,18 @@ async function getUserRole(userId, businessId = null) {
     if (!userId) return null;
     
     try {
-        if (typeof window.ensureMwTradingOwnerBizMembership === 'function' && window.auth && window.auth.currentUser && window.auth.currentUser.uid === userId) {
+        const MW_BID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        const resolvedBusinessId = businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+
+        // Only run MW membership sync for MW business context.
+        if (resolvedBusinessId === MW_BID
+            && typeof window.ensureMwTradingOwnerBizMembership === 'function'
+            && window.auth
+            && window.auth.currentUser
+            && window.auth.currentUser.uid === userId) {
             await window.ensureMwTradingOwnerBizMembership(window.auth.currentUser);
             console.log('[getUserRole] ensureMwTradingOwnerBizMembership invoked for uid', userId);
         }
-
-        const resolvedBusinessId = businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
 
         // Check if SUPER_ADMIN first
         const userDoc = await db.collection('users').doc(userId).get();
@@ -235,6 +241,7 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
  */
 (function attachDistributorPermissions() {
     const OWNER_NORMS = new Set(['DISTRIBUTOR_OWNER', 'BUSINESS_OWNER', 'SUPER_ADMIN', 'ADMIN']);
+    const MW_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
 
     function normalizeRole(r) {
         let s = String(r || '')
@@ -255,8 +262,10 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
         return 'OTHER';
     }
 
-    function permissionsForRole(roleRaw) {
+    function permissionsForRole(roleRaw, businessId) {
         const b = roleBand(roleRaw);
+        const bid = String(businessId || '').trim();
+        const isMwTrading = bid === MW_BUSINESS_ID;
         const isOwner = b === 'OWNER';
         const isSC = b === 'SALES_COORDINATOR';
         const isAM = b === 'AREA_MANAGER';
@@ -274,7 +283,7 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
                 canViewFinancialsProfit: false,
                 canStockEdit: false,
                 canStockView: true,
-                canCustomerCreate: false,
+                canCustomerCreate: isMwTrading,
                 canCustomerEditDelete: false,
                 canCustomerView: true,
                 canProductCreate: false,
@@ -301,7 +310,7 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
             canViewFinancialsProfit: isOwner || isSC,
             canStockEdit: isOwner,
             canStockView: matrix,
-            canCustomerCreate: matrix,
+            canCustomerCreate: matrix || isMwTrading,
             canCustomerEditDelete: isOwner || isSC,
             canCustomerView: matrix,
             canProductCreate: isOwner || isSC,

@@ -137,10 +137,13 @@ class DashboardCore {
         const shouldPreferManufacturer = storedBusinessType === 'manufacturer' || String(window.location.pathname || '').toLowerCase().includes('/modules/manufacturer/');
         let businessType = shouldPreferManufacturer ? 'manufacturer' : 'retail';
         let businessName = 'Business';
+        let logoUrl = '';
         const businessDoc = await window.db.collection('businesses').doc(businessId).get();
         if (businessDoc.exists) {
-            businessType = this.normalizeBusinessType(businessDoc.data().businessType || businessType);
-            businessName = businessDoc.data().name || businessName;
+            const bd = businessDoc.data() || {};
+            businessType = this.normalizeBusinessType(bd.businessType || businessType);
+            businessName = bd.name || businessName;
+            logoUrl = String(bd.logoUrl || '').trim();
         } else {
             businessType = this.normalizeBusinessType(storedBusinessType || businessType);
         }
@@ -172,7 +175,7 @@ class DashboardCore {
             }
         } catch (eBud) { /* ignore */ }
 
-        const context = { userId: user.uid, businessId, businessType, businessName, userRole };
+        const context = { userId: user.uid, businessId, businessType, businessName, userRole, logoUrl };
         this.persistContext(context);
         return context;
     }

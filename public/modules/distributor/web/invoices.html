@@ -33,11 +33,71 @@
 </div>
 <script>
 let invoiceRows=[];
+const MW_BID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+let activeBusinessId = '';
 function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
 function money(n){return 'Rs '+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
-function render(){rows.innerHTML=invoiceRows.map((o,i)=>`<tr><td>${esc(o.orderNumber||o.id)}</td><td>${esc(o.date)}</td><td>${esc(o.shopName||o.shopId||'-')}</td><td>${esc(o.repName||o.repId||'-')}</td><td>${money(o.totalAmount)}</td><td>${esc(o.status)}</td><td><button onclick="viewPdf(${i})">View PDF</button></td></tr>`).join('')||'<tr><td colspan="7">No approved invoices.</td></tr>';}
+function isMwBusiness(){ return String(activeBusinessId || '').trim() === MW_BID; }
+function mwPrintCss(){
+    return `@media print {
+@page { size: 80mm auto; margin: 4mm; }
+html,body{width:72mm !important;margin:0 auto !important;}
+}
+html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Segoe UI',Arial,sans-serif;font-size:11px;}
+.bill{width:72mm;max-width:72mm;margin:0 auto;}
+.biz-title{font-family:Impact,'Arial Black',Arial,sans-serif;font-size:14px;text-align:center;line-height:1.2;text-transform:uppercase;}
+.biz-sub{font-size:10px;text-align:center;margin-top:4px;line-height:1.35;}
+.meta{margin-top:8px;font-size:10px;line-height:1.45;}
+.meta-row{display:flex;justify-content:space-between;gap:4px;border-bottom:1px dotted #ccc;padding:2px 0;}
+.bill-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:9px;}
+.bill-table th,.bill-table td{border:1px solid #000;padding:3px 4px;vertical-align:top;}
+.bill-table th{font-size:7.5px;text-align:center;background:#f0f0f0;line-height:1.2;}
+.bill-num{text-align:right;white-space:nowrap;}
+.summary{margin-top:10px;font-size:10px;line-height:1.5;}
+.summary-row{display:flex;justify-content:space-between;border-bottom:1px dotted #999;padding:2px 0;}
+.footer{margin-top:12px;text-align:center;font-size:10px;font-weight:600;}
+.softby{margin-top:8px;text-align:center;font-size:7px;color:#333;line-height:1.35;}`;
+}
+function printInvoice(htmlContent){
+    const printWindow = window.open('', '_blank', 'width=400,height=600');
+    if(!printWindow){ alert('Please allow pop-ups to print the invoice.'); return; }
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    setTimeout(() => {
+        try { printWindow.focus(); printWindow.print(); } catch (_e) {}
+        setTimeout(() => { try { printWindow.close(); } catch (_e2) {} }, 500);
+    }, 350);
+}
+function buildMwInvoiceHtml(o){
+    const billNo = o.orderNumber || o.id;
+    const rowsHtml = (o.items||[]).map(it=>`<tr>
+<td>${esc(it.productName||'-')}</td>
+<td class="bill-num">${Number(it.freeQty||0)}</td>
+<td class="bill-num">${money(it.totalPrice||0)}</td>
+</tr>`).join('') || '<tr><td colspan="3" style="text-align:center">No items</td></tr>';
+    return `<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${esc(billNo)}</title><style>${mwPrintCss()}</style></head><body><div class="bill">
+<div class="biz-title">MW TRADING</div>
+<div class="biz-sub">Approved Invoice</div>
+<div class="meta">
+<div class="meta-row"><span>Invoice</span><span>${esc(billNo)}</span></div>
+<div class="meta-row"><span>Date</span><span>${esc(o.date)}</span></div>
+<div class="meta-row"><span>Customer</span><span>${esc(o.shopName||o.shopId||'-')}</span></div>
+<div class="meta-row"><span>Rep</span><span>${esc(o.repName||o.repId||'-')}</span></div>
+</div>
+<table class="bill-table"><thead><tr><th>Item</th><th>Free Qty</th><th>Amount</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+<div class="summary"><div class="summary-row"><span>Total</span><span>${money(o.totalAmount||0)}</span></div></div>
+<div class="footer">Thank You! Come Again......</div>
+<div class="softby">Software Solution by DIGIBIZ - 0713446500</div>
+</div></body></html>`;
+}
+function render(){rows.innerHTML=invoiceRows.map((o,i)=>`<tr><td>${esc(o.orderNumber||o.id)}</td><td>${esc(o.date)}</td><td>${esc(o.shopName||o.shopId||'-')}</td><td>${esc(o.repName||o.repId||'-')}</td><td>${money(o.totalAmount)}</td><td>${esc(o.status)}</td><td><button onclick="viewPdf(${i})">${isMwBusiness() ? 'Print 80mm' : 'View PDF'}</button></td></tr>`).join('')||'<tr><td colspan="7">No approved invoices.</td></tr>';}
 window.viewPdf=function(idx){
     const o=invoiceRows[idx]; if(!o)return;
+    if (isMwBusiness()) {
+        printInvoice(buildMwInvoiceHtml(o));
+        return;
+    }
     const html=`<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${esc(o.orderNumber||o.id)}</title><style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{padding:8px;border:1px solid #ddd;font-size:12px;}h2{margin:0 0 8px;} .r{text-align:right;}</style></head><body><h2>Invoice ${esc(o.orderNumber||o.id)}</h2><p>Date: ${esc(o.date)}<br>Customer: ${esc(o.shopName||o.shopId||'-')}<br>Rep: ${esc(o.repName||o.repId||'-')}</p><table><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Total</th></tr></thead><tbody>${(o.items||[]).map(it=>`<tr><td>${esc(it.productName||'-')}</td><td class="r">${Number(it.orderedQty||0)+Number(it.freeQty||0)}</td><td class="r">${money(it.unitPrice||0)}</td><td class="r">${money(it.totalPrice||0)}</td></tr>`).join('')}</tbody></table><h3>Total: ${money(o.totalAmount||0)}</h3></body></html>`;
     const w=window.open('','_blank'); if(!w)return; w.document.write(html); w.document.close();
 };
@@ -52,6 +112,7 @@ firebase.auth().onAuthStateChanged(async(u)=>{
         rows.innerHTML = '<tr><td colspan="7">No business selected.</td></tr>';
         return;
     }
+    activeBusinessId = bid;
     localStorage.setItem('currentBusinessId', bid);sessionStorage.setItem('currentBusinessId', bid);
     const snap=await db.collection('orders').where('businessId','==',bid).where('status','==','approved').get();
     invoiceRows=snap.docs.map(d=>{const o=d.data();const dt=o.approvedAt?.toDate?o.approvedAt.toDate():(o.orderDate?.toDate?o.orderDate.toDate():new Date());return{id:d.id,...o,date:dt.toLocaleString()};}).sort((a,b)=>new Date(b.date)-new Date(a.date));

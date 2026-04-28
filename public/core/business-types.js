@@ -191,6 +191,7 @@ const BUSINESS_TYPES = {
         description: "Raw materials, production planning, cost tracking and profitability",
         menus: [
             { icon: "📥", name: "Inbound", link: "/modules/manufacturer/inbound.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
+            { icon: "🛍️", name: "Sales", link: "/modules/manufacturer/sales.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
             { icon: "📤", name: "Outbound", link: "/modules/manufacturer/outbound.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
             { icon: "📦", name: "Stock 360", link: "/modules/manufacturer/stock.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
             { icon: "🧾", name: "Expenses", link: "/modules/manufacturer/expenses.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },

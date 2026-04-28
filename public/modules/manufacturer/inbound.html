@@ -14,12 +14,12 @@
     <script src="/core/event-validation.js?v=2"></script>
     <script src="/core/event-bus.js?v=2"></script>
     <script src="/core/accounts-core.js?v=2"></script>
-    <script src="/core/dashboard-core.js?v=62"></script>
-    <script src="/core/sidebar.js?v=64"></script>
+    <script src="/core/dashboard-core.js?v=70"></script>
+    <script src="/core/sidebar.js?v=67"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
     <script src="/core/sms-wallet-core.js?v=4"></script>
     <script src="/core/ui-helpers.js?v=1"></script>
-    <script src="/modules/manufacturer/manufacturer-common.js?v=7"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=9"></script>
     <style id="mfgStyle"></style>
 </head>
 <body>
@@ -72,18 +72,89 @@
         <div class="mfg-card">
             <h3>Latest Inbound Entries</h3>
             <table>
-                <thead><tr><th>Material</th><th>Supplier</th><th>Amount</th><th>Payment</th><th>Date</th></tr></thead>
+                <thead><tr><th>Material</th><th>Supplier</th><th>Amount</th><th>Payment</th><th>Date</th><th>Actions</th></tr></thead>
                 <tbody id="historyRows"></tbody>
             </table>
         </div>
     </div>
 </div>
+<div id="editModal" class="mfg-modal" style="display:none;">
+    <div class="mfg-modal-box">
+        <h3>Edit Inbound Purchase</h3>
+        <div class="mfg-row">
+            <div><label>Material Name</label><input id="editMaterialName"></div>
+            <div><label>Supplier Name</label><input id="editSupplierName"></div>
+        </div>
+        <div class="mfg-row3" style="margin-top:8px;">
+            <div><label>Qty</label><input type="number" id="editQty" min="0" step="0.01"></div>
+            <div><label>Unit Cost</label><input type="number" id="editUnitCost" min="0" step="0.01"></div>
+            <div><label>Amount</label><input type="number" id="editAmount" min="0" step="0.01"></div>
+        </div>
+        <div class="mfg-row3" style="margin-top:8px;">
+            <div><label>Payment Mode</label>
+                <select id="editPaymentMode">
+                    <option value="CASH">Cash</option>
+                    <option value="BANK">Bank</option>
+                    <option value="CREDIT">Credit</option>
+                    <option value="CHEQUE">Cheque</option>
+                </select>
+            </div>
+            <div><label>Due Date</label><input type="date" id="editDueDate"></div>
+            <div><label>Cheque Clearance Date</label><input type="date" id="editChequeClearanceDate"></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+            <button id="editCancelBtn" type="button">Cancel</button>
+            <button id="editSaveBtn" type="button">Update</button>
+        </div>
+    </div>
+</div>
 <script>
 document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
+const modalStyle = document.createElement('style');
+modalStyle.textContent = `.mfg-modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:12000;padding:14px}.mfg-modal-box{max-width:760px;width:100%;background:#fff;border-radius:12px;padding:14px}`;
+document.head.appendChild(modalStyle);
 const supplierCustomerById = {};
+let editingRowId = '';
+const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
 function v(id){ return document.getElementById(id).value; }
 function n(id){ return Number(v(id)) || 0; }
 function payStatus(mode){ return mode === 'CREDIT' ? 'PENDING' : (mode === 'CHEQUE' ? 'PENDING_CLEARANCE' : 'PAID'); }
+function isKubuka(){ return ManufacturerModule.businessId === KUBUKA_BID; }
+async function saveInvoiceDoc(invoice){
+    if (!isKubuka()) return null;
+    const id = invoice.invoiceNo || (`INV-${Date.now()}`);
+    await db.collection('invoices').doc(id).set({
+        ...invoice,
+        businessId: ManufacturerModule.businessId,
+        printHistory: [{ printedAt: new Date(), channel: 'browser-print' }],
+        createdAt: new Date(),
+        isActive: true
+    }, { merge: true });
+    return id;
+}
+function printThermalPurchaseInvoice(invoice){
+    if (!isKubuka()) return;
+    const w = window.open('', '_blank', 'width=420,height=760');
+    if (!w) return;
+    w.document.write(`
+        <html><head><title>${invoice.invoiceNo}</title><style>
+            @page{size:80mm auto;margin:2mm;}
+            body{font-family:Arial,sans-serif;width:76mm;margin:0 auto;padding:2mm;color:#111}
+            h2{font-size:13px;text-align:center;margin:0 0 6px}
+            p{font-size:11px;line-height:1.35;margin:0 0 6px}
+            table{width:100%;border-collapse:collapse;font-size:11px}
+            th,td{border:1px solid #ddd;padding:4px}
+            .tr{text-align:right}
+        </style></head><body>
+            <h2>KUBUKA TEA FACTORY<br>Purchase Invoice</h2>
+            <p>No: ${invoice.invoiceNo}<br>Date: ${invoice.date || ''}<br>Supplier: ${invoice.supplierName || '-'}</p>
+            <table><thead><tr><th>Material</th><th class="tr">Qty</th><th class="tr">Unit</th><th class="tr">Total</th></tr></thead>
+            <tbody><tr><td>${invoice.materialName || '-'}</td><td class="tr">${invoice.qty || 0}</td><td class="tr">${ManufacturerModule.money(invoice.unitPrice || 0)}</td><td class="tr">${ManufacturerModule.money(invoice.totalAmount || 0)}</td></tr></tbody></table>
+            <p>Payment: ${invoice.paymentMethod || '-'} ${invoice.dueDate ? `<br>Due: ${invoice.dueDate}` : ''}<br><b>Total: Rs ${ManufacturerModule.money(invoice.totalAmount || 0)}</b></p>
+        </body></html>
+    `);
+    w.document.close(); w.focus(); w.print();
+}
 function recalcAmount(){
     const qty = Number(document.getElementById('qty').value || 0);
     const unitPrice = Number(document.getElementById('unitPrice').value || 0);
@@ -96,6 +167,7 @@ async function refresh(){
         .where('businessId','==',bid).limit(100).get().catch(()=>({docs:[]}));
     const rows = snap.docs
         .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+        .filter((x) => x.isActive !== false)
         .sort((a, b) => {
             const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
             const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
@@ -103,9 +175,68 @@ async function refresh(){
         })
         .slice(0, 25);
     document.getElementById('historyRows').innerHTML = rows.map((x)=>{
-        return `<tr><td class="wrap-name">${x.materialName||'-'}</td><td>${x.supplierName||'-'}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td>${x.paymentMode||'-'} / ${x.paymentStatus||'-'}</td><td>${ManufacturerModule.formatDate(x.createdAt)}</td></tr>`;
+        return `<tr>
+            <td class="wrap-name">${x.materialName||'-'}</td>
+            <td>${x.supplierName||'-'}</td>
+            <td>Rs ${ManufacturerModule.money(x.amount)}</td>
+            <td>${x.paymentMode||'-'} / ${x.paymentStatus||'-'}</td>
+            <td>${ManufacturerModule.formatDate(x.createdAt)}</td>
+            <td>
+                <button type="button" onclick="openEditInbound('${x.id}')">✏️</button>
+                <button type="button" onclick="deleteInbound('${x.id}')">🗑️</button>
+            </td>
+        </tr>`;
     }).join('');
 }
+function openEditInbound(id){
+    editingRowId = id;
+    db.collection('manufacturer_raw_material_history').doc(id).get().then((doc) => {
+        const x = doc.exists ? (doc.data() || {}) : {};
+        document.getElementById('editMaterialName').value = x.materialName || '';
+        document.getElementById('editSupplierName').value = x.supplierName || '';
+        document.getElementById('editQty').value = Number(x.qty || 0);
+        document.getElementById('editUnitCost').value = Number(x.unitCost || 0);
+        document.getElementById('editAmount').value = Number(x.amount || 0);
+        document.getElementById('editPaymentMode').value = x.paymentMode || 'CASH';
+        document.getElementById('editDueDate').value = x.dueDate || '';
+        document.getElementById('editChequeClearanceDate').value = x.chequeClearanceDate || '';
+        document.getElementById('editModal').style.display = 'flex';
+    }).catch((e) => {
+        alert('Unable to open edit: ' + (e.message || e));
+    });
+}
+function closeEditInbound(){
+    editingRowId = '';
+    document.getElementById('editModal').style.display = 'none';
+}
+async function saveEditInbound(){
+    if (!editingRowId) return;
+    const updatePayload = {
+        materialName: v('editMaterialName').trim(),
+        supplierName: v('editSupplierName').trim(),
+        qty: Number(v('editQty')) || 0,
+        unitCost: Number(v('editUnitCost')) || 0,
+        amount: Number(v('editAmount')) || 0,
+        paymentMode: v('editPaymentMode'),
+        paymentStatus: payStatus(v('editPaymentMode')),
+        dueDate: v('editDueDate') || null,
+        chequeClearanceDate: v('editChequeClearanceDate') || null,
+        updatedAt: new Date()
+    };
+    await db.collection('manufacturer_raw_material_history').doc(editingRowId).update(updatePayload);
+    closeEditInbound();
+    await refresh();
+}
+async function deleteInbound(id){
+    if (!confirm('Are you sure you want to delete this record?')) return;
+    await db.collection('manufacturer_raw_material_history').doc(id).update({
+        isActive: false,
+        deletedAt: new Date()
+    });
+    await refresh();
+}
+window.openEditInbound = openEditInbound;
+window.deleteInbound = deleteInbound;
 async function loadCategoryOptions(){
     const cats = await ManufacturerModule.loadCategories('INBOUND_PURCHASE');
     document.getElementById('purchaseCategoryList').innerHTML = cats.map((c)=>`<option value="${c}"></option>`).join('');
@@ -240,7 +371,8 @@ async function save(){
         paymentStatus: payStatus(mode),
         dueDate: v('dueDate') || null,
         chequeClearanceDate: v('chequeClearanceDate') || null,
-        createdAt: new Date()
+        createdAt: new Date(),
+        flatAccountingSyncedV1: false
     };
     data.customerId = cid;
     data.customerMobile = customer.mobile || '';
@@ -265,7 +397,13 @@ async function save(){
         }, { merge: true });
         
         ManufacturerModule.publishEvent('MANUFACTURING_RAW_MATERIAL_PURCHASED', data);
-        
+        try {
+            await ManufacturerModule.syncFlatAccountingRawMaterialPurchase(data);
+            await db.collection('manufacturer_raw_material_history').doc(id).update({ flatAccountingSyncedV1: true });
+        } catch (eFlat) {
+            console.warn('[Inbound] Flat accounting mirror failed', eFlat);
+        }
+
         const smsRes = await ManufacturerModule.enqueueSms('INBOUND_PURCHASE', null, {
             name: data.customerFirstName || data.supplierName,
             mobile: data.customerMobile,
@@ -278,6 +416,24 @@ async function save(){
         
         msgEl.textContent = 'Purchase saved and stock updated.' + (smsRes && smsRes.ok ? ' SMS queued.' : '') + smsEnqueueNote(smsRes);
         if (smsRes && !smsRes.ok) msgEl.classList.add(smsRes.skipped ? 'warn' : 'err');
+        if (isKubuka()) {
+            const invoiceNo = `PINV-${Date.now()}`;
+            const invoice = {
+                invoiceNo,
+                invoiceType: 'PURCHASE_INVOICE',
+                referenceId: data.purchaseId,
+                supplierName: data.supplierName,
+                materialName: data.materialName,
+                qty: data.qty,
+                unitPrice: data.unitCost,
+                totalAmount: data.amount,
+                paymentMethod: data.paymentMode,
+                dueDate: data.dueDate || null,
+                date: new Date().toISOString().slice(0, 10)
+            };
+            await saveInvoiceDoc(invoice);
+            printThermalPurchaseInvoice(invoice);
+        }
         
         // Reset fields
         document.getElementById('materialName').value = '';
@@ -299,6 +455,8 @@ async function save(){
 (async function(){
     await ManufacturerModule.init('inbound');
     document.getElementById('saveBtn').onclick = save;
+    document.getElementById('editSaveBtn').onclick = saveEditInbound;
+    document.getElementById('editCancelBtn').onclick = closeEditInbound;
     document.getElementById('supplierCustomerId').addEventListener('change', renderSupplierCustomerBanner);
     document.getElementById('qty').addEventListener('input', recalcAmount);
     document.getElementById('unitPrice').addEventListener('input', recalcAmount);

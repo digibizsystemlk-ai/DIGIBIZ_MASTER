@@ -1,0 +1,41 @@
+rules_version = '2';
+// Deploy: firebase deploy --only storage
+// Existing businesses: open /modules/company/profile.html as an owner (or allowed role), upload PNG/JPG ≤2MB; Firestore field businesses.logoUrl powers UI.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function canActOnBusinessLogo(businessId) {
+      return request.auth != null
+        && businessId is string
+        && businessId.size() > 4
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && (
+          userDoc().role == 'SUPER_ADMIN'
+          || userDoc().businessId == businessId
+          || (
+            firestore.exists(/databases/(default)/documents/businesses/$(businessId))
+            && firestore.get(/databases/(default)/documents/businesses/$(businessId)).data.ownerId == request.auth.uid
+          )
+          || (
+            firestore.exists(/databases/(default)/documents/businesses/$(businessId)/users/$(request.auth.uid))
+            && firestore.get(/databases/(default)/documents/businesses/$(businessId)/users/$(request.auth.uid)).data.role in [
+              'BUSINESS_OWNER', 'DISTRIBUTOR_OWNER', 'ADMIN',
+              'business_owner', 'distributor_owner', 'admin'
+            ]
+          )
+        );
+    }
+
+    match /business-logos/{businessId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow create, update: if canActOnBusinessLogo(businessId)
+        && request.resource.size < 3 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if canActOnBusinessLogo(businessId);
+    }
+  }
+}

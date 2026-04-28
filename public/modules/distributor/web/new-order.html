@@ -142,7 +142,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/core/firebase-init.js?v=46"></script>
-    <script src="/core/auth-roles.js?v=47"></script>
+    <script src="/core/auth-roles.js?v=48"></script>
     <script src="/core/dashboard-core.js?v=46"></script>
     <script src="/core/distributor-inventory.js?v=46"></script>
     <script src="/core/distributor-lorry-stock.js?v=1"></script>
@@ -321,8 +321,16 @@
             return orderedQtyOf(item) * (Number(item && item.unitPrice) || 0);
         }
         function distributorPerms() {
-            if (window.DigibizDistributorPermissions) return window.DigibizDistributorPermissions.permissionsForRole(userRole);
+            if (window.DigibizDistributorPermissions) return window.DigibizDistributorPermissions.permissionsForRole(userRole, currentBusinessId);
             return null;
+        }
+        function canCreateCustomerMwOpen() {
+            var p = distributorPerms();
+            if (p) return !!p.canCustomerCreate;
+            var bid = currentBizFromStorage();
+            if (bid === MW_TRADING_BILLING_BID) return true;
+            var r = normalizeRole(userRole);
+            return r === 'BUSINESS_OWNER' || r === 'DISTRIBUTOR_OWNER' || r === 'SUPER_ADMIN' || r === 'ADMIN';
         }
         function canCreateOrder() {
             var p = distributorPerms();
@@ -584,6 +592,10 @@
         }
 
         async function addNewShopFromOrderForm() {
+            if (!canCreateCustomerMwOpen()) {
+                showFormMsg('Your role cannot create new shops/customers in this business.', 'err');
+                return;
+            }
             var repId = document.getElementById('repSelect').value;
             if (!repId) {
                 showFormMsg('Select a sales rep first. The new shop is saved under that rep.', 'err');
@@ -632,6 +644,8 @@
         function bindShopQuickAdd() {
             var btn = document.getElementById('newShopAddBtn');
             var inp = document.getElementById('newShopNameInput');
+            if (btn) btn.style.display = canCreateCustomerMwOpen() ? '' : 'none';
+            if (inp) inp.disabled = !canCreateCustomerMwOpen();
             if (!btn || btn.dataset.bound === '1') return;
             btn.dataset.bound = '1';
             btn.addEventListener('click', addNewShopFromOrderForm);
@@ -1334,10 +1348,15 @@
                 isLorryPilotBiz = false;
             }
 
-            if (!canCreateOrder()) {
+            if (!canCreateOrder() && !canCreateCustomerMwOpen()) {
                 document.getElementById('gateBlock').style.display = 'block';
                 document.getElementById('orderFormBlock').style.display = 'none';
                 return;
+            }
+            if (!canCreateOrder() && canCreateCustomerMwOpen()) {
+                showFormMsg('Shop creation is allowed for your role in MW Trading. Order submission remains restricted.', 'ok');
+                var saveBtn = document.getElementById('saveBtn');
+                if (saveBtn) saveBtn.disabled = true;
             }
             setupMwNewOrderUiHints();
             var orderDateEl = document.getElementById('orderDate');

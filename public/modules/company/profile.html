@@ -15,7 +15,7 @@
     
     <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
     <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
-    <script src="../../core/firebase-init.js?v=55"></script>
+    <script src="../../core/firebase-init.js?v=56"></script>
     <script src="../../core/event-validation.js?v=55"></script>
     <script src="../../core/event-bus.js?v=55"></script>
     <script src="../../core/accounts-core.js?v=55"></script>
@@ -23,7 +23,7 @@
     <script src="../../core/business-types.js?v=55"></script>
     <script src="../../core/dashboard-core.js?v=55"></script>
     <script src="../../core/subscription-manager.js?v=55"></script>
-    <script src="../../core/sidebar.js?v=55"></script>
+    <script src="../../core/sidebar.js?v=67"></script>
     
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
@@ -232,6 +232,25 @@
             if (btype !== 'distributor' || !window.DigibizDistributorPermissions) return true;
             const r = await resolveBusinessNavRoleForDistributor();
             return !!window.DigibizDistributorPermissions.permissionsForRole(r).canBusinessInfoEdit;
+        }
+
+        /** Owner / admin roles / distributor profile editor / super admin */
+        async function assertCanUploadBusinessLogo() {
+            if (String(currentUserRole || '').toUpperCase() === 'SUPER_ADMIN') return true;
+            const bid = currentCompanyId;
+            if (!bid) return false;
+            const bizSnap = await db.collection('businesses').doc(bid).get();
+            const biz = bizSnap.exists ? (bizSnap.data() || {}) : {};
+            if (String(biz.ownerId || '') === currentUserId) return true;
+            const uSnap = await db.collection('users').doc(currentUserId).get();
+            const ur = uSnap.exists ? (uSnap.data() || {}) : {};
+            if (String(ur.businessId || '') === bid && String(ur.role || '').toUpperCase() === 'BUSINESS_OWNER') return true;
+            try {
+                const bud = await db.collection('businesses').doc(bid).collection('users').doc(currentUserId).get();
+                const br = bud.exists ? String((bud.data() || {}).role || '').toUpperCase() : '';
+                if (['BUSINESS_OWNER', 'DISTRIBUTOR_OWNER', 'ADMIN'].includes(br)) return true;
+            } catch (e) { /* ignore */ }
+            return assertDistributorBusinessProfileEdit();
         }
 
         function syncBusinessTypeOptionVisibility() {
@@ -447,18 +466,53 @@
         
         async function uploadLogo(file) {
             if (!file) return;
-            if (!(await assertDistributorBusinessProfileEdit())) {
-                showMessage('Only the business owner can change the logo.', false);
+            const maxBytes = 2 * 1024 * 1024;
+            if (file.size > maxBytes) {
+                showMessage('Logo must be 2MB or smaller.', false);
                 return;
             }
-            const storageRef = storage.ref();
-            const logoRef = storageRef.child(`businesses/${currentCompanyId}/logo`);
+            if (!(await assertCanUploadBusinessLogo())) {
+                showMessage('Only an authorized business owner can change the logo.', false);
+                return;
+            }
+            const storageApi = window.storage || (typeof firebase !== 'undefined' && firebase.storage && firebase.storage());
+            if (!storageApi || typeof storageApi.ref !== 'function') {
+                showMessage('File storage is not ready. Refresh the page and try again.', false);
+                console.error('[profile] Firebase Storage not initialized (window.storage)');
+                return;
+            }
+            const bid = currentCompanyId;
+            if (!bid) {
+                showMessage('Business not loaded yet.', false);
+                return;
+            }
+            const ext = (file.name && file.name.includes('.'))
+                ? String(file.name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
+                : (file.type === 'image/png' ? 'png' : 'jpg');
+            const path = `business-logos/${bid}/logo-${Date.now()}.${ext}`;
             showMessage('Uploading logo...');
-            await logoRef.put(file);
-            const logoUrl = await logoRef.getDownloadURL();
-            await db.collection('businesses').doc(currentCompanyId).update({ logoUrl: logoUrl });
-            document.getElementById('logoPreview').src = logoUrl;
-            showMessage('Logo uploaded successfully!', true);
+            try {
+                const logoRef = storageApi.ref().child(path);
+                await logoRef.put(file, { contentType: file.type || 'image/jpeg' });
+                const logoUrl = await logoRef.getDownloadURL();
+                await db.collection('businesses').doc(bid).update({
+                    logoUrl,
+                    logoUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                const prev = document.getElementById('logoPreview');
+                if (prev) prev.src = logoUrl;
+                showMessage('Logo uploaded successfully!', true);
+                try {
+                    window.dispatchEvent(new CustomEvent('digibiz-profile-updated', { detail: { businessId: bid, logoUrl } }));
+                } catch (e) { /* ignore */ }
+                if (window.eventBus && typeof window.eventBus.publish === 'function') {
+                    window.eventBus.publish('BUSINESS_UPDATED', { businessId: bid, logoUrl });
+                }
+                try { document.getElementById('logoFile').value = ''; } catch (e) { /* ignore */ }
+            } catch (err) {
+                console.error('[profile] Logo upload failed', err);
+                showMessage('Upload failed: ' + (err && err.message ? err.message : 'check Firebase Storage rules and deploy storage.rules'), false);
+            }
         }
         
         function cancelEdit() { 

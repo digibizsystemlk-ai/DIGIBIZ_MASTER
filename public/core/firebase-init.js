@@ -33,6 +33,11 @@ if (!firebase.apps.length) {
 
 window.db = firebase.firestore();
 window.auth = firebase.auth();
+try {
+    window.storage = firebase.storage();
+} catch (e) {
+    console.warn('[DigiBiz] Firebase Storage init failed (add firebase-storage script on pages that upload files):', e && (e.message || e));
+}
 
 const db = window.db;
 const auth = window.auth;
@@ -40,6 +45,8 @@ const auth = window.auth;
 (function () {
     const MW_TRADING_OWNER_EMAIL = 'mwtradingsolutions@gmail.com';
     const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+    const KUBUKA_OWNER_EMAIL = 'kdkumbukaagro@gmail.com';
+    const KUBUKA_BUSINESS_ID = '0Uled5estVeQVN8cChmMTNRDNIE3';
 
     /**
      * Ensures MW Trading business profile is pinned to distributor mode.
@@ -58,6 +65,24 @@ const auth = window.auth;
             sessionStorage.setItem('currentBusinessType', 'distributor');
         } catch (e) {
             console.warn('[DigiBiz] MW Trading business profile bootstrap failed:', e && (e.message || e));
+        }
+    };
+
+    /**
+     * Ensure KUBUKA Tea Factory business name is correct in Firestore.
+     * This keeps sidebar/dashboard/business name consistent for this tenant.
+     */
+    window.ensureKubukaTeaBusinessProfile = async function () {
+        if (!window.db) return;
+        try {
+            await window.db.collection('businesses').doc(KUBUKA_BUSINESS_ID).set(
+                {
+                    name: 'KUBUKA TEA FACTORY'
+                },
+                { merge: true }
+            );
+        } catch (e) {
+            console.warn('[DigiBiz] KUBUKA business profile bootstrap failed:', e && (e.message || e));
         }
     };
 
@@ -127,6 +152,14 @@ const auth = window.auth;
                 sessionStorage.setItem('currentBusinessType', 'distributor');
             } catch (e) { /* ignore */ }
             console.info('[DigiBiz] MW email master: BUSINESS_OWNER @', MW_TRADING_BUSINESS_ID);
+        } else if (email === KUBUKA_OWNER_EMAIL) {
+            try {
+                window.ensureKubukaTeaBusinessProfile();
+                localStorage.setItem('currentBusinessId', KUBUKA_BUSINESS_ID);
+                sessionStorage.setItem('currentBusinessId', KUBUKA_BUSINESS_ID);
+                localStorage.setItem('selectedBusinessId', KUBUKA_BUSINESS_ID);
+                sessionStorage.setItem('selectedBusinessId', KUBUKA_BUSINESS_ID);
+            } catch (e) { /* ignore */ }
         } else {
             window.__DIGIBIZ_MW_PROFILE_SYNC__ = null;
             try {
@@ -143,6 +176,9 @@ const auth = window.auth;
                     sessionStorage.removeItem('selectedBusinessId');
                 }
             } catch (e) { /* ignore */ }
+        }
+        if (storedBusinessId === KUBUKA_BUSINESS_ID) {
+            try { window.ensureKubukaTeaBusinessProfile(); } catch (e) { /* ignore */ }
         }
     });
 })();
