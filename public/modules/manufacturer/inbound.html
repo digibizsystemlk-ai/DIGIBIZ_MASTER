@@ -120,6 +120,14 @@ function v(id){ return document.getElementById(id).value; }
 function n(id){ return Number(v(id)) || 0; }
 function payStatus(mode){ return mode === 'CREDIT' ? 'PENDING' : (mode === 'CHEQUE' ? 'PENDING_CLEARANCE' : 'PAID'); }
 function isKubuka(){ return ManufacturerModule.businessId === KUBUKA_BID; }
+function escPrint(v){
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 async function saveInvoiceDoc(invoice){
     if (!isKubuka()) return null;
     const id = invoice.invoiceNo || (`INV-${Date.now()}`);
@@ -134,26 +142,75 @@ async function saveInvoiceDoc(invoice){
 }
 function printThermalPurchaseInvoice(invoice){
     if (!isKubuka()) return;
-    const w = window.open('', '_blank', 'width=420,height=760');
+    const w = window.open('', '_blank', 'width=900,height=700');
     if (!w) return;
+    const totalAmount = Number(invoice.totalAmount || 0);
+    const paidAmount = Number(invoice.paidAmount || 0);
+    const balanceDue = Number(invoice.balanceDue || Math.max(0, totalAmount - paidAmount));
+    const previousBalance = Number(invoice.previousBalance || 0);
+    const totalDue = Number(invoice.totalDue || (balanceDue + previousBalance));
     w.document.write(`
         <html><head><title>${invoice.invoiceNo}</title><style>
-            @page{size:80mm auto;margin:2mm;}
-            body{font-family:Arial,sans-serif;width:76mm;margin:0 auto;padding:2mm;color:#111}
-            h2{font-size:13px;text-align:center;margin:0 0 6px}
-            p{font-size:11px;line-height:1.35;margin:0 0 6px}
+            @media print {
+                @page { size: A5; margin: 8mm; }
+                body { width: 132mm; margin: 0 auto; font-family: monospace; font-size: 11px; }
+            }
+            body{width:132mm;margin:0 auto;color:#111;font-family:monospace;font-size:11px;line-height:1.35}
+            .box{border:1px solid #111;padding:6px 8px;margin-top:6px}
+            .center{text-align:center}
+            .title{font-size:18px;font-weight:700;letter-spacing:.4px}
+            .subtitle{font-size:11px}
             table{width:100%;border-collapse:collapse;font-size:11px}
-            th,td{border:1px solid #ddd;padding:4px}
+            th,td{border:1px solid #111;padding:5px}
             .tr{text-align:right}
+            .label-row{display:flex;justify-content:space-between;gap:10px;margin:2px 0}
+            .line{border-top:1px solid #111;margin:6px 0}
         </style></head><body>
-            <h2>KUBUKA TEA FACTORY<br>Purchase Invoice</h2>
-            <p>No: ${invoice.invoiceNo}<br>Date: ${invoice.date || ''}<br>Supplier: ${invoice.supplierName || '-'}</p>
-            <table><thead><tr><th>Material</th><th class="tr">Qty</th><th class="tr">Unit</th><th class="tr">Total</th></tr></thead>
-            <tbody><tr><td>${invoice.materialName || '-'}</td><td class="tr">${invoice.qty || 0}</td><td class="tr">${ManufacturerModule.money(invoice.unitPrice || 0)}</td><td class="tr">${ManufacturerModule.money(invoice.totalAmount || 0)}</td></tr></tbody></table>
-            <p>Payment: ${invoice.paymentMethod || '-'} ${invoice.dueDate ? `<br>Due: ${invoice.dueDate}` : ''}<br><b>Total: Rs ${ManufacturerModule.money(invoice.totalAmount || 0)}</b></p>
+            <div class="box center">
+                <div class="title">KUBUKA TEA FACTORY</div>
+                <div class="subtitle">Company details contact, email</div>
+            </div>
+            <div class="box center"><b>INVOICE</b></div>
+            <div class="box">
+                <div class="label-row"><span>Customer Name:</span><span>${escPrint(invoice.supplierName || '-')}</span></div>
+                <div class="label-row"><span>Invoice Number:</span><span>${escPrint(invoice.invoiceNo || '-')}</span></div>
+                <div class="label-row"><span>Invoice Date:</span><span>${escPrint(invoice.date || '-')}</span></div>
+                <div class="label-row"><span>Due Date:</span><span>${escPrint(invoice.dueDate || '-')}</span></div>
+                <div class="label-row"><span>Sale Person:</span><span>${escPrint(invoice.salePerson || '-')}</span></div>
+            </div>
+            <div class="box">
+                <table>
+                    <thead>
+                        <tr><th>Name</th><th class="tr">Qty</th><th class="tr">Unit Price</th><th class="tr">Total</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>${escPrint(invoice.materialName || '-')}</td>
+                            <td class="tr">${Number(invoice.qty || 0)}</td>
+                            <td class="tr">${ManufacturerModule.money(invoice.unitPrice || 0)}</td>
+                            <td class="tr">${ManufacturerModule.money(totalAmount)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="box">
+                <div class="label-row"><span>Total:</span><span>${ManufacturerModule.money(totalAmount)}</span></div>
+                <div class="label-row"><span>Paid:</span><span>${ManufacturerModule.money(paidAmount)}</span></div>
+                <div class="label-row"><span>Balance Due:</span><span>${ManufacturerModule.money(balanceDue)}</span></div>
+                <div class="label-row"><span>Previous Balance:</span><span>${ManufacturerModule.money(previousBalance)}</span></div>
+            </div>
+            <div class="box">
+                <div class="label-row"><b>Total Due:</b><b>${ManufacturerModule.money(totalDue)}</b></div>
+            </div>
+            <div class="box">
+                <div>Thanking you</div>
+                <div>Remarks: ${escPrint(invoice.remarks || '-')}</div>
+            </div>
+            <div class="box center">Software Solution by DIGIBIZ - 0713446500</div>
         </body></html>
     `);
-    w.document.close(); w.focus(); w.print();
+    w.document.close();
+    setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 200);
 }
 function recalcAmount(){
     const qty = Number(document.getElementById('qty').value || 0);
@@ -417,6 +474,9 @@ async function save(){
         msgEl.textContent = 'Purchase saved and stock updated.' + (smsRes && smsRes.ok ? ' SMS queued.' : '') + smsEnqueueNote(smsRes);
         if (smsRes && !smsRes.ok) msgEl.classList.add(smsRes.skipped ? 'warn' : 'err');
         if (isKubuka()) {
+            const paidAmount = data.paymentMode === 'CASH' || data.paymentMode === 'BANK' ? Number(data.amount || 0) : 0;
+            const balanceDue = Math.max(0, Number(data.amount || 0) - paidAmount);
+            const user = (window.auth && window.auth.currentUser) || null;
             const invoiceNo = `PINV-${Date.now()}`;
             const invoice = {
                 invoiceNo,
@@ -429,7 +489,13 @@ async function save(){
                 totalAmount: data.amount,
                 paymentMethod: data.paymentMode,
                 dueDate: data.dueDate || null,
-                date: new Date().toISOString().slice(0, 10)
+                date: new Date().toISOString().slice(0, 10),
+                salePerson: (user && (user.displayName || user.email)) || 'System',
+                paidAmount,
+                balanceDue,
+                previousBalance: 0,
+                totalDue: balanceDue,
+                remarks: `Payment Method: ${data.paymentMode || '-'}`
             };
             await saveInvoiceDoc(invoice);
             printThermalPurchaseInvoice(invoice);
