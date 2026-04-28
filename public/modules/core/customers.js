@@ -67,6 +67,14 @@ function formatTotalPurchases(row) {
     return `LKR ${n.toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function formatCreditLimit(row) {
+    const raw = row.creditLimit;
+    const n = Number(raw);
+    if (raw === undefined || raw === null || raw === '') return '';
+    if (!Number.isFinite(n)) return '';
+    return n.toFixed(2);
+}
+
 function canCustomerEditDeleteUI() {
     const bt = String(businessType || '').toLowerCase();
     const roleRaw = String(dashboardUserRole || (bt === 'distributor' ? distributorNavRole : retailStaffRole) || '').trim();
@@ -220,7 +228,7 @@ async function refresh() {
     const snap = await db.collection('customers').where('businessId', '==', businessId).limit(300).get().catch(() => ({ docs: [] }));
     allRows = snap.docs
         .map((d) => ({ id: d.id, ...(d.data() || {}) }))
-        .filter((x) => x.archived !== true)
+        .filter((x) => x.archived !== true && x.isActive !== false)
         .sort((a, b) => {
             const ta = a.updatedAt?.toDate ? a.updatedAt.toDate().getTime() : new Date(a.updatedAt || a.createdAt || 0).getTime();
             const tb = b.updatedAt?.toDate ? b.updatedAt.toDate().getTime() : new Date(b.updatedAt || b.createdAt || 0).getTime();
@@ -369,6 +377,7 @@ function showEditModal(row) {
     document.getElementById('editCustomerPhone').value = row.mobile || row.phone || '';
     document.getElementById('editCustomerAddress').value = row.address || '';
     document.getElementById('editCustomerEmail').value = row.email || '';
+    document.getElementById('editCustomerCreditLimit').value = formatCreditLimit(row);
     document.getElementById('editCustomerType').value = String(row.type || row.context || 'Customer');
     const modal = document.getElementById('editCustomerModal');
     if (modal) {
@@ -393,6 +402,7 @@ async function saveCustomerEdit() {
     const mobile = String(document.getElementById('editCustomerPhone').value || '').trim();
     const address = String(document.getElementById('editCustomerAddress').value || '').trim();
     const email = String(document.getElementById('editCustomerEmail').value || '').trim();
+    const creditLimitRaw = String(document.getElementById('editCustomerCreditLimit').value || '').trim();
     const context = String(document.getElementById('editCustomerType').value || 'Customer').trim();
     if (!existingId) {
         showToast('Missing customer id.', false);
@@ -429,6 +439,15 @@ async function saveCustomerEdit() {
     };
     if (email) payload.email = email;
     else payload.email = firebase.firestore.FieldValue.delete();
+    if (creditLimitRaw === '') payload.creditLimit = firebase.firestore.FieldValue.delete();
+    else {
+        const creditLimitNum = Number(creditLimitRaw);
+        if (!Number.isFinite(creditLimitNum) || creditLimitNum < 0) {
+            showToast('Credit limit must be a valid non-negative number.', false);
+            return;
+        }
+        payload.creditLimit = creditLimitNum;
+    }
     try {
         if (existingId !== targetId) {
             const batch = db.batch();
@@ -471,7 +490,11 @@ async function deleteCustomer(customerId) {
     const label = row.fullName || row.name || 'this customer';
     if (!window.confirm(`Delete ${label}?`)) return;
     try {
-        await db.collection('customers').doc(id).delete();
+        await db.collection('customers').doc(id).set({
+            isActive: false,
+            deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
         showToast('Customer deleted successfully.', true);
         if (editingCustomerId === id) editingCustomerId = '';
         await refresh();
