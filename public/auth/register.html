@@ -10,8 +10,9 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-functions-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
-    <script src="../core/firebase-init.js?v=4"></script>
+    <script src="../core/firebase-init.js?v=5"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
         body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#10b981 0%,#059669 100%);min-height:100vh;display:flex;justify-content:center;align-items:center;}
@@ -51,6 +52,7 @@
         const registerBtn = document.getElementById('registerBtn');
         const googleBtn = document.getElementById('googleBtn');
         const messageDiv = document.getElementById('message');
+        const functionsSvc = firebase.functions();
 
         async function routeToUniversalDashboard(userId) {
             try {
@@ -69,87 +71,50 @@
             window.location.href = '../modules/core/dashboard.html';
         }
 
-        async function createBusinessAndRedirect(userId, ownerName, userEmail, userPhone, businessName) {
-            try {
-                console.log('Creating business for user:', userId);
-                const businessId = userId;
-                const normalizedBusinessName = String(businessName || 'MY BUSINESS').trim().toUpperCase();
-                const businessData = {
-                    name: normalizedBusinessName,
-                    ownerName: String(ownerName || '').trim(),
-                    email: userEmail,
-                    phone: userPhone || '',
-                    businessType: 'retail',  // Always retail
-                    subscriptionStatus: 'trial',
-                    trialEndDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-                    status: 'active',
-                    createdAt: new Date()
-                };
-                await db.collection('businesses').doc(businessId).set(businessData);
-                console.log('Business created successfully');
+        const DEFAULT_TEST_BUSINESS_ID = 'DEFAULT_TEST_BUSINESS';
+        const DEFAULT_TEST_BUSINESS_NAME = 'Demo Business';
 
-                await db.collection('settings').doc(businessId).set({
-                    subscription: {
-                        plan: 'TRIAL',
-                        status: 'TRIAL',
-                        trialStart: new Date().toISOString(),
-                        trialEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-                        expireDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-                    },
-                    smsWallet: {
-                        paidSmsBalance: 0,
-                        trialSmsBalance: 300,
-                        trialSmsExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-                        smsBalance: 300,
-                        lowBalanceThreshold: 50,
-                        unitPrice: 1,
-                        monthlyFee: 1000,
-                        trialCreditsGranted: true,
-                        updatedAt: new Date().toISOString()
-                    },
-                    smsBalance: 300,
-                    smsManager: {
-                        tplSales: '[BRAND] - Hello {Name}, your bill of Rs.{Amount} is confirmed. Bal: Rs.{Balance}.',
-                        tplPayment: '[BRAND] - Hi {Name}, received payment Rs.{Amount}. Remaining: Rs.{Balance}.',
-                        tplDebt: '[BRAND] - Dear {Name}, a friendly reminder of your outstanding Rs.{Amount}. Please settle soon.',
-                        autoDebtReminders: false,
-                        events: { sales: true, payment: true, debt: true },
-                        updatedAt: new Date().toISOString()
-                    }
-                }, { merge: true });
-                
-                // Update user with business ID
+        async function assignUserToDefaultBusiness(userId, ownerName, userEmail, userPhone) {
+            try {
+                if (typeof window.ensureDefaultTestBusinessProfile === 'function') {
+                    await window.ensureDefaultTestBusinessProfile();
+                }
                 await db.collection('users').doc(userId).update({
-                    businessId: businessId,
+                    businessId: DEFAULT_TEST_BUSINESS_ID,
                     name: ownerName,
                     ownerName: ownerName,
-                    phone: userPhone || ''
+                    phone: userPhone || '',
+                    role: 'BUSINESS_OWNER',
+                    businessType: 'distributor'
                 });
-                console.log('User updated with business ID');
-                
-                // Create default chart of accounts
-                const defaultAccounts = [
-                    { code: '1-1010-01', name: 'Cash', type: 'ASSET', openingBalance: 0, currentBalance: 0 },
-                    { code: '1-1020-01', name: 'Bank', type: 'ASSET', openingBalance: 0, currentBalance: 0 },
-                    { code: '1-1030-01', name: 'Accounts Receivable', type: 'ASSET', openingBalance: 0, currentBalance: 0 },
-                    { code: '1-1040-01', name: 'Inventory', type: 'ASSET', openingBalance: 0, currentBalance: 0 },
-                    { code: '1-1060-01', name: 'Supplier Advances (Scrap)', type: 'ASSET', openingBalance: 0, currentBalance: 0 },
-                    { code: '2-2010-01', name: 'Accounts Payable', type: 'LIABILITY', openingBalance: 0, currentBalance: 0 },
-                    { code: '3-3010-01', name: 'Capital', type: 'EQUITY', openingBalance: 0, currentBalance: 0 },
-                    { code: '4-4010-01', name: 'Sales Revenue', type: 'INCOME', openingBalance: 0, currentBalance: 0 },
-                    { code: '5-5010-01', name: 'Cost of Goods Sold', type: 'EXPENSE', openingBalance: 0, currentBalance: 0 },
-                    { code: '5-5020-01', name: 'Expenses', type: 'EXPENSE', openingBalance: 0, currentBalance: 0 }
-                ];
-                
-                for (const acc of defaultAccounts) {
-                    await db.collection('accounts').doc(businessId).collection('list').doc(acc.code).set(acc);
-                }
-                console.log('Chart of accounts created');
-                
-                return businessId;
+                await db.collection('businesses').doc(DEFAULT_TEST_BUSINESS_ID).collection('users').doc(userId).set({
+                    email: userEmail,
+                    role: 'BUSINESS_OWNER',
+                    businessId: DEFAULT_TEST_BUSINESS_ID,
+                    name: ownerName,
+                    phone: userPhone || '',
+                    isActive: true,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                }, { merge: true });
+                return DEFAULT_TEST_BUSINESS_ID;
             } catch (error) {
-                console.error('Error in createBusinessAndRedirect:', error);
+                console.error('Error in assignUserToDefaultBusiness:', error);
                 throw error;
+            }
+        }
+
+        async function sendRegistrationNotification(userEmail, userId) {
+            try {
+                const notify = functionsSvc.httpsCallable('sendNewUserNotification');
+                await notify({
+                    userEmail: String(userEmail || '').trim().toLowerCase(),
+                    userId: String(userId || '').trim(),
+                    timestamp: new Date().toISOString(),
+                    assignedBusiness: 'Demo Business (DEFAULT_TEST_BUSINESS)'
+                });
+            } catch (e) {
+                console.warn('Registration notification call failed:', e && (e.message || e));
             }
         }
 
@@ -158,10 +123,9 @@
             const email = document.getElementById('email').value;
             const phone = document.getElementById('phone').value;
             const password = document.getElementById('password').value;
-            const businessName = document.getElementById('businessName').value;
-            const normalizedBusinessName = String(businessName || '').trim().toUpperCase();
+                const businessName = document.getElementById('businessName').value;
             
-            if (!ownerName || !email || !password || !normalizedBusinessName) {
+                if (!ownerName || !email || !password || !businessName) {
                 messageDiv.textContent = 'Please fill all required fields';
                 return;
             }
@@ -188,16 +152,15 @@
                     email: email,
                     phone: phone,
                     role: 'BUSINESS_OWNER',
-                    businessId: userId,
+                    businessId: DEFAULT_TEST_BUSINESS_ID,
                     createdAt: new Date()
                 });
                 console.log('User document created in Firestore');
-                
-                // Create business and accounts
-                await createBusinessAndRedirect(userId, ownerName, email, phone, normalizedBusinessName);
+                await assignUserToDefaultBusiness(userId, ownerName, email, phone);
+                await sendRegistrationNotification(email, userId);
                 
                 messageDiv.className = 'success';
-                messageDiv.textContent = '✅ Account created successfully! Redirecting to dashboard...';
+                messageDiv.textContent = `✅ Account created successfully! Assigned to ${DEFAULT_TEST_BUSINESS_NAME}. Redirecting...`;
                 
                 // Redirect to Core Dashboard
                 setTimeout(() => {
@@ -223,20 +186,19 @@
                 // Check if user already exists in Firestore
                 const userDoc = await db.collection('users').doc(userId).get();
                 if (!userDoc.exists) {
-                    const businessName = prompt('Enter your business name:', 'My Business');
-                    const normalizedBusinessName = String(businessName || 'My Business').trim().toUpperCase();
+                    const businessName = prompt('Enter your business name:', DEFAULT_TEST_BUSINESS_NAME);
                     
                     await db.collection('users').doc(userId).set({
                         name: user.displayName || user.email,
                         ownerName: user.displayName || user.email,
                         email: user.email,
                         role: 'BUSINESS_OWNER',
-                        businessId: userId,
+                        businessId: DEFAULT_TEST_BUSINESS_ID,
                         createdAt: new Date()
                     });
                     console.log('Google user document created');
-                    
-                    await createBusinessAndRedirect(userId, user.displayName || user.email, user.email, '', normalizedBusinessName);
+                    await assignUserToDefaultBusiness(userId, user.displayName || user.email, user.email, '');
+                    await sendRegistrationNotification(user.email, userId);
                 }
                 
                 await routeToUniversalDashboard(userId);

@@ -174,6 +174,7 @@ class Sidebar {
     constructor() {
         preReserveSidebarSpace();
         this.mwBusinessId = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        this.spranzaBusinessId = 'SPRANZA_PVT_LTD';
         this.kduTeaBusinessId = '0Uled5estVeQVN8cChmMTNRDNIE3';
         this.scrapOwnerUid = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
         this.superAdmin = false;
@@ -550,7 +551,10 @@ class Sidebar {
     }
 
     isMwTradingContext() {
-        return this.businessId === this.mwBusinessId;
+        return this.businessId === this.mwBusinessId || this.businessId === this.spranzaBusinessId;
+    }
+    isStrictMwTradingBusiness() {
+        return String(this.businessId || '') === this.mwBusinessId;
     }
 
     isPilotTenant(email, businessId) {
@@ -577,7 +581,8 @@ class Sidebar {
         const pilotByEmail = this.isPilotTenant(email, bid);
         console.log('isPilotTenant:', pilotByEmail);
         console.log('activeForSession result:', activeResult);
-        return pilotByEmail || activeResult;
+        const bidTenant = bid === this.mwBusinessId || bid === this.spranzaBusinessId;
+        return pilotByEmail || activeResult || bidTenant;
     }
 
     isWarehouseDisabledForCurrentTenant() {
@@ -619,6 +624,13 @@ class Sidebar {
             { icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
             { icon: '📈', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' }
         ];
+        if (String(this.businessId || '') === this.spranzaBusinessId) {
+            base.splice(base.length - 1, 0,
+                { icon: '🏬', name: 'Branches', link: '/modules/distributor/web/branches.html' },
+                { icon: '🔁', name: 'Stock Transfers', link: '/modules/distributor/web/branches.html#transfers' },
+                { icon: '📊', name: 'Branch Reports', link: '/modules/distributor/web/branches.html#reports' }
+            );
+        }
         if (this.isBdkAccountingTenant()) {
             base.splice(base.length - 1, 0, { icon: '📊', name: 'Accounting', link: '/modules/distributor/web/accounting.html' });
         }
@@ -638,13 +650,13 @@ class Sidebar {
 
     buildDistributorMenusForCurrentRole() {
         const perms = this.getDistributorPermissionProfile();
-        const tail = this.getSharedCrosscutMenus().filter((m) => {
+        let tail = this.getSharedCrosscutMenus().filter((m) => {
             if (m.name === 'Accounting') return !!perms.canViewAccounting;
             if (m.name === 'Reports') return !!perms.canViewReportsFull;
             if (m.name === 'Finance') return !!perms.canViewFinancialsProfit;
             return true;
         });
-        const menus = this.getDistributorWebMenuBase().filter((m) => {
+        let menus = this.getDistributorWebMenuBase().filter((m) => {
             if (m.name === 'Finance') return !!perms.canViewFinancialsProfit;
             // Any distributor staff with stock visibility can open HQ orders; workflow buttons stay RBAC-gated on the page.
             if (m.name === 'Orders') return !!(perms.canStockView || perms.canInvoiceCreateEdit);
@@ -652,6 +664,18 @@ class Sidebar {
             if (m.name === 'Reps') return !!perms.canManageRepsWeb;
             return true;
         });
+        if (this.isStrictMwTradingBusiness()) {
+            const blockedLinks = new Set([
+                '/modules/distributor/web/invoices.html',
+                '/modules/distributor/web/warehouse.html',
+                '/modules/distributor/web/deliveries.html',
+                '/modules/distributor/web/commission-config.html',
+                '/modules/distributor/web/reports.html',
+                '/modules/core/finance-ledger.html'
+            ]);
+            menus = menus.filter((m) => !blockedLinks.has(String((m && m.link) || '')));
+            tail = tail.filter((m) => String((m && m.link) || '') !== '/modules/core/finance-ledger.html');
+        }
         return this.assembleSidebarMenus(menus, tail);
     }
 
@@ -790,7 +814,7 @@ class Sidebar {
                 menus = [
                     { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
                     { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
-                    { icon: '🏭', name: 'Production / Manufacturing', link: '/modules/manufacturer/outbound.html' },
+                    { icon: '🏭', name: 'Products', link: '/modules/manufacturer/outbound.html' },
                     { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
                     { icon: '🧪', name: 'Quality Control', link: '/modules/manufacturer/stock.html' },
                     { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },

@@ -142,11 +142,11 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/core/firebase-init.js?v=46"></script>
-    <script src="/core/auth-roles.js?v=48"></script>
+    <script src="/core/auth-roles.js?v=49"></script>
     <script src="/core/dashboard-core.js?v=46"></script>
     <script src="/core/distributor-inventory.js?v=46"></script>
     <script src="/core/distributor-lorry-stock.js?v=1"></script>
-    <script src="/core/sidebar.js?v=49"></script>
+    <script src="/core/sidebar.js?v=69"></script>
     <script src="/core/mw-trading-dsl-config.js?v=2"></script>
 </head>
 <body>
@@ -197,6 +197,10 @@
                     <div class="row" id="lorrySelectRow" style="display:none;">
                         <label for="lorrySelect">Select Lorry</label>
                         <select id="lorrySelect"><option value="">Loading lorries…</option></select>
+                    </div>
+                    <div class="row" id="branchSelectRow" style="display:none;">
+                        <label for="branchSelect">Select Branch / Warehouse</label>
+                        <select id="branchSelect"><option value="">Loading branches…</option></select>
                     </div>
                     <div class="row" id="lorryStockHintRow" style="display:none;">
                         <p id="lorryStockHint" class="hint">Select a lorry to view stock availability.</p>
@@ -291,7 +295,9 @@
         var currentBusinessData = null;
         var isMwTradingBiz = false;
         var MW_TRADING_BILLING_BID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        var SPRANZA_BILLING_BID = 'SPRANZA_PVT_LTD';
         var isLorryPilotBiz = false;
+        var branchRows = [];
         var webLineEditPid = '';
         var MAX_CART_LINES = 500;
         var SUGGEST_MAX_HITS = 42;
@@ -312,13 +318,106 @@
         }
         function isMwBillingTenant() {
             var bid = currentBizFromStorage();
-            return !!(isMwTradingBiz || bid === MW_TRADING_BILLING_BID);
+            return !!(isMwTradingBiz || bid === MW_TRADING_BILLING_BID || bid === SPRANZA_BILLING_BID);
+        }
+        function isSpranzaTenant() {
+            var bid = currentBizFromStorage();
+            return bid === SPRANZA_BILLING_BID;
+        }
+        async function getNextMwOrderNumber(businessId) {
+            var bid = String(businessId || '').trim();
+            if (!bid) throw new Error('Missing business id for order number counter.');
+            var counterRef = db.collection('counters').doc(bid + '_orderNumber');
+            var nextNum = 1;
+            await db.runTransaction(async function (tx) {
+                var snap = await tx.get(counterRef);
+                var current = snap.exists ? (Number((snap.data() || {}).value) || 0) : 0;
+                nextNum = current + 1;
+                tx.set(counterRef, {
+                    businessId: bid,
+                    key: 'orderNumber',
+                    value: nextNum,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+            });
+            return 'ORD-' + String(nextNum).padStart(7, '0');
         }
         function orderedQtyOf(item) {
             return Math.max(0, Number(item && (item.orderedQty != null ? item.orderedQty : item.qty)) || 0);
         }
         function linePaidTotal(item) {
             return orderedQtyOf(item) * (Number(item && item.unitPrice) || 0);
+        }
+        function toYmd(value) {
+            if (!value) return new Date().toISOString().slice(0, 10);
+            if (typeof value === 'string') return value.slice(0, 10);
+            if (value && typeof value.toDate === 'function') return value.toDate().toISOString().slice(0, 10);
+            var d = new Date(value);
+            return Number.isNaN(d.getTime()) ? new Date().toISOString().slice(0, 10) : d.toISOString().slice(0, 10);
+        }
+        async function postMwReceivableSalesForOrder(orderData, orderId, shopId) {
+            var bid = String(orderData && orderData.businessId || '').trim();
+            if (bid !== MW_TRADING_BILLING_BID) return;
+            var pay = String(orderData && orderData.paymentMethod || '').toUpperCase();
+            if (pay !== 'CREDIT' && pay !== 'CHEQUE') return;
+            var amount = Number(orderData && orderData.totalAmount) || 0;
+            if (!(amount > 0)) return;
+            var customerName = '';
+            try {
+                var shopDoc = await db.collection('shops').doc(String(shopId || '').trim()).get();
+                customerName = shopDoc.exists ? String((shopDoc.data() || {}).name || '').trim() : '';
+            } catch (e) { /* ignore */ }
+            var refText = 'ORDER/' + String(orderData.orderNumber || orderId || '').trim();
+            var postingDate = toYmd(orderData.orderDate || orderData.createdAt);
+            var now = new Date();
+            var arDocId = 'MW_AR_ORDER_' + String(orderId || '').replace(/[^A-Za-z0-9_-]/g, '_') + '_DR';
+            var revDocId = 'MW_AR_ORDER_' + String(orderId || '').replace(/[^A-Za-z0-9_-]/g, '_') + '_CR';
+            await Promise.all([
+                db.collection('journal_entries').doc(arDocId).set({
+                    businessId: bid,
+                    account: 'Accounts Receivable',
+                    amount: amount,
+                    entryType: 'debit',
+                    reference: refText,
+                    referenceType: 'MW_ORDER_RECEIVABLE',
+                    date: postingDate,
+                    createdAt: now,
+                    meta: {
+                        orderId: String(orderId || ''),
+                        orderNumber: String(orderData.orderNumber || ''),
+                        paymentMethod: pay,
+                        customerId: String(shopId || ''),
+                        customerName: customerName || '',
+                        businessScope: 'MW_TRADING_ONLY'
+                    }
+                }, { merge: true }),
+                db.collection('journal_entries').doc(revDocId).set({
+                    businessId: bid,
+                    account: 'Sales Revenue',
+                    amount: amount,
+                    entryType: 'credit',
+                    reference: refText,
+                    referenceType: 'MW_ORDER_REVENUE',
+                    date: postingDate,
+                    createdAt: now,
+                    meta: {
+                        orderId: String(orderId || ''),
+                        orderNumber: String(orderData.orderNumber || ''),
+                        paymentMethod: pay,
+                        customerId: String(shopId || ''),
+                        customerName: customerName || '',
+                        businessScope: 'MW_TRADING_ONLY'
+                    }
+                }, { merge: true }),
+                db.collection('pendingOrders').doc(String(orderId || '')).set({
+                    accounting: {
+                        receivableEntryId: arDocId,
+                        salesRevenueEntryId: revDocId,
+                        postedAt: now,
+                        scope: 'MW_TRADING_ONLY'
+                    }
+                }, { merge: true })
+            ]);
         }
         function distributorPerms() {
             if (window.DigibizDistributorPermissions) return window.DigibizDistributorPermissions.permissionsForRole(userRole, currentBusinessId);
@@ -1109,6 +1208,42 @@
             hint.textContent = 'Lorry availability -> ' + lines.join(' | ') + more;
         }
 
+        async function loadBranchOptionsForSpranza() {
+            var row = document.getElementById('branchSelectRow');
+            var sel = document.getElementById('branchSelect');
+            if (!row || !sel) return;
+            if (!isSpranzaTenant()) {
+                row.style.display = 'none';
+                sel.innerHTML = '<option value="">Branch not required</option>';
+                branchRows = [];
+                return;
+            }
+            row.style.display = 'block';
+            var snap = await db.collection('branches')
+                .where('businessId', '==', currentBusinessId)
+                .where('isActive', '!=', false)
+                .get()
+                .catch(function () { return { docs: [] }; });
+            branchRows = (snap.docs || []).map(function (d) { return { id: d.id, data: d.data() || {} }; });
+            branchRows.sort(function (a, b) {
+                return String((a.data.name || '')).localeCompare(String((b.data.name || '')));
+            });
+            var options = branchRows.map(function (b) {
+                var x = b.data || {};
+                var label = String(x.name || b.id);
+                var loc = String(x.location || '').trim();
+                return '<option value="' + esc(b.id) + '">' + esc(loc ? (label + ' - ' + loc) : label) + '</option>';
+            }).join('');
+            sel.innerHTML = '<option value="">Select branch…</option>' + options;
+        }
+
+        function branchStockDocRef(branchId, productId) {
+            var b = String(branchId || '').trim();
+            var p = String(productId || '').trim();
+            if (!b || !p) return null;
+            return db.collection('branch_stock').doc(currentBusinessId + '_' + b + '_' + p);
+        }
+
         function applyRepOnlyOrderHeader() {
             if (normalizeRole(userRole) !== 'REP' || !myRepDocId) return;
             var sel = document.getElementById('repSelect');
@@ -1175,9 +1310,20 @@
             var orderNumber = 'ORD-' + Date.now();
             var businessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || currentBusinessId;
             var lorryId = '';
+            var branchId = '';
+            var branchName = '';
+            var branchLocation = '';
             if (isLorryPilotBiz) {
                 lorryId = String(document.getElementById('lorrySelect')?.value || '').trim();
                 if (!lorryId) { showFormMsg('Select a lorry for this order.', 'err'); return; }
+            }
+            if (isSpranzaTenant()) {
+                branchId = String(document.getElementById('branchSelect')?.value || '').trim();
+                if (!branchId) { showFormMsg('Select a branch/warehouse for this order.', 'err'); return; }
+                var bRow = branchRows.find(function (b) { return String(b.id) === branchId; });
+                var bData = bRow ? (bRow.data || {}) : {};
+                branchName = String(bData.name || branchId);
+                branchLocation = String(bData.location || '');
             }
             var isMwDateScoped = (
                 businessId === 'mw_trading_business_id' ||
@@ -1230,6 +1376,9 @@
                 collectionAmount: 0,
                 paymentMethod: paymentMethod,
                 lorryId: lorryId || '',
+                branchId: branchId || '',
+                branchName: branchName || '',
+                branchLocation: branchLocation || '',
                 commissionAmount: 0,
                 commissionRate: 0,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -1239,6 +1388,11 @@
             btn.disabled = true;
             showFormMsg('Submitting…', '');
             try {
+                if (isMwTradingBiz === true) {
+                    orderNumber = await getNextMwOrderNumber(currentBusinessId);
+                    orderData.orderNumber = orderNumber;
+                }
+                var pendingOrderRef = db.collection('pendingOrders').doc();
                 if (isLorryPilotBiz && lorryId && window.DigiBizDistributorLorryStock) {
                     var cfg = window.DigiBizDistributorLorryStock;
                     var needByProduct = {};
@@ -1273,11 +1427,46 @@
                                 updatedBy: firebase.auth().currentUser?.uid || ''
                             }, { merge: true });
                         });
-                        tx.set(db.collection('pendingOrders').doc(), orderData);
+                        tx.set(pendingOrderRef, orderData);
                     });
                 } else {
-                    await db.collection('pendingOrders').add(orderData);
+                    if (isSpranzaTenant() && branchId) {
+                        var needByProductBranch = {};
+                        activeLines.forEach(function (item) {
+                            var pid = String(item.productId || '').trim();
+                            if (!pid) return;
+                            needByProductBranch[pid] = (needByProductBranch[pid] || 0) + calculateLineLorryNeed(item);
+                        });
+                        await db.runTransaction(async function (tx) {
+                            var rows = Object.keys(needByProductBranch).map(function (pid) {
+                                return { pid: pid, need: needByProductBranch[pid], ref: branchStockDocRef(branchId, pid) };
+                            }).filter(function (r) { return r.need > 0 && r.ref; });
+                            for (var i = 0; i < rows.length; i++) {
+                                var row = rows[i];
+                                var snap = await tx.get(row.ref);
+                                var available = snap.exists ? (Number((snap.data() || {}).qty) || 0) : 0;
+                                if (available < row.need) {
+                                    throw new Error('Insufficient branch stock in ' + branchName + '. Available: ' + available);
+                                }
+                            }
+                            rows.forEach(function (row) {
+                                tx.set(row.ref, {
+                                    businessId: currentBusinessId,
+                                    branchId: branchId,
+                                    branchName: branchName,
+                                    productId: row.pid,
+                                    qty: firebase.firestore.FieldValue.increment(-row.need),
+                                    updatedAt: new Date(),
+                                    updatedBy: firebase.auth().currentUser?.uid || ''
+                                }, { merge: true });
+                            });
+                            tx.set(pendingOrderRef, orderData);
+                        });
+                    } else {
+                        await pendingOrderRef.set(orderData);
+                    }
                 }
+                await postMwReceivableSalesForOrder(orderData, pendingOrderRef.id, shopId);
                 showFormMsg('Saved to pending queue.', 'ok');
                 cart = [];
                 renderLines();
@@ -1368,6 +1557,7 @@
             await refreshMwShopNameDatalist();
             await refreshProductCatalog();
             await loadLorryOptionsForPilot();
+            await loadBranchOptionsForSpranza();
             bindShopQuickAdd();
             bindLineSearch();
             bindLinesTableDelegation();

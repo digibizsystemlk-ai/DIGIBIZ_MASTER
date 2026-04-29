@@ -7,11 +7,13 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 
 admin.initializeApp({
     databaseURL: "https://digibiz-sys-default-rtdb.firebaseio.com/",
 });
 const db = admin.firestore();
+const REG_NOTIFY_TO = "digibizsystemlk@gmail.com";
 const SUPER_ADMIN_UIDS = (process.env.SUPER_ADMIN_UIDS || "")
     .split(",")
     .map((x) => x.trim())
@@ -23,6 +25,82 @@ try {
 } catch (e) {
     logger.warn("Realtime Database not available for SMS gateway mirror", e && e.message);
 }
+
+function registrationNotifierTransport() {
+    const host = String(
+        process.env.DIGIBIZ_NOTIFY_SMTP_HOST ||
+        process.env.DIGIBIZ_NOTIFY_SMTP_HOST_RUNTIME ||
+        ""
+    ).trim();
+    const port = Number(process.env.DIGIBIZ_NOTIFY_SMTP_PORT || 587);
+    const user = String(process.env.DIGIBIZ_NOTIFY_EMAIL_USER || "").trim();
+    const pass = String(process.env.DIGIBIZ_NOTIFY_EMAIL_PASS || "").trim();
+    const secureRaw = String(process.env.DIGIBIZ_NOTIFY_SMTP_SECURE || "false").trim().toLowerCase();
+    const secure = secureRaw === "true";
+    logger.info("SMTP Config loaded", {
+        host: host || "(missing)",
+        port,
+        user: user || "(missing)",
+        secure,
+        passSet: !!pass,
+    });
+    if (!host || !user || !pass) return null;
+    return nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: { user, pass },
+    });
+}
+
+exports.sendNewUserNotification = onCall(
+    {
+        timeoutSeconds: 60,
+        memory: "256MiB",
+    },
+    async (request) => {
+        const data = request.data || {};
+        const userEmail = String(data.userEmail || "").trim().toLowerCase();
+        const userId = String(data.userId || "").trim();
+        const timestampRaw = data.timestamp;
+        const assignedBusiness = String(data.assignedBusiness || "Demo Business (DEFAULT_TEST_BUSINESS)");
+        if (!userEmail || !userId) {
+            throw new HttpsError("invalid-argument", "userEmail and userId are required.");
+        }
+
+        const transporter = registrationNotifierTransport();
+        if (!transporter) {
+            logger.warn("sendNewUserNotification skipped: SMTP env not configured");
+            return { success: false, skipped: true, reason: "SMTP not configured" };
+        }
+
+        const ts = timestampRaw ? new Date(timestampRaw) : new Date();
+        const timestampText = Number.isNaN(ts.getTime()) ? new Date().toISOString() : ts.toISOString();
+        const subject = "New User Registration - DIGIBIZ";
+        const text = [
+            "New user registered on DIGIBIZ system.",
+            "",
+            "Registration Details:",
+            `- Email: ${userEmail}`,
+            `- Registration Time: ${timestampText}`,
+            `- Assigned Business: ${assignedBusiness}`,
+            `- User ID: ${userId}`,
+            "",
+            "Please log in to Super Dashboard to review and assign appropriate business if needed.",
+            "",
+            "DIGIBIZ System",
+        ].join("\n");
+
+        await transporter.sendMail({
+            from: String(process.env.DIGIBIZ_NOTIFY_EMAIL_FROM || process.env.DIGIBIZ_NOTIFY_EMAIL_USER || "").trim(),
+            to: REG_NOTIFY_TO,
+            subject,
+            text,
+        });
+        logger.info("sendNewUserNotification sent", { userEmail, userId, to: REG_NOTIFY_TO });
+        return { success: true };
+    }
+);
 
 function colomboDateKey(d) {
     const x = d instanceof Date ? d : new Date(d);

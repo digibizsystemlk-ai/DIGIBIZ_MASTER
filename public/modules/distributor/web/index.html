@@ -29,14 +29,14 @@
     <script src="/core/event-validation.js?v=2"></script>
     <script src="/core/event-bus.js?v=2"></script>
     <script src="/core/accounts-core.js?v=2"></script>
-    <script src="/core/auth-roles.js?v=47"></script>
+    <script src="/core/auth-roles.js?v=49"></script>
     <script src="/core/business-types.js?v=46"></script>
     <script src="/core/dashboard-core.js?v=46"></script>
     <script src="/core/subscription-manager.js?v=2"></script>
     <script src="/core/distributor-inventory.js?v=46"></script>
     <script src="/core/distributor-lorry-stock.js?v=1"></script>
     <script src="/core/mw-trading-dsl-config.js?v=46"></script>
-    <script src="/core/sidebar.js?v=49"></script>
+    <script src="/core/sidebar.js?v=70"></script>
     <style>
         * {
             margin: 0;
@@ -408,6 +408,19 @@
             </div>
             <div id="commissionWidgetMeta" style="font-size:13px;color:#374151;"></div>
         </div>
+        <div class="accounting-widget" id="freeItemsSummaryWidget" style="display:none;">
+            <div class="rep-summary-head">
+                <h3>🎁 Free Items Summary</h3>
+                <a href="/modules/distributor/web/free-items.html" class="btn btn-view" style="text-decoration:none;">Open Free Items Log</a>
+            </div>
+            <div class="accounting-grid">
+                <div class="accounting-kpi"><div class="k">Total free qty (orders)</div><div class="v" id="mwFreeQtyOrders">0</div><div class="k" style="font-size:10px;margin-top:6px;color:#64748b;">GRN free qty</div><div class="v" id="mwFreeQtyGrn" style="font-size:1rem;">0</div></div>
+                <div class="accounting-kpi"><div class="k">Free issue value (est.)</div><div class="v" id="mwFreeValueEst">Rs 0.00</div></div>
+                <div class="accounting-kpi"><div class="k">Orders with free lines</div><div class="v" id="mwFreeOrdersCount">0</div></div>
+                <div class="accounting-kpi"><div class="k">Top free SKU</div><div class="v" id="mwFreeTopProduct">-</div></div>
+                <div class="accounting-kpi"><div class="k">Last updated</div><div class="v" id="mwFreeLastUpdated">-</div></div>
+            </div>
+        </div>
         <div class="accounting-widget" id="accountingSummaryWidget" style="display:block;">
             <div class="rep-summary-head">
                 <h3>📒 Accounting Summary</h3>
@@ -455,6 +468,7 @@
                         <th>Date</th>
                         <th>Rep</th>
                         <th>Shop</th>
+                        <th>Branch</th>
                         <th>Lorry</th>
                         <th>Brands</th>
                         <th>Items</th>
@@ -464,7 +478,7 @@
                     </tr>
                 </thead>
                 <tbody id="ordersList">
-                    <tr><td colspan="10" class="loading">Loading orders...</td></tr>
+                    <tr><td colspan="11" class="loading">Loading orders...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -790,6 +804,11 @@
         let lastSeenBusinessId = '';
         let __CHEQUE_PILOT_ENABLED__ = false;
         let commissionRows = [];
+        let mwFreeItemsOrdersUnsub = null;
+        let mwFreeItemsPendingUnsub = null;
+        let mwFreeItemsGrnUnsub = null;
+        let mwFreeWidgetDebounceTimer = null;
+        const mwFreeWidgetCache = { pendingDocs: [], orderDocs: [], grnDocs: [] };
 
         function escapeBillHtml(s) {
             return String(s ?? '')
@@ -813,7 +832,13 @@
         }
 
         function isMwTradingBusiness() {
-            return String(currentBusinessId || '') === MW_TRADING_BUSINESS_ID;
+            if (String(currentBusinessId || '') === MW_TRADING_BUSINESS_ID) return true;
+            try {
+                if (window.DigibizMwDslConfig && typeof window.DigibizMwDslConfig.isMwTradingTenantActive === 'function') {
+                    return !!window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData);
+                }
+            } catch (eMw) { /* ignore */ }
+            return false;
         }
 
         async function attachMwFreeIssuesAndReturns(rows) {
@@ -886,7 +911,38 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Segoe UI',A
 .softby{margin-top:8px;text-align:center;font-size:7px;color:#333;line-height:1.35;}`;
         }
 
-        function openAndPrintInvoice(htmlContent) {
+        function isAndroidDevice() {
+            return /android/i.test(String(navigator.userAgent || ''));
+        }
+
+        async function tryMwBluetoothPrint(htmlContent) {
+            if (!isMwTradingBusiness() || !isAndroidDevice()) return false;
+            if (!navigator.bluetooth || typeof navigator.bluetooth.requestDevice !== 'function') return false;
+            try {
+                await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
+                });
+                // Web Bluetooth print pipeline varies by printer model; once selected, fall back to shared
+                // browser print layout so output stays consistent across devices.
+                return false;
+            } catch (e) {
+                if (navigator.share && navigator.canShare) {
+                    try {
+                        const file = new File([htmlContent], 'mw-invoice.html', { type: 'text/html' });
+                        if (navigator.canShare({ files: [file] })) {
+                            await navigator.share({ files: [file], title: 'MW Invoice' });
+                            return true;
+                        }
+                    } catch (_e2) { /* ignore */ }
+                }
+                return false;
+            }
+        }
+
+        async function openAndPrintInvoice(htmlContent) {
+            const handledByShare = await tryMwBluetoothPrint(htmlContent);
+            if (handledByShare) return;
             const w = window.open('', '_blank', 'width=400,height=600');
             if (!w) {
                 alert('Please allow pop-ups to print the bill.');
@@ -950,6 +1006,8 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Segoe UI',A
             return `
 <div class="meta">
 <div class="meta-row"><span>Customer</span><span style="text-align:right;max-width:55%">${escapeBillHtml(customer)}</span></div>
+<div class="meta-row"><span>Branch</span><span style="text-align:right;max-width:55%">${escapeBillHtml(order.branchName || '-')}</span></div>
+<div class="meta-row"><span>Branch Location</span><span style="text-align:right;max-width:55%">${escapeBillHtml(order.branchLocation || '-')}</span></div>
 <div class="meta-row"><span>Address</span><span style="text-align:right;max-width:55%">${escapeBillHtml(custAddr) || '—'}</span></div>
 <div class="meta-row"><span>Bill No</span><span>${escapeBillHtml(String(billNo))}</span></div>
 <div class="meta-row"><span>Cashier (Rep)</span><span>${escapeBillHtml(String(cashier))}</span></div>
@@ -1029,7 +1087,7 @@ ${meta}
             const html = isMw
                 ? buildMwDslThermalBillHtml(order, shopData)
                 : buildGenericThermalBillHtml(order, shopData, currentBusinessData);
-            openAndPrintInvoice(html);
+            await openAndPrintInvoice(html);
         }
 
         async function loadStats() {
@@ -1244,6 +1302,153 @@ ${meta}
             }
         }
 
+        function tearMwFreeItemsWidgetListeners() {
+            if (mwFreeWidgetDebounceTimer) {
+                clearTimeout(mwFreeWidgetDebounceTimer);
+                mwFreeWidgetDebounceTimer = null;
+            }
+            if (typeof mwFreeItemsOrdersUnsub === 'function') {
+                try { mwFreeItemsOrdersUnsub(); } catch (e0) {}
+            }
+            if (typeof mwFreeItemsPendingUnsub === 'function') {
+                try { mwFreeItemsPendingUnsub(); } catch (e1) {}
+            }
+            if (typeof mwFreeItemsGrnUnsub === 'function') {
+                try { mwFreeItemsGrnUnsub(); } catch (e2) {}
+            }
+            mwFreeItemsOrdersUnsub = null;
+            mwFreeItemsPendingUnsub = null;
+            mwFreeItemsGrnUnsub = null;
+        }
+
+        function extractGrnFreeContribution(d) {
+            const x = d || {};
+            if (x.isActive === false) return null;
+            let qty = Number(x.freeQty ?? x.freeIssueQty ?? x.complimentaryQty ?? x.promoFreeQty ?? 0) || 0;
+            const typeStr = String(x.grnType ?? x.movementType ?? x.lineType ?? '').toLowerCase();
+            if (qty <= 0 && (typeStr.includes('free') || x.isFreeIssue === true)) {
+                qty = Number(x.quantity ?? x.receivedQty ?? 0) || 0;
+            }
+            if (qty <= 0) return null;
+            const unit = Number(x.sellingPrice ?? x.buyingPrice ?? 0) || 0;
+            return {
+                qty,
+                val: qty * unit,
+                name: String(x.productName || x.name || 'GRN').trim() || 'GRN'
+            };
+        }
+
+        function recomputeMwFreeItemsWidgetFromCache() {
+            const card = document.getElementById('freeItemsSummaryWidget');
+            if (!card || !isMwTradingBusiness()) {
+                if (card) card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            const inv = window.DigiBizDistributorInventory;
+            let orderFreeQty = 0;
+            let orderFreeVal = 0;
+            let ordersWithFree = 0;
+            const byProduct = {};
+
+            function consumeOrderDoc(doc) {
+                const order = doc.data() || {};
+                const rows = (inv && typeof inv.extractFreeIssueRowsFromOrder === 'function')
+                    ? inv.extractFreeIssueRowsFromOrder(order, doc.id)
+                    : [];
+                if (rows.length) {
+                    let lineSum = 0;
+                    rows.forEach((r) => {
+                        lineSum += Number(r.qty) || 0;
+                        orderFreeVal += Number(r.value) || 0;
+                        const key = String(r.item || 'Unknown');
+                        byProduct[key] = (byProduct[key] || 0) + (Number(r.qty) || 0);
+                    });
+                    if (lineSum > 0) ordersWithFree += 1;
+                    orderFreeQty += lineSum;
+                    return;
+                }
+                const items = Array.isArray(order.items) ? order.items : [];
+                let orderLine = 0;
+                items.forEach((it) => {
+                    const fq = Number(it.freeQty ?? it.freeQuantity ?? 0) || 0;
+                    if (fq <= 0) return;
+                    orderLine += fq;
+                    const up = Number(it.unitPrice || it.price || 0) || 0;
+                    orderFreeVal += fq * up;
+                    const key = String(it.productName || it.productId || 'Unknown');
+                    byProduct[key] = (byProduct[key] || 0) + fq;
+                });
+                if (orderLine > 0) ordersWithFree += 1;
+                orderFreeQty += orderLine;
+            }
+
+            (mwFreeWidgetCache.pendingDocs || []).forEach(consumeOrderDoc);
+            (mwFreeWidgetCache.orderDocs || []).forEach(consumeOrderDoc);
+
+            let grnQty = 0;
+            let grnVal = 0;
+            (mwFreeWidgetCache.grnDocs || []).forEach((doc) => {
+                const g = extractGrnFreeContribution(doc.data());
+                if (!g) return;
+                grnQty += g.qty;
+                grnVal += g.val;
+                const key = 'GRN: ' + g.name;
+                byProduct[key] = (byProduct[key] || 0) + g.qty;
+            });
+
+            const totalQty = orderFreeQty + grnQty;
+            const totalVal = orderFreeVal + grnVal;
+            const top = Object.keys(byProduct).sort((a, b) => (byProduct[b] || 0) - (byProduct[a] || 0))[0] || '';
+
+            const elOrd = document.getElementById('mwFreeQtyOrders');
+            const elGrn = document.getElementById('mwFreeQtyGrn');
+            const elVal = document.getElementById('mwFreeValueEst');
+            const elCnt = document.getElementById('mwFreeOrdersCount');
+            const elTop = document.getElementById('mwFreeTopProduct');
+            const elLu = document.getElementById('mwFreeLastUpdated');
+            if (elOrd) elOrd.textContent = Number(orderFreeQty).toLocaleString();
+            if (elGrn) elGrn.textContent = Number(grnQty).toLocaleString();
+            if (elVal) elVal.textContent = 'Rs ' + Number(totalVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            if (elCnt) elCnt.textContent = Number(ordersWithFree).toLocaleString();
+            if (elTop) elTop.textContent = top ? (top + ' (' + byProduct[top] + ')') : '-';
+            if (elLu) elLu.textContent = new Date().toLocaleString();
+        }
+
+        function scheduleMwFreeItemsWidgetRecompute() {
+            if (!isMwTradingBusiness()) return;
+            if (mwFreeWidgetDebounceTimer) clearTimeout(mwFreeWidgetDebounceTimer);
+            mwFreeWidgetDebounceTimer = setTimeout(function () {
+                mwFreeWidgetDebounceTimer = null;
+                recomputeMwFreeItemsWidgetFromCache();
+            }, 150);
+        }
+
+        function attachMwFreeItemsWidgetRealtime() {
+            tearMwFreeItemsWidgetListeners();
+            const card = document.getElementById('freeItemsSummaryWidget');
+            if (!isMwTradingBusiness() || !currentBusinessId) {
+                if (card) card.style.display = 'none';
+                return;
+            }
+            const bid = currentBusinessId;
+            if (card) card.style.display = 'block';
+
+            mwFreeItemsPendingUnsub = db.collection('pendingOrders').where('businessId', '==', bid).onSnapshot(function (snap) {
+                mwFreeWidgetCache.pendingDocs = snap.docs || [];
+                scheduleMwFreeItemsWidgetRecompute();
+            }, function () {});
+            mwFreeItemsOrdersUnsub = db.collection('orders').where('businessId', '==', bid).onSnapshot(function (snap) {
+                mwFreeWidgetCache.orderDocs = snap.docs || [];
+                scheduleMwFreeItemsWidgetRecompute();
+            }, function () {});
+            mwFreeItemsGrnUnsub = db.collection('grn_history').where('businessId', '==', bid).onSnapshot(function (snap) {
+                mwFreeWidgetCache.grnDocs = snap.docs || [];
+                scheduleMwFreeItemsWidgetRecompute();
+            }, function () {});
+            scheduleMwFreeItemsWidgetRecompute();
+        }
+
         async function resolveCommissionRateForOrder(order) {
             const repId = String(order && order.repId || '').trim();
             if (!repId) return { rate: 0, amount: 0 };
@@ -1381,7 +1586,7 @@ ${meta}
                 
             } catch (error) {
                 console.error('Error loading orders:', error);
-                document.getElementById('ordersList').innerHTML = '<tr><td colspan="10" class="loading">Error loading orders</td></tr>';
+                document.getElementById('ordersList').innerHTML = '<tr><td colspan="11" class="loading">Error loading orders</td></tr>';
             }
         }
 
@@ -1472,11 +1677,23 @@ ${meta}
             });
 
             if (visible.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" class="loading">No orders found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="11" class="loading">No orders found</td></tr>';
                 return;
             }
 
             tbody.innerHTML = visible.map(order => {
+                const dRaw = order.orderDate || order.createdAt || null;
+                let dText = '-';
+                if (dRaw && typeof dRaw.toDate === 'function') {
+                    dText = dRaw.toDate().toLocaleDateString();
+                } else if (dRaw && dRaw.seconds) {
+                    dText = new Date(dRaw.seconds * 1000).toLocaleDateString();
+                } else if (typeof dRaw === 'string') {
+                    const dObj = new Date(dRaw);
+                    dText = Number.isNaN(dObj.getTime()) ? dRaw : dObj.toLocaleDateString();
+                } else if (dRaw instanceof Date) {
+                    dText = dRaw.toLocaleDateString();
+                }
                 const itemCount = order.items?.reduce((sum, i) => sum + (i.orderedQty || 0) + (i.freeQty || 0), 0) || 0;
                 const mwLine = isMwTradingBusiness()
                     ? `<div style="font-size:11px;color:#475569;margin-top:2px;">Free: ${Number(order.mwFreeIssuesQty || 0)} | Returns: ${Number(order.mwReturnsQty || 0)}</div>`
@@ -1485,9 +1702,10 @@ ${meta}
                 return `
                     <tr>
                         <td><strong>${order.orderNumber || order.id.slice(-8)}</strong></td>
-                        <td>${order.orderDate?.toDate ? new Date(order.orderDate.toDate()).toLocaleDateString() : '-'}</td>
+                        <td>${dText}</td>
                         <td>${order.repName}</td>
                         <td>${order.shopName}</td>
+                        <td>${order.branchName || '-'}</td>
                         <td>${getLorryLabel(order)}</td>
                         <td style="max-width:180px;font-size:12px;color:#475569;">${brands}</td>
                         <td>${itemCount} items${mwLine}</td>
@@ -1801,6 +2019,7 @@ ${meta}
             
             modalBody.innerHTML = `
                 <div><strong>Shop:</strong> ${order.shopName}</div>
+                <div><strong>Branch:</strong> ${order.branchName || '-'}</div>
                 <div><strong>Rep:</strong> ${order.repName}</div>
                 <div><strong>Lorry:</strong> ${getLorryLabel(order)}</div>
                 <div><strong>Date:</strong> ${order.orderDate?.toDate ? new Date(order.orderDate.toDate()).toLocaleString() : '-'}</div>
@@ -1881,6 +2100,7 @@ ${meta}
             if (typeof accountBalancesUnsub === 'function') {
                 try { accountBalancesUnsub(); } catch (e5) {}
             }
+            tearMwFreeItemsWidgetListeners();
             ordersUnsub = null;
             pendingOrdersUnsub = null;
             supplierLedgerUnsub = null;
@@ -1904,6 +2124,7 @@ ${meta}
                 loadUpcomingChequesWidget();
                 loadCommissionWidget();
             });
+            attachMwFreeItemsWidgetRealtime();
             const email = String((currentUser && currentUser.email) || '').trim().toLowerCase();
             if (email === BDK_EMAIL) {
                 const accountingBid = BDK_ACCOUNTING_BUSINESS_ID || currentBusinessId;
@@ -1962,7 +2183,7 @@ ${meta}
             await loadOrders();
             await loadRepSummary();
             await loadUpcomingChequesWidget();
-                await loadCommissionWidget();
+            await loadCommissionWidget();
             attachDashboardRealtimeListeners();
         }
 

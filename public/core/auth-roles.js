@@ -242,6 +242,7 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
 (function attachDistributorPermissions() {
     const OWNER_NORMS = new Set(['DISTRIBUTOR_OWNER', 'BUSINESS_OWNER', 'SUPER_ADMIN', 'ADMIN']);
     const MW_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+    const SPRANZA_BUSINESS_ID = 'SPRANZA_PVT_LTD';
 
     function normalizeRole(r) {
         let s = String(r || '')
@@ -265,7 +266,7 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
     function permissionsForRole(roleRaw, businessId) {
         const b = roleBand(roleRaw);
         const bid = String(businessId || '').trim();
-        const isMwTrading = bid === MW_BUSINESS_ID;
+        const isMwTrading = bid === MW_BUSINESS_ID || bid === SPRANZA_BUSINESS_ID;
         const isOwner = b === 'OWNER';
         const isSC = b === 'SALES_COORDINATOR';
         const isAM = b === 'AREA_MANAGER';

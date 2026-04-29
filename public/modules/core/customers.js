@@ -82,9 +82,9 @@ function canCustomerEditDeleteUI() {
         const p = window.DigibizDistributorPermissions.permissionsForRole(roleRaw);
         return !!p.canCustomerEditDelete;
     }
-    const nr = normalizeStaffRole(roleRaw);
-    const allow = new Set(['SUPER_ADMIN', 'BUSINESS_OWNER', 'ADMIN', 'DISTRIBUTOR_OWNER', 'SALES_COORDINATOR']);
-    return allow.has(nr);
+    // For non-distributor businesses (including KUBUKA manufacturer), keep customer edit/delete
+    // actions visible as requested.
+    return true;
 }
 
 function syncMwCustomerDatalist() {

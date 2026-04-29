@@ -13,8 +13,8 @@
     <script src="/core/firebase-init.js?v=47"></script>
     <script src="/core/dashboard-core.js?v=47"></script>
     <script src="/core/distributor-lorry-stock.js?v=1"></script>
-    <script src="/core/sidebar.js?v=50"></script>
-    <script src="/modules/distributor/web/credit-aging.js?v=2"></script>
+    <script src="/core/sidebar.js?v=70"></script>
+    <script src="/modules/distributor/web/credit-aging.js?v=3"></script>
     <style>
         body{font-family:Inter,system-ui,sans-serif;background:#f3f4f6;margin:0;}
         .wrap{padding:22px;}
@@ -39,6 +39,9 @@
         .modal-card{background:#fff;border-radius:14px;max-width:980px;width:100%;max-height:85vh;overflow:auto;padding:16px;}
         .modal-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;}
         .modal-close{border:0;background:#e5e7eb;border-radius:8px;padding:6px 10px;cursor:pointer;}
+        .aging-info{font-size:12px;color:#334155;line-height:1.55;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:0;}
+        .aging-info summary{cursor:pointer;font-weight:700;color:#0f172a;}
+        .aging-info ul{margin:8px 0 0 18px;padding:0;}
         @media print {.no-print{display:none !important;} body{background:#fff;} .wrap{padding:0;}}
     </style>
 </head>
@@ -48,6 +51,20 @@
     <div class="card">
         <h2 style="margin:0 0 6px;">Credit Customer Aging Report</h2>
         <p id="gateMsg" style="margin:0;color:#6b7280;font-size:13px;">Outstanding credit by aging bucket (0-30, 31-60, 61-90, 90+ days).</p>
+    </div>
+
+    <div class="card no-print" id="agingBucketInfo" style="display:none;">
+        <details class="aging-info">
+            <summary>How aging buckets work (tooltip)</summary>
+            <p style="margin:8px 0 0;">Aging buckets show how many days the payment is overdue from the due date:</p>
+            <ul>
+                <li><strong>Current (0-30 days):</strong> Payment due within 30 days — not yet overdue.</li>
+                <li><strong>31-60 days:</strong> Payment overdue by 1-2 months.</li>
+                <li><strong>61-90 days:</strong> Payment overdue by 2-3 months.</li>
+                <li><strong>90+ days:</strong> Payment overdue by more than 3 months.</li>
+            </ul>
+            <p style="margin:8px 0 0;">Higher overdue days may indicate higher risk of non-payment.</p>
+        </details>
     </div>
 
     <div class="card no-print">
@@ -78,9 +95,11 @@
                         <th>Last Txn</th>
                         <th class="num">Credit Limit</th>
                         <th>Overdue</th>
+                        <th>Due Date</th>
+                        <th>Penalty Note</th>
                     </tr>
                 </thead>
-                <tbody id="rows"><tr><td colspan="10">Loading...</td></tr></tbody>
+                <tbody id="rows"><tr><td colspan="12">Loading...</td></tr></tbody>
             </table>
         </div>
     </div>
@@ -100,21 +119,23 @@
                 <thead>
                     <tr>
                         <th>Order / Invoice #</th>
-                        <th>Order date</th>
+                        <th>Due / order date</th>
                         <th class="num">Total</th>
                         <th class="num">Paid</th>
                         <th class="num">Outstanding</th>
                         <th class="num">Days overdue</th>
-                        <th>Status</th>
+                        <th>Payment</th>
+                        <th>Order status</th>
+                        <th>Credit release</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
-                <tbody id="agingModalRows"><tr><td colspan="7">Loading...</td></tr></tbody>
+                <tbody id="agingModalRows"><tr><td colspan="10">Loading...</td></tr></tbody>
                 <tfoot>
                     <tr>
                         <td colspan="4" class="num"><strong>Total outstanding</strong></td>
                         <td class="num"><strong id="agingModalTotal">Rs 0.00</strong></td>
-                        <td colspan="3"></td>
+                        <td colspan="5"></td>
                     </tr>
                 </tfoot>
             </table>
@@ -124,11 +145,13 @@
 
 <script>
 (() => {
+    const MW_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
     const state = { user:null, businessId:'', isPilot:false, rows:[] };
     const $ = (id) => document.getElementById(id);
     function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
     function money(n){ return (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
     function dms(v){ if(!v) return 0; if(v.toDate) return v.toDate().getTime(); if(v.seconds) return v.seconds*1000; const d=new Date(v); return isNaN(d.getTime())?0:d.getTime(); }
+    function isMwBusiness(){ return String(state.businessId || '') === MW_BUSINESS_ID; }
     function calcAgingBucket(days){
         if (days <= 30) return 'current';
         if (days <= 60) return '31_60';
@@ -136,16 +159,20 @@
         return '90_plus';
     }
     function extractOutstanding(order){
-        const total = Number(order.totalAmount || order.subtotal || 0) || 0;
-        const paid = Number(order.collectionAmount || order.collectedAmount || 0) || 0;
-        const explicit = Number(order.outstandingBalance);
-        const out = Number.isFinite(explicit) ? explicit : (total - paid);
-        return Math.max(0, out);
+        const o = order || {};
+        const total = Number(o.totalAmount || o.subtotal || 0) || 0;
+        const paid = Number(o.collectionAmount || o.collectedAmount || 0) || 0;
+        const released = Number(o.releasedAmount || 0) || 0;
+        const explicit = Number(o.outstandingBalance);
+        const computed = Math.max(0, total - paid - released);
+        if (Number.isFinite(explicit) && explicit >= 0) return Math.max(0, explicit);
+        return computed;
     }
     async function loadData(){
-        const [shopsSnap, ordersSnap] = await Promise.all([
+        const [shopsSnap, ordersSnap, chequesSnap] = await Promise.all([
             db.collection('shops').where('businessId','==',state.businessId).get(),
-            db.collection('orders').where('businessId','==',state.businessId).get()
+            db.collection('orders').where('businessId','==',state.businessId).get(),
+            db.collection('cheques').where('businessId','==',state.businessId).where('isActive','==',true).get()
         ]);
         const shops = {};
         shopsSnap.docs.forEach((d)=>{ shops[d.id] = { id:d.id, ...(d.data()||{}) }; });
@@ -163,7 +190,7 @@
                 acc[shopId] = {
                     shopId, shopName: s.name || o.shopName || shopId, contact: s.mobile || s.phone || s.contactNumber || '',
                     creditLimit: Number(s.creditLimit || 0) || 0,
-                    totalOutstanding: 0, current: 0, b31_60: 0, b61_90: 0, b90_plus: 0, lastTxnMs: 0
+                    totalOutstanding: 0, current: 0, b31_60: 0, b61_90: 0, b90_plus: 0, lastTxnMs: 0, oldestDueMs: 0, maxOverdueDays: 0
                 };
             }
             const row = acc[shopId];
@@ -176,10 +203,26 @@
             if (bucket === '61_90') row.b61_90 += outstanding;
             if (bucket === '90_plus') row.b90_plus += outstanding;
             if (ms > row.lastTxnMs) row.lastTxnMs = ms;
+            const dueMs = dms(o.creditDueDate || o.dueDate || o.paymentDueDate || o.orderDate || o.createdAt);
+            if (dueMs > 0 && (row.oldestDueMs === 0 || dueMs < row.oldestDueMs)) row.oldestDueMs = dueMs;
+            if (dueMs > 0) {
+                const over = Math.max(0, Math.floor((now.getTime() - dueMs) / 86400000));
+                if (over > row.maxOverdueDays) row.maxOverdueDays = over;
+            }
+        });
+        chequesSnap.docs.forEach((d) => {
+            const c = d.data() || {};
+            const sid = String(c.customerId || '').trim();
+            if (!sid || !acc[sid]) return;
+            const dueMs = dms(c.depositDueDate);
+            if (dueMs > 0 && (acc[sid].oldestDueMs === 0 || dueMs < acc[sid].oldestDueMs)) acc[sid].oldestDueMs = dueMs;
+            const over = dueMs > 0 ? Math.max(0, Math.floor((now.getTime() - dueMs) / 86400000)) : 0;
+            if (over > acc[sid].maxOverdueDays) acc[sid].maxOverdueDays = over;
         });
         state.rows = Object.values(acc).filter((r)=>r.totalOutstanding > 0).map((r)=>({
             ...r,
-            overdue: r.creditLimit > 0 && r.totalOutstanding > r.creditLimit
+            overdue: r.creditLimit > 0 && r.totalOutstanding > r.creditLimit,
+            penaltyNotice: r.maxOverdueDays > 0 ? `Penalty/interest may apply (${r.maxOverdueDays}d overdue)` : ''
         })).sort((a,b)=>b.totalOutstanding - a.totalOutstanding);
         render();
     }
@@ -219,11 +262,13 @@
                 <td>${r.lastTxnMs ? new Date(r.lastTxnMs).toLocaleDateString() : '-'}</td>
                 <td class="num">${r.creditLimit>0?('Rs '+money(r.creditLimit)):'-'}</td>
                 <td>${r.overdue?'<span class="warn">OVER LIMIT</span>':'-'}</td>
-            </tr>`).join('') : '<tr><td colspan="10">No credit aging rows</td></tr>';
+                <td>${r.oldestDueMs ? new Date(r.oldestDueMs).toLocaleDateString() : '-'}</td>
+                <td>${r.penaltyNotice ? `<span class="warn">${esc(r.penaltyNotice)}</span>` : '-'}</td>
+            </tr>`).join('') : '<tr><td colspan="12">No credit aging rows</td></tr>';
     }
     function exportCsv(){
         const rows = filteredRows();
-        const header = ['Shop name','Contact','Total credit outstanding','Current (0-30)','31-60','61-90','90+','Last transaction date','Credit limit','Overdue flag'];
+        const header = ['Shop name','Contact','Total credit outstanding','Current (0-30)','31-60','61-90','90+','Last transaction date','Credit limit','Overdue flag','Oldest due date','Max overdue days','Penalty note'];
         const lines = [header.join(',')];
         rows.forEach((r)=>{
             lines.push([
@@ -236,7 +281,10 @@
                 r.b90_plus.toFixed(2),
                 r.lastTxnMs ? `"${new Date(r.lastTxnMs).toISOString().slice(0,10)}"` : '""',
                 r.creditLimit.toFixed(2),
-                r.overdue ? '"YES"' : '"NO"'
+                r.overdue ? '"YES"' : '"NO"',
+                r.oldestDueMs ? `"${new Date(r.oldestDueMs).toISOString().slice(0,10)}"` : '""',
+                String(r.maxOverdueDays || 0),
+                `"${String(r.penaltyNotice || '').replace(/"/g,'""')}"`
             ].join(','));
         });
         const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -261,12 +309,16 @@
             state.businessId = ctx && ctx.businessId ? ctx.businessId : '';
         }
         if (!state.businessId) return alert('Select business first');
-        state.isPilot = !!(window.DigiBizDistributorLorryStock && window.DigiBizDistributorLorryStock.activeForSession(user.email, state.businessId));
+        state.isPilot = isMwBusiness();
         if (!state.isPilot) {
-            $('gateMsg').textContent = 'Credit aging report is enabled only for the configured pilot business.';
-            $('rows').innerHTML = '<tr><td colspan="10">Access restricted.</td></tr>';
+            $('gateMsg').textContent = 'Credit aging report is enabled only for MW Trading business.';
+            $('rows').innerHTML = '<tr><td colspan="12">Access restricted.</td></tr>';
+            const inf = document.getElementById('agingBucketInfo');
+            if (inf) inf.style.display = 'none';
             return;
         }
+        const infOk = document.getElementById('agingBucketInfo');
+        if (infOk) infOk.style.display = 'block';
         if (window.CreditAgingDrilldown && typeof window.CreditAgingDrilldown.init === 'function') {
             window.CreditAgingDrilldown.init({ db, user, businessId: state.businessId });
         }

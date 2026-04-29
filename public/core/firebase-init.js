@@ -45,6 +45,7 @@ const auth = window.auth;
 (function () {
     const MW_TRADING_OWNER_EMAIL = 'mwtradingsolutions@gmail.com';
     const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+    const DEFAULT_TEST_BUSINESS_ID = 'DEFAULT_TEST_BUSINESS';
     const KUBUKA_OWNER_EMAIL = 'kdkumbukaagro@gmail.com';
     const KUBUKA_BUSINESS_ID = '0Uled5estVeQVN8cChmMTNRDNIE3';
 
@@ -83,6 +84,49 @@ const auth = window.auth;
             );
         } catch (e) {
             console.warn('[DigiBiz] KUBUKA business profile bootstrap failed:', e && (e.message || e));
+        }
+    };
+
+    /**
+     * One-time/default demo tenant for all new registrations.
+     * Keeps SPRANZA and other customer businesses fully isolated.
+     */
+    window.ensureDefaultTestBusinessProfile = async function () {
+        if (!window.db) return;
+        try {
+            await window.db.collection('businesses').doc(DEFAULT_TEST_BUSINESS_ID).set(
+                {
+                    name: 'Demo Business',
+                    businessType: 'distributor',
+                    status: 'active',
+                    mwTradingSolutionsTenant: true,
+                    distributorModel: 'MW',
+                    branchWarehousesEnabled: true
+                },
+                { merge: true }
+            );
+            await window.db.collection('settings').doc(DEFAULT_TEST_BUSINESS_ID).set({
+                subscription: {
+                    plan: 'TRIAL',
+                    status: 'TRIAL',
+                    trialStart: new Date().toISOString(),
+                    trialEnd: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                    expireDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+                },
+                smsWallet: {
+                    paidSmsBalance: 0,
+                    trialSmsBalance: 300,
+                    trialSmsExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                    smsBalance: 300,
+                    lowBalanceThreshold: 50,
+                    unitPrice: 1,
+                    monthlyFee: 1000,
+                    trialCreditsGranted: true,
+                    updatedAt: new Date().toISOString()
+                }
+            }, { merge: true });
+        } catch (e) {
+            console.warn('[DigiBiz] Default demo business bootstrap failed:', e && (e.message || e));
         }
     };
 
@@ -126,6 +170,7 @@ const auth = window.auth;
             return;
         }
         const email = String(user.email || '').trim().toLowerCase();
+        try { window.ensureDefaultTestBusinessProfile(); } catch (e) { /* ignore */ }
         const storedBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
         if (storedBusinessId === MW_TRADING_BUSINESS_ID) {
             try {

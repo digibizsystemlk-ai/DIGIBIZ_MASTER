@@ -14,7 +14,7 @@
     <script src="/core/auth-roles.js?v=47"></script>
     <script src="/core/dashboard-core.js?v=47"></script>
     <script src="/core/distributor-lorry-stock.js?v=1"></script>
-    <script src="/core/sidebar.js?v=50"></script>
+    <script src="/core/sidebar.js?v=69"></script>
     <style>
         body{font-family:Inter,system-ui,sans-serif;background:#f3f4f6;margin:0;color:#111827;}
         .wrap{padding:22px;}
@@ -99,6 +99,7 @@
 
 <script>
 (() => {
+    const MW_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
     const state = { user: null, businessId: '', isPilot: false, editId: '', rows: [], shops: [] };
     const $ = (id) => document.getElementById(id);
     const STATUS_FLOW = {
@@ -111,6 +112,15 @@
     function dueDays(v){ if(!v) return ''; const due = v.toDate ? v.toDate() : new Date(v); const now = new Date(); now.setHours(0,0,0,0); due.setHours(0,0,0,0); return Math.ceil((due.getTime()-now.getTime())/86400000); }
     function toTs(dateStr){ const d = new Date(dateStr + 'T00:00:00'); return firebase.firestore.Timestamp.fromDate(d); }
     function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+    function ymd(v){ if(!v) return new Date().toISOString().slice(0,10); const d=v.toDate? v.toDate(): new Date(v); return isNaN(d.getTime())?new Date().toISOString().slice(0,10):d.toISOString().slice(0,10); }
+    function isMwBusiness(){ return String(state.businessId || '') === MW_BUSINESS_ID; }
+    function interestNotice(daysOverdue, amount){
+        const days = Number(daysOverdue || 0);
+        if (!(days > 0)) return '';
+        const monthlyRate = 0.015; // 1.5% per month info alert
+        const est = (Number(amount || 0) * monthlyRate * (days / 30));
+        return `Overdue ${days}d · est. penalty Rs ${est.toFixed(2)}`;
+    }
     function resetForm(){
         state.editId=''; ['fInvoice','fOrderId','fBank','fChequeNo','fAmount','fIssueDate','fDueDate','fBounceReason'].forEach((id)=>$(id).value='');
         $('fStatus').value='pending_deposit';
@@ -200,8 +210,17 @@
                 <td>${esc(r.chequeNumber || '-')}</td>
                 <td>Rs ${(Number(r.amount)||0).toLocaleString()}</td>
                 <td>${fmtDate(r.issueDate)}</td>
-                <td>${fmtDate(r.depositDueDate)}</td>
-                <td><span class="status s-${esc(r.status)}">${esc(r.status)}</span>${r.status==='bounced'&&r.bounceReason?`<div class="muted">${esc(r.bounceReason)}</div>`:''}</td>
+                <td>${fmtDate(r.depositDueDate)}<div class="muted">${(() => {
+                    const d = dueDays(r.depositDueDate);
+                    if (d === '') return 'No due date';
+                    if (d < 0) return `${Math.abs(d)} day(s) overdue`;
+                    if (d === 0) return 'Due today';
+                    return `${d} day(s) left`;
+                })()}</div></td>
+                <td><span class="status s-${esc(r.status)}">${esc(r.status)}</span>${r.status==='bounced'&&r.bounceReason?`<div class="muted">${esc(r.bounceReason)}</div>`:''}${(() => {
+                    const d = dueDays(r.depositDueDate);
+                    return d < 0 ? `<div class="muted" style="color:#b91c1c;">${esc(interestNotice(Math.abs(d), r.amount))}</div>` : '';
+                })()}</td>
                 <td>
                     <button class="btn alt" onclick="window.__chequeEdit('${r.id}')">Edit</button>
                     <button class="btn warn" onclick="window.__chequeSetStatus('${r.id}','deposited')">Deposited</button>
@@ -210,6 +229,95 @@
                     <button class="btn alt" onclick="window.__chequeDelete('${r.id}')">Delete</button>
                 </td>
             </tr>`).join('') : '<tr><td colspan="9" class="muted">No cheques found</td></tr>';
+    }
+    async function postChequeAccountingOnTransition(prevStatus, nextStatus, chequeId, chequeRow){
+        if (!isMwBusiness()) return;
+        const row = chequeRow || {};
+        const amount = Number(row.amount || 0);
+        if (!(amount > 0)) return;
+        const orderId = String(row.orderId || '').trim();
+        const refBase = `CHEQUE/${String(row.chequeNumber || chequeId || '').trim()}`;
+        const commonMeta = {
+            chequeId: String(chequeId || ''),
+            chequeNumber: String(row.chequeNumber || ''),
+            customerId: String(row.customerId || ''),
+            customerName: String(row.customerName || ''),
+            orderId: orderId,
+            invoiceNumber: String(row.invoiceNumber || ''),
+            scope: 'MW_TRADING_ONLY'
+        };
+        if (nextStatus === 'deposited' && prevStatus !== 'deposited' && prevStatus !== 'cleared') {
+            const drId = `MW_CHEQUE_${String(chequeId).replace(/[^A-Za-z0-9_-]/g, '_')}_BANK_DR`;
+            const crId = `MW_CHEQUE_${String(chequeId).replace(/[^A-Za-z0-9_-]/g, '_')}_AR_CR`;
+            await Promise.all([
+                db.collection('journal_entries').doc(drId).set({
+                    businessId: state.businessId,
+                    account: 'Bank',
+                    amount,
+                    entryType: 'debit',
+                    reference: refBase,
+                    referenceType: 'MW_CHEQUE_DEPOSIT',
+                    date: ymd(row.depositDueDate || row.updatedAt),
+                    createdAt: new Date(),
+                    meta: commonMeta
+                }, { merge: true }),
+                db.collection('journal_entries').doc(crId).set({
+                    businessId: state.businessId,
+                    account: 'Accounts Receivable',
+                    amount,
+                    entryType: 'credit',
+                    reference: refBase,
+                    referenceType: 'MW_CHEQUE_DEPOSIT',
+                    date: ymd(row.depositDueDate || row.updatedAt),
+                    createdAt: new Date(),
+                    meta: commonMeta
+                }, { merge: true }),
+                db.collection('cheques').doc(chequeId).set({
+                    accounting: {
+                        depositDebitId: drId,
+                        depositCreditId: crId,
+                        lastAccountingStatus: 'deposited',
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }
+                }, { merge: true })
+            ]);
+        }
+        if (nextStatus === 'bounced' && (prevStatus === 'deposited' || prevStatus === 'cleared')) {
+            const drId = `MW_CHEQUE_${String(chequeId).replace(/[^A-Za-z0-9_-]/g, '_')}_AR_DR_BOUNCE`;
+            const crId = `MW_CHEQUE_${String(chequeId).replace(/[^A-Za-z0-9_-]/g, '_')}_BANK_CR_BOUNCE`;
+            await Promise.all([
+                db.collection('journal_entries').doc(drId).set({
+                    businessId: state.businessId,
+                    account: 'Accounts Receivable',
+                    amount,
+                    entryType: 'debit',
+                    reference: refBase,
+                    referenceType: 'MW_CHEQUE_BOUNCE',
+                    date: ymd(row.updatedAt || new Date()),
+                    createdAt: new Date(),
+                    meta: commonMeta
+                }, { merge: true }),
+                db.collection('journal_entries').doc(crId).set({
+                    businessId: state.businessId,
+                    account: 'Bank',
+                    amount,
+                    entryType: 'credit',
+                    reference: refBase,
+                    referenceType: 'MW_CHEQUE_BOUNCE',
+                    date: ymd(row.updatedAt || new Date()),
+                    createdAt: new Date(),
+                    meta: commonMeta
+                }, { merge: true }),
+                db.collection('cheques').doc(chequeId).set({
+                    accounting: {
+                        bounceDebitId: drId,
+                        bounceCreditId: crId,
+                        lastAccountingStatus: 'bounced',
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }
+                }, { merge: true })
+            ]);
+        }
     }
     window.__chequeEdit = (id) => {
         const r = state.rows.find((x)=>x.id===id); if(!r) return;
@@ -230,6 +338,7 @@
     };
     window.__chequeSetStatus = async (id, nextStatus) => {
         const r = state.rows.find((x)=>x.id===id); if(!r) return;
+        const prevStatus = String(r.status || 'pending_deposit');
         let bounceReason = r.bounceReason || '';
         if (nextStatus === 'bounced') {
             bounceReason = prompt('Bounce reason:', bounceReason || '') || '';
@@ -242,6 +351,10 @@
             bounceReason: nextStatus === 'bounced' ? bounceReason.trim() : '',
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
+        await postChequeAccountingOnTransition(prevStatus, nextStatus, id, Object.assign({}, r, {
+            status: nextStatus,
+            bounceReason: nextStatus === 'bounced' ? bounceReason.trim() : ''
+        }));
         await loadRows();
     };
     window.__chequeDelete = async (id) => {
@@ -262,6 +375,7 @@
         if (!state.editId) data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
         const ref = state.editId ? db.collection('cheques').doc(state.editId) : db.collection('cheques').doc();
         await ref.set(data, { merge: true });
+        await postChequeAccountingOnTransition(prev, data.status, ref.id, data);
         resetForm();
         await loadRows();
     }
@@ -311,9 +425,9 @@
             state.businessId = ctx && ctx.businessId ? ctx.businessId : '';
         }
         if (!state.businessId) return alert('Select a business first');
-        state.isPilot = !!(window.DigiBizDistributorLorryStock && window.DigiBizDistributorLorryStock.activeForSession(user.email, state.businessId));
+        state.isPilot = isMwBusiness();
         if (!state.isPilot) {
-            $('gateMsg').textContent = 'Cheque management is enabled only for the configured pilot business.';
+            $('gateMsg').textContent = 'Cheque management is enabled only for MW Trading business.';
             $('formCard').style.display = 'none';
             $('rows').innerHTML = '<tr><td colspan="9" class="muted">Access restricted for this tenant.</td></tr>';
             return;
