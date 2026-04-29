@@ -11,6 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
     <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/auth-roles.js?v=49"></script>
     <script src="/core/event-validation.js?v=2"></script>
     <script src="/core/event-bus.js?v=2"></script>
     <script src="/core/accounts-core.js?v=2"></script>
@@ -116,10 +117,80 @@ document.head.appendChild(modalStyle);
 const supplierCustomerById = {};
 let editingRowId = '';
 const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+const KDKUMBUKA_EMAIL = 'kdkumbukaagro@gmail.com';
+let inboundAccessRole = 'VIEWER';
 function v(id){ return document.getElementById(id).value; }
 function n(id){ return Number(v(id)) || 0; }
 function payStatus(mode){ return mode === 'CREDIT' ? 'PENDING' : (mode === 'CHEQUE' ? 'PENDING_CLEARANCE' : 'PAID'); }
 function isKubuka(){ return ManufacturerModule.businessId === KUBUKA_BID; }
+function normRole(raw){
+    return String(raw || '').trim().toUpperCase().replace(/\s+/g, '_');
+}
+function isKdkumbukaTenantUser(){
+    const user = (window.auth && window.auth.currentUser) || firebase.auth().currentUser;
+    const email = String((user && user.email) || '').trim().toLowerCase();
+    return email === KDKUMBUKA_EMAIL && ManufacturerModule.businessId === KUBUKA_BID;
+}
+async function resolveInboundRole(){
+    const user = (window.auth && window.auth.currentUser) || firebase.auth().currentUser;
+    if (!user) return 'VIEWER';
+    const emailNorm = String(user.email || '').trim().toLowerCase();
+    const isKdkumbuka = emailNorm === KDKUMBUKA_EMAIL && ManufacturerModule.businessId === KUBUKA_BID;
+    if (emailNorm === KDKUMBUKA_EMAIL) return 'BUSINESS_OWNER';
+    if (!isKdkumbuka) return 'BUSINESS_OWNER';
+    try {
+        const roleInfo = window.getUserRole ? await window.getUserRole(user.uid, ManufacturerModule.businessId) : null;
+        const roleNorm = normRole(roleInfo && roleInfo.role);
+        if (roleNorm && roleNorm !== 'VIEWER') return roleNorm;
+    } catch (e) {
+        console.warn('[Inbound] getUserRole failed:', e?.message || e);
+    }
+    try {
+        const bizUser = await db.collection('businesses').doc(ManufacturerModule.businessId).collection('users').doc(user.uid).get();
+        if (bizUser.exists) {
+            const roleNorm = normRole((bizUser.data() || {}).role);
+            if (roleNorm) return roleNorm;
+        }
+    } catch (e) {
+        console.warn('[Inbound] business role fallback failed:', e?.message || e);
+    }
+    try {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        if (userDoc.exists) {
+            const roleNorm = normRole((userDoc.data() || {}).role);
+            if (roleNorm) return roleNorm;
+        }
+    } catch (e) {
+        console.warn('[Inbound] users role fallback failed:', e?.message || e);
+    }
+    return 'BUSINESS_OWNER';
+}
+function canOperateInbound(roleNorm){
+    if (!isKdkumbukaTenantUser()) return true;
+    const allowed = new Set(['BUSINESS_OWNER', 'SUPER_ADMIN', 'ADMIN', 'TEA_LEAFER']);
+    return allowed.has(roleNorm);
+}
+function enforceInboundAccess(roleNorm){
+    const ok = canOperateInbound(roleNorm);
+    const saveBtn = document.getElementById('saveBtn');
+    if (saveBtn) saveBtn.disabled = !ok;
+    if (!ok) {
+        const msgEl = document.getElementById('msg');
+        msgEl.className = 'mfg-msg err';
+        msgEl.textContent = 'You do not have access to Raw Material Buying.';
+    }
+    return ok;
+}
+function guardInboundActionOrWarn(){
+    const ok = canOperateInbound(inboundAccessRole);
+    if (!ok) {
+        const msgEl = document.getElementById('msg');
+        msgEl.className = 'mfg-msg err';
+        msgEl.textContent = 'You do not have access to Raw Material Buying actions.';
+        return false;
+    }
+    return true;
+}
 function escPrint(v){
     return String(v == null ? '' : v)
         .replace(/&/g, '&amp;')
@@ -246,6 +317,7 @@ async function refresh(){
     }).join('');
 }
 function openEditInbound(id){
+    if (!guardInboundActionOrWarn()) return;
     editingRowId = id;
     db.collection('manufacturer_raw_material_history').doc(id).get().then((doc) => {
         const x = doc.exists ? (doc.data() || {}) : {};
@@ -267,6 +339,7 @@ function closeEditInbound(){
     document.getElementById('editModal').style.display = 'none';
 }
 async function saveEditInbound(){
+    if (!guardInboundActionOrWarn()) return;
     if (!editingRowId) return;
     const updatePayload = {
         materialName: v('editMaterialName').trim(),
@@ -285,6 +358,7 @@ async function saveEditInbound(){
     await refresh();
 }
 async function deleteInbound(id){
+    if (!guardInboundActionOrWarn()) return;
     if (!confirm('Are you sure you want to delete this record?')) return;
     await db.collection('manufacturer_raw_material_history').doc(id).update({
         isActive: false,
@@ -378,6 +452,7 @@ function smsEnqueueNote(res){
     return '';
 }
 async function save(){
+    if (!enforceInboundAccess(inboundAccessRole)) return;
     const bid = ManufacturerModule.businessId;
     const mode = v('paymentMode');
     const cid = v('supplierCustomerId');
@@ -438,6 +513,20 @@ async function save(){
     
     try {
         await db.collection('manufacturer_raw_material_history').doc(id).set(data);
+        if (isKubuka()) {
+            await db.collection('procurement_kdkumbuka').doc(id).set({
+                ...data,
+                procurementId: id,
+                processingStatus: 'PENDING_SHIFTING',
+                shiftingAcceptedAt: null,
+                ratioUsed: null,
+                madeTeaQty: null,
+                madeTeaUnitCost: null,
+                madeTeaTotalValue: null,
+                readyForProductionId: null,
+                updatedAt: new Date()
+            }, { merge: true });
+        }
         
         // Save suggestions
         if (typeof window.saveMaterialSuggestion === 'function') await window.saveMaterialSuggestion();
@@ -520,6 +609,8 @@ async function save(){
 }
 (async function(){
     await ManufacturerModule.init('inbound');
+    inboundAccessRole = await resolveInboundRole();
+    enforceInboundAccess(inboundAccessRole);
     document.getElementById('saveBtn').onclick = save;
     document.getElementById('editSaveBtn').onclick = saveEditInbound;
     document.getElementById('editCancelBtn').onclick = closeEditInbound;

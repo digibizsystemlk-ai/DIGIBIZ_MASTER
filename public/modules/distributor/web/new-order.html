@@ -114,6 +114,16 @@
         .btn-clear-cart:hover { background: #fef2f2; }
         .totals { display: flex; justify-content: flex-end; padding-top: 4px; }
         .totals strong { font-size: 1.05rem; }
+        .other-returns-wrap { margin-top: 14px; border: 1px solid #fecaca; border-radius: 12px; padding: 12px; background: #fff7f7; }
+        .other-returns-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .other-returns-head h3 { margin: 0; font-size: 0.95rem; color: #991b1b; }
+        .other-returns-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .other-returns-actions select { min-width: 210px; max-width: 320px; }
+        .btn-add-return { padding: 8px 12px; border-radius: 10px; border: 1px solid #fca5a5; background: #fee2e2; color: #991b1b; font-weight: 700; cursor: pointer; font-size: 0.8rem; }
+        .btn-add-return:hover { background: #fecaca; }
+        .btn-add-return:disabled { opacity: .55; cursor: not-allowed; }
+        .other-returns-empty { color: #94a3b8; font-size: 0.82rem; padding: 10px 4px; }
+        .other-returns-total { margin-top: 8px; display: flex; justify-content: flex-end; font-size: 0.86rem; color: #991b1b; font-weight: 700; }
         .btn-submit {
             width: 100%; margin-top: 14px; padding: 14px 16px; background: #10b981; color: #fff; border: none;
             border-radius: 12px; font-size: 0.95rem; font-weight: 700; cursor: pointer;
@@ -238,6 +248,35 @@
                             <tbody id="linesBody"></tbody>
                         </table>
                     </div>
+                    <div class="other-returns-wrap">
+                        <div class="other-returns-head">
+                            <h3>Other Returns (Products not in this order)</h3>
+                            <div class="other-returns-actions">
+                                <select id="otherReturnProductSelect">
+                                    <option value="">Select return product…</option>
+                                </select>
+                                <button type="button" class="btn-add-return" id="addOtherReturnBtn">+ Add Return Item</button>
+                            </div>
+                        </div>
+                        <div id="otherReturnsEmpty" class="other-returns-empty">No other return lines added.</div>
+                        <div class="lines-table-wrap">
+                            <table class="lines" id="otherReturnsTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width:36px;">#</th>
+                                        <th style="width:100px;">Code</th>
+                                        <th>Product</th>
+                                        <th class="num" style="width:120px;">Qty</th>
+                                        <th class="num" style="width:88px;">Unit Rs</th>
+                                        <th class="num" style="width:110px;">Line Rs</th>
+                                        <th style="width:120px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="otherReturnsBody"></tbody>
+                            </table>
+                        </div>
+                        <div class="other-returns-total" id="otherReturnsTotalLabel">Other Returns Rs 0.00</div>
+                    </div>
                     <div class="cart-footer-sticky oe-footer">
                         <div class="line-meta-bar">
                             <span><strong id="lineCountLabel">0</strong> lines</span>
@@ -282,6 +321,28 @@
                 </div>
             </div>
         </div>
+        <div id="otherReturnModal" class="line-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="otherReturnModalTitle">
+            <div class="line-modal">
+                <h3 id="otherReturnModalTitle">Edit other return</h3>
+                <p id="otherReturnModalProduct" style="margin:0 0 10px;font-size:0.85rem;color:#475569;"></p>
+                <div class="row2">
+                    <div>
+                        <label for="otherReturnAgentRet">Agent return (resell)</label>
+                        <input type="text" inputmode="numeric" id="otherReturnAgentRet" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="otherReturnCompanyRet">Company return</label>
+                        <input type="text" inputmode="numeric" id="otherReturnCompanyRet" autocomplete="off">
+                    </div>
+                </div>
+                <label for="otherReturnReason">Return note (optional)</label>
+                <textarea id="otherReturnReason" rows="2" placeholder="e.g. Damaged"></textarea>
+                <div class="actions">
+                    <button type="button" class="btn-cancel" id="otherReturnModalCancel">Cancel</button>
+                    <button type="button" class="btn-save" id="otherReturnModalSave">Save return</button>
+                </div>
+            </div>
+        </div>
     </div>
     <script>
         var currentBusinessId = '';
@@ -289,6 +350,7 @@
         var myRepDocId = '';
         var products = [];
         var cart = [];
+        var otherReturns = [];
         var lineSuggestMatches = [];
         var lineSuggestActive = 0;
         var catalogLoaded = false;
@@ -299,6 +361,7 @@
         var isLorryPilotBiz = false;
         var branchRows = [];
         var webLineEditPid = '';
+        var otherReturnEditPid = '';
         var MAX_CART_LINES = 500;
         var SUGGEST_MAX_HITS = 42;
         var lineSuggestTimer = null;
@@ -347,6 +410,16 @@
         }
         function linePaidTotal(item) {
             return orderedQtyOf(item) * (Number(item && item.unitPrice) || 0);
+        }
+        function productById(productId) {
+            return products.find(function (x) { return x.id === productId; }) || null;
+        }
+        function effectiveUnitPrice(product, existingUp) {
+            var fifo = product ? fifoBatchInfo(product) : null;
+            var keep = Number(existingUp) || 0;
+            return isMwTradingBiz && keep > 0
+                ? keep
+                : (fifo ? fifo.sellingPrice : (product ? (Number(product.unitPrice) || 0) : keep));
         }
         function toYmd(value) {
             if (!value) return new Date().toISOString().slice(0, 10);
@@ -565,13 +638,17 @@
         }
 
         function updateCartTotalFooter() {
-            var mwBilling = isMwBillingTenant();
-            var tot = cart.reduce(function (s, i) {
+            var orderLinesTotal = cart.reduce(function (s, i) {
                 recalcCartLine(i);
-                return s + (mwBilling ? linePaidTotal(i) : (Number(i.total) || 0));
+                return s + (Number(i.total) || 0);
             }, 0);
+            var otherReturnsTotal = otherReturns.reduce(function (s, i) {
+                recalcOtherReturnLine(i);
+                return s + Math.abs(Number(i.total) || 0);
+            }, 0);
+            var grandTotal = orderLinesTotal - otherReturnsTotal;
             var ct = document.getElementById('cartTotal');
-            if (ct) ct.textContent = 'Total Rs ' + tot.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            if (ct) ct.textContent = 'Total Rs ' + grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             var lc = document.getElementById('lineCountLabel');
             if (lc) lc.textContent = String(cart.length);
             var mh = document.getElementById('lineMetaHint');
@@ -580,6 +657,112 @@
                     ? ('Scroll table for all rows · max ' + MAX_CART_LINES + ' SKUs')
                     : ('Max ' + MAX_CART_LINES + ' distinct product lines');
             }
+        }
+
+        function recalcOtherReturnLine(item) {
+            var pr = productById(item.productId);
+            var up = effectiveUnitPrice(pr, item.unitPrice);
+            item.productName = String(item.productName || (pr && pr.name) || '').trim();
+            item.productBrand = String(item.productBrand || productLineBrand(pr) || '').trim();
+            item.productCode = String(item.productCode || (pr && pr.productCode) || '').trim();
+            item.unitPrice = up;
+            var rr = Math.max(0, parseInt(item.returnResellQty, 10) || 0);
+            var rc = Math.max(0, parseInt(item.returnCompanyQty, 10) || 0);
+            item.returnResellQty = rr;
+            item.returnCompanyQty = rc;
+            item.returnQty = rr + rc;
+            var returnTotal = item.returnQty * up;
+            item.total = -returnTotal;
+        }
+
+        function otherReturnBadgeHtml(item) {
+            var qty = Number(item.returnQty) || 0;
+            if (qty <= 0) return '';
+            return '<span style="font-size:10px;color:#991b1b;background:#fee2e2;padding:2px 6px;border-radius:6px;">Return ×' + qty + '</span>';
+        }
+
+        function populateOtherReturnProductSelect() {
+            var sel = document.getElementById('otherReturnProductSelect');
+            if (!sel) return;
+            var html = ['<option value="">Select return product…</option>'];
+            products.forEach(function (p) {
+                var name = String(p.name || 'Item');
+                var code = String(p.productCode || '').trim();
+                var label = code ? (name + ' (' + code + ')') : name;
+                html.push('<option value="' + esc(p.id) + '">' + esc(label) + '</option>');
+            });
+            sel.innerHTML = html.join('');
+        }
+
+        function renderOtherReturns() {
+            var tbody = document.getElementById('otherReturnsBody');
+            var empty = document.getElementById('otherReturnsEmpty');
+            var totalLabel = document.getElementById('otherReturnsTotalLabel');
+            if (!tbody || !empty || !totalLabel) return;
+            if (!otherReturns.length) {
+                tbody.innerHTML = '';
+                empty.style.display = 'block';
+                totalLabel.textContent = 'Other Returns Rs 0.00';
+                updateCartTotalFooter();
+                return;
+            }
+            empty.style.display = 'none';
+            tbody.innerHTML = otherReturns.map(function (item, idx) {
+                recalcOtherReturnLine(item);
+                var lineAbs = Math.abs(Number(item.total) || 0);
+                return '<tr data-opid="' + esc(item.productId) + '">' +
+                    '<td>' + (idx + 1) + '</td>' +
+                    '<td class="oe-code">' + (item.productCode ? esc(item.productCode) : '—') + '</td>' +
+                    '<td><strong>' + esc(item.productName || 'Item') + '</strong>' +
+                    (item.productBrand ? '<div style="font-size:11px;color:#64748b;">' + esc(item.productBrand) + '</div>' : '') +
+                    '<div style="margin-top:6px;">' + otherReturnBadgeHtml(item) + '</div></td>' +
+                    '<td class="num">' + (Number(item.returnQty) || 0) + '</td>' +
+                    '<td class="num">' + (Number(item.unitPrice) || 0).toFixed(2) + '</td>' +
+                    '<td class="num">-' + lineAbs.toFixed(2) + '</td>' +
+                    '<td>' +
+                    '<button type="button" class="btn-line-edit" data-edit-other-return="' + esc(item.productId) + '">Edit</button> ' +
+                    '<button type="button" class="btn-icon" data-remove-other-return="' + esc(item.productId) + '">Remove</button>' +
+                    '</td>' +
+                    '</tr>';
+            }).join('');
+            var totalAbs = otherReturns.reduce(function (s, item) {
+                recalcOtherReturnLine(item);
+                return s + Math.abs(Number(item.total) || 0);
+            }, 0);
+            totalLabel.textContent = 'Other Returns Rs ' + totalAbs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            updateCartTotalFooter();
+        }
+
+        function addOtherReturnLine(productId) {
+            var pid = String(productId || '').trim();
+            if (!pid) {
+                showFormMsg('Select a return product first.', 'err');
+                return;
+            }
+            var pr = productById(pid);
+            if (!pr) {
+                showFormMsg('Selected return product is not available in catalog.', 'err');
+                return;
+            }
+            var existing = otherReturns.find(function (x) { return x.productId === pid; });
+            if (existing) {
+                openOtherReturnModal(pid);
+                return;
+            }
+            otherReturns.push({
+                productId: pid,
+                productName: String(pr.name || '').trim(),
+                productBrand: productLineBrand(pr),
+                productCode: String(pr.productCode || '').trim(),
+                returnResellQty: 0,
+                returnCompanyQty: 0,
+                returnQty: 0,
+                returnReason: '',
+                unitPrice: effectiveUnitPrice(pr, 0),
+                total: 0
+            });
+            renderOtherReturns();
+            openOtherReturnModal(pid);
         }
 
         function lineBadgesHtml(item) {
@@ -901,6 +1084,7 @@
                 if (lc0) lc0.textContent = '0';
                 var mh0 = document.getElementById('lineMetaHint');
                 if (mh0) mh0.textContent = 'Max ' + MAX_CART_LINES + ' distinct product lines';
+                updateCartTotalFooter();
                 return;
             }
             empty.style.display = 'none';
@@ -1008,6 +1192,43 @@
             });
         }
 
+        function openOtherReturnModal(productId) {
+            var line = otherReturns.find(function (x) { return x.productId === productId; });
+            if (!line) return;
+            recalcOtherReturnLine(line);
+            otherReturnEditPid = productId;
+            document.getElementById('otherReturnModalProduct').textContent = line.productName || 'Item';
+            document.getElementById('otherReturnAgentRet').value = String(line.returnResellQty != null ? line.returnResellQty : 0);
+            document.getElementById('otherReturnCompanyRet').value = String(line.returnCompanyQty != null ? line.returnCompanyQty : 0);
+            document.getElementById('otherReturnReason').value = line.returnReason || '';
+            var ov = document.getElementById('otherReturnModal');
+            if (ov) ov.classList.add('open');
+        }
+
+        function closeOtherReturnModal() {
+            otherReturnEditPid = '';
+            var ov = document.getElementById('otherReturnModal');
+            if (ov) ov.classList.remove('open');
+        }
+
+        function saveOtherReturnModal() {
+            if (!otherReturnEditPid) return;
+            var line = otherReturns.find(function (x) { return x.productId === otherReturnEditPid; });
+            if (!line) { closeOtherReturnModal(); return; }
+            var ar = parseQtyDigits(document.getElementById('otherReturnAgentRet').value);
+            var cr = parseQtyDigits(document.getElementById('otherReturnCompanyRet').value);
+            line.returnResellQty = ar === null ? 0 : ar;
+            line.returnCompanyQty = cr === null ? 0 : cr;
+            line.returnReason = String(document.getElementById('otherReturnReason').value || '').trim();
+            recalcOtherReturnLine(line);
+            if ((line.returnQty || 0) === 0) {
+                otherReturns = otherReturns.filter(function (x) { return x.productId !== otherReturnEditPid; });
+            }
+            closeOtherReturnModal();
+            renderOtherReturns();
+            showFormMsg('', '');
+        }
+
         function openWebLineModal(productId) {
             var line = cart.find(function (c) { return c.productId === productId; });
             if (!line) return;
@@ -1111,6 +1332,63 @@
                 });
             }
             ['webLineSalesQty', 'webLineFreeQty', 'webLineAgentRet', 'webLineCompanyRet'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el && !el.dataset.arrowBlock) {
+                    el.dataset.arrowBlock = '1';
+                    el.addEventListener('keydown', function (e) {
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault();
+                    });
+                }
+            });
+        }
+
+        function bindOtherReturns() {
+            var addBtn = document.getElementById('addOtherReturnBtn');
+            var sel = document.getElementById('otherReturnProductSelect');
+            var tbody = document.getElementById('otherReturnsBody');
+            if (addBtn && !addBtn.dataset.bound) {
+                addBtn.dataset.bound = '1';
+                addBtn.addEventListener('click', function () {
+                    addOtherReturnLine(sel && sel.value);
+                });
+            }
+            if (tbody && !tbody.dataset.bound) {
+                tbody.dataset.bound = '1';
+                tbody.addEventListener('click', function (ev) {
+                    var editBtn = ev.target && ev.target.closest ? ev.target.closest('[data-edit-other-return]') : null;
+                    if (editBtn) {
+                        var ep = editBtn.getAttribute('data-edit-other-return');
+                        if (ep) openOtherReturnModal(ep);
+                        return;
+                    }
+                    var rmBtn = ev.target && ev.target.closest ? ev.target.closest('[data-remove-other-return]') : null;
+                    if (rmBtn) {
+                        var rp = rmBtn.getAttribute('data-remove-other-return');
+                        if (rp) {
+                            otherReturns = otherReturns.filter(function (x) { return x.productId !== rp; });
+                            renderOtherReturns();
+                        }
+                    }
+                });
+            }
+            var c = document.getElementById('otherReturnModalCancel');
+            var s = document.getElementById('otherReturnModalSave');
+            var ov = document.getElementById('otherReturnModal');
+            if (c && !c.dataset.bound) {
+                c.dataset.bound = '1';
+                c.addEventListener('click', closeOtherReturnModal);
+            }
+            if (s && !s.dataset.bound) {
+                s.dataset.bound = '1';
+                s.addEventListener('click', saveOtherReturnModal);
+            }
+            if (ov && !ov.dataset.bound) {
+                ov.dataset.bound = '1';
+                ov.addEventListener('click', function (e) {
+                    if (e.target === ov) closeOtherReturnModal();
+                });
+            }
+            ['otherReturnAgentRet', 'otherReturnCompanyRet'].forEach(function (id) {
                 var el = document.getElementById(id);
                 if (el && !el.dataset.arrowBlock) {
                     el.dataset.arrowBlock = '1';
@@ -1299,13 +1577,22 @@
                 recalcCartLine(i);
                 subtotal += linePaidTotal(i);
             });
-            var totalAmount = activeLines.reduce(function (s, i) {
+            var otherReturnLines = otherReturns.filter(function (i) {
+                recalcOtherReturnLine(i);
+                return (Number(i.returnQty) || 0) > 0;
+            });
+            var otherReturnsTotal = otherReturnLines.reduce(function (s, i) {
+                return s + Math.abs(Number(i.total) || 0);
+            }, 0);
+            var orderLinesTotal = activeLines.reduce(function (s, i) {
+                recalcCartLine(i);
                 if (mwBilling) {
-                    // MW billing rule: freeQty must not be charged.
-                    return s + linePaidTotal(i);
+                    var billedQtyMw = Math.max(0, (Number(i.qty) || 0) - ((Number(i.returnResellQty) || 0) + (Number(i.returnCompanyQty) || 0)));
+                    return s + (billedQtyMw * (Number(i.unitPrice) || 0));
                 }
                 return s + (Number(i.total) || 0);
             }, 0);
+            var totalAmount = orderLinesTotal - otherReturnsTotal;
             var paymentMethod = document.getElementById('paymentMethod').value;
             var orderNumber = 'ORD-' + Date.now();
             var businessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || currentBusinessId;
@@ -1370,7 +1657,24 @@
                         freeLineTotal: 0
                     };
                 }),
+                otherReturns: otherReturnLines.map(function (item) {
+                    recalcOtherReturnLine(item);
+                    return {
+                        productId: item.productId,
+                        productName: item.productName || '',
+                        productBrand: item.productBrand || '',
+                        productCode: item.productCode || '',
+                        returnQty: ((item.returnResellQty || 0) + (item.returnCompanyQty || 0)) || (item.returnQty || 0),
+                        returnResellQty: item.returnResellQty || 0,
+                        returnCompanyQty: item.returnCompanyQty || 0,
+                        returnReason: item.returnReason || '',
+                        unitPrice: Number(item.unitPrice) || 0,
+                        total: Number(item.total) || 0
+                    };
+                }),
                 subtotal: subtotal,
+                orderLinesTotal: orderLinesTotal,
+                otherReturnsTotal: otherReturnsTotal,
                 totalAmount: totalAmount,
                 freeIssuesTotal: activeLines.reduce(function (sum, item) { return sum + (item.freeQty || 0); }, 0),
                 collectionAmount: 0,
@@ -1469,7 +1773,9 @@
                 await postMwReceivableSalesForOrder(orderData, pendingOrderRef.id, shopId);
                 showFormMsg('Saved to pending queue.', 'ok');
                 cart = [];
+                otherReturns = [];
                 renderLines();
+                renderOtherReturns();
                 window.location.href = '/modules/distributor/web/index.html?tab=pending';
             } catch (err) {
                 console.error(err);
@@ -1556,15 +1862,18 @@
             applyRepOnlyOrderHeader();
             await refreshMwShopNameDatalist();
             await refreshProductCatalog();
+            populateOtherReturnProductSelect();
             await loadLorryOptionsForPilot();
             await loadBranchOptionsForSpranza();
             bindShopQuickAdd();
             bindLineSearch();
             bindLinesTableDelegation();
             bindWebLineModal();
+            bindOtherReturns();
             bindClearCartButton();
             bindOrderEntryShortcuts();
             renderLines();
+            renderOtherReturns();
         });
     </script>
 </body>

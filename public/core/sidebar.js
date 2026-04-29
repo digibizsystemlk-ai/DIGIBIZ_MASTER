@@ -571,6 +571,10 @@ class Sidebar {
         return email === 'bdkariyapperuma@gmail.com';
     }
 
+    isKdkumbukaTenant() {
+        return String(this.businessId || '') === this.kduTeaBusinessId;
+    }
+
     isCommissionPilotEnabled() {
         const authEmail = (firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || '';
         const fromStorage = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
@@ -811,7 +815,7 @@ class Sidebar {
             ];
         } else if (menuBusinessType === 'manufacturer') {
             if (this.businessId === this.kduTeaBusinessId) {
-                menus = [
+                const kduMenus = [
                     { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
                     { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
                     { icon: '🏭', name: 'Products', link: '/modules/manufacturer/outbound.html' },
@@ -821,6 +825,23 @@ class Sidebar {
                     { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
                     { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
                 ];
+                const roleNorm = String(this.businessNavRole || this.currentRole || '')
+                    .trim()
+                    .toUpperCase()
+                    .replace(/\s+/g, '_');
+                if (this.isKdkumbukaTenant() && roleNorm === 'TEA_LEAFER') {
+                    menus = [{ icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' }];
+                } else if (this.isKdkumbukaTenant() && roleNorm === 'SHIFTING_ROOM_MANAGER') {
+                    menus = [{ icon: '⚖️', name: 'Shifting Room', link: '/modules/manufacturer/shifting-room.html' }];
+                } else if (this.isKdkumbukaTenant()) {
+                    menus = [
+                        { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
+                        { icon: '⚖️', name: 'Shifting Room', link: '/modules/manufacturer/shifting-room.html' },
+                        ...kduMenus.filter((m) => m.link !== '/modules/manufacturer/inbound.html')
+                    ];
+                } else {
+                    menus = kduMenus;
+                }
             } else {
                 menus = [
                     { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },

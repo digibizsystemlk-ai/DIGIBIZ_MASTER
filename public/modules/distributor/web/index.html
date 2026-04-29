@@ -141,6 +141,14 @@
         .commission-widget{
             background:#fff;border-radius:16px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:none;
         }
+        .free-items-widget {
+            background: #fff;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: none;
+        }
         .accounting-widget{
             background:#fff;border-radius:16px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:block;
         }
@@ -408,19 +416,6 @@
             </div>
             <div id="commissionWidgetMeta" style="font-size:13px;color:#374151;"></div>
         </div>
-        <div class="accounting-widget" id="freeItemsSummaryWidget" style="display:none;">
-            <div class="rep-summary-head">
-                <h3>🎁 Free Items Summary</h3>
-                <a href="/modules/distributor/web/free-items.html" class="btn btn-view" style="text-decoration:none;">Open Free Items Log</a>
-            </div>
-            <div class="accounting-grid">
-                <div class="accounting-kpi"><div class="k">Total free qty (orders)</div><div class="v" id="mwFreeQtyOrders">0</div><div class="k" style="font-size:10px;margin-top:6px;color:#64748b;">GRN free qty</div><div class="v" id="mwFreeQtyGrn" style="font-size:1rem;">0</div></div>
-                <div class="accounting-kpi"><div class="k">Free issue value (est.)</div><div class="v" id="mwFreeValueEst">Rs 0.00</div></div>
-                <div class="accounting-kpi"><div class="k">Orders with free lines</div><div class="v" id="mwFreeOrdersCount">0</div></div>
-                <div class="accounting-kpi"><div class="k">Top free SKU</div><div class="v" id="mwFreeTopProduct">-</div></div>
-                <div class="accounting-kpi"><div class="k">Last updated</div><div class="v" id="mwFreeLastUpdated">-</div></div>
-            </div>
-        </div>
         <div class="accounting-widget" id="accountingSummaryWidget" style="display:block;">
             <div class="rep-summary-head">
                 <h3>📒 Accounting Summary</h3>
@@ -431,6 +426,21 @@
                 <div class="accounting-kpi"><div class="k">Supplier Outstanding</div><div class="v" id="accSupplierOutstanding">Rs 0.00</div></div>
                 <div class="accounting-kpi"><div class="k">Stock Value</div><div class="v" id="accStockValue">Rs 0.00</div></div>
                 <div class="accounting-kpi"><div class="k">Net Profit</div><div class="v" id="accNetProfit">Rs 0.00</div></div>
+            </div>
+        </div>
+        <div class="free-items-widget" id="freeItemsWidget" style="display:none;">
+            <div class="rep-summary-head">
+                <h3>🎁 Free Issues Summary</h3>
+                <a href="/modules/distributor/web/free-items.html" class="btn btn-view" style="text-decoration:none;">Open Free Items Log</a>
+            </div>
+            <div class="accounting-grid">
+                <div class="accounting-kpi"><div class="k">Free Issue Units</div><div class="v" id="freeUnitsCount">0</div></div>
+                <div class="accounting-kpi"><div class="k">Free Issue Value (est.)</div><div class="v" id="freeValueEst">LKR 0.00</div></div>
+                <div class="accounting-kpi"><div class="k">Orders With Free</div><div class="v" id="ordersWithFreeCount">0</div></div>
+                <div class="accounting-kpi"><div class="k">Top Free SKU</div><div class="v" id="topFreeSku">—</div></div>
+            </div>
+            <div style="font-size:11px; color:#6b7280; text-align:right; margin-top:8px;">
+                Last updated: <span id="freeWidgetLastUpdated">—</span>
             </div>
         </div>
 
@@ -804,11 +814,7 @@
         let lastSeenBusinessId = '';
         let __CHEQUE_PILOT_ENABLED__ = false;
         let commissionRows = [];
-        let mwFreeItemsOrdersUnsub = null;
-        let mwFreeItemsPendingUnsub = null;
-        let mwFreeItemsGrnUnsub = null;
-        let mwFreeWidgetDebounceTimer = null;
-        const mwFreeWidgetCache = { pendingDocs: [], orderDocs: [], grnDocs: [] };
+        let freeItemsWidgetOrdersUnsub = null;
 
         function escapeBillHtml(s) {
             return String(s ?? '')
@@ -1302,151 +1308,84 @@ ${meta}
             }
         }
 
-        function tearMwFreeItemsWidgetListeners() {
-            if (mwFreeWidgetDebounceTimer) {
-                clearTimeout(mwFreeWidgetDebounceTimer);
-                mwFreeWidgetDebounceTimer = null;
+        function tearFreeItemsWidgetListener() {
+            if (typeof freeItemsWidgetOrdersUnsub === 'function') {
+                try { freeItemsWidgetOrdersUnsub(); } catch (eFw) {}
             }
-            if (typeof mwFreeItemsOrdersUnsub === 'function') {
-                try { mwFreeItemsOrdersUnsub(); } catch (e0) {}
-            }
-            if (typeof mwFreeItemsPendingUnsub === 'function') {
-                try { mwFreeItemsPendingUnsub(); } catch (e1) {}
-            }
-            if (typeof mwFreeItemsGrnUnsub === 'function') {
-                try { mwFreeItemsGrnUnsub(); } catch (e2) {}
-            }
-            mwFreeItemsOrdersUnsub = null;
-            mwFreeItemsPendingUnsub = null;
-            mwFreeItemsGrnUnsub = null;
+            freeItemsWidgetOrdersUnsub = null;
         }
 
-        function extractGrnFreeContribution(d) {
-            const x = d || {};
-            if (x.isActive === false) return null;
-            let qty = Number(x.freeQty ?? x.freeIssueQty ?? x.complimentaryQty ?? x.promoFreeQty ?? 0) || 0;
-            const typeStr = String(x.grnType ?? x.movementType ?? x.lineType ?? '').toLowerCase();
-            if (qty <= 0 && (typeStr.includes('free') || x.isFreeIssue === true)) {
-                qty = Number(x.quantity ?? x.receivedQty ?? 0) || 0;
+        async function loadFreeItemsWidget() {
+            const user = firebase.auth().currentUser;
+            const widget = document.getElementById('freeItemsWidget');
+            if (widget && (!user || String(user.email || '').toLowerCase() !== 'mwtradingsolutions@gmail.com')) {
+                widget.style.display = 'none';
             }
-            if (qty <= 0) return null;
-            const unit = Number(x.sellingPrice ?? x.buyingPrice ?? 0) || 0;
-            return {
-                qty,
-                val: qty * unit,
-                name: String(x.productName || x.name || 'GRN').trim() || 'GRN'
-            };
-        }
-
-        function recomputeMwFreeItemsWidgetFromCache() {
-            const card = document.getElementById('freeItemsSummaryWidget');
-            if (!card || !isMwTradingBusiness()) {
-                if (card) card.style.display = 'none';
-                return;
-            }
-            card.style.display = 'block';
-            const inv = window.DigiBizDistributorInventory;
-            let orderFreeQty = 0;
-            let orderFreeVal = 0;
-            let ordersWithFree = 0;
-            const byProduct = {};
-
-            function consumeOrderDoc(doc) {
-                const order = doc.data() || {};
-                const rows = (inv && typeof inv.extractFreeIssueRowsFromOrder === 'function')
-                    ? inv.extractFreeIssueRowsFromOrder(order, doc.id)
-                    : [];
-                if (rows.length) {
-                    let lineSum = 0;
-                    rows.forEach((r) => {
-                        lineSum += Number(r.qty) || 0;
-                        orderFreeVal += Number(r.value) || 0;
-                        const key = String(r.item || 'Unknown');
-                        byProduct[key] = (byProduct[key] || 0) + (Number(r.qty) || 0);
+            if (!user || String(user.email || '').toLowerCase() !== 'mwtradingsolutions@gmail.com') return;
+            if (!widget) return;
+            widget.style.display = 'block';
+            const MW_BID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+            try {
+                const ordersSnap = await firebase.firestore().collection('orders')
+                    .where('businessId', '==', MW_BID)
+                    .get();
+                let totalFreeUnits = 0;
+                let totalFreeValue = 0;
+                let ordersWithFree = 0;
+                const skuMap = new Map();
+                ordersSnap.forEach(function (doc) {
+                    const items = (doc.data() && doc.data().items) || [];
+                    let hasFree = false;
+                    items.forEach(function (item) {
+                        const freeQty = Number(item.freeQty) || 0;
+                        if (freeQty > 0) {
+                            hasFree = true;
+                            totalFreeUnits += freeQty;
+                            const price = Number(item.unitPrice) || 0;
+                            totalFreeValue += freeQty * price;
+                            const sku = item.productName || item.productId || 'Unknown';
+                            skuMap.set(sku, (skuMap.get(sku) || 0) + freeQty);
+                        }
                     });
-                    if (lineSum > 0) ordersWithFree += 1;
-                    orderFreeQty += lineSum;
-                    return;
-                }
-                const items = Array.isArray(order.items) ? order.items : [];
-                let orderLine = 0;
-                items.forEach((it) => {
-                    const fq = Number(it.freeQty ?? it.freeQuantity ?? 0) || 0;
-                    if (fq <= 0) return;
-                    orderLine += fq;
-                    const up = Number(it.unitPrice || it.price || 0) || 0;
-                    orderFreeVal += fq * up;
-                    const key = String(it.productName || it.productId || 'Unknown');
-                    byProduct[key] = (byProduct[key] || 0) + fq;
+                    if (hasFree) ordersWithFree += 1;
                 });
-                if (orderLine > 0) ordersWithFree += 1;
-                orderFreeQty += orderLine;
+                let topSku = '—';
+                let topCount = 0;
+                for (const entry of skuMap) {
+                    const sku = entry[0];
+                    const count = entry[1];
+                    if (count > topCount) {
+                        topCount = count;
+                        topSku = sku;
+                    }
+                }
+                const elU = document.getElementById('freeUnitsCount');
+                const elV = document.getElementById('freeValueEst');
+                const elO = document.getElementById('ordersWithFreeCount');
+                const elT = document.getElementById('topFreeSku');
+                const elLu = document.getElementById('freeWidgetLastUpdated');
+                if (elU) elU.innerText = String(totalFreeUnits);
+                if (elV) elV.innerText = 'LKR ' + totalFreeValue.toLocaleString();
+                if (elO) elO.innerText = String(ordersWithFree);
+                if (elT) elT.innerText = topSku;
+                if (elLu) elLu.innerText = new Date().toLocaleTimeString();
+            } catch (e) {
+                console.warn('loadFreeItemsWidget failed', e);
             }
-
-            (mwFreeWidgetCache.pendingDocs || []).forEach(consumeOrderDoc);
-            (mwFreeWidgetCache.orderDocs || []).forEach(consumeOrderDoc);
-
-            let grnQty = 0;
-            let grnVal = 0;
-            (mwFreeWidgetCache.grnDocs || []).forEach((doc) => {
-                const g = extractGrnFreeContribution(doc.data());
-                if (!g) return;
-                grnQty += g.qty;
-                grnVal += g.val;
-                const key = 'GRN: ' + g.name;
-                byProduct[key] = (byProduct[key] || 0) + g.qty;
-            });
-
-            const totalQty = orderFreeQty + grnQty;
-            const totalVal = orderFreeVal + grnVal;
-            const top = Object.keys(byProduct).sort((a, b) => (byProduct[b] || 0) - (byProduct[a] || 0))[0] || '';
-
-            const elOrd = document.getElementById('mwFreeQtyOrders');
-            const elGrn = document.getElementById('mwFreeQtyGrn');
-            const elVal = document.getElementById('mwFreeValueEst');
-            const elCnt = document.getElementById('mwFreeOrdersCount');
-            const elTop = document.getElementById('mwFreeTopProduct');
-            const elLu = document.getElementById('mwFreeLastUpdated');
-            if (elOrd) elOrd.textContent = Number(orderFreeQty).toLocaleString();
-            if (elGrn) elGrn.textContent = Number(grnQty).toLocaleString();
-            if (elVal) elVal.textContent = 'Rs ' + Number(totalVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            if (elCnt) elCnt.textContent = Number(ordersWithFree).toLocaleString();
-            if (elTop) elTop.textContent = top ? (top + ' (' + byProduct[top] + ')') : '-';
-            if (elLu) elLu.textContent = new Date().toLocaleString();
         }
+        window.loadFreeItemsWidget = loadFreeItemsWidget;
 
-        function scheduleMwFreeItemsWidgetRecompute() {
-            if (!isMwTradingBusiness()) return;
-            if (mwFreeWidgetDebounceTimer) clearTimeout(mwFreeWidgetDebounceTimer);
-            mwFreeWidgetDebounceTimer = setTimeout(function () {
-                mwFreeWidgetDebounceTimer = null;
-                recomputeMwFreeItemsWidgetFromCache();
-            }, 150);
-        }
-
-        function attachMwFreeItemsWidgetRealtime() {
-            tearMwFreeItemsWidgetListeners();
-            const card = document.getElementById('freeItemsSummaryWidget');
-            if (!isMwTradingBusiness() || !currentBusinessId) {
-                if (card) card.style.display = 'none';
-                return;
-            }
-            const bid = currentBusinessId;
-            if (card) card.style.display = 'block';
-
-            mwFreeItemsPendingUnsub = db.collection('pendingOrders').where('businessId', '==', bid).onSnapshot(function (snap) {
-                mwFreeWidgetCache.pendingDocs = snap.docs || [];
-                scheduleMwFreeItemsWidgetRecompute();
-            }, function () {});
-            mwFreeItemsOrdersUnsub = db.collection('orders').where('businessId', '==', bid).onSnapshot(function (snap) {
-                mwFreeWidgetCache.orderDocs = snap.docs || [];
-                scheduleMwFreeItemsWidgetRecompute();
-            }, function () {});
-            mwFreeItemsGrnUnsub = db.collection('grn_history').where('businessId', '==', bid).onSnapshot(function (snap) {
-                mwFreeWidgetCache.grnDocs = snap.docs || [];
-                scheduleMwFreeItemsWidgetRecompute();
-            }, function () {});
-            scheduleMwFreeItemsWidgetRecompute();
+        function attachFreeItemsWidgetListener() {
+            tearFreeItemsWidgetListener();
+            const email = String((currentUser && currentUser.email) || '').trim().toLowerCase();
+            if (email !== MW_TRADING_OWNER_EMAIL) return;
+            freeItemsWidgetOrdersUnsub = firebase.firestore().collection('orders')
+                .where('businessId', '==', MW_TRADING_BUSINESS_ID)
+                .onSnapshot(function () {
+                    loadFreeItemsWidget();
+                }, function (err) {
+                    console.warn('Free items widget orders listener', err);
+                });
         }
 
         async function resolveCommissionRateForOrder(order) {
@@ -2100,7 +2039,7 @@ ${meta}
             if (typeof accountBalancesUnsub === 'function') {
                 try { accountBalancesUnsub(); } catch (e5) {}
             }
-            tearMwFreeItemsWidgetListeners();
+            tearFreeItemsWidgetListener();
             ordersUnsub = null;
             pendingOrdersUnsub = null;
             supplierLedgerUnsub = null;
@@ -2124,7 +2063,7 @@ ${meta}
                 loadUpcomingChequesWidget();
                 loadCommissionWidget();
             });
-            attachMwFreeItemsWidgetRealtime();
+            attachFreeItemsWidgetListener();
             const email = String((currentUser && currentUser.email) || '').trim().toLowerCase();
             if (email === BDK_EMAIL) {
                 const accountingBid = BDK_ACCOUNTING_BUSINESS_ID || currentBusinessId;
@@ -2375,6 +2314,19 @@ ${meta}
                     });
                 }
                 attachDashboardRealtimeListeners();
+                const userEmail = user?.email?.toLowerCase();
+                if (userEmail === 'mwtradingsolutions@gmail.com') {
+                    if (typeof window.loadFreeItemsWidget === 'function') {
+                        await window.loadFreeItemsWidget();
+                    } else {
+                        console.warn('loadFreeItemsWidget not ready, retrying...');
+                        setTimeout(() => {
+                            if (typeof window.loadFreeItemsWidget === 'function') {
+                                window.loadFreeItemsWidget();
+                            }
+                        }, 500);
+                    }
+                }
                 bindBusinessSwitchWatchers();
             } else {
                 clearDashboardRealtimeListeners();
