@@ -178,6 +178,7 @@ class Sidebar {
         this.kduTeaBusinessId = '0Uled5estVeQVN8cChmMTNRDNIE3';
         this.scrapOwnerUid = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
         this.superAdmin = false;
+        this.businessLockSummary = null;
         this.businessLogoUrl = '';
         if (SHOULD_RESERVE_SIDEBAR_SPACE) {
             // Paint cached sidebar immediately at bootstrap (no auth/db wait).
@@ -400,6 +401,16 @@ class Sidebar {
                 } else {
                     this.businessType = this.normalizeBusinessType(userData.businessType || 'retail');
                 }
+                this.businessLockSummary = null;
+                if (businessDoc.exists) {
+                    const bd = businessDoc.data() || {};
+                    const ls = String(bd.lockStatus || 'UNLOCKED').toUpperCase();
+                    if (ls === 'LOCKED') {
+                        let lev = String(bd.lockLevel || 'HARD').toUpperCase();
+                        if (lev !== 'SOFT' && lev !== 'MEDIUM' && lev !== 'HARD') lev = 'HARD';
+                        this.businessLockSummary = { lockStatus: 'LOCKED', lockLevel: lev };
+                    }
+                }
                 this.businessName = businessDoc.exists ? businessDoc.data().name : 'My Business';
                 if (businessDoc.exists && businessDoc.data().ownerName) this.ownerName = businessDoc.data().ownerName;
                 const logoFromDoc = businessDoc.exists ? String((businessDoc.data() || {}).logoUrl || '').trim() : '';
@@ -423,6 +434,7 @@ class Sidebar {
                     sessionStorage.setItem('currentBusinessType', 'distributor');
                 }
             } else {
+                this.businessLockSummary = null;
                 this.businessType = storedType || (this.shouldForceManufacturerMode() ? 'manufacturer' : 'retail');
                 this.businessName = 'No Business Connected';
                 this.businessLogoUrl = '';
@@ -1094,6 +1106,7 @@ class Sidebar {
                             <span id="sidebarBusinessLogoIcon" class="sidebar-business-logo-icon is-visible" aria-hidden="true">🏢</span>
                         </div>
                         <div class="sidebar-business-name biz-name" id="sidebarBusinessName"></div>
+                        <div id="sidebarLockBadge" class="sidebar-lock-badge" style="display:none;margin:8px auto 0;max-width:220px;text-align:center;font-size:10px;font-weight:800;padding:5px 10px;border-radius:999px;background:rgba(34,197,94,.22);color:#bbf7d0;border:1px solid rgba(74,222,128,.35);letter-spacing:.04em;"></div>
                         <div class="user-info-sidebar">
                             <span class="user-avatar-sidebar">👤</span>
                             <div>
@@ -1123,6 +1136,7 @@ class Sidebar {
                         </div>` : ''}
                         ${this.isSuperAdminUser() ? `<div class="menu-section-label">Super Admin</div>
                         <a href="/admin/super-dashboard.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${pathname === '/admin/super-dashboard.html' ? 'active' : ''}"><span class="menu-icon">👑</span><span>Super Admin</span></a>
+                        <a href="/admin/business-lock.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${pathname === '/admin/business-lock.html' ? 'active' : ''}"><span class="menu-icon">🔒</span><span>Business Lock</span></a>
                         <a href="/admin/super-dashboard.html#tab-users" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item"><span class="menu-icon">👥</span><span>User Management</span></a>` : ''}
                     </div>
                 </div>
@@ -1156,6 +1170,7 @@ class Sidebar {
             roleEl.textContent = role;
         }
         const subEl = document.getElementById('sidebarSubscriptionStatus');
+        this.updateLockBadge();
         if (subEl) {
             const text = this.subscriptionState ? this.subscriptionState.statusText : 'Free';
             subEl.textContent = text;
@@ -1175,6 +1190,19 @@ class Sidebar {
                 low.textContent = `Low SMS balance: ${this.smsLowBalanceAlert.bal} left`;
                 subEl.appendChild(low);
             }
+        }
+    }
+
+    updateLockBadge() {
+        const el = document.getElementById('sidebarLockBadge');
+        if (!el) return;
+        const s = this.businessLockSummary;
+        if (s && s.lockStatus === 'LOCKED') {
+            el.style.display = 'block';
+            el.textContent = `LOCKED · ${s.lockLevel}`;
+        } else {
+            el.style.display = 'none';
+            el.textContent = '';
         }
     }
 

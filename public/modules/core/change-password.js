@@ -23,6 +23,16 @@
             }
             const udoc = await db.collection('users').doc(user.uid).get().catch(() => null);
             const u = udoc && udoc.exists ? (udoc.data() || {}) : {};
+            const bid = String(u.businessId || '').trim();
+            if (bid) {
+                try {
+                    localStorage.setItem('currentBusinessId', bid);
+                    sessionStorage.setItem('currentBusinessId', bid);
+                } catch (e) { /* ignore */ }
+            }
+            if (window.DigibizLockGuard) {
+                await window.DigibizLockGuard.checkBusinessLock();
+            }
             if (u.mustChangePassword) {
                 forceMsg.className = 'sub warn';
                 forceMsg.textContent = 'Please change your password before continuing.';
