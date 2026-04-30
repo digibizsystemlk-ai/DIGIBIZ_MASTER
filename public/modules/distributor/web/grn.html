@@ -216,6 +216,19 @@
         });
         return unique.slice(0, 10);
     }
+    function mapGrnRowsFromSnap(snap) {
+        var rows = snap.docs.map(function (doc) {
+            var d = doc.data() || {};
+            d.id = doc.id;
+            return d;
+        }).filter(function (d) { return d.isActive !== false; });
+        rows.sort(function (a, b) {
+            var ad = new Date(a.date || a.dateText || (a.createdAt && a.createdAt.toDate ? a.createdAt.toDate() : a.createdAt) || 0).getTime();
+            var bd = new Date(b.date || b.dateText || (b.createdAt && b.createdAt.toDate ? b.createdAt.toDate() : b.createdAt) || 0).getTime();
+            return bd - ad;
+        });
+        return rows;
+    }
     function setDefaultRangeLast90Days() {
         var to = new Date();
         to.setHours(0, 0, 0, 0);
@@ -329,16 +342,15 @@
                 .where('businessId', 'in', getMwTradingHistoryBusinessIds())
                 .limit(1200)
                 .get();
-            historyRows = snap.docs.map(function (doc) {
-                var d = doc.data() || {};
-                d.id = doc.id;
-                return d;
-            }).filter(function (d) { return d.isActive !== false; });
-            historyRows.sort(function (a, b) {
-                var ad = new Date(a.date || a.dateText || (a.createdAt && a.createdAt.toDate ? a.createdAt.toDate() : a.createdAt) || 0).getTime();
-                var bd = new Date(b.date || b.dateText || (b.createdAt && b.createdAt.toDate ? b.createdAt.toDate() : b.createdAt) || 0).getTime();
-                return bd - ad;
-            });
+            historyRows = mapGrnRowsFromSnap(snap);
+            if (!historyRows.length && isMwTradingTenant()) {
+                var legacySnap = await db.collection('grn_history').limit(1200).get();
+                var allowedIds = getMwTradingHistoryBusinessIds();
+                historyRows = mapGrnRowsFromSnap(legacySnap).filter(function (row) {
+                    var bid = normalizeText(row.businessId);
+                    return !bid || allowedIds.indexOf(bid) >= 0;
+                });
+            }
             applyHistoryFilter();
         } catch (e) {
             console.error('Failed to load GRN history', e);
@@ -356,16 +368,7 @@
             .where('businessId', 'in', getMwTradingHistoryBusinessIds())
             .limit(1200)
             .onSnapshot(function (snap) {
-                historyRows = snap.docs.map(function (doc) {
-                    var d = doc.data() || {};
-                    d.id = doc.id;
-                    return d;
-                }).filter(function (d) { return d.isActive !== false; });
-                historyRows.sort(function (a, b) {
-                    var ad = new Date(a.date || a.dateText || (a.createdAt && a.createdAt.toDate ? a.createdAt.toDate() : a.createdAt) || 0).getTime();
-                    var bd = new Date(b.date || b.dateText || (b.createdAt && b.createdAt.toDate ? b.createdAt.toDate() : b.createdAt) || 0).getTime();
-                    return bd - ad;
-                });
+                historyRows = mapGrnRowsFromSnap(snap);
                 applyHistoryFilter();
             }, function (err) {
                 console.error('GRN realtime listener failed', err);
