@@ -551,8 +551,13 @@ class Sidebar {
     }
 
     isMwTradingContext() {
-        return this.businessId === this.mwBusinessId || this.businessId === this.spranzaBusinessId;
+        return this.businessId === this.mwBusinessId;
     }
+
+    isSpranzaContext() {
+        return String(this.businessId || '') === this.spranzaBusinessId;
+    }
+
     isStrictMwTradingBusiness() {
         return String(this.businessId || '') === this.mwBusinessId;
     }
@@ -798,7 +803,7 @@ class Sidebar {
             return repMenus;
         }
 
-        if (!onManufacturerModule && (this.isMwTradingContext() || normalizedBusinessType === 'distributor')) {
+        if (!onManufacturerModule && ((this.isMwTradingContext() || this.isSpranzaContext()) || normalizedBusinessType === 'distributor')) {
             return this.buildDistributorMenusForCurrentRole();
         }
 

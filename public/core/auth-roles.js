@@ -266,7 +266,8 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
     function permissionsForRole(roleRaw, businessId) {
         const b = roleBand(roleRaw);
         const bid = String(businessId || '').trim();
-        const isMwTrading = bid === MW_BUSINESS_ID || bid === SPRANZA_BUSINESS_ID;
+        const isMwTrading = bid === MW_BUSINESS_ID;
+        const isSpranza = bid === SPRANZA_BUSINESS_ID;
         const isOwner = b === 'OWNER';
         const isSC = b === 'SALES_COORDINATOR';
         const isAM = b === 'AREA_MANAGER';
@@ -284,7 +285,7 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
                 canViewFinancialsProfit: false,
                 canStockEdit: false,
                 canStockView: true,
-                canCustomerCreate: isMwTrading,
+                canCustomerCreate: isMwTrading || isSpranza,
                 canCustomerEditDelete: false,
                 canCustomerView: true,
                 canProductCreate: false,
@@ -311,7 +312,7 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
             canViewFinancialsProfit: isOwner || isSC,
             canStockEdit: isOwner,
             canStockView: matrix,
-            canCustomerCreate: matrix || isMwTrading,
+            canCustomerCreate: matrix || isMwTrading || isSpranza,
             canCustomerEditDelete: isOwner || isSC,
             canCustomerView: matrix,
             canProductCreate: isOwner || isSC,
