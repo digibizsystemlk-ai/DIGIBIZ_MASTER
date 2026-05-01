@@ -26,6 +26,9 @@ try {
     logger.warn("Realtime Database not available for SMS gateway mirror", e && e.message);
 }
 
+/** When false: never queue investor portfolio accrual SMS (Firestore investorPhone is ignored). Set true and redeploy to re-enable. */
+const INVESTOR_OUTBOUND_SMS_ENABLED = false;
+
 function registrationNotifierTransport() {
     const host = String(
         process.env.DIGIBIZ_NOTIFY_SMTP_HOST ||
@@ -123,10 +126,14 @@ function colomboCalendarDaysBetween(lastIso, now) {
 }
 
 async function queueSms(businessId, mobile, message, createdBy = "cloudfunctions.dailyInterestLoanAccrualColombo") {
+    const normalized = String(mobile || "").replace(/\s/g, "");
+    if (!normalized) {
+        return;
+    }
     const id = `loan_cf_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     const payload = {
         businessId,
-        mobile,
+        mobile: normalized,
         message,
         status: "pending",
         createdBy,
@@ -219,8 +226,6 @@ exports.dailyInterestLoanAccrualColombo = onSchedule(
     }
 );
 
-const DEFAULT_INVESTOR_PHONE = "0773125715";
-
 exports.dailyInvestorPortfolioAccrualColombo = onSchedule(
     {
         schedule: "35 0 * * *",
@@ -240,7 +245,7 @@ exports.dailyInvestorPortfolioAccrualColombo = onSchedule(
             try {
                 const businessId = cfgDoc.id;
                 const cfg = cfgDoc.data() || {};
-                const phone = String(cfg.investorPhone || DEFAULT_INVESTOR_PHONE).replace(/\s/g, "");
+                const phone = String(cfg.investorPhone || "").replace(/\s/g, "");
                 const ratePct = Number(cfg.dailyCapitalRatePercent || 8);
                 const dailyDecimal = ratePct / 100;
 
@@ -303,12 +308,14 @@ exports.dailyInvestorPortfolioAccrualColombo = onSchedule(
                     { merge: true }
                 );
 
-                const msg = `Investor ledger: daily interest on capital Rs.${interestAdd.toFixed(
-                    2
-                )} (${diffDays} day(s) at ${ratePct}%/day). Interest balance Rs.${nextIntBal.toFixed(
-                    2
-                )}. Capital balance Rs.${capBal.toFixed(2)}.`;
-                await queueSms(businessId, phone, msg, "cloudfunctions.dailyInvestorPortfolioAccrualColombo");
+                if (INVESTOR_OUTBOUND_SMS_ENABLED && phone) {
+                    const msg = `Investor ledger: daily interest on capital Rs.${interestAdd.toFixed(
+                        2
+                    )} (${diffDays} day(s) at ${ratePct}%/day). Interest balance Rs.${nextIntBal.toFixed(
+                        2
+                    )}. Capital balance Rs.${capBal.toFixed(2)}.`;
+                    await queueSms(businessId, phone, msg, "cloudfunctions.dailyInvestorPortfolioAccrualColombo");
+                }
                 appended += 1;
             } catch (e) {
                 errors += 1;

@@ -104,7 +104,6 @@
         
         <div class="tabs">
             <button class="tab-btn active" data-tab="purchases"><i class="fas fa-list"></i> Purchase Orders</button>
-            <button class="tab-btn" data-tab="suppliers"><i class="fas fa-building"></i> Suppliers</button>
         </div>
         
         <!-- Purchase Orders Tab -->
@@ -136,26 +135,6 @@
             </div>
         </div>
         
-        <!-- Suppliers Tab -->
-        <div id="tab-suppliers" class="tab-pane">
-            <div class="filter-bar">
-                <input type="text" id="searchSupplier" placeholder="Search supplier...">
-                <button id="addSupplierBtn" class="btn-primary"><i class="fas fa-plus"></i> Add Supplier</button>
-            </div>
-            
-            <div class="card">
-                <div class="card-header"><h3><i class="fas fa-building"></i> Suppliers List</h3></div>
-                <div class="card-body">
-                    <table class="data-table" id="supplierTable">
-                        <thead>
-                            <tr><th>Code</th><th>Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Actions</th></tr>
-                        </thead>
-                        <tbody id="supplierList"><tr><td colspan="6" style="text-align:center;padding:40px;">Loading...</tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-        
         <footer><p>© 2025 DIGIBIZ Universal - Purchase Management System</p></footer>
     </div>
     
@@ -163,9 +142,6 @@
     <div id="purchaseModal" class="modal">
         <div class="modal-content" style="max-width:700px;">
             <h3>New Purchase Order</h3>
-            <select id="poSupplier">
-                <option value="">Select Supplier</option>
-            </select>
             <div id="poItemsList">
                 <div class="purchase-item">
                     <select class="po-product-select">
@@ -199,31 +175,14 @@
         </div>
     </div>
     
-    <!-- Supplier Modal -->
-    <div id="supplierModal" class="modal">
-        <div class="modal-content">
-            <h3 id="supplierModalTitle">Add Supplier</h3>
-            <input type="text" id="supplierCode" placeholder="Supplier Code">
-            <input type="text" id="supplierName" placeholder="Supplier Name">
-            <input type="text" id="supplierContact" placeholder="Contact Person">
-            <input type="email" id="supplierEmail" placeholder="Email">
-            <input type="tel" id="supplierPhone" placeholder="Phone">
-            <input type="text" id="supplierAddress" placeholder="Address">
-            <div class="modal-buttons">
-                <button class="btn-outline" id="closeSupplierModal">Cancel</button>
-                <button class="btn-primary" id="saveSupplierBtn">Save Supplier</button>
-            </div>
-        </div>
-    </div>
-    
     <div id="toast" class="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
 
     <script>
         let currentBusinessId = null;
+        const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
         let products = [];
         let suppliers = [];
         let purchaseOrders = [];
-        let editingSupplierId = null;
         
         function formatCurrency(amt){ return 'Rs. ' + (amt||0).toLocaleString('en-LK'); }
         
@@ -251,36 +210,29 @@
         
         // Load suppliers
         async function loadSuppliers(){
-            const snapshot = await db.collection('suppliers').doc(currentBusinessId).collection('list').get();
             suppliers = [];
-            snapshot.forEach(doc => suppliers.push({id: doc.id, ...doc.data()}));
-            renderSuppliers();
-            updateSupplierSelects();
-            document.getElementById('supplierCount').innerHTML = suppliers.length;
-        }
-        
-        function renderSuppliers(){
-            const tbody = document.getElementById('supplierList');
-            if(suppliers.length === 0){
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;">No suppliers found</td></tr>';
-                return;
+            if (currentBusinessId === KUBUKA_BID) {
+                const snapshot = await db.collection('customers')
+                    .where('businessId', '==', currentBusinessId)
+                    .orderBy('fullName')
+                    .get();
+                snapshot.forEach((doc) => {
+                    const d = doc.data() || {};
+                    suppliers.push({
+                        id: doc.id,
+                        code: d.code || doc.id,
+                        name: d.fullName || d.name || '',
+                        contact: d.contact || '',
+                        email: d.email || '',
+                        phone: d.mobile || d.phone || '',
+                        address: d.address || ''
+                    });
+                });
+            } else {
+                const snapshot = await db.collection('suppliers').doc(currentBusinessId).collection('list').get();
+                snapshot.forEach(doc => suppliers.push({id: doc.id, ...doc.data()}));
             }
-            tbody.innerHTML = suppliers.map(s => `<tr>
-                <td>${s.code || s.id.substring(0,8)}</td>
-                <td><strong>${s.name}</strong></td>
-                <td>${s.contact || '-'}</td>
-                <td>${s.email || '-'}</td>
-                <td>${s.phone || '-'}</td>
-                <td>
-                    <button class="btn-outline" onclick="editSupplier('${s.id}')" style="padding:5px 10px;"><i class="fas fa-edit"></i></button>
-                    <button class="btn-danger" onclick="deleteSupplier('${s.id}')" style="padding:5px 10px;"><i class="fas fa-trash"></i></button>
-                 </td>
-            </td>`).join('');
-        }
-        
-        function updateSupplierSelects(){
-            const select = document.getElementById('poSupplier');
-            select.innerHTML = '<option value="">Select Supplier</option>' + suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+            document.getElementById('supplierCount').innerHTML = suppliers.length;
         }
         
         // Load purchase orders
@@ -376,9 +328,8 @@
         
         // Create purchase order
         async function createPurchaseOrder(){
-            const supplierId = document.getElementById('poSupplier').value;
-            const supplier = suppliers.find(s => s.id === supplierId);
-            if(!supplier){ showToast('Please select a supplier', true); return; }
+            const supplierId = 'GENERAL_SUPPLIER';
+            const supplier = { name: 'General Supplier' };
             
             const items = [];
             document.querySelectorAll('.purchase-item').forEach(item => {
@@ -463,55 +414,6 @@
             loadProducts();
         };
         
-        // Supplier management
-        window.editSupplier = async (id) => {
-            const supplier = suppliers.find(s => s.id === id);
-            if(supplier){
-                editingSupplierId = id;
-                document.getElementById('supplierModalTitle').innerHTML = 'Edit Supplier';
-                document.getElementById('supplierCode').value = supplier.code || '';
-                document.getElementById('supplierName').value = supplier.name;
-                document.getElementById('supplierContact').value = supplier.contact || '';
-                document.getElementById('supplierEmail').value = supplier.email || '';
-                document.getElementById('supplierPhone').value = supplier.phone || '';
-                document.getElementById('supplierAddress').value = supplier.address || '';
-                document.getElementById('supplierModal').style.display = 'flex';
-            }
-        };
-        
-        window.deleteSupplier = async (id) => {
-            if(confirm('Delete this supplier?')){
-                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(id).delete();
-                showToast('Supplier deleted');
-                loadSuppliers();
-            }
-        };
-        
-        async function saveSupplier(){
-            const code = document.getElementById('supplierCode').value;
-            const name = document.getElementById('supplierName').value;
-            const contact = document.getElementById('supplierContact').value;
-            const email = document.getElementById('supplierEmail').value;
-            const phone = document.getElementById('supplierPhone').value;
-            const address = document.getElementById('supplierAddress').value;
-            
-            if(!name){ showToast('Supplier name required', true); return; }
-            
-            const supplierId = code || 'SUP-' + Date.now();
-            const supplierData = { id: supplierId, code: supplierId, name, contact, email, phone, address, updatedAt: new Date() };
-            
-            if(editingSupplierId){
-                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(editingSupplierId).update(supplierData);
-                showToast('Supplier updated');
-            } else {
-                supplierData.createdAt = new Date();
-                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(supplierId).set(supplierData);
-                showToast('Supplier added');
-            }
-            document.getElementById('supplierModal').style.display = 'none';
-            loadSuppliers();
-        }
-        
         // Tab switching
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.onclick = () => {
@@ -519,7 +421,6 @@
                 document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
                 btn.classList.add('active');
                 document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
-                if(btn.dataset.tab === 'suppliers') loadSuppliers();
             };
         });
         
@@ -527,7 +428,6 @@
         document.getElementById('newPurchaseBtn').onclick = () => {
             document.getElementById('poItemsList').innerHTML = '';
             addPurchaseItem();
-            document.getElementById('poSupplier').value = '';
             document.getElementById('poNotes').value = '';
             document.getElementById('purchaseModal').style.display = 'flex';
         };
@@ -535,9 +435,6 @@
         document.getElementById('closePOModal').onclick = () => document.getElementById('purchaseModal').style.display = 'none';
         document.getElementById('savePOBtn').onclick = createPurchaseOrder;
         document.getElementById('closeReceiveModal').onclick = () => document.getElementById('receiveModal').style.display = 'none';
-        document.getElementById('addSupplierBtn').onclick = () => { editingSupplierId = null; document.getElementById('supplierModalTitle').innerHTML = 'Add Supplier'; document.getElementById('supplierCode').value = ''; document.getElementById('supplierName').value = ''; document.getElementById('supplierContact').value = ''; document.getElementById('supplierEmail').value = ''; document.getElementById('supplierPhone').value = ''; document.getElementById('supplierAddress').value = ''; document.getElementById('supplierModal').style.display = 'flex'; };
-        document.getElementById('closeSupplierModal').onclick = () => document.getElementById('supplierModal').style.display = 'none';
-        document.getElementById('saveSupplierBtn').onclick = saveSupplier;
         document.getElementById('filterPOBtn').onclick = () => loadPurchaseOrders();
         document.getElementById('exportPOBtn').onclick = () => showToast('Export feature coming soon');
         

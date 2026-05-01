@@ -41,6 +41,9 @@
         .search-bar input{flex:1;padding:12px;border:1px solid #e9ecef;border-radius:10px;font-size:14px;}
         .search-bar input:focus{outline:none;border-color:#10b981;}
         .search-bar button{background:#10b981;color:white;border:none;padding:12px 20px;border-radius:10px;cursor:pointer;}
+        .order-type-box{background:#fff;border:1px solid #e9ecef;border-radius:14px;padding:12px 14px;margin-bottom:14px}
+        .order-type-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+        .order-type-row label{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;cursor:pointer}
         
         .category-tabs{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;}
         .category-btn{background:white;border:1px solid #e9ecef;padding:8px 16px;border-radius:30px;cursor:pointer;font-size:13px;}
@@ -82,6 +85,16 @@
         .modal-content{background:white;border-radius:24px;padding:32px;width:90%;max-width:450px;}
         .modal-content input,.modal-content select{width:100%;padding:12px;margin-bottom:15px;border:1px solid #e9ecef;border-radius:10px;}
         .modal-buttons{display:flex;gap:12px;justify-content:flex-end;margin-top:15px;}
+        .invoice-paper{border:1px solid #e2e8f0;border-radius:10px;padding:12px;background:#fff;color:#111827;font-size:13px}
+        .invoice-head{font-weight:700;font-size:16px;text-align:center}
+        .invoice-sub{font-size:12px;text-align:center;margin-bottom:8px}
+        .invoice-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin:10px 0}
+        .invoice-grid div:nth-child(odd){font-weight:600}
+        .invoice-table{width:100%;border-collapse:collapse;margin-top:10px}
+        .invoice-table th,.invoice-table td{border:1px solid #cbd5e1;padding:6px;font-size:12px}
+        .invoice-table th{background:#f8fafc}
+        .invoice-totals{margin-top:10px}
+        .invoice-totals .row{display:flex;justify-content:space-between;margin-bottom:4px}
         
         /* Toast Notification */
         .toast{position:fixed;bottom:30px;right:30px;background:#1a1a2e;color:white;padding:12px 20px;border-radius:10px;z-index:3000;display:none;align-items:center;gap:10px;}
@@ -96,6 +109,13 @@
         <div class="pos-container">
             <!-- Left Panel: Products -->
             <div>
+                <div class="order-type-box" id="orderTypeBox">
+                    <div class="order-type-row">
+                        <strong>Order Type:</strong>
+                        <label><input type="radio" name="orderType" value="Tea Lounge"> 🍵 Tea Lounge</label>
+                        <label><input type="radio" name="orderType" value="General Sales" checked> 📋 General Sales</label>
+                    </div>
+                </div>
                 <div class="search-bar">
                     <input type="text" id="productSearch" placeholder="🔍 Search by name, barcode or scan...">
                     <button id="scanBtn"><i class="fas fa-camera"></i> Scan</button>
@@ -138,13 +158,13 @@
     <div id="customerModal" class="modal">
         <div class="modal-content">
             <h3>Customer Details</h3>
-            <select id="customerType">
-                <option value="walkin">Walk-in Customer</option>
-                <option value="existing">Existing Customer</option>
-                <option value="new">New Customer</option>
-            </select>
-            <div id="existingCustomerDiv" style="display:none;"><select id="existingCustomer"><option>Select Customer</option></select></div>
-            <div id="newCustomerDiv" style="display:none;"><input type="text" id="newCustomerName" placeholder="Customer Name"><input type="tel" id="newCustomerPhone" placeholder="Phone Number"></div>
+            <div style="margin-bottom:10px;font-size:13px;font-weight:600;">Customer Details:</div>
+            <div style="display:flex;gap:14px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+                <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="radio" name="customerType" value="existing" checked> Existing Customer</label>
+                <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="radio" name="customerType" value="new"> New Customer</label>
+            </div>
+            <div id="existingCustomerDiv"><select id="existingCustomer"><option>Select Customer</option></select></div>
+            <div id="newCustomerDiv" style="display:none;"><input type="text" id="newCustomerName" placeholder="Customer Name"><input type="tel" id="newCustomerPhone" placeholder="Mobile Number"></div>
             <div class="modal-buttons"><button class="btn-outline" id="closeCustomerModal">Cancel</button><button class="btn-primary" id="confirmCustomerBtn">Continue</button></div>
         </div>
     </div>
@@ -160,7 +180,7 @@
                 <option value="credit">Credit</option>
             </select>
             <div id="cashDiv"><input type="number" id="cashAmount" placeholder="Amount Received"></div>
-            <div id="changeDiv" style="margin-top:10px;font-size:18px;font-weight:700;color:#10b981;">Change: Rs. 0</div>
+            <div id="changeDiv" style="display:none;margin-top:10px;font-size:18px;font-weight:700;color:#10b981;">Change: Rs. 0</div>
             <div class="modal-buttons"><button class="btn-outline" id="closePaymentModal">Cancel</button><button class="btn-primary" id="completePaymentBtn">Complete Sale</button></div>
         </div>
     </div>
@@ -169,7 +189,7 @@
     <div id="invoiceModal" class="modal">
         <div class="modal-content" style="max-width:500px;">
             <h3><i class="fas fa-receipt"></i> Sale Completed!</h3>
-            <p id="invoiceDetails"></p>
+            <div id="invoiceDetails"></div>
             <div class="modal-buttons"><button class="btn-primary" id="printInvoiceBtn"><i class="fas fa-print"></i> Print</button><button class="btn-outline" id="closeInvoiceModal">Close</button></div>
         </div>
     </div>
@@ -178,11 +198,14 @@
 
     <script>
         let currentBusinessId = null;
+        let currentBusinessContext = null;
         let products = [];
         let cart = [];
         let selectedCustomer = null;
         let currentInvoiceNo = 'INV-' + Date.now();
         let taxRate = 0;
+        const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+        let currentOrderType = 'General Sales';
         
         function showToast(msg, isError=false){
             const toast = document.getElementById('toast');
@@ -193,6 +216,206 @@
         }
         
         function formatCurrency(amt){ return 'Rs. ' + (amt||0).toLocaleString('en-LK'); }
+        function unitPriceOf(p){
+            return amountNumber(
+                p && (
+                    p.price != null ? p.price :
+                    p.unitPrice != null ? p.unitPrice :
+                    p.sellingPrice != null ? p.sellingPrice : 0
+                )
+            );
+        }
+        function amountNumber(v){
+            if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+            const n = Number(String(v == null ? '' : v).replace(/[^0-9.-]+/g, ''));
+            return Number.isFinite(n) ? n : 0;
+        }
+        function isKubukaTenant(){ return String(currentBusinessId || '') === KUBUKA_BID; }
+        function escapeHtml(v){
+            return String(v == null ? '' : v)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+        function formatInvoiceDate(v){
+            const d = v ? new Date(v) : new Date();
+            if (isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const yyyy = d.getFullYear();
+            return dd + '-' + mm + '-' + yyyy;
+        }
+        function selectedOrderTypeValue(){
+            const el = document.querySelector('input[name="orderType"]:checked');
+            return el ? String(el.value || 'General Sales') : 'General Sales';
+        }
+
+        async function getBusinessContext() {
+            if (currentBusinessContext && currentBusinessContext.businessId) return currentBusinessContext;
+            const user = auth.currentUser;
+            if (!user) return { businessId: currentBusinessId || '' };
+            if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+                try {
+                    const ctx = await window.dashboardCore.getContext(user);
+                    if (ctx && ctx.businessId) {
+                        currentBusinessContext = ctx;
+                        currentBusinessId = ctx.businessId;
+                        return ctx;
+                    }
+                } catch (e) { /* ignore */ }
+            }
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+            currentBusinessId = businessId;
+            currentBusinessContext = { businessId: businessId };
+            return currentBusinessContext;
+        }
+
+        async function loadExistingCustomers() {
+            const ctx = await getBusinessContext();
+            let customerDocs = [];
+            if (ctx.businessId === KUBUKA_BID) {
+                // KUBUKA-only: mirror customers directory source/filter behavior.
+                const snap = await db.collection('customers')
+                    .where('businessId', '==', ctx.businessId)
+                    .limit(300)
+                    .get();
+                customerDocs = snap.docs
+                    .map((doc) => ({ id: doc.id, data: doc.data() || {} }))
+                    .filter((x) => x.data.archived !== true && x.data.isActive !== false)
+                    .sort((a, b) => {
+                        const ta = a.data.updatedAt && a.data.updatedAt.toDate
+                            ? a.data.updatedAt.toDate().getTime()
+                            : new Date(a.data.updatedAt || a.data.createdAt || 0).getTime();
+                        const tb = b.data.updatedAt && b.data.updatedAt.toDate
+                            ? b.data.updatedAt.toDate().getTime()
+                            : new Date(b.data.updatedAt || b.data.createdAt || 0).getTime();
+                        return tb - ta;
+                    });
+            } else {
+                const snap = await db.collection('customers')
+                    .where('businessId', '==', ctx.businessId)
+                    .where('type', '==', 'buyer')
+                    .where('archived', '!=', true)
+                    .orderBy('fullName')
+                    .get();
+                customerDocs = snap.docs.map((doc) => ({ id: doc.id, data: doc.data() || {} }));
+            }
+            const select = document.getElementById('existingCustomer');
+            select.innerHTML = '<option value="">Select Customer</option>';
+            customerDocs.forEach((entry) => {
+                const c = entry.data || {};
+                const name = String(c.fullName || c.name || '').trim();
+                const phone = String(c.mobile || '').trim();
+                if (!name) return;
+                const label = phone ? ('Customer: ' + name + ' - ' + phone) : ('Customer: ' + name);
+                select.innerHTML += `<option value="${entry.id}" data-name="${name}" data-phone="${phone}">${label}</option>`;
+            });
+        }
+        async function saveNewCustomerToDirectory(newName, newMobile) {
+            const name = String(newName || '').trim();
+            const mobile = String(newMobile || '').trim();
+            if (!name) throw new Error('Customer name is required');
+            const ref = await db.collection('customers').add({
+                fullName: name,
+                mobile: mobile,
+                type: 'buyer',
+                businessId: currentBusinessId,
+                businessType: 'retail',
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            if (window.eventBus && typeof window.eventBus.publish === 'function') {
+                window.eventBus.publish('CUSTOMER_CREATED', {
+                    customerId: ref.id,
+                    businessId: currentBusinessId,
+                    fullName: name,
+                    mobile: mobile,
+                    type: 'buyer'
+                });
+            }
+            document.dispatchEvent(new CustomEvent('CUSTOMER_CREATED', {
+                detail: {
+                    customerId: ref.id,
+                    businessId: currentBusinessId,
+                    fullName: name,
+                    mobile: mobile,
+                    type: 'buyer'
+                }
+            }));
+            return { id: ref.id, fullName: name, mobile: mobile };
+        }
+
+        async function saveInvoice(saleData) {
+            const ctx = await getBusinessContext();
+            const counterRef = db.collection('invoices').doc(ctx.businessId);
+            const nextNum = await db.runTransaction(async (tx) => {
+                const counter = await tx.get(counterRef);
+                const last = Number((counter.exists ? (counter.data() || {}).lastNumber : 0) || 0);
+                const next = last + 1;
+                tx.set(counterRef, { lastNumber: next }, { merge: true });
+                return next;
+            });
+            const invoiceNumber = 'INV-' + String(nextNum).padStart(6, '0');
+            await db.collection('invoices')
+                .doc(ctx.businessId)
+                .collection('list')
+                .add({
+                    ...saleData,
+                    invoiceNumber,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            return invoiceNumber;
+        }
+        function renderKubukaInvoiceHtml(data){
+            const rows = (data.items || []).map((it, idx) => {
+                const qty = Number(it.qty || it.quantity || 0);
+                const up = Number(it.unitPrice || it.price || 0);
+                const lineTotal = Number(it.total || (qty * up) || 0);
+                return `<tr>
+                    <td>${idx + 1}</td>
+                    <td>${escapeHtml(it.name || '-')}</td>
+                    <td style="text-align:right">${qty}</td>
+                    <td style="text-align:right">${up.toFixed(2)}</td>
+                    <td style="text-align:right">${lineTotal.toFixed(2)}</td>
+                </tr>`;
+            }).join('');
+            return `<div class="invoice-paper">
+                <div class="invoice-head">KD KUMBUKA AG (PVT) LTD</div>
+                <div class="invoice-sub">INVOICE</div>
+                <div>Billing Address: N. MASANA STREETS</div>
+                <div style="margin-top:4px;">Order Type: ${escapeHtml(data.orderType || 'General Sales')}</div>
+                <div class="invoice-grid">
+                    <div>Invoice Number:</div><div>${escapeHtml(data.invoiceNumber || '')}</div>
+                    <div>Invoice Date:</div><div>${escapeHtml(data.invoiceDate || '')}</div>
+                    <div>Salesperson:</div><div>${escapeHtml(data.salesperson || '')}</div>
+                    <div>Customer Name:</div><div>${escapeHtml(data.customerName || 'Walk-in Customer')}</div>
+                    <div>Customer Mobile:</div><div>${escapeHtml(data.customerMobile || '-')}</div>
+                </div>
+                <table class="invoice-table">
+                    <thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+                    <tbody>${rows || '<tr><td colspan="5">No items</td></tr>'}</tbody>
+                </table>
+                <div class="invoice-totals">
+                    <div class="row"><span>Sub Total:</span><strong>Rs ${Number(data.subTotal || 0).toFixed(2)}</strong></div>
+                    <div class="row"><span>Discount:</span><strong>Rs ${Number(data.discount || 0).toFixed(2)}</strong></div>
+                    <div class="row"><span>Total:</span><strong>Rs ${Number(data.total || 0).toFixed(2)}</strong></div>
+                    <div class="row"><span>Amount Paid:</span><strong>Rs ${Number(data.amountPaid || 0).toFixed(2)}</strong></div>
+                    <div class="row"><span>Change:</span><strong>Rs ${Number(data.change || 0).toFixed(2)}</strong></div>
+                    <div class="row"><span>Balance Due:</span><strong>Rs ${Number(data.balanceDue || 0).toFixed(2)}</strong></div>
+                </div>
+                <div style="margin-top:10px;text-align:center">Thank you for your business!</div>
+            </div>`;
+        }
+        function printKubukaInvoice(data){
+            const w = window.open('', '_blank', 'width=900,height=700');
+            if (!w) return;
+            w.document.write('<html><head><title>' + escapeHtml(data.invoiceNumber || 'Invoice') + '</title><style>body{font-family:Inter,Arial,sans-serif;padding:16px;background:#fff}.invoice-paper{border:1px solid #ddd;padding:14px}.invoice-head{font-size:18px;font-weight:700;text-align:center}.invoice-sub{text-align:center;margin-bottom:10px}.invoice-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin:10px 0}.invoice-grid div:nth-child(odd){font-weight:600}.invoice-table{width:100%;border-collapse:collapse;margin-top:10px}.invoice-table th,.invoice-table td{border:1px solid #cbd5e1;padding:6px;font-size:12px}.invoice-table th{background:#f8fafc}.invoice-totals{margin-top:10px}.invoice-totals .row{display:flex;justify-content:space-between;margin-bottom:4px}</style></head><body>' + renderKubukaInvoiceHtml(data) + '</body></html>');
+            w.document.close();
+            setTimeout(function () { try { w.focus(); w.print(); } catch (e) {} }, 150);
+        }
         
         // Load products from Firestore
         async function loadProducts(){
@@ -230,7 +453,7 @@
                 <div class="product-card ${p.stock < 10 ? 'low-stock' : ''}" onclick="addToCart('${p.id}')">
                     <div style="font-size:28px;">${p.category === 'groceries' ? '🛒' : p.category === 'dairy' ? '🥛' : '🧴'}</div>
                     <div class="product-name">${p.name}</div>
-                    <div class="product-price">${formatCurrency(p.price)}</div>
+                    <div class="product-price">${formatCurrency(unitPriceOf(p))}</div>
                     <div class="product-stock">Stock: ${p.stock}</div>
                 </div>
             `).join('');
@@ -270,7 +493,7 @@
                 }
                 existing.quantity++;
             } else {
-                cart.push({...product, quantity: 1});
+                cart.push({...product, price: unitPriceOf(product), quantity: 1});
             }
             renderCart();
             showToast(`${product.name} added to cart`);
@@ -317,7 +540,7 @@
         }
         
         function updateTotals(){
-            const subtotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+            const subtotal = cart.reduce((sum, i) => sum + (amountNumber(i.price) * amountNumber(i.quantity)), 0);
             const discount = 0;
             const tax = (subtotal - discount) * taxRate / 100;
             const total = subtotal - discount + tax;
@@ -325,6 +548,8 @@
             document.getElementById('discountAmount').innerHTML = formatCurrency(discount);
             document.getElementById('taxAmount').innerHTML = formatCurrency(tax);
             document.getElementById('totalAmount').innerHTML = formatCurrency(total);
+            const payEl = document.getElementById('payTotal');
+            if (payEl) payEl.innerHTML = formatCurrency(total);
         }
         
         document.getElementById('clearCartBtn').onclick = () => { cart = []; renderCart(); };
@@ -335,21 +560,48 @@
             document.getElementById('customerModal').style.display = 'flex';
         };
         
-        document.getElementById('customerType').onchange = (e) => {
-            const type = e.target.value;
+        document.querySelectorAll('input[name="customerType"]').forEach((radio) => {
+            radio.onchange = () => {
+                const selected = document.querySelector('input[name="customerType"]:checked');
+                const type = selected ? selected.value : 'existing';
+                document.getElementById('existingCustomerDiv').style.display = type === 'existing' ? 'block' : 'none';
+                document.getElementById('newCustomerDiv').style.display = type === 'new' ? 'block' : 'none';
+            };
+        });
+        
+        document.getElementById('confirmCustomerBtn').onclick = async () => {
+            const selected = document.querySelector('input[name="customerType"]:checked');
+            const type = selected ? selected.value : 'existing';
+            if(type === 'existing') {
+                const select = document.getElementById('existingCustomer');
+                const selectedId = select.value;
+                if (!selectedId) { showToast('Please select a customer', true); return; }
+                const selectedOption = selectedId ? select.options[select.selectedIndex] : null;
+                const selectedName = selectedOption ? (selectedOption.getAttribute('data-name') || selectedOption.text || '') : '';
+                const selectedPhone = selectedOption ? (selectedOption.getAttribute('data-phone') || '') : '';
+                selectedCustomer = { id: selectedId, name: selectedName || 'Existing Customer', phone: selectedPhone, type: 'existing' };
+            } else {
+                const newName = document.getElementById('newCustomerName').value;
+                const newMobile = document.getElementById('newCustomerPhone').value;
+                try {
+                    const saved = await saveNewCustomerToDirectory(newName, newMobile);
+                    await loadExistingCustomers();
+                    const select = document.getElementById('existingCustomer');
+                    if (select) select.value = saved.id;
+                    selectedCustomer = { id: saved.id, name: saved.fullName, phone: saved.mobile, type: 'new' };
+                } catch (e) {
+                    showToast(e.message || 'Failed to save customer', true);
+                    return;
+                }
+            }
             document.getElementById('existingCustomerDiv').style.display = type === 'existing' ? 'block' : 'none';
             document.getElementById('newCustomerDiv').style.display = type === 'new' ? 'block' : 'none';
-        };
-        
-        document.getElementById('confirmCustomerBtn').onclick = () => {
-            const type = document.getElementById('customerType').value;
-            if(type === 'walkin') selectedCustomer = { name: 'Walk-in Customer', type: 'walkin' };
-            else if(type === 'existing') selectedCustomer = { name: document.getElementById('existingCustomer').value, type: 'existing' };
-            else selectedCustomer = { name: document.getElementById('newCustomerName').value, phone: document.getElementById('newCustomerPhone').value, type: 'new' };
             document.getElementById('customerModal').style.display = 'none';
-            const total = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+            const total = cart.reduce((sum, i) => sum + (amountNumber(i.price) * amountNumber(i.quantity)), 0);
             const tax = total * taxRate / 100;
             document.getElementById('payTotal').innerHTML = formatCurrency(total + tax);
+            document.getElementById('cashAmount').value = '';
+            document.getElementById('changeDiv').innerHTML = 'Change: Rs. 0.00';
             document.getElementById('paymentModal').style.display = 'flex';
         };
         
@@ -359,27 +611,94 @@
         document.getElementById('paymentMethod').onchange = (e) => {
             const method = e.target.value;
             document.getElementById('cashDiv').style.display = method === 'cash' ? 'block' : 'none';
+            document.getElementById('changeDiv').style.display = 'none';
         };
         
         document.getElementById('cashAmount').oninput = () => {
-            const total = parseFloat(document.getElementById('payTotal').innerHTML.replace(/[^0-9.-]+/g, '')) || 0;
-            const cash = parseFloat(document.getElementById('cashAmount').value) || 0;
-            document.getElementById('changeDiv').innerHTML = `Change: ${formatCurrency(cash - total)}`;
+            const total = amountNumber(document.getElementById('payTotal').innerHTML);
+            const cash = amountNumber(document.getElementById('cashAmount').value);
+            const change = cash - total;
+            if (change < 0) {
+                document.getElementById('changeDiv').innerHTML = `Insufficient amount. Need Rs ${(Math.abs(change)).toFixed(2)} more`;
+            } else {
+                document.getElementById('changeDiv').innerHTML = `Change: Rs ${change.toFixed(2)}`;
+            }
         };
         
         document.getElementById('completePaymentBtn').onclick = async () => {
-            const subtotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
-            const tax = subtotal * taxRate / 100;
-            const total = subtotal + tax;
-            
-            // Publish SALE_COMPLETED event
-            window.eventBus.publish('SALE_COMPLETED', {
-                invoiceNo: currentInvoiceNo,
-                amount: total,
-                businessId: currentBusinessId,
-                customerName: selectedCustomer?.name || 'Walk-in Customer',
-                items: cart.map(i => ({id: i.id, name: i.name, quantity: i.quantity, price: i.price}))
-            });
+            try {
+                if (!selectedCustomer || !selectedCustomer.name) {
+                    showToast('Please select or create a customer first', true);
+                    return;
+                }
+                if (!cart.length) {
+                    showToast('Cart is empty', true);
+                    return;
+                }
+                const subtotal = cart.reduce((sum, i) => sum + (amountNumber(i.price) * amountNumber(i.quantity)), 0);
+                const tax = subtotal * taxRate / 100;
+                const total = subtotal + tax;
+                const paymentMethod = document.getElementById('paymentMethod').value;
+                currentOrderType = selectedOrderTypeValue();
+                const amountPaid = paymentMethod === 'cash' ? amountNumber(document.getElementById('cashAmount').value) : total;
+                let changeAmount = amountPaid - total;
+
+                if (paymentMethod === 'cash') {
+                    if (changeAmount < 0) {
+                        document.getElementById('changeDiv').innerHTML = `Insufficient amount. Need Rs ${(Math.abs(changeAmount)).toFixed(2)} more`;
+                        showToast('Insufficient amount. Need Rs ' + (Math.abs(changeAmount)).toFixed(2) + ' more', true);
+                        return;
+                    }
+                    document.getElementById('changeDiv').textContent = 'Change: Rs ' + changeAmount.toFixed(2);
+                } else {
+                    changeAmount = 0;
+                }
+                const balanceDue = Math.max(0, total - amountPaid);
+                const invoiceDate = formatInvoiceDate(new Date());
+                const itemRows = cart.map(i => ({
+                    name: String(i.name || '-').trim(),
+                    qty: Number(i.quantity || 0),
+                    unitPrice: Number(i.price || 0),
+                    total: Number((Number(i.quantity || 0) * Number(i.price || 0)).toFixed(2))
+                }));
+
+                const invoiceNumber = await saveInvoice({
+                    orderType: currentOrderType,
+                    invoiceDate: invoiceDate,
+                    customerName: selectedCustomer?.name || 'Walk-in Customer',
+                    customerMobile: selectedCustomer?.phone || '',
+                    items: itemRows,
+                    subTotal: subtotal,
+                    discount: 0,
+                    total: total,
+                    amountPaid: amountPaid,
+                    change: Math.max(0, changeAmount),
+                    balanceDue: balanceDue,
+                    paymentMethod: paymentMethod,
+                    businessId: currentBusinessId
+                });
+                currentInvoiceNo = invoiceNumber;
+                
+                // Publish SALE_COMPLETED event
+                if (window.eventBus && typeof window.eventBus.publish === 'function') {
+                    window.eventBus.publish('SALE_COMPLETED', {
+                        invoiceNo: currentInvoiceNo,
+                        amount: total,
+                        businessId: currentBusinessId,
+                        customerName: selectedCustomer?.name || 'Walk-in Customer',
+                        orderType: currentOrderType,
+                        items: cart.map(i => ({id: i.id, name: i.name, quantity: i.quantity, price: i.price}))
+                    });
+                }
+            document.dispatchEvent(new CustomEvent('SALE_COMPLETED', {
+                detail: {
+                    businessId: currentBusinessId,
+                    amount: total,
+                    items: cart.map(i => ({id: i.id, name: i.name, quantity: i.quantity, price: i.price})),
+                    invoiceNumber: currentInvoiceNo,
+                    orderType: currentOrderType
+                }
+            }));
             
             // Update stock
             for(const item of cart){
@@ -391,13 +710,33 @@
             }
             
             document.getElementById('paymentModal').style.display = 'none';
-            document.getElementById('invoiceDetails').innerHTML = `
-                <p><strong>Invoice No:</strong> ${currentInvoiceNo}</p>
-                <p><strong>Customer:</strong> ${selectedCustomer?.name || 'Walk-in Customer'}</p>
-                <p><strong>Items:</strong> ${cart.reduce((s,i) => s + i.quantity, 0)}</p>
-                <p><strong>Total:</strong> ${formatCurrency(total)}</p>
-                <p><strong>Payment:</strong> ${document.getElementById('paymentMethod').value}</p>
-            `;
+            const invoiceViewData = {
+                invoiceNumber: currentInvoiceNo,
+                orderType: currentOrderType,
+                invoiceDate: invoiceDate,
+                salesperson: ((auth.currentUser && (auth.currentUser.displayName || auth.currentUser.email)) || 'System'),
+                customerName: selectedCustomer?.name || 'Walk-in Customer',
+                customerMobile: selectedCustomer?.phone || '-',
+                items: itemRows,
+                subTotal: subtotal,
+                discount: 0,
+                total: total,
+                amountPaid: amountPaid,
+                change: Math.max(0, changeAmount),
+                balanceDue: balanceDue
+            };
+            if (isKubukaTenant()) {
+                document.getElementById('invoiceDetails').innerHTML = renderKubukaInvoiceHtml(invoiceViewData);
+            } else {
+                document.getElementById('invoiceDetails').innerHTML = `
+                    <p><strong>Invoice No:</strong> ${currentInvoiceNo}</p>
+                    <p><strong>Customer:</strong> ${selectedCustomer?.name || 'Walk-in Customer'}</p>
+                    <p><strong>Items:</strong> ${cart.reduce((s,i) => s + i.quantity, 0)}</p>
+                    <p><strong>Total:</strong> ${formatCurrency(total)}</p>
+                    <p><strong>Payment:</strong> ${document.getElementById('paymentMethod').value}</p>
+                `;
+            }
+            window.__DIGIBIZ_LAST_INVOICE__ = invoiceViewData;
             document.getElementById('invoiceModal').style.display = 'flex';
             
             // Save to orders
@@ -408,7 +747,8 @@
                 subtotal: subtotal,
                 tax: tax,
                 total: total,
-                paymentMethod: document.getElementById('paymentMethod').value,
+                paymentMethod: paymentMethod,
+                orderType: currentOrderType,
                 status: 'completed',
                 createdAt: new Date()
             });
@@ -418,19 +758,35 @@
             loadProducts();
             currentInvoiceNo = 'INV-' + Date.now();
             showToast('Sale completed successfully!');
+            } catch (err) {
+                console.error('Complete sale failed', err);
+                showToast('Complete sale failed: ' + (err && err.message ? err.message : 'Unknown error'), true);
+            }
         };
         
         document.getElementById('closePaymentModal').onclick = () => document.getElementById('paymentModal').style.display = 'none';
-        document.getElementById('printInvoiceBtn').onclick = () => { window.print(); document.getElementById('invoiceModal').style.display = 'none'; };
+        document.getElementById('printInvoiceBtn').onclick = () => {
+            if (isKubukaTenant() && window.__DIGIBIZ_LAST_INVOICE__) {
+                printKubukaInvoice(window.__DIGIBIZ_LAST_INVOICE__);
+            } else {
+                window.print();
+            }
+            document.getElementById('invoiceModal').style.display = 'none';
+        };
         document.getElementById('closeInvoiceModal').onclick = () => document.getElementById('invoiceModal').style.display = 'none';
         document.getElementById('holdOrderBtn').onclick = () => showToast('Hold order feature coming soon');
         document.getElementById('scanBtn').onclick = () => showToast('Barcode scanner feature coming soon');
         
         auth.onAuthStateChanged(async(user)=>{
             if(!user){ window.location.href='../../auth/login.html'; return; }
-            const userDoc = await db.collection('users').doc(user.uid).get();
-            currentBusinessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+            const ctx = await getBusinessContext();
+            currentBusinessId = ctx.businessId;
+            const orderTypeBox = document.getElementById('orderTypeBox');
+            if (orderTypeBox && !isKubukaTenant()) {
+                orderTypeBox.style.display = 'none';
+            }
             await loadProducts();
+            await loadExistingCustomers();
         });
     </script>
 </body>

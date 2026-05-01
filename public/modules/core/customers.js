@@ -75,6 +75,20 @@ function formatCreditLimit(row) {
     return n.toFixed(2);
 }
 
+function normalizeCustomerType(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw === 'supplier') return 'supplier';
+    if (raw === 'buyer') return 'buyer';
+    return 'customer';
+}
+
+function customerTypeBadge(typeValue) {
+    const t = normalizeCustomerType(typeValue);
+    if (t === 'buyer') return '<span class="tag tag-buyer">🟢 Buyer</span>';
+    if (t === 'supplier') return '<span class="tag tag-supplier">🔵 Supplier</span>';
+    return '<span class="tag tag-customer">⚪ Customer</span>';
+}
+
 function canCustomerEditDeleteUI() {
     const bt = String(businessType || '').toLowerCase();
     const roleRaw = String(dashboardUserRole || (bt === 'distributor' ? distributorNavRole : retailStaffRole) || '').trim();
@@ -127,6 +141,7 @@ function render() {
         <tr data-id="${x.id || ''}" style="cursor:pointer;${editingCustomerId && x.id === editingCustomerId ? 'background:#eff6ff;' : ''}">
             <td>${x.fullName || '-'}</td>
             <td>${x.mobile || '-'}</td>
+            <td>${customerTypeBadge(x.type || x.context || 'customer')}</td>
             <td>${x.address || '-'}</td>
             <td>${formatTotalPurchases(x)}</td>
             <td class="actions" style="white-space:nowrap;">
@@ -249,6 +264,7 @@ async function saveCustomer() {
     const mobile = String(document.getElementById('mobile').value || '').trim();
     const address = String(document.getElementById('address').value || '').trim();
     const context = String(document.getElementById('context').value || 'Customer').trim();
+    const type = normalizeCustomerType(context);
     if (!fullName) { setMsg('Name is required.', false); return; }
     const targetId = computeCustomerDocId(fullName, mobile);
     const existingId = String(editingCustomerId || '').trim();
@@ -279,7 +295,7 @@ async function saveCustomer() {
         firstName: firstName(fullName),
         mobile,
         address,
-        type: context,
+        type: type,
         context,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedBy: u && u.email ? u.email : ''
@@ -404,6 +420,7 @@ async function saveCustomerEdit() {
     const email = String(document.getElementById('editCustomerEmail').value || '').trim();
     const creditLimitRaw = String(document.getElementById('editCustomerCreditLimit').value || '').trim();
     const context = String(document.getElementById('editCustomerType').value || 'Customer').trim();
+    const type = normalizeCustomerType(context);
     if (!existingId) {
         showToast('Missing customer id.', false);
         return;
@@ -432,7 +449,7 @@ async function saveCustomerEdit() {
         firstName: firstName(fullName),
         mobile,
         address,
-        type: context,
+        type: type,
         context,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedBy: u && u.email ? u.email : ''

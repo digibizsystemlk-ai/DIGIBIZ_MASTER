@@ -54,7 +54,7 @@
     </div>
     <div class="card">
         <h2 style="margin:0 0 8px;">Advanced Loan (Investor Fund)</h2>
-        <div>Investor phone: <b id="investorPhoneDisplay">0773125715</b> · Default member daily rate: <b>0.27%</b> (editable per row / import)</div>
+        <div>Investor phone (SMS): <b id="investorPhoneDisplay">—</b> · <span class="muted">Investor-bound SMS is off in application code (<code>INVESTOR_OUTBOUND_SMS_ENABLED</code>).</span> · Default member daily rate: <b>0.27%</b> (editable per row / import)</div>
         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
             <button id="sendNowBtn" type="button">Send investor SMS (recalc + queue)</button>
         </div>
@@ -122,7 +122,8 @@
 </div>
 <script>
 let businessId = null;
-const DEFAULT_INVESTOR_PHONE = '0773125715';
+/** When false: never queue SMS to investor (Firestore phone ignored). Set true to re-enable after deploy. */
+const INVESTOR_OUTBOUND_SMS_ENABLED = false;
 const DEFAULT_MEMBER_RATE_MONTHLY = 8;
 const DEFAULT_DAILY_RATE_PERCENT = 0.27;
 const customerMap = {};
@@ -139,6 +140,22 @@ function escapeHtml(str){
 }
 function pickMobile(v){
   return String(v?.mobile || v?.phone || v?.phoneNumber || '').trim();
+}
+async function getInvestorSmsPhone(){
+  if (!businessId) return '';
+  const s = await db.collection('investor_portfolio_config').doc(businessId).get().catch(()=>null);
+  const p = (s && s.exists && s.data()) ? s.data().investorPhone : '';
+  return String(p || '').replace(/\s/g, '');
+}
+async function refreshInvestorPhoneDisplay(){
+  const el = document.getElementById('investorPhoneDisplay');
+  if (!el) return;
+  if (!INVESTOR_OUTBOUND_SMS_ENABLED) {
+    el.textContent = '— (SMS off in code)';
+    return;
+  }
+  const ph = await getInvestorSmsPhone();
+  el.textContent = ph || '— (no number)';
 }
 function stripPercentCell(s){
   const t = String(s||'').trim().replace(/%/g,'').replace(/,/g,'');
@@ -210,16 +227,17 @@ async function addJournal(desc, entries, refType, loanLink){
 }
 async function enqueueSms(mobile, message){
   try {
-    if (!mobile) return { ok:false, skipped:'no_mobile' };
+    const m = String(mobile || '').replace(/\s/g, '');
+    if (!m) return { ok:false, skipped:'no_mobile' };
     if (window.scrapVbaCore && typeof window.scrapVbaCore.enqueuePendingSms === 'function') {
-      return await window.scrapVbaCore.enqueuePendingSms(businessId, mobile, message);
+      return await window.scrapVbaCore.enqueuePendingSms(businessId, m, message);
     }
     const id = `advloan_${Date.now()}_${Math.floor(Math.random()*1000)}`;
     await db.collection('pending_sms').doc(id).set({
-      businessId,mobile,message,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()
+      businessId,mobile:m,message,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()
     });
     if (typeof firebase !== 'undefined' && typeof firebase.database === 'function') {
-      await firebase.database().ref(`sms_gateway/${businessId}/pending_sms/${id}`).set({businessId,mobile,message});
+      await firebase.database().ref(`sms_gateway/${businessId}/pending_sms/${id}`).set({businessId,mobile:m,message});
     }
     return { ok:true, id };
   } catch (e) {
@@ -257,7 +275,6 @@ async function appendInvestorCapitalLedgerRemit(intPortion, prPortion, memberLab
   });
   await db.collection('investor_portfolio_config').doc(businessId).set({
     businessId,
-    investorPhone: String(DEFAULT_INVESTOR_PHONE).replace(/\s/g, ''),
     dailyCapitalRatePercent: 8,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
@@ -323,8 +340,17 @@ async function recalcAndSendInvestorSms(){
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
     }
-    await enqueueSms(DEFAULT_INVESTOR_PHONE, `Investor update: Principal Rs.${totalPrincipal.toFixed(2)}, Interest Rs.${totalInterest.toFixed(2)}, Today's interest Rs.${todayInterest.toFixed(2)}.`);
-    showSmsDebug(`Investor SMS queued. Principal ${totalPrincipal.toFixed(2)}, Interest ${totalInterest.toFixed(2)}.`, true);
+    if (INVESTOR_OUTBOUND_SMS_ENABLED) {
+      const invPhone = await getInvestorSmsPhone();
+      if (invPhone) {
+        await enqueueSms(invPhone, `Investor update: Principal Rs.${totalPrincipal.toFixed(2)}, Interest Rs.${totalInterest.toFixed(2)}, Today's interest Rs.${todayInterest.toFixed(2)}.`);
+        showSmsDebug(`Investor SMS queued. Principal ${totalPrincipal.toFixed(2)}, Interest ${totalInterest.toFixed(2)}.`, true);
+      } else {
+        showSmsDebug(`Investor SMS skipped (no investorPhone on investor_portfolio_config). Principal ${totalPrincipal.toFixed(2)}, Interest ${totalInterest.toFixed(2)}.`, true);
+      }
+    } else {
+      showSmsDebug(`Investor outbound SMS disabled in code (INVESTOR_OUTBOUND_SMS_ENABLED). Principal ${totalPrincipal.toFixed(2)}, Interest ${totalInterest.toFixed(2)}.`, true);
+    }
   } catch (e) {
     showSmsDebug(`Investor SMS failed: ${e?.message||e}`, false);
   }
@@ -562,11 +588,14 @@ async function applyRemitInvestorPay(id, pay, opts){
       showSmsDebug(`Investor capital ledger: ${e?.message || e}`, false);
     }
   }
-  if (!skipSms) {
+  if (!skipSms && INVESTOR_OUTBOUND_SMS_ENABLED) {
     try {
-      const smsText = `DIGIBIZ — Investor: Advanced loan ගෙවීම Rs.${totRemit.toFixed(2)} (${r.customerName || 'member'}). පොලිය Rs.${intPortion.toFixed(2)}, අස්ති Rs.${prPortion.toFixed(2)}.`;
-      const smsRes = await enqueueSms(DEFAULT_INVESTOR_PHONE, smsText);
-      if (!smsRes?.ok) showSmsDebug(`Investor remit SMS: ${smsRes?.skipped || 'failed'}`, false);
+      const invPhone = await getInvestorSmsPhone();
+      if (invPhone) {
+        const smsText = `DIGIBIZ — Investor: Advanced loan ගෙවීම Rs.${totRemit.toFixed(2)} (${r.customerName || 'member'}). පොලිය Rs.${intPortion.toFixed(2)}, අස්ති Rs.${prPortion.toFixed(2)}.`;
+        const smsRes = await enqueueSms(invPhone, smsText);
+        if (!smsRes?.ok) showSmsDebug(`Investor remit SMS: ${smsRes?.skipped || 'failed'}`, false);
+      }
     } catch (e) {
       showSmsDebug(`Investor remit SMS error: ${e?.message || e}`, false);
     }
@@ -589,7 +618,7 @@ async function remitAllInvestorPay(){
   let grand = 0;
   rows.forEach((r)=>{ grand += n(r.principalDueToInvestor) + n(r.interestDueToInvestor); });
   if (grand <= 0.0001) { alert('Investorට ගෙවිය යුතු due මුදලක් නැහැ · No investor dues to pay.'); return; }
-  if (!confirm(`සියලු member වල investor due එක වර ගෙවන්නද?\nPay ALL investor dues in one step?\nTotal Rs.${grand.toFixed(2)} (per-member journal lines; one SMS to investor).`)) return;
+  if (!confirm(`සියලු member වල investor due එක වර ගෙවන්නද?\nPay ALL investor dues in one step?\nTotal Rs.${grand.toFixed(2)} (per-member journal lines${INVESTOR_OUTBOUND_SMS_ENABLED ? '; one SMS to investor if phone set' : '; investor SMS off in code'}).`)) return;
   let done = 0;
   let sumI = 0, sumP = 0;
   for (const r of rows){
@@ -621,9 +650,14 @@ async function remitAllInvestorPay(){
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     try {
-      const smsText = `DIGIBIZ — Investor: සියලු advanced loan dues එක වර ගෙවීම Rs.${grand.toFixed(2)} (${done} member row(s)).`;
-      const smsRes = await enqueueSms(DEFAULT_INVESTOR_PHONE, smsText);
-      if (!smsRes?.ok) showSmsDebug(`Bulk investor SMS: ${smsRes?.skipped || 'failed'}`, false);
+      if (INVESTOR_OUTBOUND_SMS_ENABLED) {
+        const invPhone = await getInvestorSmsPhone();
+        if (invPhone) {
+          const smsText = `DIGIBIZ — Investor: සියලු advanced loan dues එක වර ගෙවීම Rs.${grand.toFixed(2)} (${done} member row(s)).`;
+          const smsRes = await enqueueSms(invPhone, smsText);
+          if (!smsRes?.ok) showSmsDebug(`Bulk investor SMS: ${smsRes?.skipped || 'failed'}`, false);
+        }
+      }
     } catch (e) {
       showSmsDebug(`Bulk investor SMS error: ${e?.message || e}`, false);
     }
@@ -769,6 +803,7 @@ firebase.auth().onAuthStateChanged(async (u)=>{
   businessId = String((ctx&&ctx.businessId)||u.uid);
   await loadCustomers();
   await loadRows();
+  await refreshInvestorPhoneDisplay();
   if (window.LoanZeroCleanup) {
     advLoanSweepTimer = setInterval(async ()=>{
       if (!businessId) return;
@@ -780,7 +815,12 @@ firebase.auth().onAuthStateChanged(async (u)=>{
 function wireAdvLoanChromeButtons(){
   const byId = (id, fn)=>{ const el = document.getElementById(id); if (el) el.onclick = fn; };
   byId('saveBtn', issueLoan);
-  byId('sendNowBtn', recalcAndSendInvestorSms);
+  const sendNow = document.getElementById('sendNowBtn');
+  if (sendNow) {
+    sendNow.disabled = !INVESTOR_OUTBOUND_SMS_ENABLED;
+    sendNow.title = INVESTOR_OUTBOUND_SMS_ENABLED ? '' : 'Investor outbound SMS is disabled in application code (INVESTOR_OUTBOUND_SMS_ENABLED).';
+    if (INVESTOR_OUTBOUND_SMS_ENABLED) sendNow.onclick = recalcAndSendInvestorSms;
+  }
   byId('importBulkBtn', importBulk);
   byId('clearAllBtn', deleteAllAdvancedLoansForBusiness);
   byId('payAllInvestorBtn', remitAllInvestorPay);

@@ -820,32 +820,35 @@ class Sidebar {
             ];
         } else if (menuBusinessType === 'manufacturer') {
             if (this.businessId === this.kduTeaBusinessId) {
-                const kduMenus = [
-                    { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
-                    { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
-                    { icon: '🏭', name: 'Products', link: '/modules/manufacturer/outbound.html' },
-                    { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
-                    { icon: '🧪', name: 'Quality Control', link: '/modules/manufacturer/stock.html' },
-                    { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
-                    { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
-                    { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
-                ];
                 const roleNorm = String(this.businessNavRole || this.currentRole || '')
                     .trim()
                     .toUpperCase()
                     .replace(/\s+/g, '_');
                 if (this.isKdkumbukaTenant() && roleNorm === 'TEA_LEAFER') {
                     menus = [{ icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' }];
-                } else if (this.isKdkumbukaTenant() && roleNorm === 'SHIFTING_ROOM_MANAGER') {
-                    menus = [{ icon: '⚖️', name: 'Shifting Room', link: '/modules/manufacturer/shifting-room.html' }];
                 } else if (this.isKdkumbukaTenant()) {
                     menus = [
+                        { icon: '📊', name: 'Dashboard', link: '/modules/core/dashboard.html' },
                         { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
-                        { icon: '⚖️', name: 'Shifting Room', link: '/modules/manufacturer/shifting-room.html' },
-                        ...kduMenus.filter((m) => m.link !== '/modules/manufacturer/inbound.html')
+                        { icon: '📦', name: 'Inventory', link: '/modules/retail/inventory.html' },
+                        { icon: '🛒', name: 'Point of Sale', link: '/modules/retail/pos.html' },
+                        { icon: '🧾', name: 'Expenses', link: '/modules/retail/expenses.html' },
+                        { icon: '📁', name: 'Accounting Dashboard', link: '/modules/accounts/advanced-accounting-dashboard.html' },
+                        { icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
+                        { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+                        { icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
                     ];
                 } else {
-                    menus = kduMenus;
+                    menus = [
+                        { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
+                        { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
+                        { icon: '🏭', name: 'Products', link: '/modules/manufacturer/outbound.html' },
+                        { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
+                        { icon: '🧪', name: 'Quality Control', link: '/modules/manufacturer/stock.html' },
+                        { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
+                        { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+                        { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
+                    ];
                 }
             } else {
                 menus = [
@@ -869,16 +872,13 @@ class Sidebar {
         }
         const isKduManufacturer = menuBusinessType === 'manufacturer' && this.businessId === this.kduTeaBusinessId;
         if (isKduManufacturer) {
-            const kduTail = this.getSharedCrosscutMenus().filter((m) => m.name !== 'Finance');
-            menus = this.assembleSidebarMenus(menus, kduTail);
-            menus = menus.filter((m) => {
-                const name = String((m && (m.name || m.text)) || '').trim().toLowerCase();
-                const link = String((m && m.link) || '').toLowerCase();
-                if (name === 'supplier management' || name.includes('supplier')) return false;
-                if (link && link.includes('supplier')) return false;
-                return true;
-            });
-            menus = this.dedupeMenus(menus);
+            const roleNorm = String(this.businessNavRole || this.currentRole || '')
+                .trim()
+                .toUpperCase()
+                .replace(/\s+/g, '_');
+            if (roleNorm !== 'TEA_LEAFER') {
+                menus = this.dedupeMenus(menus);
+            }
         } else {
             menus = this.assembleSidebarMenus(menus);
         }

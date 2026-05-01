@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retail Expenses - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=1"></script>
+    <script src="../../core/event-validation.js?v=1"></script>
+    <script src="../../core/event-bus.js?v=1"></script>
+    <script src="../../core/accounts-core.js?v=1"></script>
+    <script src="../../core/auth-roles.js?v=1"></script>
+    <script src="../../core/dashboard-core.js?v=1"></script>
+    <script src="/core/sidebar.js?v=1"></script>
+    <style>
+        *{box-sizing:border-box}
+        body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f3f4f6;color:#0f172a}
+        .wrap{max-width:980px;padding:22px}
+        .card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px;box-shadow:0 4px 14px rgba(15,23,42,.05)}
+        h1{margin:0 0 10px;font-size:24px}
+        .grid{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px}
+        .full{grid-column:1/-1}
+        label{display:block;font-size:12px;color:#334155;font-weight:600;margin-bottom:5px}
+        input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}
+        textarea{min-height:90px;resize:vertical}
+        .btn{border:none;background:#0f766e;color:#fff;padding:10px 14px;border-radius:8px;cursor:pointer;font-weight:600}
+        .msg{margin-top:8px;font-size:13px}
+        .err{color:#b91c1c}
+        .ok{color:#065f46}
+        .table{margin-top:14px;overflow:auto;border:1px solid #e2e8f0;border-radius:10px}
+        table{width:100%;border-collapse:collapse;min-width:700px}
+        th,td{padding:10px;border-bottom:1px solid #e2e8f0;text-align:left;font-size:13px}
+        thead th{background:#f8fafc}
+        .num{text-align:right}
+        .summary{margin-top:12px;font-size:14px;font-weight:700}
+        @media (max-width:768px){.wrap{padding:14px}.grid{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="card">
+        <h1>Expenses</h1>
+        <div class="grid">
+            <div>
+                <label for="expenseCategory">Category</label>
+                <select id="expenseCategory">
+                    <option value="General">General</option>
+                    <option value="Transport">Transport</option>
+                    <option value="Utility">Utility</option>
+                    <option value="Salary">Salary</option>
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Rent">Rent</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div>
+                <label for="expenseAmount">Amount</label>
+                <input id="expenseAmount" type="number" min="0" step="0.01" placeholder="0.00">
+            </div>
+            <div>
+                <label for="expenseDate">Date</label>
+                <input id="expenseDate" type="date">
+            </div>
+            <div class="full">
+                <label for="expenseDescription">Description</label>
+                <textarea id="expenseDescription" placeholder="Expense details"></textarea>
+            </div>
+        </div>
+        <div style="margin-top:12px;">
+            <button id="saveExpenseBtn" class="btn" type="button">Save Expense</button>
+            <div id="msg" class="msg"></div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+        <div class="table">
+            <table>
+                <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th class="num">Amount</th>
+                    <th>Description</th>
+                </tr>
+                </thead>
+                <tbody id="expenseRows"></tbody>
+            </table>
+        </div>
+        <div id="totalExpenses" class="summary">Total Expenses: Rs 0.00</div>
+    </div>
+</div>
+
+<script>
+(function () {
+    let currentBusinessId = '';
+    const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+    let expensesCache = [];
+
+    function showMsg(text, kind) {
+        const el = document.getElementById('msg');
+        el.className = 'msg ' + (kind || '');
+        el.textContent = text || '';
+    }
+
+    function money(v) {
+        return 'Rs ' + (Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function isKubuka(){ return String(currentBusinessId || '') === KUBUKA_BID; }
+
+    async function getBusinessContext() {
+        const user = auth.currentUser;
+        if (!user) return { businessId: currentBusinessId || '' };
+        if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+            try {
+                const ctx = await window.dashboardCore.getContext(user);
+                if (ctx && ctx.businessId) {
+                    currentBusinessId = ctx.businessId;
+                    return ctx;
+                }
+            } catch (e) { /* ignore */ }
+        }
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+        currentBusinessId = businessId;
+        return { businessId: businessId };
+    }
+
+    async function loadExpenses() {
+        if (!currentBusinessId) return;
+        const snap = await db.collection('expenses').doc(currentBusinessId).collection('list')
+            .orderBy('date', 'desc')
+            .get();
+        let total = 0;
+        const rows = [];
+        snap.forEach((doc) => {
+            const x = doc.data() || {};
+            const amt = Number(x.amount) || 0;
+            rows.push({
+                date: x.date || '',
+                category: x.category || 'General',
+                amount: amt,
+                description: x.description || ''
+            });
+        });
+        expensesCache = rows.slice();
+        const from = document.getElementById('expFromDate') ? document.getElementById('expFromDate').value : '';
+        const to = document.getElementById('expToDate') ? document.getElementById('expToDate').value : '';
+        const filtered = rows.filter((r) => {
+            if (!from && !to) return true;
+            const d = new Date((r.date || '') + 'T00:00:00');
+            if (isNaN(d.getTime())) return false;
+            if (from) {
+                const f = new Date(from + 'T00:00:00');
+                if (d < f) return false;
+            }
+            if (to) {
+                const t = new Date(to + 'T23:59:59');
+                if (d > t) return false;
+            }
+            return true;
+        });
+        filtered.forEach((r) => { total += Number(r.amount) || 0; });
+        document.getElementById('expenseRows').innerHTML = filtered.map((r) => (
+            '<tr><td>' + (r.date || '-') + '</td><td>' + r.category + '</td><td class="num">' + money(r.amount) + '</td><td>' + r.description + '</td></tr>'
+        )).join('') || '<tr><td colspan="4">No expenses yet.</td></tr>';
+        document.getElementById('totalExpenses').textContent = 'Total Expenses: ' + money(total);
+    }
+    function exportExpensesCsv() {
+        if (!isKubuka()) return;
+        const from = document.getElementById('expFromDate').value;
+        const to = document.getElementById('expToDate').value;
+        const rows = expensesCache.filter((r) => {
+            if (!from && !to) return true;
+            const d = new Date((r.date || '') + 'T00:00:00');
+            if (isNaN(d.getTime())) return false;
+            if (from) {
+                const f = new Date(from + 'T00:00:00');
+                if (d < f) return false;
+            }
+            if (to) {
+                const t = new Date(to + 'T23:59:59');
+                if (d > t) return false;
+            }
+            return true;
+        });
+        const esc = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+        const lines = [['Date','Category','Amount','Description'].map(esc).join(',')];
+        rows.forEach((r) => {
+            lines.push([r.date || '', r.category || '', Number(r.amount || 0).toFixed(2), r.description || ''].map(esc).join(','));
+        });
+        const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'kubuka_expenses_export.csv';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+    }
+
+    async function saveExpense() {
+        const category = document.getElementById('expenseCategory').value || 'General';
+        const amount = Number(document.getElementById('expenseAmount').value);
+        const description = String(document.getElementById('expenseDescription').value || '').trim();
+        const date = document.getElementById('expenseDate').value || new Date().toISOString().slice(0, 10);
+        if (isNaN(amount) || amount <= 0) {
+            showMsg('Enter a valid amount.', 'err');
+            return;
+        }
+        if (!description) {
+            showMsg('Description is required.', 'err');
+            return;
+        }
+        try {
+            const docRef = await db.collection('expenses').doc(currentBusinessId).collection('list').add({
+                businessId: currentBusinessId,
+                category: category,
+                amount: amount,
+                description: description,
+                date: date,
+                createdAt: new Date()
+            });
+
+            document.dispatchEvent(new CustomEvent('EXPENSE_CREATED', {
+                detail: {
+                    businessId: currentBusinessId,
+                    amount: amount,
+                    category: category,
+                    description: description,
+                    expenseId: docRef.id
+                }
+            }));
+
+            if (window.eventBus && typeof window.eventBus.publish === 'function') {
+                window.eventBus.publish('EXPENSE_MADE', {
+                    businessId: currentBusinessId,
+                    amount: amount,
+                    description: description,
+                    expenseType: category,
+                    receiptNo: docRef.id
+                });
+            }
+
+            showMsg('Expense saved.', 'ok');
+            document.getElementById('expenseAmount').value = '';
+            document.getElementById('expenseDescription').value = '';
+            await loadExpenses();
+        } catch (e) {
+            showMsg('Failed to save expense: ' + (e.message || String(e)), 'err');
+        }
+    }
+
+    auth.onAuthStateChanged(async (user) => {
+        if (!user) {
+            window.location.href = '../../auth/login.html';
+            return;
+        }
+        const ctx = await getBusinessContext();
+        currentBusinessId = ctx.businessId;
+        document.getElementById('expenseDate').value = new Date().toISOString().slice(0, 10);
+        if (isKubuka()) {
+            const tableCard = document.querySelector('.card[style*="margin-top:14px;"]');
+            if (tableCard) {
+                const filterWrap = document.createElement('div');
+                filterWrap.style.cssText = 'display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:10px;';
+                filterWrap.innerHTML = '<div><label for="expFromDate">From Date</label><input id="expFromDate" type="date"></div><div><label for="expToDate">To Date</label><input id="expToDate" type="date"></div><div><button id="applyExpFilterBtn" class="btn" type="button">Apply</button></div><div><button id="exportExpBtn" class="btn" type="button">Export</button></div>';
+                tableCard.insertBefore(filterWrap, tableCard.firstChild);
+                document.getElementById('applyExpFilterBtn').addEventListener('click', loadExpenses);
+                document.getElementById('exportExpBtn').addEventListener('click', exportExpensesCsv);
+            }
+        }
+        document.getElementById('saveExpenseBtn').addEventListener('click', saveExpense);
+        await loadExpenses();
+    });
+})();
+</script>
+</body>
+</html>

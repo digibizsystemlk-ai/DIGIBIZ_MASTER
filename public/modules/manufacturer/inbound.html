@@ -35,9 +35,9 @@
             <div class="mfg-row">
                 <div><label>Material Name</label><input id="materialName"></div>
                 <div>
-                    <label>Supplier / Customer (from Customers list)</label>
+                    <label>Supplier (from Suppliers list)</label>
                     <select id="supplierCustomerId" class="mfg-select-customer">
-                        <option value="">Select…</option>
+                        <option value="">Select Supplier…</option>
                     </select>
                     <div id="supplierCustomerBanner" class="mfg-customer-banner" role="status"></div>
                 </div>
@@ -72,8 +72,24 @@
         </div>
         <div class="mfg-card">
             <h3>Latest Inbound Entries</h3>
+            <div id="kubukaExportBar" style="display:none;margin-bottom:8px;gap:8px;align-items:end;flex-wrap:wrap;">
+                <div>
+                    <label for="filterFromDate">From Date</label>
+                    <input type="date" id="filterFromDate">
+                </div>
+                <div>
+                    <label for="filterToDate">To Date</label>
+                    <input type="date" id="filterToDate">
+                </div>
+                <div>
+                    <button type="button" id="applyFilterBtn">Apply</button>
+                </div>
+                <div>
+                    <button type="button" id="exportInboundBtn">Export</button>
+                </div>
+            </div>
             <table>
-                <thead><tr><th>Material</th><th>Supplier</th><th>Amount</th><th>Payment</th><th>Date</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Material</th><th>Supplier</th><th>Amount</th><th>Payment</th><th>Date</th><th>Invoice No</th><th>Actions</th></tr></thead>
                 <tbody id="historyRows"></tbody>
             </table>
         </div>
@@ -119,6 +135,7 @@ let editingRowId = '';
 const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
 const KDKUMBUKA_EMAIL = 'kdkumbukaagro@gmail.com';
 let inboundAccessRole = 'VIEWER';
+let inboundRowsCache = [];
 function v(id){ return document.getElementById(id).value; }
 function n(id){ return Number(v(id)) || 0; }
 function payStatus(mode){ return mode === 'CREDIT' ? 'PENDING' : (mode === 'CHEQUE' ? 'PENDING_CLEARANCE' : 'PAID'); }
@@ -300,21 +317,70 @@ async function refresh(){
             const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
             const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
             return tb - ta;
-        })
-        .slice(0, 25);
-    document.getElementById('historyRows').innerHTML = rows.map((x)=>{
+        });
+    inboundRowsCache = rows.slice();
+    const from = v('filterFromDate');
+    const to = v('filterToDate');
+    const fromMs = from ? new Date(from + 'T00:00:00').getTime() : null;
+    const toMs = to ? new Date(to + 'T23:59:59').getTime() : null;
+    const filtered = rows.filter((x) => {
+        const t = x.createdAt?.toDate ? x.createdAt.toDate().getTime() : new Date(x.createdAt || 0).getTime();
+        if (isNaN(t)) return false;
+        if (fromMs != null && t < fromMs) return false;
+        if (toMs != null && t > toMs) return false;
+        return true;
+    }).slice(0, 100);
+    document.getElementById('historyRows').innerHTML = filtered.map((x)=>{
         return `<tr>
             <td class="wrap-name">${x.materialName||'-'}</td>
             <td>${x.supplierName||'-'}</td>
             <td>Rs ${ManufacturerModule.money(x.amount)}</td>
             <td>${x.paymentMode||'-'} / ${x.paymentStatus||'-'}</td>
             <td>${ManufacturerModule.formatDate(x.createdAt)}</td>
+            <td>${x.invoiceNo || '-'}</td>
             <td>
                 <button type="button" onclick="openEditInbound('${x.id}')">✏️</button>
                 <button type="button" onclick="deleteInbound('${x.id}')">🗑️</button>
             </td>
         </tr>`;
     }).join('');
+}
+function exportInboundRowsCsv(){
+    if (!isKubuka()) return;
+    const from = v('filterFromDate');
+    const to = v('filterToDate');
+    const fromMs = from ? new Date(from + 'T00:00:00').getTime() : null;
+    const toMs = to ? new Date(to + 'T23:59:59').getTime() : null;
+    const rows = inboundRowsCache.filter((x) => {
+        const t = x.createdAt?.toDate ? x.createdAt.toDate().getTime() : new Date(x.createdAt || 0).getTime();
+        if (isNaN(t)) return false;
+        if (fromMs != null && t < fromMs) return false;
+        if (toMs != null && t > toMs) return false;
+        return true;
+    });
+    const esc = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+    const header = ['Date','Supplier','Product','Quantity','Unit Price','Total','Invoice Number'];
+    const lines = [header.map(esc).join(',')];
+    rows.forEach((x) => {
+        const dt = x.createdAt?.toDate ? x.createdAt.toDate().toISOString().slice(0, 10) : '';
+        lines.push([
+            dt,
+            x.supplierName || '',
+            x.materialName || '',
+            Number(x.qty || 0),
+            Number(x.unitCost || 0).toFixed(2),
+            Number(x.amount || 0).toFixed(2),
+            x.invoiceNo || ''
+        ].map(esc).join(','));
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'kubuka_raw_materials_export.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
 }
 function openEditInbound(id){
     if (!guardInboundActionOrWarn()) return;
@@ -401,7 +467,11 @@ async function loadSupplierOptions(){
 
     const fetchSuppliers = async () => {
         console.log('[Inbound] Fetching suppliers from Firestore...');
-        const snap = await db.collection('customers').where('businessId','==',bid).limit(300).get().catch(()=>({docs:[]}));
+        let query = db.collection('customers').where('businessId','==',bid);
+        if (bid !== KUBUKA_BID) {
+            query = query.where('type','==','supplier');
+        }
+        const snap = await query.limit(300).get().catch(()=>({docs:[]}));
         return snap.docs.map((d) => ({ id: d.id, data: d.data() || {} }));
     };
 
@@ -416,14 +486,10 @@ async function loadSupplierOptions(){
     sel.innerHTML = '';
     const opt0 = document.createElement('option');
     opt0.value = '';
-    opt0.textContent = 'Select supplier / customer…';
+    opt0.textContent = 'Select supplier…';
     sel.appendChild(opt0);
     
     const filteredRows = rows
-        .filter(({ data: x }) => {
-            const customerType = String(x.type || x.context || '').toLowerCase();
-            return customerType !== 'client';
-        })
         .sort((a, b) => String(a.data.fullName || '').localeCompare(String(b.data.fullName || ''), undefined, { sensitivity: 'base' }));
     
     filteredRows.forEach(({ id, data: x }) => {
@@ -587,6 +653,7 @@ async function save(){
                 remarks: `Payment Method: ${data.paymentMode || '-'}`
             };
             await saveInvoiceDoc(invoice);
+            await db.collection('manufacturer_raw_material_history').doc(id).set({ invoiceNo }, { merge: true });
             printThermalPurchaseInvoice(invoice);
         }
         
@@ -620,6 +687,12 @@ async function save(){
     
     window.saveMaterialSuggestion = await ManufacturerModule.bindAutocomplete('materialName', 'RAW_MATERIAL_NAME');
     window.saveCategorySuggestion = await ManufacturerModule.bindAutocomplete('purchaseCategory', 'INBOUND_PURCHASE_CATEGORY');
+    if (isKubuka()) {
+        const bar = document.getElementById('kubukaExportBar');
+        if (bar) bar.style.display = 'flex';
+        document.getElementById('applyFilterBtn').addEventListener('click', refresh);
+        document.getElementById('exportInboundBtn').addEventListener('click', exportInboundRowsCsv);
+    }
 
     await loadSupplierOptions();
     recalcAmount();
