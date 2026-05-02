@@ -54,14 +54,20 @@
         .kv{display:grid;grid-template-columns:180px 1fr;gap:8px 10px;font-size:14px}
         .kv div:nth-child(odd){font-weight:600;color:#374151}
         .kv div:nth-child(even){color:#111827}
+        .grn-items-card{margin-top:12px;padding:12px;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa}
+        .grn-items-card h3{margin:0 0 8px;font-size:13px;color:#374151}
+        .grn-items-table{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb}
+        .grn-items-table th,.grn-items-table td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left}
+        .grn-items-table th{background:#f9fafb;font-weight:600}
+        .grn-items-table td.num{text-align:right}
         @media (max-width:768px){.wrap{padding:14px}.grid{grid-template-columns:1fr}}
     </style>
 </head>
 <body>
 <div class="wrap">
-    <div class="card">
+    <div class="card" id="grnEntryCard">
         <h1>GRN + Product Entry</h1>
-        <p class="sub">Create/update product details and record GRN in one step.</p>
+        <p class="sub">Create/update product details and record GRN in one step. Search products, add lines, then save once — or use a single line without Add.</p>
         <div class="grid">
             <div>
                 <label for="supplierName">Supplier Name *</label>
@@ -73,8 +79,9 @@
             </div>
 
             <div class="full">
-                <label for="productName">Product Name *</label>
-                <input id="productName" type="text" placeholder="Product name">
+                <label for="productName">Product *</label>
+                <input id="productName" type="text" list="productList" placeholder="Type or pick from list…" autocomplete="off" spellcheck="false">
+                <datalist id="productList"></datalist>
             </div>
             <div>
                 <label for="category">Category</label>
@@ -105,9 +112,20 @@
                 <input id="minStockLevel" type="number" min="0" step="1" value="10">
             </div>
             <div class="full">
-                <label for="receivedQty">Received Quantity</label>
+                <label for="receivedQty">Quantity for next line</label>
                 <input id="receivedQty" type="number" min="0" step="1" value="0">
             </div>
+            <div class="full" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                <button type="button" id="addGrnLineBtn" class="btn btn-lite">+ Add line to GRN</button>
+                <span style="font-size:12px;color:#64748b;">Pick a product from search or type an exact name, set qty &amp; prices, then add.</span>
+            </div>
+        </div>
+        <div id="grnItemsCard" class="grn-items-card hidden">
+            <h3>Lines on this GRN</h3>
+            <table class="grn-items-table">
+                <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Buy unit</th><th class="num">Line total</th><th></th></tr></thead>
+                <tbody id="grnItemsBody"></tbody>
+            </table>
         </div>
         <div class="actions">
             <button id="saveBtn" class="btn btn-save">Save GRN</button>
@@ -175,6 +193,10 @@
     var MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
     var grnHistoryUnsub = null;
     var editingGrnId = '';
+    var grnCatalog = [];
+    var grnCatalogLoaded = false;
+    var grnPickedProduct = null;
+    var grnItems = [];
 
     function showMsg(text, kind) {
         var el = document.getElementById('msg');
@@ -205,6 +227,137 @@
     }
     function isMwTradingTenant() {
         return normalizeText(currentBusinessId) === MW_TRADING_BUSINESS_ID;
+    }
+    function escAttr(v) {
+        return String(v == null ? '' : v)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;');
+    }
+    function rebuildGrnProductDatalist() {
+        var dl = document.getElementById('productList');
+        if (!dl) return;
+        if (!grnCatalog.length) {
+            dl.innerHTML = '';
+            return;
+        }
+        var seen = {};
+        dl.innerHTML = grnCatalog.map(function (p) {
+            var v = normalizeText(p.name);
+            if (!v) return '';
+            var key = v.toLowerCase();
+            if (seen[key]) return '';
+            seen[key] = 1;
+            return '<option value="' + escAttr(v) + '"></option>';
+        }).join('');
+    }
+    function applyGrnProductPick(p) {
+        if (!p) return;
+        grnPickedProduct = p;
+        document.getElementById('productName').value = normalizeText(p.name);
+        document.getElementById('category').value = normalizeText(p.category);
+        document.getElementById('brand').value = normalizeText(p.brand);
+        document.getElementById('barcode').value = normalizeText(p.barcode);
+        var sp = toNum(p.unitPrice);
+        var bp = toNum(p.buyingPrice != null ? p.buyingPrice : p.lastBuyingPrice);
+        document.getElementById('sellingPrice').value = sp ? String(sp) : '';
+        document.getElementById('buyingPrice').value = bp ? String(bp) : (sp ? String(sp) : '');
+        var st = Number(p.currentStock != null ? p.currentStock : p.stock) || 0;
+        document.getElementById('currentStock').value = String(st);
+        var rq = document.getElementById('receivedQty');
+        if (rq) rq.focus();
+    }
+    function syncGrnFormFromCatalogByName() {
+        var inp = document.getElementById('productName');
+        if (!inp || !grnCatalogLoaded) return;
+        var v = normalizeText(inp.value).toLowerCase();
+        if (!v) {
+            grnPickedProduct = null;
+            return;
+        }
+        var hit = null;
+        for (var i = 0; i < grnCatalog.length; i++) {
+            if (normalizeText(grnCatalog[i].name).toLowerCase() === v) {
+                hit = grnCatalog[i];
+                break;
+            }
+        }
+        if (hit) applyGrnProductPick(hit);
+        else grnPickedProduct = null;
+    }
+    function bindGrnProductSearchInput() {
+        var inp = document.getElementById('productName');
+        if (!inp || inp.dataset.grnSearchBound === '1') return;
+        inp.dataset.grnSearchBound = '1';
+        var tmr = null;
+        inp.addEventListener('input', function () {
+            clearTimeout(tmr);
+            tmr = setTimeout(syncGrnFormFromCatalogByName, 120);
+        });
+        inp.addEventListener('change', syncGrnFormFromCatalogByName);
+    }
+    function bindGrnEntryCardDelegation() {
+        var card = document.getElementById('grnEntryCard');
+        if (!card || card.dataset.grnLineDeleg === '1') return;
+        card.dataset.grnLineDeleg = '1';
+        card.addEventListener('mousedown', function (ev) {
+            var rm = ev.target && ev.target.closest ? ev.target.closest('[data-grn-remove-idx]') : null;
+            if (!rm) return;
+            var ri = parseInt(rm.getAttribute('data-grn-remove-idx'), 10);
+            if (isNaN(ri) || !grnItems[ri]) return;
+            ev.preventDefault();
+            grnItems.splice(ri, 1);
+            renderGrnItemsTable();
+        });
+    }
+    async function loadGrnProductCatalog() {
+        if (!currentBusinessId) {
+            grnCatalog = [];
+            grnCatalogLoaded = true;
+            return;
+        }
+        var byId = {};
+        function addDoc(doc) {
+            var d = doc.data() || {};
+            if (d.isActive === false) return;
+            var row = Object.assign({ id: doc.id }, d);
+            if (!byId[row.id]) byId[row.id] = row;
+        }
+        try {
+            var flat = await db.collection('products').where('businessId', '==', currentBusinessId).get();
+            flat.forEach(addDoc);
+        } catch (e1) { console.warn('GRN products flat', e1); }
+        try {
+            var nested = await db.collection('products').doc(currentBusinessId).collection('list').get();
+            nested.forEach(addDoc);
+        } catch (e2) { console.warn('GRN products nested', e2); }
+        try {
+            var scoped = await db.collection('businesses').doc(currentBusinessId).collection('products').get();
+            scoped.forEach(addDoc);
+        } catch (e3) { console.warn('GRN products scoped', e3); }
+        grnCatalog = Object.values(byId);
+        grnCatalogLoaded = true;
+        rebuildGrnProductDatalist();
+    }
+    function renderGrnItemsTable() {
+        var card = document.getElementById('grnItemsCard');
+        var body = document.getElementById('grnItemsBody');
+        if (!card || !body) return;
+        if (!grnItems.length) {
+            card.classList.add('hidden');
+            body.innerHTML = '';
+            return;
+        }
+        card.classList.remove('hidden');
+        body.innerHTML = grnItems.map(function (line, idx) {
+            return '<tr data-grn-line-idx="' + idx + '">' +
+                '<td>' + esc(normalizeText(line.productName)) + '</td>' +
+                '<td class="num">' + toNum(line.quantity).toLocaleString() + '</td>' +
+                '<td class="num">' + fmtMoney(line.unitPrice != null ? line.unitPrice : line.buyingPrice) + '</td>' +
+                '<td class="num">' + fmtMoney(line.lineTotal) + '</td>' +
+                '<td><button type="button" class="btn btn-ghost" data-grn-remove-idx="' + idx + '">Remove</button></td>' +
+                '</tr>';
+        }).join('');
     }
     function getMwTradingHistoryBusinessIds() {
         var ids = [normalizeText(currentBusinessId), MW_TRADING_BUSINESS_ID, 'MW_TRADING'];
@@ -270,14 +423,18 @@
         }
         empty.classList.add('hidden');
         body.innerHTML = visibleRows.map(function (r, idx) {
+            var prodLabel = normalizeText(r.productName || '—');
+            if (Array.isArray(r.items) && r.items.length) {
+                prodLabel = String(r.items.length) + ' lines: ' + r.items.map(function (it) { return normalizeText(it.productName || '—'); }).slice(0, 2).join(', ') + (r.items.length > 2 ? '…' : '');
+            }
             return '<tr class="row-click" data-row="' + idx + '">' +
                 '<td>' + fmtDate(r.date || r.dateText || (r.createdAt && r.createdAt.toDate ? r.createdAt.toDate() : r.createdAt)) + '</td>' +
                 '<td>' + esc(normalizeText(r.supplier || r.supplierName || '—')) + '</td>' +
-                '<td>' + esc(normalizeText(r.productName || '—')) + '</td>' +
+                '<td>' + esc(prodLabel) + '</td>' +
                 '<td class="num">' + toNum(r.quantity).toLocaleString() + '</td>' +
                 '<td class="num">' + fmtMoney(r.buyingPrice) + '</td>' +
                 '<td class="num">' + fmtMoney(r.sellingPrice) + '</td>' +
-                '<td class="num">' + fmtMoney(r.total != null ? r.total : r.lineTotal) + '</td>' +
+                '<td class="num">' + fmtMoney(r.totalAmount != null ? r.totalAmount : (r.total != null ? r.total : r.lineTotal)) + '</td>' +
                 '<td><button class="btn btn-ghost" type="button" data-action="edit" data-id="' + esc(r.id || '') + '">Edit</button> <button class="btn btn-ghost" type="button" data-action="delete" data-id="' + esc(r.id || '') + '">Delete</button></td>' +
                 '</tr>';
         }).join('');
@@ -287,15 +444,43 @@
         var row = visibleRows.find(function (x) { return x.id === id; }) || historyRows.find(function (x) { return x.id === id; });
         if (!row) return;
         editingGrnId = id;
+        grnItems = [];
+        grnPickedProduct = null;
         document.getElementById('supplierName').value = normalizeText(row.supplier || row.supplierName);
         document.getElementById('grnDate').value = fmtDate(row.date || row.dateText || (row.createdAt && row.createdAt.toDate ? row.createdAt.toDate() : row.createdAt));
-        document.getElementById('productName').value = normalizeText(row.productName);
-        document.getElementById('category').value = normalizeText(row.category);
-        document.getElementById('brand').value = normalizeText(row.brand);
-        document.getElementById('barcode').value = normalizeText(row.barcode);
-        document.getElementById('sellingPrice').value = String(toNum(row.sellingPrice));
-        document.getElementById('buyingPrice').value = String(toNum(row.buyingPrice));
-        document.getElementById('receivedQty').value = String(toNum(row.quantity));
+        if (Array.isArray(row.items) && row.items.length) {
+            grnItems = row.items.map(function (it) {
+                return {
+                    productId: normalizeText(it.productId),
+                    productName: normalizeText(it.productName),
+                    productCode: normalizeText(it.productCode),
+                    category: normalizeText(it.category),
+                    brand: normalizeText(it.brand),
+                    barcode: normalizeText(it.barcode),
+                    quantity: toNum(it.quantity),
+                    unitPrice: toNum(it.unitPrice != null ? it.unitPrice : it.buyingPrice),
+                    buyingPrice: toNum(it.buyingPrice != null ? it.buyingPrice : it.unitPrice),
+                    sellingPrice: toNum(it.sellingPrice),
+                    lineTotal: toNum(it.lineTotal != null ? it.lineTotal : (toNum(it.quantity) * toNum(it.unitPrice != null ? it.unitPrice : it.buyingPrice)))
+                };
+            });
+            document.getElementById('productName').value = '';
+            document.getElementById('category').value = '';
+            document.getElementById('brand').value = '';
+            document.getElementById('barcode').value = '';
+            document.getElementById('sellingPrice').value = '';
+            document.getElementById('buyingPrice').value = '';
+            document.getElementById('receivedQty').value = '0';
+        } else {
+            document.getElementById('productName').value = normalizeText(row.productName);
+            document.getElementById('category').value = normalizeText(row.category);
+            document.getElementById('brand').value = normalizeText(row.brand);
+            document.getElementById('barcode').value = normalizeText(row.barcode);
+            document.getElementById('sellingPrice').value = String(toNum(row.sellingPrice));
+            document.getElementById('buyingPrice').value = String(toNum(row.buyingPrice));
+            document.getElementById('receivedQty').value = String(toNum(row.quantity));
+        }
+        renderGrnItemsTable();
         showMsg('Editing GRN row. Click Save GRN to update.', '');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -316,17 +501,25 @@
             ['GRN ID', row.grnId || row.id || '—'],
             ['Date', fmtDate(row.date || row.dateText || (row.createdAt && row.createdAt.toDate ? row.createdAt.toDate() : row.createdAt))],
             ['Supplier', row.supplier || row.supplierName || '—'],
+            ['Status', row.status || '—'],
             ['Product ID', row.productId || '—'],
             ['Product', row.productName || '—'],
             ['Quantity', toNum(row.quantity).toLocaleString()],
             ['Buying Price', fmtMoney(row.buyingPrice)],
             ['Selling Price', fmtMoney(row.sellingPrice)],
-            ['Total', fmtMoney(row.total != null ? row.total : row.lineTotal)],
+            ['Total', fmtMoney(row.totalAmount != null ? row.totalAmount : (row.total != null ? row.total : row.lineTotal))],
             ['Business ID', row.businessId || '—'],
             ['Created At', row.createdAt && row.createdAt.toDate ? row.createdAt.toDate().toLocaleString() : (row.createdAt ? String(row.createdAt) : '—')]
         ];
+        if (Array.isArray(row.items) && row.items.length) {
+            allFields.splice(4, 0, ['Lines', String(row.items.length) + ' item(s) — see list below']);
+            row.items.forEach(function (it, ix) {
+                var lt = it.lineTotal != null ? it.lineTotal : (toNum(it.quantity) * toNum(it.unitPrice != null ? it.unitPrice : it.buyingPrice));
+                allFields.push(['Line ' + (ix + 1), String(normalizeText(it.productName || '—')) + ' · Qty ' + toNum(it.quantity) + ' · ' + fmtMoney(lt)]);
+            });
+        }
         body.innerHTML = allFields.map(function (pair) {
-            return '<div>' + esc(pair[0]) + '</div><div>' + esc(normalizeText(pair[1])) + '</div>';
+            return '<div>' + esc(pair[0]) + '</div><div>' + esc(String(pair[1])) + '</div>';
         }).join('');
         modal.classList.add('open');
     }
@@ -475,24 +668,78 @@
         ]);
     }
 
-    async function saveGrn() {
-        var supplierName = normalizeText(document.getElementById('supplierName').value);
-        var grnDate = normalizeText(document.getElementById('grnDate').value);
+    async function rollbackGrnStockForPreviousDoc(grnDocId, when) {
+        var prevSnap = await db.collection('grn_history').doc(grnDocId).get();
+        if (!prevSnap.exists) return;
+        var prevData = prevSnap.data() || {};
+        var prevItems = Array.isArray(prevData.items) && prevData.items.length ? prevData.items.slice() : [];
+        if (!prevItems.length && prevData.productId) {
+            prevItems.push({ productId: prevData.productId, quantity: toNum(prevData.quantity) });
+        }
+        for (var pi = 0; pi < prevItems.length; pi++) {
+            var pit = prevItems[pi];
+            var pid = normalizeText(pit.productId);
+            if (!pid) continue;
+            var refP = db.collection('products').doc(pid);
+            var ps = await refP.get();
+            if (!ps.exists) continue;
+            var pd = ps.data() || {};
+            var curS = Number(pd.currentStock != null ? pd.currentStock : pd.stock) || 0;
+            var rollback = Math.max(0, curS - toNum(pit.quantity));
+            await refP.set({ currentStock: rollback, stock: rollback, updatedAt: when || new Date() }, { merge: true });
+        }
+    }
+
+    function addGrnLineFromForm() {
         var productName = normalizeText(document.getElementById('productName').value);
+        if (!productName && grnPickedProduct && grnPickedProduct.name) {
+            productName = normalizeText(grnPickedProduct.name);
+        }
+        if (!productName) return showMsg('Enter or pick a product.', 'err');
+        var qty = Math.max(0, parseInt(document.getElementById('receivedQty').value, 10) || 0);
+        if (!(qty > 0)) return showMsg('Quantity must be greater than zero.', 'err');
+        var sellingPrice = Number(document.getElementById('sellingPrice').value);
+        var buyingPrice = Number(document.getElementById('buyingPrice').value);
+        if (isNaN(sellingPrice) || sellingPrice < 0) return showMsg('Selling Price is required.', 'err');
+        if (isNaN(buyingPrice) || buyingPrice < 0) return showMsg('Buying Price is required.', 'err');
         var category = normalizeText(document.getElementById('category').value);
         var brand = normalizeText(document.getElementById('brand').value);
         var barcode = normalizeText(document.getElementById('barcode').value);
-        var sellingPrice = Number(document.getElementById('sellingPrice').value);
-        var buyingPrice = Number(document.getElementById('buyingPrice').value);
-        var currentStockInput = Math.max(0, parseInt(document.getElementById('currentStock').value, 10) || 0);
+        var productId = '';
+        if (grnPickedProduct && grnPickedProduct.id) {
+            productId = normalizeText(grnPickedProduct.id);
+        }
+        if (grnPickedProduct && !category && grnPickedProduct.category) category = normalizeText(grnPickedProduct.category);
+        if (grnPickedProduct && !brand && grnPickedProduct.brand) brand = normalizeText(grnPickedProduct.brand);
+        if (grnPickedProduct && !barcode && grnPickedProduct.barcode) barcode = normalizeText(grnPickedProduct.barcode);
+        var lineTotal = buyingPrice * qty;
+        var pcode = grnPickedProduct && grnPickedProduct.productCode ? normalizeText(grnPickedProduct.productCode) : '';
+        grnItems.push({
+            productId: productId,
+            productName: productName,
+            productCode: pcode,
+            category: category,
+            brand: brand,
+            barcode: barcode,
+            quantity: qty,
+            unitPrice: buyingPrice,
+            buyingPrice: buyingPrice,
+            sellingPrice: sellingPrice,
+            lineTotal: lineTotal
+        });
+        renderGrnItemsTable();
+        document.getElementById('receivedQty').value = '0';
+        grnPickedProduct = null;
+        showMsg('Line added. Add more lines or click Save GRN.', 'ok');
+    }
+
+    async function saveGrn() {
+        var supplierName = normalizeText(document.getElementById('supplierName').value);
+        var grnDate = normalizeText(document.getElementById('grnDate').value);
         var minStockLevel = Math.max(0, parseInt(document.getElementById('minStockLevel').value, 10) || 0);
-        var receivedQty = Math.max(0, parseInt(document.getElementById('receivedQty').value, 10) || 0);
 
         if (!supplierName) return showMsg('Supplier Name is required.', 'err');
         if (!grnDate) return showMsg('Date is required.', 'err');
-        if (!productName) return showMsg('Product Name is required.', 'err');
-        if (isNaN(sellingPrice) || sellingPrice < 0) return showMsg('Selling Price is required.', 'err');
-        if (isNaN(buyingPrice) || buyingPrice < 0) return showMsg('Buying Price is required.', 'err');
 
         var btn = document.getElementById('saveBtn');
         btn.disabled = true;
@@ -500,6 +747,134 @@
 
         try {
             var now = new Date();
+            var totalAmount = 0;
+            var totQty = 0;
+            var productName = '';
+            var category = '';
+            var brand = '';
+            var barcode = '';
+            var sellingPrice = 0;
+            var buyingPrice = 0;
+            var currentStockInput = 0;
+            var receivedQty = 0;
+
+            if (grnItems.length > 0) {
+                totalAmount = grnItems.reduce(function (s, it) { return s + toNum(it.lineTotal); }, 0);
+                totQty = grnItems.reduce(function (s, it) { return s + toNum(it.quantity); }, 0);
+                if (!(totalAmount > 0) || !(totQty > 0)) {
+                    return showMsg('Add at least one line with quantity and prices.', 'err');
+                }
+            } else {
+                productName = normalizeText(document.getElementById('productName').value);
+                category = normalizeText(document.getElementById('category').value);
+                brand = normalizeText(document.getElementById('brand').value);
+                barcode = normalizeText(document.getElementById('barcode').value);
+                sellingPrice = Number(document.getElementById('sellingPrice').value);
+                buyingPrice = Number(document.getElementById('buyingPrice').value);
+                currentStockInput = Math.max(0, parseInt(document.getElementById('currentStock').value, 10) || 0);
+                receivedQty = Math.max(0, parseInt(document.getElementById('receivedQty').value, 10) || 0);
+                if (!productName) return showMsg('Product Name is required.', 'err');
+                if (isNaN(sellingPrice) || sellingPrice < 0) return showMsg('Selling Price is required.', 'err');
+                if (isNaN(buyingPrice) || buyingPrice < 0) return showMsg('Buying Price is required.', 'err');
+            }
+
+            if (editingGrnId) {
+                await rollbackGrnStockForPreviousDoc(editingGrnId, now);
+            }
+
+            if (grnItems.length > 0) {
+                var resolvedItems = [];
+                for (var gi = 0; gi < grnItems.length; gi++) {
+                    var line = grnItems[gi];
+                    var existing = null;
+                    if (normalizeText(line.productId)) {
+                        var prSnap = await db.collection('products').doc(line.productId).get();
+                        if (prSnap.exists) existing = { id: prSnap.id, data: prSnap.data() };
+                    }
+                    if (!existing) existing = await resolveExistingProductByName(line.productName);
+                    var productId = existing ? existing.id : db.collection('products').doc().id;
+                    var oldStock = existing ? (Number(existing.data.currentStock != null ? existing.data.currentStock : existing.data.stock) || 0) : 0;
+                    var newStock = oldStock + toNum(line.quantity);
+                    var productPayload = {
+                        businessId: currentBusinessId,
+                        name: line.productName,
+                        category: line.category,
+                        brand: line.brand,
+                        barcode: line.barcode,
+                        unitPrice: toNum(line.sellingPrice),
+                        buyingPrice: toNum(line.buyingPrice),
+                        lastBuyingPrice: toNum(line.buyingPrice),
+                        currentStock: newStock,
+                        stock: newStock,
+                        minStockLevel: minStockLevel,
+                        updatedAt: now
+                    };
+                    if (!existing) productPayload.createdAt = now;
+                    await db.collection('products').doc(productId).set(productPayload, { merge: true });
+                    resolvedItems.push({
+                        productId: productId,
+                        productName: line.productName,
+                        productCode: line.productCode || '',
+                        category: line.category,
+                        brand: line.brand,
+                        barcode: line.barcode,
+                        quantity: toNum(line.quantity),
+                        unitPrice: toNum(line.unitPrice),
+                        buyingPrice: toNum(line.buyingPrice),
+                        sellingPrice: toNum(line.sellingPrice),
+                        lineTotal: toNum(line.lineTotal)
+                    });
+                }
+                var avgBuy = totQty > 0 ? totalAmount / totQty : 0;
+                var grnDocRef = editingGrnId ? db.collection('grn_history').doc(editingGrnId) : db.collection('grn_history').doc();
+                await grnDocRef.set({
+                    grnId: grnDocRef.id,
+                    businessId: currentBusinessId,
+                    supplier: supplierName,
+                    supplierName: supplierName,
+                    date: grnDate,
+                    dateText: grnDate,
+                    status: 'received',
+                    items: resolvedItems,
+                    totalAmount: totalAmount,
+                    productId: resolvedItems[0] ? resolvedItems[0].productId : '',
+                    productName: resolvedItems.length > 1 ? (resolvedItems.length + ' products') : (resolvedItems[0] ? resolvedItems[0].productName : ''),
+                    category: resolvedItems[0] ? resolvedItems[0].category : '',
+                    brand: resolvedItems[0] ? resolvedItems[0].brand : '',
+                    barcode: resolvedItems[0] ? resolvedItems[0].barcode : '',
+                    quantity: totQty,
+                    buyingPrice: avgBuy,
+                    sellingPrice: resolvedItems[0] ? toNum(resolvedItems[0].sellingPrice) : 0,
+                    total: totalAmount,
+                    lineTotal: totalAmount,
+                    oldStock: 0,
+                    newStock: 0,
+                    createdAt: now,
+                    createdBy: currentUser ? currentUser.uid : ''
+                });
+                var supplierUpdate = await updateSupplierBalanceIfExists(supplierName, totalAmount);
+                var namesJoined = resolvedItems.map(function (x) { return x.productName; }).join('; ');
+                await createAccountingEntries(
+                    grnDocRef.id,
+                    grnDate,
+                    supplierName,
+                    supplierUpdate && supplierUpdate.supplierId ? supplierUpdate.supplierId : '',
+                    totalAmount,
+                    totQty,
+                    avgBuy,
+                    resolvedItems[0] ? resolvedItems[0].productId : '',
+                    namesJoined,
+                    now
+                );
+                editingGrnId = '';
+                grnItems = [];
+                renderGrnItemsTable();
+                showMsg('GRN saved with ' + resolvedItems.length + ' line(s).', 'ok');
+                document.getElementById('receivedQty').value = '0';
+                await loadGrnList();
+                return;
+            }
+
             var existing = await resolveExistingProductByName(productName);
             var productId = existing ? existing.id : db.collection('products').doc().id;
             var oldStock = existing ? (Number(existing.data.currentStock != null ? existing.data.currentStock : existing.data.stock) || 0) : currentStockInput;
@@ -595,6 +970,9 @@
         localStorage.setItem('currentBusinessType', 'distributor');
         sessionStorage.setItem('currentBusinessType', 'distributor');
         document.getElementById('grnDate').value = new Date().toISOString().slice(0, 10);
+        await loadGrnProductCatalog();
+        bindGrnProductSearchInput();
+        bindGrnEntryCardDelegation();
         if (isMwTradingTenant()) {
             document.getElementById('historySection').classList.remove('hidden');
             setDefaultRangeLast90Days();
@@ -604,6 +982,9 @@
     });
 
     document.getElementById('saveBtn').addEventListener('click', saveGrn);
+    document.getElementById('addGrnLineBtn').addEventListener('click', function () {
+        void addGrnLineFromForm();
+    });
     document.getElementById('applyFilterBtn').addEventListener('click', applyHistoryFilter);
     document.getElementById('last3MonthsBtn').addEventListener('click', function () {
         setDefaultRangeLast90Days();

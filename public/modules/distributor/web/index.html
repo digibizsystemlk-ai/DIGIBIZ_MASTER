@@ -318,6 +318,19 @@
         }
         .hq-order-actions .hq-cta-web { background: #10b981; color: #fff; }
         .hq-order-actions .hq-cta-mob { background: #fff; color: #047857; border: 2px solid #10b981; }
+        #adminEditLineSuggest button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 8px 10px;
+            border: none;
+            border-bottom: 1px solid #e5e7eb;
+            background: #fff;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        #adminEditLineSuggest button:last-child { border-bottom: none; }
+        #adminEditLineSuggest button:hover { background: #f3f4f6; }
         @media (max-width: 768px) {
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
@@ -522,6 +535,11 @@
         let __ORDER_STATUS_ROLE__ = '';
         let __REP_DOC_ID__ = null;
         let adminEditState = { collection: '', id: '', order: null };
+        let adminEditCatalog = [];
+        let adminEditCatalogLoaded = false;
+        let adminEditSuggestTimer = null;
+        let adminEditSuggestMatches = [];
+        let adminEditPickedProduct = null;
         const BDK_EMAIL = 'bdkariyapperuma@gmail.com';
 
         function isRepOrderView() {
@@ -609,11 +627,6 @@
             return ['BUSINESS_OWNER','DISTRIBUTOR_OWNER','SUPER_ADMIN','ADMIN'].includes(r);
         }
 
-        function closeAdminEditModal() {
-            document.getElementById('adminEditModal').style.display = 'none';
-            adminEditState = { collection: '', id: '', order: null };
-        }
-
         function recalcItemsAndTotals(items) {
             const arr = Array.isArray(items) ? items.map((it) => ({ ...it })) : [];
             let subtotal = 0;
@@ -630,30 +643,89 @@
             return { items: arr, subtotal, totalAmount: subtotal };
         }
 
-        function openAdminOrderEdit(order) {
-            if (!order) return;
-            if (isRepOrderView()) {
-                if (!orderVisibleForCurrentRole(order)) {
-                    alert('You can only edit your own orders.');
-                    return;
-                }
-                if (String(order.status || '').toLowerCase() !== 'pending') {
-                    alert('Reps can only edit pending orders here. Use HQ for changes after approval.');
-                    return;
-                }
-            } else {
-                const p = distributorOrderPerms();
-                const ok = p ? !!(p.canInvoiceCreateEdit || p.canStockView) : true;
-                if (!ok) {
-                    alert('Your role cannot edit orders.');
-                    return;
+        function closeAdminEditModal() {
+            document.getElementById('adminEditModal').style.display = 'none';
+            adminEditState = { collection: '', id: '', order: null };
+            adminEditCatalogLoaded = false;
+            adminEditCatalog = [];
+            adminEditSuggestMatches = [];
+            adminEditPickedProduct = null;
+            hideAdminEditSuggest();
+        }
+
+        function hideAdminEditSuggest() {
+            const box = document.getElementById('adminEditLineSuggest');
+            if (box) {
+                box.style.display = 'none';
+                box.innerHTML = '';
+            }
+            adminEditSuggestMatches = [];
+        }
+
+        function renderAdminEditSuggest() {
+            const inp = document.getElementById('adminEditLineSearch');
+            const box = document.getElementById('adminEditLineSuggest');
+            if (!inp || !box) return;
+            const q = String(inp.value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            if (!q || !adminEditCatalogLoaded) {
+                hideAdminEditSuggest();
+                return;
+            }
+            const hits = [];
+            for (let i = 0; i < adminEditCatalog.length; i++) {
+                const p = adminEditCatalog[i];
+                const hay = p._hay != null ? p._hay : '';
+                if (hay.indexOf(q) !== -1) {
+                    hits.push(p);
+                    if (hits.length >= 40) break;
                 }
             }
-            const collection = order.status === 'pending' ? 'pendingOrders' : 'orders';
-            adminEditState = { collection, id: order.id, order: JSON.parse(JSON.stringify(order)) };
-            const body = document.getElementById('adminEditBody');
-            const o = adminEditState.order;
-            document.getElementById('adminEditTitle').textContent = `Edit order ${o.orderNumber || order.id.slice(-8)}`;
+            adminEditSuggestMatches = hits;
+            if (!hits.length) {
+                hideAdminEditSuggest();
+                return;
+            }
+            box.innerHTML = hits.map((p, idx) => {
+                const code = p.productCode ? String(p.productCode) : '';
+                const meta = [p.brand || '—', code ? ('Code: ' + code) : '', p.unitPrice != null ? ('Rs ' + Number(p.unitPrice).toFixed(2)) : ''].filter(Boolean).join(' · ');
+                return `<button type="button" data-admin-pick-idx="${idx}"><strong>${escapeAttr(String(p.name || 'Item'))}</strong><br><span style="font-size:11px;color:#64748b;font-weight:400;">${escapeAttr(meta)}</span></button>`;
+            }).join('');
+            box.style.display = 'block';
+        }
+
+        async function ensureAdminEditProductCatalog() {
+            if (!currentBusinessId) {
+                adminEditCatalog = [];
+                adminEditCatalogLoaded = true;
+                return;
+            }
+            const byId = {};
+            function addDoc(doc) {
+                const d = doc.data() || {};
+                if (d.isActive === false) return;
+                const row = Object.assign({ id: doc.id }, d);
+                if (!byId[row.id]) byId[row.id] = row;
+            }
+            try {
+                const flat = await db.collection('products').where('businessId', '==', currentBusinessId).get();
+                flat.forEach(addDoc);
+            } catch (e1) { console.warn('adminEdit products flat:', e1); }
+            try {
+                const nested = await db.collection('products').doc(currentBusinessId).collection('list').get();
+                nested.forEach(addDoc);
+            } catch (e2) { console.warn('adminEdit products nested:', e2); }
+            try {
+                const scoped = await db.collection('businesses').doc(currentBusinessId).collection('products').get();
+                scoped.forEach(addDoc);
+            } catch (e3) { console.warn('adminEdit products scoped:', e3); }
+            adminEditCatalog = Object.values(byId);
+            adminEditCatalog.forEach((p) => {
+                p._hay = [p.name, p.brand, p.category, p.model, p.productCode, p.barcode, p.id].filter(Boolean).join(' ').toLowerCase().replace(/\s+/g, ' ').trim();
+            });
+            adminEditCatalogLoaded = true;
+        }
+
+        function buildAdminEditBodyHtml(o) {
             const items = Array.isArray(o.items) ? o.items : [];
             const pay = String(o.paymentMethod || 'CASH').toUpperCase();
             const headerBlock = `
@@ -693,16 +765,33 @@
                         <label>Batch / FIFO id<br><input type="text" data-f="bid" value="${escapeAttr(it.batchIdentifier || '')}" style="width:100%;padding:6px;"></label>
                     </div>
                 </div>
-            `).join('') || '<p>No line items</p>';
-            body.innerHTML = headerBlock + linesHtml;
-            document.getElementById('adminEditModal').style.display = 'flex';
+            `).join('');
+            const addBlock = `
+                <div class="admin-edit-add-wrap" style="margin-top:10px;padding-top:10px;border-top:1px dashed #e5e7eb;">
+                    <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px;">Add new line item</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
+                        <div style="flex:1;min-width:140px;position:relative;">
+                            <input type="text" id="adminEditLineSearch" placeholder="Search by name, brand, code…" autocomplete="off" spellcheck="false" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+                            <div id="adminEditLineSuggest" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;z-index:30;max-height:220px;overflow-y:auto;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);"></div>
+                        </div>
+                        <input type="number" id="adminEditLineQty" value="1" min="1" step="1" title="Qty for new line" style="width:64px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+                        <button type="button" id="adminEditAddLineBtn" class="btn btn-view" style="padding:6px 12px;white-space:nowrap;">+ Add Line</button>
+                    </div>
+                </div>`;
+            return headerBlock + linesHtml + addBlock;
         }
 
-        async function saveAdminOrderEdit() {
-            if (!adminEditState.id || !adminEditState.order) return;
+        function collectAdminEditLineItemsFromDom() {
+            if (!adminEditState.order) return [];
             const baseItems = Array.isArray(adminEditState.order.items) ? adminEditState.order.items.map((it) => ({ ...it })) : [];
             const newItems = [];
-            document.querySelectorAll('#adminEditBody .admin-line-block').forEach((block) => {
+            const blocks = Array.from(document.querySelectorAll('#adminEditBody .admin-line-block'));
+            blocks.sort((a, b) => {
+                const ai = parseInt(a.getAttribute('data-original-idx'), 10);
+                const bi = parseInt(b.getAttribute('data-original-idx'), 10);
+                return (isNaN(ai) ? 9999 : ai) - (isNaN(bi) ? 9999 : bi);
+            });
+            blocks.forEach((block) => {
                 if (block.getAttribute('data-removed') === '1') return;
                 const orig = parseInt(block.getAttribute('data-original-idx'), 10);
                 if (isNaN(orig) || !baseItems[orig]) return;
@@ -725,6 +814,136 @@
                 row.returnQty = rr + rc;
                 newItems.push(row);
             });
+            return newItems;
+        }
+
+        function bindAdminEditAddLineUi() {
+            clearTimeout(adminEditSuggestTimer);
+            const inp = document.getElementById('adminEditLineSearch');
+            if (!inp || inp.dataset.boundAdminSuggest === '1') return;
+            inp.dataset.boundAdminSuggest = '1';
+            inp.addEventListener('input', function () {
+                adminEditPickedProduct = null;
+                clearTimeout(adminEditSuggestTimer);
+                adminEditSuggestTimer = setTimeout(renderAdminEditSuggest, 180);
+            });
+            inp.addEventListener('blur', function () {
+                setTimeout(hideAdminEditSuggest, 220);
+            });
+        }
+
+        function handleAdminEditAddLineClick() {
+            let product = adminEditPickedProduct;
+            if (!product && adminEditSuggestMatches.length === 1) {
+                product = adminEditSuggestMatches[0];
+            }
+            if (!product || !product.id) {
+                alert('Search and pick a product from the list (tap a row), or narrow search to a single match.');
+                return;
+            }
+            const synced = collectAdminEditLineItemsFromDom();
+            adminEditState.order.items = synced;
+            const qtyEl = document.getElementById('adminEditLineQty');
+            const qty = Math.max(1, parseInt(qtyEl && qtyEl.value, 10) || 1);
+            const rate = Number(product.unitPrice) || 0;
+            const newItem = {
+                productId: product.id,
+                productName: String(product.name || '').trim() || 'Item',
+                productBrand: String(product.brand || '').trim(),
+                productCode: String(product.productCode || '').trim(),
+                orderedQty: qty,
+                freeQty: 0,
+                returnResellQty: 0,
+                returnCompanyQty: 0,
+                returnQty: 0,
+                freeReason: '',
+                returnReason: '',
+                batchIdentifier: '',
+                unitPrice: rate,
+                totalPrice: qty * rate
+            };
+            adminEditState.order.items.push(newItem);
+            const body = document.getElementById('adminEditBody');
+            body.innerHTML = buildAdminEditBodyHtml(adminEditState.order);
+            bindAdminEditAddLineUi();
+            adminEditPickedProduct = null;
+            const si = document.getElementById('adminEditLineSearch');
+            if (si) {
+                si.value = '';
+                si.dataset.boundAdminSuggest = '';
+            }
+            const qi = document.getElementById('adminEditLineQty');
+            if (qi) qi.value = '1';
+            hideAdminEditSuggest();
+        }
+
+        (function initAdminEditLineModalDelegation() {
+            const modal = document.getElementById('adminEditModal');
+            if (!modal || modal.dataset.adminLineDeleg === '1') return;
+            modal.dataset.adminLineDeleg = '1';
+            modal.addEventListener('mousedown', function (ev) {
+                const sug = document.getElementById('adminEditLineSuggest');
+                if (!sug || !sug.contains(ev.target)) return;
+                const btn = ev.target.closest('[data-admin-pick-idx]');
+                if (btn) ev.preventDefault();
+            });
+            modal.addEventListener('click', function (ev) {
+                const addBtn = ev.target.closest('#adminEditAddLineBtn');
+                if (addBtn) {
+                    ev.preventDefault();
+                    handleAdminEditAddLineClick();
+                    return;
+                }
+                const pickBtn = ev.target.closest('[data-admin-pick-idx]');
+                if (!pickBtn) return;
+                const sug = document.getElementById('adminEditLineSuggest');
+                if (!sug || !sug.contains(pickBtn)) return;
+                const ix = parseInt(pickBtn.getAttribute('data-admin-pick-idx'), 10);
+                if (isNaN(ix) || !adminEditSuggestMatches[ix]) return;
+                adminEditPickedProduct = adminEditSuggestMatches[ix];
+                const inp = document.getElementById('adminEditLineSearch');
+                if (inp) inp.value = adminEditPickedProduct.name || '';
+                hideAdminEditSuggest();
+            });
+        })();
+
+        async function openAdminOrderEdit(order) {
+            if (!order) return;
+            if (isRepOrderView()) {
+                if (!orderVisibleForCurrentRole(order)) {
+                    alert('You can only edit your own orders.');
+                    return;
+                }
+                if (String(order.status || '').toLowerCase() !== 'pending') {
+                    alert('Reps can only edit pending orders here. Use HQ for changes after approval.');
+                    return;
+                }
+            } else {
+                const p = distributorOrderPerms();
+                const ok = p ? !!(p.canInvoiceCreateEdit || p.canStockView) : true;
+                if (!ok) {
+                    alert('Your role cannot edit orders.');
+                    return;
+                }
+            }
+            const collection = order.status === 'pending' ? 'pendingOrders' : 'orders';
+            adminEditState = { collection, id: order.id, order: JSON.parse(JSON.stringify(order)) };
+            const body = document.getElementById('adminEditBody');
+            const o = adminEditState.order;
+            document.getElementById('adminEditTitle').textContent = `Edit order ${o.orderNumber || order.id.slice(-8)}`;
+            try {
+                await ensureAdminEditProductCatalog();
+            } catch (eCat) {
+                console.warn(eCat);
+            }
+            body.innerHTML = buildAdminEditBodyHtml(adminEditState.order);
+            bindAdminEditAddLineUi();
+            document.getElementById('adminEditModal').style.display = 'flex';
+        }
+
+        async function saveAdminOrderEdit() {
+            if (!adminEditState.id || !adminEditState.order) return;
+            const newItems = collectAdminEditLineItemsFromDom();
             const { items: recalced, subtotal, totalAmount } = recalcItemsAndTotals(newItems);
             const freeIssuesTotal = recalced.reduce((s, it) => s + (Number(it.freeQty) || 0), 0);
             const payload = {

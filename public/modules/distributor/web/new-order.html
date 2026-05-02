@@ -158,6 +158,7 @@
     <script src="/core/distributor-lorry-stock.js?v=1"></script>
     <script src="/core/sidebar.js?v=69"></script>
     <script src="/core/mw-trading-dsl-config.js?v=2"></script>
+    <link rel="stylesheet" href="/core/mw-print.css?v=1">
 </head>
 <body>
     <datalist id="mwShopNameDatalist"></datalist>
@@ -287,6 +288,13 @@
                         </div>
                         <div class="totals"><strong id="cartTotal">Total Rs 0.00</strong></div>
                         <button type="button" class="btn-submit oe-submit" id="submitBtn">Submit to pending queue</button>
+                        <div id="mwPostSubmitBar" class="mw-post-submit-bar" style="display:none;margin-top:14px;padding:14px 16px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;">
+                            <p style="margin:0 0 10px;font-size:0.9rem;font-weight:600;color:#065f46;">Order saved to pending queue.</p>
+                            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+                                <button type="button" class="btn-submit oe-submit" id="mwPrintReceiptBtn" style="margin:0;width:auto;padding:10px 16px;font-size:0.88rem;">Print 80mm receipt</button>
+                                <a href="/modules/distributor/web/index.html?tab=pending" class="oe-link-quiet" id="mwPendingLink">Order status →</a>
+                            </div>
+                        </div>
                     </div>
                 </section>
             </div>
@@ -404,6 +412,64 @@
                 }, { merge: true });
             });
             return 'ORD-' + String(nextNum).padStart(7, '0');
+        }
+        /** MW Trading canonical Firestore business id only (YRMbB6…). */
+        function isMwTradingSolutionsBusiness() {
+            return String(currentBusinessId || '').trim() === MW_TRADING_BILLING_BID;
+        }
+        /** Billed line Rs for MW submit payload (sales qty minus line returns) × unit. */
+        function mwBilledLineAmountForSubmit(item) {
+            var billedQtyMw = Math.max(0, (Number(item.qty) || 0) - ((Number(item.returnResellQty) || 0) + (Number(item.returnCompanyQty) || 0)));
+            return billedQtyMw * (Number(item.unitPrice) || 0);
+        }
+        /**
+         * MW Trading: browser print for 80mm receipt (see /core/mw-print.css).
+         * Future optional: Web Bluetooth ESC/POS requires HTTPS, explicit user gesture (e.g. click),
+         * and raw ESC/POS byte streams — not implemented here. On mobile/tablet, window.print()
+         * opens the system dialog; the user may choose a Bluetooth printer when the OS supports it.
+         */
+        function openMwOrderPrintWindow() {
+            var payload = window.__mwPrintPayload;
+            if (!payload) return;
+            var w = window.open('', '_blank', 'width=420,height=760');
+            if (!w) {
+                alert('Please allow pop-ups to print the receipt.');
+                return;
+            }
+            var escP = function (s) {
+                return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+            };
+            var money = function (n) {
+                return 'Rs ' + (Number(n) || 0).toFixed(2);
+            };
+            var rows = (payload.items || []).map(function (it) {
+                return '<tr><td>' + escP(it.name) + '</td><td class="num">' + escP(String(it.qty)) + '</td><td class="num">' + money(it.unitPrice) + '</td><td class="num">' + money(it.lineAmount) + '</td></tr>';
+            }).join('');
+            if (!rows) rows = '<tr><td colspan="4">—</td></tr>';
+            var html = '<!DOCTYPE html><html class="mw-print-receipt"><head><meta charset="utf-8"><title>' + escP(payload.orderNumber) + '</title>' +
+                '<link rel="stylesheet" href="/core/mw-print.css?v=1"></head><body><div class="mw-print-wrap">' +
+                '<div class="mw-print-company">' + escP(payload.companyName) + '</div>' +
+                '<table class="mw-print-meta"><tbody>' +
+                '<tr><td>Invoice</td><td>' + escP(payload.orderNumber) + '</td></tr>' +
+                '<tr><td>Date</td><td>' + escP(payload.orderDateStr) + '</td></tr>' +
+                '<tr><td>Customer</td><td>' + escP(payload.customerName) + '</td></tr>' +
+                '</tbody></table>' +
+                '<table class="mw-print-table"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Amount</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+                '<table class="mw-print-totals"><tbody>' +
+                '<tr><td>Sub total</td><td>' + money(payload.subtotal) + '</td></tr>' +
+                '<tr><td>Returns</td><td>' + money(payload.returnsTotal) + '</td></tr>' +
+                '<tr><td>Free issues (units)</td><td>' + escP(String(payload.freeIssuesCount)) + '</td></tr>' +
+                '<tr class="grand"><td>Grand total</td><td>' + money(payload.grandTotal) + '</td></tr>' +
+                '<tr><td>Payment</td><td>' + escP(payload.paymentMethod) + '</td></tr>' +
+                '</tbody></table>' +
+                '<div class="mw-print-footer">Software solutions by DIGIBIZ - 0713446500</div>' +
+                '</div></body></html>';
+            w.document.open();
+            w.document.write(html);
+            w.document.close();
+            setTimeout(function () {
+                try { w.focus(); w.print(); } catch (e1) { /* ignore */ }
+            }, 280);
         }
         function orderedQtyOf(item) {
             return Math.max(0, Number(item && (item.orderedQty != null ? item.orderedQty : item.qty)) || 0);
@@ -1533,6 +1599,8 @@
         }
 
         async function submitWebOrder() {
+            var postBar = document.getElementById('mwPostSubmitBar');
+            if (postBar) postBar.style.display = 'none';
             var repId = document.getElementById('repSelect').value;
             if (normalizeRole(userRole) === 'REP' && myRepDocId) {
                 repId = myRepDocId;
@@ -1575,7 +1643,7 @@
             var subtotal = 0;
             activeLines.forEach(function (i) {
                 recalcCartLine(i);
-                subtotal += linePaidTotal(i);
+                subtotal += isMwTradingSolutionsBusiness() ? mwBilledLineAmountForSubmit(i) : linePaidTotal(i);
             });
             var otherReturnLines = otherReturns.filter(function (i) {
                 recalcOtherReturnLine(i);
@@ -1613,6 +1681,7 @@
                 branchLocation = String(bData.location || '');
             }
             var isMwDateScoped = (
+                String(currentBusinessId || '').trim() === MW_TRADING_BILLING_BID ||
                 businessId === 'mw_trading_business_id' ||
                 businessId === 'MW_TRADING' ||
                 isMwTradingBiz === true
@@ -1651,7 +1720,7 @@
                         returnReason: item.returnReason || '',
                         unitPrice: item.unitPrice,
                         totalPrice: mwBilling
-                            ? linePaidTotal(item)
+                            ? (isMwTradingSolutionsBusiness() ? mwBilledLineAmountForSubmit(item) : linePaidTotal(item))
                             : (item.total || 0),
                         freeUnitPrice: mwBilling ? 0 : (Number(item.unitPrice) || 0),
                         freeLineTotal: 0
@@ -1692,7 +1761,8 @@
             btn.disabled = true;
             showFormMsg('Submitting…', '');
             try {
-                if (isMwTradingBiz === true) {
+                // Sequential ORD-0000001: canonical MW Trading businessId only (not timestamp). Id gate is robust if isMwTradingBiz fails to load.
+                if (isMwTradingSolutionsBusiness()) {
                     orderNumber = await getNextMwOrderNumber(currentBusinessId);
                     orderData.orderNumber = orderNumber;
                 }
@@ -1772,11 +1842,52 @@
                 }
                 await postMwReceivableSalesForOrder(orderData, pendingOrderRef.id, shopId);
                 showFormMsg('Saved to pending queue.', 'ok');
+                var shopDisplayName = '';
+                try {
+                    var ssEl = document.getElementById('shopSelect');
+                    if (ssEl && ssEl.selectedIndex >= 0 && ssEl.options[ssEl.selectedIndex]) {
+                        shopDisplayName = String(ssEl.options[ssEl.selectedIndex].textContent || '').trim();
+                    }
+                } catch (eSn) { /* ignore */ }
+                if (isMwTradingSolutionsBusiness()) {
+                    var odRaw = orderData.orderDate;
+                    var orderDateStr = '';
+                    if (typeof odRaw === 'string') {
+                        orderDateStr = odRaw.slice(0, 10);
+                    } else if (odRaw && typeof odRaw.toDate === 'function') {
+                        orderDateStr = odRaw.toDate().toISOString().slice(0, 10);
+                    } else {
+                        orderDateStr = new Date().toISOString().slice(0, 10);
+                    }
+                    window.__mwPrintPayload = {
+                        companyName: 'MW TRADING SOLUTIONS (PVT) LTD',
+                        orderNumber: String(orderData.orderNumber || ''),
+                        orderDateStr: orderDateStr,
+                        customerName: shopDisplayName,
+                        items: (orderData.items || []).map(function (it) {
+                            var rq = (Number(it.returnResellQty) || 0) + (Number(it.returnCompanyQty) || 0);
+                            var billedQty = Math.max(0, (Number(it.orderedQty) || 0) - rq);
+                            return {
+                                name: String(it.productName || it.productCode || '—'),
+                                qty: billedQty,
+                                unitPrice: Number(it.unitPrice) || 0,
+                                lineAmount: Number(it.totalPrice) || 0
+                            };
+                        }),
+                        subtotal: Number(orderData.subtotal) || 0,
+                        returnsTotal: Number(orderData.otherReturnsTotal) || 0,
+                        freeIssuesCount: Number(orderData.freeIssuesTotal) || 0,
+                        grandTotal: Number(orderData.totalAmount) || 0,
+                        paymentMethod: String(orderData.paymentMethod || '')
+                    };
+                    if (postBar) postBar.style.display = 'block';
+                } else {
+                    window.location.href = '/modules/distributor/web/index.html?tab=pending';
+                }
                 cart = [];
                 otherReturns = [];
                 renderLines();
                 renderOtherReturns();
-                window.location.href = '/modules/distributor/web/index.html?tab=pending';
             } catch (err) {
                 console.error(err);
                 showFormMsg('Could not save: ' + (err.message || String(err)) + ' — check Firestore rules for pendingOrders.', 'err');
@@ -1786,6 +1897,13 @@
         }
 
         document.getElementById('submitBtn').addEventListener('click', submitWebOrder);
+        (function bindMwPrintReceiptBtn() {
+            var b = document.getElementById('mwPrintReceiptBtn');
+            if (b && !b.dataset.mwPrintBound) {
+                b.dataset.mwPrintBound = '1';
+                b.addEventListener('click', function () { openMwOrderPrintWindow(); });
+            }
+        })();
 
         firebase.auth().onAuthStateChanged(async function (user) {
             if (!user) { window.location.href = '/auth/login.html'; return; }

@@ -67,6 +67,65 @@
             if (raw === 'BANK' || raw === 'BANK_TRANSFER' || raw.includes('BANK')) return 'CREDIT';
             return 'CASH';
         }
+        /** Order row time (ms) for sort/filter: orderDate (any shape) or createdAt. */
+        function mwSalesRowSortMs(o) {
+            const od = o.orderDate;
+            if (od && typeof od.toDate === 'function') {
+                const d = od.toDate();
+                if (d && !isNaN(d.getTime())) return d.getTime();
+            }
+            if (od && typeof od.seconds === 'number') {
+                return od.seconds * 1000 + Math.floor((od.nanoseconds || 0) / 1e6);
+            }
+            if (typeof od === 'string' && od) {
+                const p = new Date(String(od).slice(0, 10) + 'T12:00:00');
+                if (!isNaN(p.getTime())) return p.getTime();
+            }
+            const ca = o.createdAt;
+            if (ca && typeof ca.toDate === 'function') {
+                const d2 = ca.toDate();
+                if (d2 && !isNaN(d2.getTime())) return d2.getTime();
+            }
+            if (ca && typeof ca.seconds === 'number') {
+                return ca.seconds * 1000 + Math.floor((ca.nanoseconds || 0) / 1e6);
+            }
+            return 0;
+        }
+        /** Numeric key from orderNumber (higher = newer invoice); fallback digits from doc id. */
+        function salesOrderSortKey(o, docId) {
+            const raw = o.orderNumber;
+            if (raw != null && raw !== '') {
+                if (typeof raw === 'number' && !isNaN(raw)) return raw;
+                const digits = String(raw).replace(/\D/g, '');
+                if (digits) {
+                    const slice = digits.length > 15 ? digits.slice(-15) : digits;
+                    const n = parseInt(slice, 10);
+                    if (!isNaN(n)) return n;
+                }
+            }
+            const fb = String(docId || '').replace(/\D/g, '');
+            if (fb) {
+                const n2 = parseInt(fb.length > 15 ? fb.slice(-15) : fb, 10);
+                if (!isNaN(n2)) return n2;
+            }
+            return 0;
+        }
+        /** Chunked doc().get() — huge Promise.all (100+ reps/shops) hung the page / hit Firestore limits. */
+        async function fetchDocsAsMap(collectionName, ids) {
+            const uniq = [...new Set((ids || []).filter(Boolean))];
+            const map = {};
+            const chunkSize = 12;
+            for (let i = 0; i < uniq.length; i += chunkSize) {
+                const chunk = uniq.slice(i, i + chunkSize);
+                await Promise.all(chunk.map(async (id) => {
+                    try {
+                        const snap = await db.collection(collectionName).doc(id).get();
+                        if (snap.exists) map[id] = snap.data();
+                    } catch (e) { /* ignore per-doc */ }
+                }));
+            }
+            return map;
+        }
         function renderRows(){
             const from = document.getElementById('fromDate').value;
             const to = document.getElementById('toDate').value;
@@ -77,8 +136,9 @@
             const fromD = from ? new Date(from + 'T00:00:00') : null;
             const toD = to ? new Date(to + 'T23:59:59') : null;
             const rows = allRows.filter((r) => {
-                if (fromD && (!r.dateObj || r.dateObj < fromD)) return false;
-                if (toD && (!r.dateObj || r.dateObj > toD)) return false;
+                const t = Number(r.rowDateMs) || 0;
+                if (fromD && (!t || t < fromD.getTime())) return false;
+                if (toD && (!t || t > toD.getTime())) return false;
                 if (repQ && !String(r.rep || '').toLowerCase().includes(repQ)) return false;
                 if (cusQ && !String(r.customer || '').toLowerCase().includes(cusQ)) return false;
                 if (payQ && r.pay !== payQ) return false;
@@ -106,45 +166,75 @@
         });
         firebase.auth().onAuthStateChanged(async (user) => {
             if (!user) { window.location.href = '/auth/login.html'; return; }
-            let bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
-            if (!bid && window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
-                const ctx = await window.dashboardCore.getContext(user).catch(() => null);
-                bid = ctx && ctx.businessId ? ctx.businessId : '';
-            }
-            if (!bid) { document.getElementById('out').textContent = 'No business selected.'; return; }
-            localStorage.setItem('currentBusinessId', bid);
-            sessionStorage.setItem('currentBusinessId', bid);
-            localStorage.setItem('currentBusinessType', 'distributor');
-            sessionStorage.setItem('currentBusinessType', 'distributor');
-            const ri = await window.getUserRole(user.uid, bid);
-            if (String(ri && ri.role || '').toUpperCase() === 'REP') {
-                window.location.href = '/modules/distributor/mobile/order.html';
-                return;
-            }
-            const snap = await db.collection('orders').where('businessId', '==', bid).get();
-            allRows.length = 0;
-            for (const doc of snap.docs) {
-                const o = doc.data();
-                const st = String(o.status || '').toLowerCase();
-                if (!['approved', 'dispatched', 'delivered'].includes(st)) continue;
-                let repName = o.repName || o.repId;
-                try { const r = await db.collection('reps').doc(o.repId).get(); if (r.exists) repName = r.data().name || repName; } catch (e) {}
-                let customer = o.shopName || o.shopId;
-                try { const s = await db.collection('shops').doc(o.shopId).get(); if (s.exists) customer = s.data().name || customer; } catch (e2) {}
-                const dateObj = o.orderDate && o.orderDate.toDate ? o.orderDate.toDate() : null;
-                allRows.push({
-                    inv: o.orderNumber || doc.id,
-                    customer,
-                    total: o.totalAmount || 0,
-                    rep: repName,
-                    dt: dateObj ? dateObj.toLocaleString() : '—',
-                    st,
-                    pay: normalizePaymentMode(o),
-                    dateObj
+            const outEl = document.getElementById('out');
+            try {
+                let bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                if (!bid && window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+                    const ctx = await window.dashboardCore.getContext(user).catch(() => null);
+                    bid = ctx && ctx.businessId ? ctx.businessId : '';
+                }
+                if (!bid) { outEl.textContent = 'No business selected.'; return; }
+                localStorage.setItem('currentBusinessId', bid);
+                sessionStorage.setItem('currentBusinessId', bid);
+                localStorage.setItem('currentBusinessType', 'distributor');
+                sessionStorage.setItem('currentBusinessType', 'distributor');
+                const ri = await window.getUserRole(user.uid, bid);
+                if (String(ri && ri.role || '').toUpperCase() === 'REP') {
+                    window.location.href = '/modules/distributor/mobile/order.html';
+                    return;
+                }
+                const snap = await db.collection('orders').where('businessId', '==', bid).limit(200).get();
+                allRows.length = 0;
+                const pending = [];
+                for (const doc of snap.docs) {
+                    const o = doc.data();
+                    const st = String(o.status || '').toLowerCase();
+                    if (!['approved', 'dispatched', 'delivered'].includes(st)) continue;
+                    pending.push({ doc, o });
+                }
+                const repIds = pending.map((p) => p.o.repId).filter(Boolean);
+                const shopIds = pending.map((p) => p.o.shopId).filter(Boolean);
+                const [repMap, shopMap] = await Promise.all([
+                    fetchDocsAsMap('reps', repIds),
+                    fetchDocsAsMap('shops', shopIds)
+                ]);
+                for (const { doc, o } of pending) {
+                    const st = String(o.status || '').toLowerCase();
+                    let repName = o.repName || o.repId;
+                    const rd = o.repId && repMap[o.repId];
+                    if (rd && rd.name) repName = rd.name;
+                    let customer = o.shopName || o.shopId;
+                    const sd = o.shopId && shopMap[o.shopId];
+                    if (sd && sd.name) customer = sd.name;
+                    const dateObj = o.orderDate && o.orderDate.toDate ? o.orderDate.toDate() : null;
+                    const rowDateMs = mwSalesRowSortMs(o);
+                    const dt = dateObj ? dateObj.toLocaleString() : (rowDateMs ? new Date(rowDateMs).toLocaleString() : '—');
+                    const row = {
+                        inv: o.orderNumber || doc.id,
+                        customer,
+                        total: o.totalAmount || 0,
+                        rep: repName,
+                        dt,
+                        st,
+                        pay: normalizePaymentMode(o),
+                        dateObj,
+                        rowDateMs,
+                        orderSortKey: salesOrderSortKey(o, doc.id)
+                    };
+                    allRows.push(row);
+                }
+                allRows.sort((a, b) => {
+                    const ord = (Number(b.orderSortKey) || 0) - (Number(a.orderSortKey) || 0);
+                    if (ord !== 0) return ord;
+                    const ms = (Number(b.rowDateMs) || 0) - (Number(a.rowDateMs) || 0);
+                    if (ms !== 0) return ms;
+                    return String(b.inv || '').localeCompare(String(a.inv || ''), undefined, { numeric: true, sensitivity: 'base' });
                 });
+                renderRows();
+            } catch (err) {
+                console.error('Sales load failed', err);
+                outEl.textContent = 'Could not load sales: ' + (err && err.message ? err.message : String(err));
             }
-            allRows.sort((a,b)=>(b.dateObj ? b.dateObj.getTime() : 0) - (a.dateObj ? a.dateObj.getTime() : 0));
-            renderRows();
         });
     </script>
 </body>

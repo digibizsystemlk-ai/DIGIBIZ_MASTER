@@ -92,6 +92,8 @@
             <button class="report-tab" data-tab="tax"><i class="fas fa-percent"></i> Tax Report</button>
             <button class="report-tab" data-tab="inventory"><i class="fas fa-boxes"></i> Current Stock Report</button>
             <button class="report-tab" data-tab="financial"><i class="fas fa-chart-pie"></i> Financial Report</button>
+            <button class="report-tab" data-tab="freeissues"><i class="fas fa-gift"></i> Free Issues</button>
+            <button class="report-tab" data-tab="returns"><i class="fas fa-undo"></i> Returns</button>
         </div>
         
         <!-- Sales Report Tab -->
@@ -164,6 +166,30 @@
                 <div class="card-body"><canvas id="incomeExpenseChart" style="height:300px;"></canvas></div>
             </div>
         </div>
+
+        <div id="tab-freeissues" class="tab-pane">
+            <div class="card">
+                <div class="card-header"><h3><i class="fas fa-gift"></i> Free issues (from distributor orders)</h3><button class="btn-export" type="button" onclick="exportToCSV('freeissues')"><i class="fas fa-file-csv"></i> Export CSV</button></div>
+                <div class="card-body">
+                    <table class="data-table" id="freeIssuesTable">
+                        <thead><tr><th>Date</th><th>Order #</th><th>Customer</th><th>Product</th><th>Free qty</th><th>Reason</th><th>Rep</th></tr></thead>
+                        <tbody id="freeIssuesList"><tr><td colspan="7" style="text-align:center;padding:40px;">Select date range and apply filter...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-returns" class="tab-pane">
+            <div class="card">
+                <div class="card-header"><h3><i class="fas fa-undo"></i> Returns (from distributor orders)</h3><button class="btn-export" type="button" onclick="exportToCSV('returns')"><i class="fas fa-file-csv"></i> Export CSV</button></div>
+                <div class="card-body">
+                    <table class="data-table" id="returnsTable">
+                        <thead><tr><th>Date</th><th>Order #</th><th>Customer</th><th>Product</th><th>Return qty</th><th>Unit Rs</th><th>Line Rs</th><th>Type</th><th>Note</th><th>Rep</th></tr></thead>
+                        <tbody id="returnsList"><tr><td colspan="10" style="text-align:center;padding:40px;">Select date range and apply filter...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
         
         <footer><p>© 2025 DIGIBIZ Universal - Complete Business Management Platform</p></footer>
     </div>
@@ -172,8 +198,54 @@
         let currentBusinessId = null;
         let incomeExpenseChart = null;
         const SCRAP_OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+        const reportCache = { sales: [], freeIssues: [], returns: [] };
 
         function formatCurrency(amount){ return 'Rs. ' + (Number(amount)||0).toLocaleString('en-LK'); }
+        function escapeHtmlReport(s) {
+            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        }
+        function orderDateMsForReport(order) {
+            if (!order) return 0;
+            const od = order.orderDate;
+            if (od && typeof od.toDate === 'function') {
+                const d = od.toDate();
+                return d && !isNaN(d.getTime()) ? d.getTime() : 0;
+            }
+            if (od && typeof od.seconds === 'number') {
+                return od.seconds * 1000 + Math.floor((od.nanoseconds || 0) / 1e6);
+            }
+            if (typeof od === 'string' && od) {
+                const ds = od.slice(0, 10);
+                const parsed = new Date(ds + 'T12:00:00');
+                return isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+            }
+            const ca = order.createdAt;
+            if (ca && typeof ca.toDate === 'function') {
+                const d2 = ca.toDate();
+                return d2 && !isNaN(d2.getTime()) ? d2.getTime() : 0;
+            }
+            if (ca && typeof ca.seconds === 'number') {
+                return ca.seconds * 1000 + Math.floor((ca.nanoseconds || 0) / 1e6);
+            }
+            return 0;
+        }
+        function formatReportDate(ms) {
+            if (!ms) return '-';
+            const d = new Date(ms);
+            return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('en-LK');
+        }
+        async function fetchDistributorOrdersForReports() {
+            const bid = currentBusinessId;
+            if (!bid) return [];
+            const [pSnap, oSnap] = await Promise.all([
+                db.collection('pendingOrders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                db.collection('orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] }))
+            ]);
+            const list = [];
+            (pSnap.docs || []).forEach((d) => list.push({ id: d.id, _source: 'pending', ...(d.data() || {}) }));
+            (oSnap.docs || []).forEach((d) => list.push({ id: d.id, _source: 'order', ...(d.data() || {}) }));
+            return list;
+        }
         function toDate(value) {
             if (!value) return null;
             if (value.toDate) return value.toDate();
@@ -189,7 +261,10 @@
         async function loadSalesReport(){
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
-            if(!startDate || !endDate) return;
+            if(!startDate || !endDate) {
+                reportCache.sales = [];
+                return;
+            }
             const start = new Date(`${startDate}T00:00:00`);
             const end = new Date(`${endDate}T23:59:59`);
             const salesSnap = await db.collection('selling_history').where('businessId', '==', currentBusinessId).get();
@@ -205,6 +280,15 @@
             rows.forEach((r) => { topMap[r.itemId || r.customerName || '-'] = (topMap[r.itemId || r.customerName || '-'] || 0) + (Number(r.totalAmount) || 0); });
             const top = Object.entries(topMap).sort((a,b) => b[1]-a[1])[0];
             document.getElementById('topProduct').innerHTML = top ? top[0] : '-';
+            reportCache.sales = rows.map((r, i) => ({
+                date: toDate(r.date) ? toDate(r.date).toISOString() : '',
+                invoice: 'SL-' + (i + 1),
+                customer: r.customerName || '-',
+                items: Number(r.qty) || 0,
+                subtotal: Number(r.totalAmount) || 0,
+                tax: 0,
+                total: Number(r.totalAmount) || 0
+            }));
             document.getElementById('salesList').innerHTML = rows.map((r, i) => `<tr>
                 <td>${toDate(r.date)?.toLocaleString() || '-'}</td>
                 <td>SL-${i+1}</td>
@@ -214,6 +298,128 @@
                 <td>${formatCurrency(0)}</td>
                 <td>${formatCurrency(r.totalAmount || 0)}</td>
             </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;padding:40px;">No sales rows</td></tr>';
+        }
+
+        async function loadFreeIssuesReport() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const tbody = document.getElementById('freeIssuesList');
+            if (!tbody) return;
+            if (!startDate || !endDate) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;">Select date range...</td></tr>';
+                reportCache.freeIssues = [];
+                return;
+            }
+            const start = new Date(`${startDate}T00:00:00`).getTime();
+            const end = new Date(`${endDate}T23:59:59`).getTime();
+            const orders = await fetchDistributorOrdersForReports();
+            const rows = [];
+            orders.forEach((order) => {
+                const t = orderDateMsForReport(order);
+                if (!t || t < start || t > end) return;
+                const dateStr = formatReportDate(t);
+                const ordNo = order.orderNumber || order.id || '';
+                const cust = order.shopName || order.shopId || '';
+                const rep = order.repName || order.repId || '';
+                (order.items || []).forEach((it) => {
+                    const fq = Number(it.freeQty) || 0;
+                    if (fq <= 0) return;
+                    rows.push({
+                        dateStr,
+                        orderNumber: ordNo,
+                        customer: cust,
+                        product: it.productName || it.productCode || '',
+                        freeQty: fq,
+                        reason: it.freeReason || '',
+                        rep
+                    });
+                });
+            });
+            rows.sort((a, b) => String(b.orderNumber).localeCompare(String(a.orderNumber)));
+            reportCache.freeIssues = rows;
+            tbody.innerHTML = rows.length ? rows.map((r) => `<tr>
+                <td>${escapeHtmlReport(r.dateStr)}</td>
+                <td>${escapeHtmlReport(r.orderNumber)}</td>
+                <td>${escapeHtmlReport(r.customer)}</td>
+                <td>${escapeHtmlReport(r.product)}</td>
+                <td>${r.freeQty}</td>
+                <td>${escapeHtmlReport(r.reason)}</td>
+                <td>${escapeHtmlReport(r.rep)}</td>
+            </tr>`).join('') : '<tr><td colspan="7" style="text-align:center;padding:40px;">No free issue lines in range</td></tr>';
+        }
+
+        async function loadReturnsReport() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const tbody = document.getElementById('returnsList');
+            if (!tbody) return;
+            if (!startDate || !endDate) {
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;">Select date range...</td></tr>';
+                reportCache.returns = [];
+                return;
+            }
+            const start = new Date(`${startDate}T00:00:00`).getTime();
+            const end = new Date(`${endDate}T23:59:59`).getTime();
+            const orders = await fetchDistributorOrdersForReports();
+            const rows = [];
+            orders.forEach((order) => {
+                const t = orderDateMsForReport(order);
+                if (!t || t < start || t > end) return;
+                const dateStr = formatReportDate(t);
+                const ordNo = order.orderNumber || order.id || '';
+                const cust = order.shopName || order.shopId || '';
+                const rep = order.repName || order.repId || '';
+                (order.items || []).forEach((it) => {
+                    const rq = Number(it.returnQty) || 0;
+                    if (rq <= 0) return;
+                    const up = Number(it.unitPrice) || 0;
+                    const lineRs = Math.abs(Number(it.totalPrice) != null ? Number(it.totalPrice) : rq * up);
+                    rows.push({
+                        dateStr,
+                        orderNumber: ordNo,
+                        customer: cust,
+                        product: it.productName || it.productCode || '',
+                        returnQty: rq,
+                        unitPrice: up,
+                        lineRs,
+                        type: 'On order',
+                        note: it.returnReason || '',
+                        rep
+                    });
+                });
+                (order.otherReturns || []).forEach((it) => {
+                    const rq = Number(it.returnQty) || 0;
+                    if (rq <= 0) return;
+                    const up = Number(it.unitPrice) || 0;
+                    const lineRs = Math.abs(Number(it.total) != null ? Number(it.total) : rq * up);
+                    rows.push({
+                        dateStr,
+                        orderNumber: ordNo,
+                        customer: cust,
+                        product: it.productName || it.productCode || '',
+                        returnQty: rq,
+                        unitPrice: up,
+                        lineRs,
+                        type: 'Other',
+                        note: it.returnReason || '',
+                        rep
+                    });
+                });
+            });
+            rows.sort((a, b) => String(b.orderNumber).localeCompare(String(a.orderNumber)));
+            reportCache.returns = rows;
+            tbody.innerHTML = rows.length ? rows.map((r) => `<tr>
+                <td>${escapeHtmlReport(r.dateStr)}</td>
+                <td>${escapeHtmlReport(r.orderNumber)}</td>
+                <td>${escapeHtmlReport(r.customer)}</td>
+                <td>${escapeHtmlReport(r.product)}</td>
+                <td>${r.returnQty}</td>
+                <td>${(Number(r.unitPrice) || 0).toFixed(2)}</td>
+                <td>${(Number(r.lineRs) || 0).toFixed(2)}</td>
+                <td>${escapeHtmlReport(r.type)}</td>
+                <td>${escapeHtmlReport(r.note)}</td>
+                <td>${escapeHtmlReport(r.rep)}</td>
+            </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:40px;">No return lines in range</td></tr>';
         }
 
         async function loadTaxReport(){
@@ -290,13 +496,60 @@
             });
         }
 
-        function exportToCSV(type){ alert(`Export for ${type} is enabled via tab table copy currently.`); }
+        function csvEscapeCell(val) {
+            const s = String(val ?? '');
+            if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+            return s;
+        }
+        function downloadCsvFile(filename, headerRow, dataRows) {
+            const lines = [headerRow.map(csvEscapeCell).join(',')].concat(
+                dataRows.map((row) => row.map(csvEscapeCell).join(','))
+            );
+            const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        }
+        function getActiveReportTabId() {
+            const t = document.querySelector('.report-tab.active');
+            return t ? String(t.dataset.tab || '') : 'sales';
+        }
+        function exportToCSV(type) {
+            const tab = type === 'all' ? getActiveReportTabId() : type;
+            if (tab === 'freeissues') {
+                const hdr = ['Date', 'Order #', 'Customer', 'Product', 'Free qty', 'Reason', 'Rep'];
+                const rows = reportCache.freeIssues.map((r) => [r.dateStr, r.orderNumber, r.customer, r.product, r.freeQty, r.reason, r.rep]);
+                downloadCsvFile('free-issues-report.csv', hdr, rows);
+                return;
+            }
+            if (tab === 'returns') {
+                const hdr = ['Date', 'Order #', 'Customer', 'Product', 'Return qty', 'Unit Rs', 'Line Rs', 'Type', 'Note', 'Rep'];
+                const rows = reportCache.returns.map((r) => [r.dateStr, r.orderNumber, r.customer, r.product, r.returnQty, r.unitPrice, r.lineRs, r.type, r.note, r.rep]);
+                downloadCsvFile('returns-report.csv', hdr, rows);
+                return;
+            }
+            if (tab === 'sales') {
+                const hdr = ['Date', 'Invoice No', 'Customer', 'Items', 'Subtotal', 'Tax', 'Total'];
+                const rows = reportCache.sales.map((r) => [r.date, r.invoice, r.customer, r.items, r.subtotal, r.tax, r.total]);
+                downloadCsvFile('sales-report.csv', hdr, rows);
+                return;
+            }
+            alert('CSV download is implemented for Sales, Free Issues, and Returns. Open one of those tabs, then click Export.');
+        }
 
         const today = new Date();
         const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
         document.getElementById('startDate').value = firstDay.toISOString().split('T')[0];
         document.getElementById('endDate').value = today.toISOString().split('T')[0];
-        document.getElementById('applyFilterBtn').onclick = () => { loadSalesReport(); loadTaxReport(); loadInventoryReport(); loadFinancialReport(); };
+        document.getElementById('applyFilterBtn').onclick = () => {
+            loadSalesReport(); loadTaxReport(); loadInventoryReport(); loadFinancialReport();
+            loadFreeIssuesReport(); loadReturnsReport();
+        };
         document.getElementById('exportBtn').onclick = () => exportToCSV('all');
         document.querySelectorAll('.report-tab').forEach(tab=>{
             tab.onclick=()=>{
@@ -312,6 +565,7 @@
             const context = window.dashboardCore ? await window.dashboardCore.getContext(user) : null;
             currentBusinessId = context?.businessType === 'scrap_collection_center' ? SCRAP_OWNER_UID : (context?.businessId || user.uid);
             loadSalesReport(); loadTaxReport(); loadInventoryReport(); loadFinancialReport();
+            loadFreeIssuesReport(); loadReturnsReport();
         });
     </script>
 </body>
