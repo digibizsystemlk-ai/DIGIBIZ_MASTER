@@ -1126,8 +1126,7 @@ class Sidebar {
                         </div>` : ''}
                         ${this.isSuperAdminUser() ? `<div class="menu-section-label">Super Admin</div>
                         <a href="/admin/super-dashboard.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${pathname === '/admin/super-dashboard.html' ? 'active' : ''}"><span class="menu-icon">👑</span><span>Super Admin</span></a>
-                        <a href="/admin/super-dashboard.html#tab-users" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item"><span class="menu-icon">👥</span><span>User Management</span></a>
-<a href="/admin/business-management.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${pathname === '/admin/business-management.html' ? 'active' : ''}"><span class="menu-icon">💼</span><span>Business Management</span></a>` : ''}
+                        <a href="/admin/business-management.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${pathname === '/admin/business-management.html' ? 'active' : ''}"><span class="menu-icon">💼</span><span>Business Management</span></a>` : ''}
                     </div>
                 </div>
                 <div class="sidebar-footer">
