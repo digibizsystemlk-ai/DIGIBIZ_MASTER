@@ -620,6 +620,7 @@ class Sidebar {
     getDistributorWebMenuBase() {
         const base = [
             { icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
+            { icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
             { icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
             { icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
             { icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
@@ -788,8 +789,8 @@ class Sidebar {
             const repMenus = [
                 ...this.getDashboardMenu(),
                 { icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
-                { icon: '📝', name: 'Rep order (phone)', link: '/modules/distributor/mobile/order.html' },
-                { icon: '👁️', name: 'Rep view', link: '/modules/distributor/web/rep-view.html' },
+                { icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
+                { icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
                 { icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
                 { icon: '📑', name: 'HQ orders', link: '/modules/distributor/web/index.html?tab=pending' }
             ];
@@ -942,9 +943,6 @@ class Sidebar {
         }
         if (cleanLink.includes('/modules/admin/scrap-sms-settings.html')) {
             return cleanPath.endsWith('scrap-sms-settings.html');
-        }
-        if (cleanLink.includes('/modules/distributor/web/rep-view.html')) {
-            return cleanPath.endsWith('rep-view.html');
         }
         if (cleanPath === cleanLink) return true;
         if (cleanLink.endsWith('/index.html')) {

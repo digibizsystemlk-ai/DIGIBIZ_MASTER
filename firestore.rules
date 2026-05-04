@@ -61,20 +61,34 @@ service cloud.firestore {
         : (userExists() ? userData().role : null);
     }
 
+    // Order matters: hasBizUserDoc / myPrimaryBusinessId BEFORE get(businesses/$(bid)),
+    // otherwise reps/shops rules call isBusinessMember → get(business) → allow read needs
+    // isBusinessMember → circular denial for staff who only have businesses/{bid}/users/{uid}.
     function isBusinessMember(bid) {
       return signedIn() && bid != null && (
         isSuperAdmin() ||
+        myPrimaryBusinessId() == bid ||
+        hasBizUserDoc(bid) ||
         (
           exists(/databases/$(database)/documents/businesses/$(bid)) &&
           get(/databases/$(database)/documents/businesses/$(bid)).data.ownerId == uid()
-        ) ||
-        myPrimaryBusinessId() == bid ||
-        hasBizUserDoc(bid)
+        )
       );
     }
 
+    // Match distributor web RBAC (auth-roles.js): REP and common legacy/lowercase variants.
+    function isRepLikeRoleForBusiness(bid) {
+      return bid is string &&
+        isBusinessMember(bid) &&
+        roleForBusiness(bid) in [
+          'REP', 'rep',
+          'SALES_REP', 'sales_rep',
+          'DISTRIBUTOR_REP', 'distributor_rep'
+        ];
+    }
+
     function isRepInBusiness(bid) {
-      return isBusinessMember(bid) && roleForBusiness(bid) in ['REP', 'rep'];
+      return isRepLikeRoleForBusiness(bid);
     }
 
     function isAccountantInBusiness(bid) {
@@ -126,12 +140,86 @@ service cloud.firestore {
     function repDocValidForCaller(rid) {
       return rid is string &&
         exists(repDocPath(rid)) &&
-        get(repDocPath(rid)).data.businessId == myPrimaryBusinessId() &&
+        get(repDocPath(rid)).data.businessId is string &&
+        isBusinessMember(get(repDocPath(rid)).data.businessId) &&
         (
-          get(repDocPath(rid)).data.userId == uid() ||
-          ('email' in get(repDocPath(rid)).data &&
-            get(repDocPath(rid)).data.email == request.auth.token.email)
+          ('userId' in get(repDocPath(rid)).data &&
+            get(repDocPath(rid)).data.userId == uid()) ||
+          (
+            'email' in get(repDocPath(rid)).data &&
+            get(repDocPath(rid)).data.email is string &&
+            request.auth.token.email is string &&
+            get(repDocPath(rid)).data.email.lower() == request.auth.token.email.lower()
+          )
         );
+    }
+
+    function isSalesCoordinatorOrAreaManagerInBusiness(bid) {
+      return bid is string &&
+        isBusinessMember(bid) &&
+        roleForBusiness(bid) in [
+          'SALES_COORDINATOR', 'sales_coordinator',
+          'AREA_MANAGER', 'area_manager'
+        ];
+    }
+
+    function repDocBelongsToBusiness(rid, bid) {
+      return rid is string &&
+        bid is string &&
+        exists(repDocPath(rid)) &&
+        get(repDocPath(rid)).data.businessId == bid;
+    }
+
+    // REP shop create: explicit path (membership + rep role + rep row owned by caller). Avoids relying only on
+    // repDocValidForCaller → isBusinessMember(get(rep).businessId) when that chain still denies some tenants.
+    function callerRepRoleForShopCreate(bid) {
+      return bid is string &&
+        hasBizUserDoc(bid) &&
+        roleForBusiness(bid) in [
+          'REP', 'rep',
+          'SALES_REP', 'sales_rep',
+          'DISTRIBUTOR_REP', 'distributor_rep'
+        ];
+    }
+
+    function repDocOwnedByCallerForShopCreate(repId, bid) {
+      return repId is string &&
+        bid is string &&
+        exists(repDocPath(repId)) &&
+        get(repDocPath(repId)).data.businessId == bid &&
+        (
+          ('userId' in get(repDocPath(repId)).data &&
+            get(repDocPath(repId)).data.userId == uid()) ||
+          (
+            'email' in get(repDocPath(repId)).data &&
+            get(repDocPath(repId)).data.email is string &&
+            request.auth.token.email is string &&
+            get(repDocPath(repId)).data.email.lower() == request.auth.token.email.lower()
+          )
+        );
+    }
+
+    // Principal on business doc (ownerId) may not have owner-class role on users/{uid} or biz user doc.
+    function isBusinessPrincipalByOwnerId(bid) {
+      return bid is string &&
+        signedIn() &&
+        exists(/databases/$(database)/documents/businesses/$(bid)) &&
+        get(/databases/$(database)/documents/businesses/$(bid)).data.ownerId == uid();
+    }
+
+    function canCrossTeamListRepsAndShops(bid) {
+      return bid is string && (
+        isOwnerClassInBusiness(bid) ||
+        isBusinessPrincipalByOwnerId(bid) ||
+        isSalesCoordinatorOrAreaManagerInBusiness(bid)
+      );
+    }
+
+    function canMutateRepsAndShopsAsOwner(bid) {
+      return bid is string && (
+        isOwnerClassInBusiness(bid) ||
+        isBusinessPrincipalByOwnerId(bid)
+      );
     }
 
     function shopPath(sid) {
@@ -266,7 +354,9 @@ service cloud.firestore {
       );
 
       match /users/{staffUid} {
+        // Self-read breaks circular isBusinessMember ↔ businesses/{bid}/users/{uid} (exists/get).
         allow read: if signedIn() && (
+          uid() == staffUid ||
           isSuperAdmin() ||
           isBusinessMember(businessId) ||
           (
@@ -300,6 +390,16 @@ service cloud.firestore {
         allow delete: if signedIn() && (
           isSuperAdmin() ||
           isOwnerClassInBusiness(businessId)
+        );
+      }
+
+      // Nested catalog (e.g. new-order.html businesses/{bid}/products); was missing → default deny.
+      match /products/{productId} {
+        allow read: if signedIn() && isBusinessMember(businessId);
+        allow create, update, delete: if signedIn() && (
+          isSuperAdmin() ||
+          isOwnerClassInBusiness(businessId) ||
+          isSalesCoordinatorOrAreaManagerInBusiness(businessId)
         );
       }
     }
@@ -375,15 +475,37 @@ service cloud.firestore {
 
     // ----- Reps directory -----
     match /reps/{repId} {
+      // Own row via membership (resource only): avoids repDocValidForCaller(repId) doing get(/reps/{rid})
+      // on the same document, which can make list queries fail with permission-denied.
       allow read: if signedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && isOwnerClassInBusiness(resource.data.businessId)) ||
+        (
+          resource.data.businessId is string &&
+          hasBizUserDoc(resource.data.businessId) &&
+          (
+            ('userId' in resource.data && resource.data.userId == uid()) ||
+            (
+              'email' in resource.data &&
+              resource.data.email is string &&
+              request.auth.token.email is string &&
+              resource.data.email.lower() == request.auth.token.email.lower()
+            )
+          )
+        ) ||
+        (
+          resource.data.businessId is string &&
+          canCrossTeamListRepsAndShops(resource.data.businessId)
+        ) ||
+        (
+          resource.data.businessId is string &&
+          isRepInBusiness(resource.data.businessId)
+        ) ||
         repDocValidForCaller(repId)
       );
       allow create: if signedIn() &&
         request.resource.data.businessId is string &&
         (
-          isOwnerClassInBusiness(request.resource.data.businessId) ||
+          canMutateRepsAndShopsAsOwner(request.resource.data.businessId) ||
           (
             request.resource.data.keys().hasAll(['userId', 'email', 'businessId']) &&
             request.resource.data.userId == uid() &&
@@ -392,35 +514,58 @@ service cloud.firestore {
         );
       allow update, delete: if signedIn() &&
         resource.data.businessId is string &&
-        isOwnerClassInBusiness(resource.data.businessId);
+        canMutateRepsAndShopsAsOwner(resource.data.businessId);
     }
 
     // ----- Shops -----
     match /shops/{shopId} {
+      // Any business member (Owner / SC / AM / REP / staff) may read shops for list pages
+      // (e.g. my-shops, new-order dropdown). Create/update/delete stay restricted below.
       allow read: if signedIn() && (
         isSuperAdmin() ||
-        (resource.data.businessId is string && isOwnerClassInBusiness(resource.data.businessId)) ||
         (
           resource.data.businessId is string &&
-          isRepInBusiness(resource.data.businessId) &&
-          'assignedRepId' in resource.data &&
-          repDocValidForCaller(resource.data.assignedRepId)
+          isBusinessMember(resource.data.businessId)
         )
       );
       allow create: if signedIn() && (
         (request.resource.data.businessId is string &&
-          isOwnerClassInBusiness(request.resource.data.businessId)) ||
+          canMutateRepsAndShopsAsOwner(request.resource.data.businessId)) ||
+        (
+          request.resource.data.businessId is string &&
+          callerRepRoleForShopCreate(request.resource.data.businessId) &&
+          request.resource.data.assignedRepId is string &&
+          repDocOwnedByCallerForShopCreate(
+            request.resource.data.assignedRepId,
+            request.resource.data.businessId
+          )
+        ) ||
         (
           request.resource.data.businessId is string &&
           isRepInBusiness(request.resource.data.businessId) &&
-          request.resource.data.businessId == myPrimaryBusinessId() &&
+          (
+            request.resource.data.businessId == myPrimaryBusinessId() ||
+            // MW Trading only: reps may lack users/{uid}.businessId; membership is on businesses/{bid}/users/{uid}.
+            request.resource.data.businessId == mwTradingSolutionsCanonicalBusinessId() ||
+            // Any distributor: REP with businesses/{bid}/users/{uid} may create shops for that bid.
+            hasBizUserDoc(request.resource.data.businessId)
+          ) &&
           request.resource.data.assignedRepId is string &&
           repDocValidForCaller(request.resource.data.assignedRepId)
+        ) ||
+        (
+          request.resource.data.businessId is string &&
+          isSalesCoordinatorOrAreaManagerInBusiness(request.resource.data.businessId) &&
+          request.resource.data.assignedRepId is string &&
+          repDocBelongsToBusiness(
+            request.resource.data.assignedRepId,
+            request.resource.data.businessId
+          )
         )
       );
       allow update, delete: if signedIn() &&
         resource.data.businessId is string &&
-        isOwnerClassInBusiness(resource.data.businessId);
+        canMutateRepsAndShopsAsOwner(resource.data.businessId);
     }
 
     // ----- Products (flat distributor rows + nested retail lists) -----

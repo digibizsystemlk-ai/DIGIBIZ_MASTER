@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shops - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=47"></script>
+    <script src="/core/auth-roles.js?v=50"></script>
+    <script src="/core/dashboard-core.js?v=46"></script>
+    <script src="/core/sidebar.js?v=69"></script>
+    <style>
+        body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f1f5f9;color:#0f172a}
+        .wrap{padding:22px 26px 40px;max-width:1200px}
+        h1{margin:0;font-size:1.35rem;font-weight:700}
+        .sub{margin:6px 0 16px;color:#64748b;font-size:0.875rem;line-height:1.45}
+        .card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px;box-shadow:0 1px 2px rgba(15,23,42,.06)}
+        .table-wrap{overflow:auto;border:1px solid #e2e8f0;border-radius:12px;margin-top:12px}
+        table{width:100%;border-collapse:collapse;min-width:780px}
+        th,td{padding:10px 12px;border-bottom:1px solid #f1f5f9;font-size:0.8125rem;text-align:left}
+        th{background:#f8fafc;font-weight:700;color:#475569;position:sticky;top:0;z-index:1}
+        tr:last-child td{border-bottom:none}
+        .num{text-align:right;white-space:nowrap}
+        .badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:0.6875rem;font-weight:700}
+        .badge-on{background:#d1fae5;color:#065f46}
+        .badge-off{background:#fee2e2;color:#991b1b}
+        .muted{color:#94a3b8}
+        .err{color:#b91c1c;font-size:0.875rem;margin-top:10px}
+        .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:8px}
+        .btn{background:#0ea5e9;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-weight:600;cursor:pointer;font-size:0.8125rem}
+        .btn:hover{background:#0284c7}
+        .act-btns{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+        .btn-icon{background:#f1f5f9;border:1px solid #cbd5e1;color:#0f172a;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:0.875rem;line-height:1}
+        .btn-icon:hover{background:#e2e8f0}
+        .btn-icon.danger:hover{background:#fee2e2;border-color:#fecaca;color:#991b1b}
+        .modal-overlay{display:none;position:fixed;inset:0;z-index:2000;background:rgba(15,23,42,.45);align-items:center;justify-content:center;padding:16px}
+        .modal-overlay.open{display:flex}
+        .modal-card{background:#fff;border-radius:14px;max-width:400px;width:100%;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.2);border:1px solid #e2e8f0}
+        .modal-card h3{margin:0 0 14px;font-size:1rem}
+        .modal-card label{display:block;font-size:0.72rem;font-weight:600;color:#475569;margin-bottom:6px;margin-top:10px}
+        .modal-card label.row-inline{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:0.875rem}
+        .modal-card input[type="text"]{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:0.9rem}
+        .modal-actions{display:flex;gap:10px;margin-top:16px}
+        .modal-actions .btn{flex:1}
+        .modal-actions .btn-secondary{background:#e2e8f0;color:#334155}
+        .modal-actions .btn-secondary:hover{background:#cbd5e1}
+    </style>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="wrap">
+    <h1>Shops</h1>
+    <p class="sub">All shops for this business (no rep filter). Names use the customer directory when linked.</p>
+    <div class="card">
+        <div class="toolbar">
+            <button type="button" class="btn" id="btnRefresh">Refresh</button>
+            <span class="muted" id="countMeta"></span>
+        </div>
+        <div id="errBox" class="err" style="display:none;"></div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="num">#</th>
+                        <th>Shop name</th>
+                        <th>Created</th>
+                        <th>Created by (rep)</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="shopBody"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="shopEditModal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-labelledby="shopEditTitle">
+        <h3 id="shopEditTitle">Edit shop</h3>
+        <label for="shopEditName">Name</label>
+        <input type="text" id="shopEditName" autocomplete="off" maxlength="200">
+        <label class="row-inline"><input type="checkbox" id="shopEditActive"> Active</label>
+        <p id="shopEditErr" class="err" style="display:none;margin-top:10px;"></p>
+        <div class="modal-actions">
+            <button type="button" class="btn" id="shopEditSave">Save</button>
+            <button type="button" class="btn btn-secondary" id="shopEditCancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var db = firebase.firestore();
+    var currentBusinessId = '';
+    var userRole = '';
+    var lastShopRows = [];
+    var editingShopId = '';
+
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function canManageShops() {
+        var r = String(userRole || '').trim().toUpperCase();
+        return r === 'BUSINESS_OWNER' || r === 'ADMIN' || r === 'SUPER_ADMIN';
+    }
+
+    function shopCreatedMs(x) {
+        var c = x && x.createdAt;
+        if (!c) return 0;
+        if (typeof c.toMillis === 'function') return c.toMillis();
+        if (c.seconds != null) return Number(c.seconds) * 1000 + Math.floor(Number(c.nanoseconds || 0) / 1e6);
+        if (c instanceof Date) return c.getTime();
+        return 0;
+    }
+
+    function fmtCreated(x) {
+        var c = x && x.createdAt;
+        if (!c) return '—';
+        var d = c.toDate ? c.toDate() : (c instanceof Date ? c : null);
+        if (!d || isNaN(d.getTime())) return '—';
+        return d.toLocaleString();
+    }
+
+    async function loadRepNameMap(repIds) {
+        var uniq = [];
+        var seen = {};
+        (repIds || []).forEach(function (id) {
+            var r = String(id || '').trim();
+            if (!r || seen[r]) return;
+            seen[r] = true;
+            uniq.push(r);
+        });
+        var map = {};
+        await Promise.all(uniq.map(function (rid) {
+            return db.collection('reps').doc(rid).get().then(function (d) {
+                if (!d.exists) {
+                    map[rid] = rid;
+                    return;
+                }
+                var x = d.data() || {};
+                map[rid] = String(x.name || x.fullName || x.displayName || x.email || rid).trim() || rid;
+            }).catch(function () {
+                map[rid] = rid;
+            });
+        }));
+        return map;
+    }
+
+    function openEditModal(shopId) {
+        var row = lastShopRows.filter(function (x) { return x.id === shopId; })[0];
+        if (!row) return;
+        editingShopId = shopId;
+        var x = row.x || {};
+        document.getElementById('shopEditName').value = String(x.name || '').trim();
+        document.getElementById('shopEditActive').checked = x.isActive !== false;
+        document.getElementById('shopEditErr').style.display = 'none';
+        document.getElementById('shopEditErr').textContent = '';
+        var m = document.getElementById('shopEditModal');
+        m.classList.add('open');
+        m.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeEditModal() {
+        editingShopId = '';
+        var m = document.getElementById('shopEditModal');
+        m.classList.remove('open');
+        m.setAttribute('aria-hidden', 'true');
+    }
+
+    async function loadTable() {
+        var tbody = document.getElementById('shopBody');
+        var errBox = document.getElementById('errBox');
+        var countMeta = document.getElementById('countMeta');
+        errBox.style.display = 'none';
+        errBox.textContent = '';
+        tbody.innerHTML = '<tr><td colspan="6" class="muted">Loading…</td></tr>';
+        var bid = String(currentBusinessId || '').trim();
+        if (!bid) {
+            tbody.innerHTML = '<tr><td colspan="6" class="muted">No business selected.</td></tr>';
+            return;
+        }
+        var snap;
+        var usedOrderBy = false;
+        try {
+            snap = await db.collection('shops')
+                .where('businessId', '==', bid)
+                .orderBy('createdAt', 'desc')
+                .get();
+            usedOrderBy = true;
+        } catch (eOrd) {
+            console.warn('my-shops: orderBy(createdAt) failed, using unsorted fetch:', eOrd);
+            snap = await db.collection('shops').where('businessId', '==', bid).get();
+        }
+        var rows = [];
+        snap.forEach(function (d) {
+            rows.push({ id: d.id, x: d.data() || {} });
+        });
+        if (!usedOrderBy) {
+            rows.sort(function (a, b) {
+                return shopCreatedMs(b.x) - shopCreatedMs(a.x);
+            });
+        }
+        lastShopRows = rows;
+        var nameByShop = {};
+        try {
+            var cs = await db.collection('customers').where('businessId', '==', bid).limit(1000).get();
+            cs.forEach(function (cd) {
+                var cx = cd.data() || {};
+                if (cx.archived === true || cx.isActive === false) return;
+                var sid = String(cx.distributorShopId || '').trim();
+                var fn = String(cx.fullName || '').trim();
+                if (sid && fn) nameByShop[sid] = fn;
+            });
+        } catch (eC) {
+            console.warn('my-shops: customers merge failed:', eC);
+        }
+        var repIds = rows.map(function (r) { return r.x.assignedRepId; });
+        var repMap = await loadRepNameMap(repIds);
+        var showActions = canManageShops();
+        countMeta.textContent = rows.length ? (rows.length + ' shop(s)') : 'No shops';
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="muted">No shops for this business yet.</td></tr>';
+            return;
+        }
+        var html = '';
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i];
+            var x = r.x;
+            var baseName = String(x.name || '').trim() || r.id;
+            var disp = String(nameByShop[r.id] || baseName).trim() || r.id;
+            var rid = String(x.assignedRepId || '').trim();
+            var repLabel = rid ? (repMap[rid] || rid) : '—';
+            var active = x.isActive !== false;
+            var stHtml = active
+                ? '<span class="badge badge-on">Active</span>'
+                : '<span class="badge badge-off">Inactive</span>';
+            var actionsHtml = '—';
+            if (showActions) {
+                actionsHtml = '<div class="act-btns">'
+                    + '<button type="button" class="btn-icon my-shops-edit" title="Edit" data-shop-id="' + esc(r.id) + '">✏️</button>'
+                    + '<button type="button" class="btn-icon danger my-shops-remove" title="Remove" data-shop-id="' + esc(r.id) + '">🗑️</button>'
+                    + '</div>';
+            }
+            html += '<tr>'
+                + '<td class="num">' + (i + 1) + '</td>'
+                + '<td>' + esc(disp) + '</td>'
+                + '<td>' + esc(fmtCreated(x)) + '</td>'
+                + '<td>' + esc(repLabel) + '</td>'
+                + '<td>' + stHtml + '</td>'
+                + '<td>' + actionsHtml + '</td>'
+                + '</tr>';
+        }
+        tbody.innerHTML = html;
+    }
+
+    document.getElementById('btnRefresh').addEventListener('click', function () {
+        loadTable();
+    });
+
+    document.getElementById('shopBody').addEventListener('click', function (ev) {
+        var t = ev.target && ev.target.closest ? ev.target.closest('.my-shops-edit, .my-shops-remove') : null;
+        if (!t) return;
+        var sid = String(t.getAttribute('data-shop-id') || '').trim();
+        if (!sid) return;
+        if (t.classList.contains('my-shops-edit')) {
+            openEditModal(sid);
+            return;
+        }
+        if (t.classList.contains('my-shops-remove')) {
+            if (!confirm('Remove this shop from active use? It will be marked inactive (soft delete).')) return;
+            db.collection('shops').doc(sid).update({
+                isActive: false,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(function () {
+                return loadTable();
+            }).catch(function (e) {
+                alert('Could not update: ' + (e.message || String(e)));
+            });
+        }
+    });
+
+    document.getElementById('shopEditCancel').addEventListener('click', closeEditModal);
+    document.getElementById('shopEditModal').addEventListener('click', function (ev) {
+        if (ev.target.id === 'shopEditModal') closeEditModal();
+    });
+
+    document.getElementById('shopEditSave').addEventListener('click', function () {
+        var errEl = document.getElementById('shopEditErr');
+        errEl.style.display = 'none';
+        errEl.textContent = '';
+        var name = String(document.getElementById('shopEditName').value || '').trim();
+        if (!name) {
+            errEl.textContent = 'Name is required.';
+            errEl.style.display = 'block';
+            return;
+        }
+        var active = document.getElementById('shopEditActive').checked;
+        var sid = String(editingShopId || '').trim();
+        if (!sid) return;
+        var btn = document.getElementById('shopEditSave');
+        btn.disabled = true;
+        db.collection('shops').doc(sid).update({
+            name: name,
+            isActive: active,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(function () {
+            closeEditModal();
+            return loadTable();
+        }).catch(function (e) {
+            errEl.textContent = 'Could not save: ' + (e.message || String(e));
+            errEl.style.display = 'block';
+        }).finally(function () {
+            btn.disabled = false;
+        });
+    });
+
+    firebase.auth().onAuthStateChanged(async function (user) {
+        if (!user) {
+            window.location.href = '/auth/login.html';
+            return;
+        }
+        try {
+            if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+                var ctx = await window.dashboardCore.getContext(user);
+                currentBusinessId = ctx && ctx.businessId ? String(ctx.businessId).trim() : '';
+                userRole = ctx && ctx.userRole != null ? String(ctx.userRole) : '';
+            }
+            if (!currentBusinessId) {
+                currentBusinessId = String(localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '').trim();
+            }
+            if (currentBusinessId) {
+                localStorage.setItem('currentBusinessId', currentBusinessId);
+                sessionStorage.setItem('currentBusinessId', currentBusinessId);
+            }
+            if (window.sidebar && typeof window.sidebar.refreshBusinessNameFromProfile === 'function') {
+                try { await window.sidebar.refreshBusinessNameFromProfile(); } catch (e2) { /* ignore */ }
+            }
+            await loadTable();
+        } catch (e) {
+            console.error(e);
+            var errBox = document.getElementById('errBox');
+            errBox.style.display = 'block';
+            errBox.textContent = 'Failed to load: ' + (e.message || String(e));
+            document.getElementById('shopBody').innerHTML = '<tr><td colspan="6" class="muted">—</td></tr>';
+        }
+    });
+})();
+</script>
+</body>
+</html>

@@ -228,6 +228,30 @@
     function isMwTradingTenant() {
         return normalizeText(currentBusinessId) === MW_TRADING_BUSINESS_ID;
     }
+    /** MW Trading only: same rule as products.html — buying = selling × 0.93 (7% below selling). */
+    function updateMwGrnSellingBuyingAutoLink() {
+        if (!isMwTradingTenant()) return;
+        var sellingEl = document.getElementById('sellingPrice');
+        var buyingEl = document.getElementById('buyingPrice');
+        if (!sellingEl || !buyingEl) return;
+        var sell = parseFloat(sellingEl.value);
+        if (!isNaN(sell) && sell >= 0) {
+            buyingEl.value = (sell * 0.93).toFixed(2);
+        } else {
+            buyingEl.value = '';
+        }
+    }
+    function bindMwGrnSellingBuyingSync() {
+        var sellingEl = document.getElementById('sellingPrice');
+        if (!sellingEl || sellingEl.dataset.mwGrnSellBuyBound === '1') return;
+        sellingEl.dataset.mwGrnSellBuyBound = '1';
+        var h = function () {
+            if (!isMwTradingTenant()) return;
+            updateMwGrnSellingBuyingAutoLink();
+        };
+        sellingEl.addEventListener('input', h);
+        sellingEl.addEventListener('change', h);
+    }
     function escAttr(v) {
         return String(v == null ? '' : v)
             .replace(/&/g, '&amp;')
@@ -261,7 +285,11 @@
         var sp = toNum(p.unitPrice);
         var bp = toNum(p.buyingPrice != null ? p.buyingPrice : p.lastBuyingPrice);
         document.getElementById('sellingPrice').value = sp ? String(sp) : '';
-        document.getElementById('buyingPrice').value = bp ? String(bp) : (sp ? String(sp) : '');
+        if (isMwTradingTenant() && !isNaN(sp) && sp >= 0) {
+            document.getElementById('buyingPrice').value = (sp * 0.93).toFixed(2);
+        } else {
+            document.getElementById('buyingPrice').value = bp ? String(bp) : (sp ? String(sp) : '');
+        }
         var st = Number(p.currentStock != null ? p.currentStock : p.stock) || 0;
         document.getElementById('currentStock').value = String(st);
         var rq = document.getElementById('receivedQty');
@@ -973,6 +1001,7 @@
         await loadGrnProductCatalog();
         bindGrnProductSearchInput();
         bindGrnEntryCardDelegation();
+        bindMwGrnSellingBuyingSync();
         if (isMwTradingTenant()) {
             document.getElementById('historySection').classList.remove('hidden');
             setDefaultRangeLast90Days();

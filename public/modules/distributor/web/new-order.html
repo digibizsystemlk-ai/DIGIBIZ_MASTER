@@ -132,6 +132,20 @@
         .msg { display: none; padding: 10px 12px; border-radius: 10px; font-size: 0.8125rem; margin-bottom: 12px; }
         .msg.err { display: block; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
         .msg.ok { display: block; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+        .msg.warn { display: block; background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; }
+        .rep-locked-hint {
+            color: #16a34a;
+            font-size: 1.1rem;
+            font-weight: 700;
+            line-height: 1.35;
+        }
+        .qty-stock-warn {
+            display: none;
+            margin-top: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #dc2626;
+        }
         .empty-lines { color: #94a3b8; font-size: 0.875rem; padding: 20px; text-align: center; }
         .warn { background: #fffbeb; color: #92400e; padding: 14px 16px; border-radius: 12px; font-size: 0.875rem; border: 1px solid #fde68a; }
         #gateBlock { display: none; }
@@ -151,8 +165,9 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/core/firebase-init.js?v=46"></script>
-    <script src="/core/auth-roles.js?v=49"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=47"></script>
+    <script src="/core/auth-roles.js?v=50"></script>
     <script src="/core/dashboard-core.js?v=46"></script>
     <script src="/core/distributor-inventory.js?v=46"></script>
     <script src="/core/distributor-lorry-stock.js?v=1"></script>
@@ -181,10 +196,11 @@
             <div class="oe-layout">
                 <aside class="oe-aside card">
                     <h2 class="oe-aside-title">Customer</h2>
-                    <div class="row">
+                    <div class="row" id="repSelectRow">
                         <label for="repSelect">Sales rep</label>
                         <select id="repSelect"></select>
                     </div>
+                    <p class="hint rep-locked-hint" id="repLockedHint" style="display:none;margin:-4px 0 10px;"></p>
                     <div class="row">
                         <label for="shopSelect">Shop / customer</label>
                         <select id="shopSelect"><option value="">Select rep first…</option></select>
@@ -356,6 +372,8 @@
         var currentBusinessId = '';
         var userRole = '';
         var myRepDocId = '';
+        /** Set when rep row(s) load — used if <select> needs a synthetic option for applyRepOnlyOrderHeader. */
+        var lastLoadedRepDisplayName = '';
         var products = [];
         var cart = [];
         var otherReturns = [];
@@ -377,6 +395,119 @@
         function normalizeRole(r) {
             return String(r || '').toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '').trim();
         }
+        /** True when this session is a distributor rep (web + mobile RBAC), not only raw string === 'REP'. */
+        function isDistributorRepRole() {
+            if (normalizeRole(userRole) === 'REP') return true;
+            try {
+                if (window.DigibizDistributorPermissions && typeof window.DigibizDistributorPermissions.roleBand === 'function') {
+                    return window.DigibizDistributorPermissions.roleBand(userRole) === 'REP';
+                }
+            } catch (ignore) { /* empty */ }
+            return false;
+        }
+
+        /**
+         * For distributor REP sessions: resolve reps/{id} for current business, or auto-create one if missing.
+         * Uses scoped queries + Firestore self-create rule (userId + email + businessId). Any businessId (not MW-only).
+         */
+        async function ensureRepFirestoreRowForRepSession() {
+            if (!isDistributorRepRole()) return '';
+            var bid = String(currentBusinessId || '').trim();
+            var cu = firebase.auth() && firebase.auth().currentUser;
+            if (!bid || !cu) return '';
+            var uidRep = String(cu.uid || '').trim();
+            if (!uidRep) return '';
+            function repIdFromSnap(snap) {
+                for (var i = 0; i < snap.docs.length; i++) {
+                    var du = snap.docs[i];
+                    var xu = du.data() || {};
+                    if (String(xu.businessId || '').trim() === bid && xu.isActive !== false) {
+                        return String(du.id || '').trim();
+                    }
+                }
+                return '';
+            }
+            try {
+                if (myRepDocId) {
+                    var d0 = await db.collection('reps').doc(myRepDocId).get();
+                    if (d0.exists) {
+                        var z0 = d0.data() || {};
+                        if (String(z0.businessId || '').trim() === bid && z0.isActive !== false) {
+                            return myRepDocId;
+                        }
+                    }
+                }
+            } catch (e0) { /* ignore */ }
+            try {
+                var snU = await db.collection('reps')
+                    .where('businessId', '==', bid)
+                    .where('userId', '==', uidRep)
+                    .limit(10)
+                    .get();
+                var idU = repIdFromSnap(snU);
+                if (idU) {
+                    myRepDocId = idU;
+                    return idU;
+                }
+            } catch (e1) {
+                console.warn('[ensureRep] businessId+userId query:', e1);
+            }
+            var emLo = cu.email ? String(cu.email).toLowerCase().trim() : '';
+            if (emLo) {
+                try {
+                    var snE = await db.collection('reps')
+                        .where('businessId', '==', bid)
+                        .where('email', '==', emLo)
+                        .limit(10)
+                        .get();
+                    var idE = repIdFromSnap(snE);
+                    if (idE) {
+                        myRepDocId = idE;
+                        return idE;
+                    }
+                } catch (e2) {
+                    console.warn('[ensureRep] businessId+email(lower) query:', e2);
+                }
+            }
+            if (cu.email) {
+                try {
+                    var snE2 = await db.collection('reps')
+                        .where('businessId', '==', bid)
+                        .where('email', '==', cu.email)
+                        .limit(10)
+                        .get();
+                    var idE2 = repIdFromSnap(snE2);
+                    if (idE2) {
+                        myRepDocId = idE2;
+                        return idE2;
+                    }
+                } catch (e3) {
+                    console.warn('[ensureRep] businessId+email(raw) query:', e3);
+                }
+            }
+            if (!cu.email) {
+                console.warn('[ensureRep] Cannot auto-create reps/ doc: account has no email (rules require userId + email + businessId).');
+                return '';
+            }
+            try {
+                var nm = String((cu.displayName || '').trim() || cu.email || uidRep).trim() || uidRep;
+                var newRef = await db.collection('reps').add({
+                    businessId: bid,
+                    userId: uidRep,
+                    email: cu.email,
+                    name: nm,
+                    isActive: true,
+                    createdAt: new Date()
+                });
+                myRepDocId = newRef.id;
+                console.info('[ensureRep] Auto-created reps/' + newRef.id + ' for business', bid);
+                return newRef.id;
+            } catch (eAdd) {
+                console.warn('[ensureRep] Auto-create reps doc failed:', eAdd);
+                return '';
+            }
+        }
+
         function currentBizFromStorage() {
             return String(
                 localStorage.getItem('currentBusinessId') ||
@@ -563,6 +694,7 @@
             return null;
         }
         function canCreateCustomerMwOpen() {
+            if (isDistributorRepRole()) return true;
             var p = distributorPerms();
             if (p) return !!p.canCustomerCreate;
             var bid = currentBizFromStorage();
@@ -573,7 +705,8 @@
         function canCreateOrder() {
             var p = distributorPerms();
             if (p) return !!p.canInvoiceCreateEdit;
-            return ['DISTRIBUTOR_OWNER', 'BUSINESS_OWNER', 'SUPER_ADMIN', 'ADMIN', 'SALES_COORDINATOR', 'AREA_MANAGER', 'REP'].indexOf(normalizeRole(userRole)) !== -1;
+            return ['DISTRIBUTOR_OWNER', 'BUSINESS_OWNER', 'SUPER_ADMIN', 'ADMIN', 'SALES_COORDINATOR', 'AREA_MANAGER', 'REP'].indexOf(normalizeRole(userRole)) !== -1
+                || isDistributorRepRole();
         }
 
         function setupMwNewOrderUiHints() {
@@ -626,7 +759,7 @@
             var el = document.getElementById('formMsg');
             if (!el) return;
             el.textContent = text || '';
-            el.className = 'msg' + (kind === 'err' ? ' err' : kind === 'ok' ? ' ok' : '');
+            el.className = 'msg' + (kind === 'err' ? ' err' : kind === 'ok' ? ' ok' : kind === 'warn' ? ' warn' : '');
             el.style.display = text ? 'block' : 'none';
         }
 
@@ -647,6 +780,43 @@
                 identifier: oldest.specialIdentifier || oldest.batchId || 'BATCH',
                 sellingPrice: Number(oldest.sellingPrice != null ? oldest.sellingPrice : (product.unitPrice || 0)) || 0
             };
+        }
+        /** Best-effort units available from product doc (batches, stockQty, qty). 0 = unknown / not set — no stock warning. */
+        function productAvailableStockUnits(p) {
+            if (!p) return 0;
+            var batches = Array.isArray(p.stockBatches) ? p.stockBatches : [];
+            var sumB = 0;
+            for (var bi = 0; bi < batches.length; bi++) {
+                sumB += Math.max(0, Number(batches[bi] && batches[bi].availableQty) || 0);
+            }
+            if (sumB > 0) return sumB;
+            var st = Number(p.stockQty);
+            if (!isNaN(st)) return Math.max(0, st);
+            var pq = Number(p.qty);
+            if (!isNaN(pq)) return Math.max(0, pq);
+            return 0;
+        }
+        function refreshCartStockWarnings() {
+            var tbody = document.getElementById('linesBody');
+            if (!tbody) return;
+            var warns = tbody.querySelectorAll('.qty-stock-warn');
+            var firstTop = '';
+            for (var i = 0; i < cart.length && i < warns.length; i++) {
+                var item = cart[i];
+                var w = warns[i];
+                var pr = products.find(function (x) { return x.id === item.productId; });
+                var avail = productAvailableStockUnits(pr);
+                var q = Number(item.qty) || 0;
+                if (avail > 0 && q > avail) {
+                    w.textContent = 'Only ' + avail + ' units available in stock!';
+                    w.style.display = 'block';
+                    if (!firstTop) firstTop = 'Warning: Only ' + avail + ' units available in stock!';
+                } else {
+                    w.textContent = '';
+                    w.style.display = 'none';
+                }
+            }
+            showFormMsg(firstTop, firstTop ? 'warn' : '');
         }
         function productLineBrand(p) {
             return (p && p.brand) ? String(p.brand).trim() : '';
@@ -875,21 +1045,140 @@
 
         async function loadRepsIntoSelect() {
             var sel = document.getElementById('repSelect');
+            if (!sel) {
+                console.warn('loadRepsIntoSelect: #repSelect missing');
+                return;
+            }
+            var bid = String(currentBusinessId || '').trim();
             sel.innerHTML = '<option value="">Loading…</option>';
+            if (!bid) {
+                console.warn('loadRepsIntoSelect: currentBusinessId is empty when loading reps.');
+                sel.innerHTML = '<option value="">No business context</option>';
+                showFormMsg('Missing business ID — open this page from the dashboard after selecting a business.', 'err');
+                return;
+            }
             var rows = [];
-            var staffSnap = await db.collection('businesses').doc(currentBusinessId).collection('users')
-                .get()
-                .catch(function () { return { forEach: function () {} }; });
-            staffSnap.forEach(function (d) {
-                var x = d.data() || {};
-                if (x.isActive === false) return;
-                var uid = String(d.id || '').trim();
-                if (!uid) return;
-                rows.push({
-                    id: uid,
-                    name: String(x.name || x.displayName || x.ownerName || x.email || uid).trim() || uid
-                });
-            });
+            // Do not use one outer try/catch: a single failing .get() would skip all REP fallbacks and show "Could not load reps".
+            if (isDistributorRepRole()) {
+                var cuRep = firebase.auth() && firebase.auth().currentUser;
+                var uidRep = cuRep ? String(cuRep.uid || '').trim() : '';
+                var emRep = cuRep && cuRep.email ? String(cuRep.email).toLowerCase().trim() : '';
+                function pushRepRowFromDoc(d) {
+                    var x = d.data() || {};
+                    if (x.isActive === false) return;
+                    var rid = String(d.id || '').trim();
+                    if (!rid) return;
+                    rows.push({
+                        id: rid,
+                        name: String(x.name || x.fullName || x.displayName || x.email || rid).trim() || rid
+                    });
+                }
+                var loadedRep = false;
+                if (myRepDocId) {
+                    try {
+                        var rd0 = await db.collection('reps').doc(myRepDocId).get();
+                        if (rd0.exists) {
+                            var x0 = rd0.data() || {};
+                            if (String(x0.businessId || '').trim() === bid) {
+                                rows.length = 0;
+                                pushRepRowFromDoc(rd0);
+                                loadedRep = rows.length > 0;
+                            }
+                        }
+                    } catch (eDoc) {
+                        console.warn('loadRepsIntoSelect: REP doc(' + myRepDocId + ') get failed:', eDoc);
+                    }
+                }
+                if (!loadedRep) {
+                    rows.length = 0;
+                    // IMPORTANT (Firestore rules): never .where('businessId').get() for REP — that returns
+                    // every rep row; each must pass allow read. Other reps fail unless isRepInBusiness matches.
+                    // Scoped queries only return rows the caller may read (same business + userId/email).
+                    if (uidRep) {
+                        try {
+                            var rsBU = await db.collection('reps')
+                                .where('businessId', '==', bid)
+                                .where('userId', '==', uidRep)
+                                .limit(10)
+                                .get();
+                            rsBU.forEach(pushRepRowFromDoc);
+                        } catch (eUid) {
+                            console.warn('loadRepsIntoSelect: REP businessId+userId query failed:', eUid);
+                        }
+                    }
+                    if (!rows.length && emRep) {
+                        try {
+                            rows.length = 0;
+                            var rsBE = await db.collection('reps')
+                                .where('businessId', '==', bid)
+                                .where('email', '==', emRep)
+                                .limit(10)
+                                .get();
+                            rsBE.forEach(pushRepRowFromDoc);
+                        } catch (eEmLo) {
+                            console.warn('loadRepsIntoSelect: REP businessId+email(lower) query failed:', eEmLo);
+                        }
+                    }
+                    if (!rows.length && cuRep && cuRep.email) {
+                        try {
+                            rows.length = 0;
+                            var rsBE2 = await db.collection('reps')
+                                .where('businessId', '==', bid)
+                                .where('email', '==', cuRep.email)
+                                .limit(10)
+                                .get();
+                            rsBE2.forEach(pushRepRowFromDoc);
+                        } catch (eEmRaw) {
+                            console.warn('loadRepsIntoSelect: REP businessId+email(raw) query failed:', eEmRaw);
+                        }
+                    }
+                    if (rows.length) {
+                        myRepDocId = rows[0].id;
+                    }
+                } else if (rows.length) {
+                    myRepDocId = rows[0].id;
+                }
+                if (!rows.length && isDistributorRepRole()) {
+                    var ensuredRepId = await ensureRepFirestoreRowForRepSession();
+                    if (ensuredRepId) {
+                        try {
+                            var rdFill = await db.collection('reps').doc(ensuredRepId).get();
+                            if (rdFill.exists) {
+                                rows.length = 0;
+                                pushRepRowFromDoc(rdFill);
+                                myRepDocId = ensuredRepId;
+                            }
+                        } catch (eFill) {
+                            console.warn('loadRepsIntoSelect: post-ensure rep load failed:', eFill);
+                        }
+                    }
+                }
+                if (rows.length > 1) {
+                    rows.splice(1, rows.length - 1);
+                }
+                if (!rows.length) {
+                    console.warn('loadRepsIntoSelect: REP — no reps/ row for this user in business', bid);
+                }
+            } else {
+                try {
+                    var repsSnap = await db.collection('reps').where('businessId', '==', bid).get();
+                    repsSnap.forEach(function (d) {
+                        var x = d.data() || {};
+                        if (x.isActive === false) return;
+                        var rid = String(d.id || '').trim();
+                        if (!rid) return;
+                        rows.push({
+                            id: rid,
+                            name: String(x.name || x.fullName || x.displayName || x.email || rid).trim() || rid
+                        });
+                    });
+                } catch (errNon) {
+                    console.warn('loadRepsIntoSelect (reps list failed):', errNon);
+                    sel.innerHTML = '<option value="">Could not load reps</option>';
+                    showFormMsg('Could not load sales reps: ' + (errNon && errNon.code ? errNon.code : (errNon.message || String(errNon))), 'err');
+                    return;
+                }
+            }
             rows.sort(function (a, b) { return a.name.localeCompare(b.name); });
             sel.innerHTML = '<option value="">Select rep…</option>';
             rows.forEach(function (r) {
@@ -898,29 +1187,73 @@
                 o.textContent = r.name;
                 sel.appendChild(o);
             });
+            if (!rows.length) {
+                console.info('loadRepsIntoSelect: zero reps for businessId', bid);
+                if (isDistributorRepRole()) {
+                    showFormMsg('Rep profile not found for this business (auto-create failed or was blocked). Check Firestore rules for reps create and that your account has an email.', 'err');
+                } else {
+                    showFormMsg('No sales rep profiles in reps/ for this business. Add reps (distributor menu) first.', 'err');
+                }
+            } else {
+                showFormMsg('', '');
+            }
             if (myRepDocId && rows.some(function (r) { return r.id === myRepDocId; })) sel.value = myRepDocId;
-            sel.onchange = loadShopsForSelectedRep;
-            if (sel.value) loadShopsForSelectedRep();
+            lastLoadedRepDisplayName = '';
+            if (rows.length === 1) {
+                lastLoadedRepDisplayName = String(rows[0].name || '').trim();
+            }
+            sel.onchange = function () { loadShopsForSelectedRep(); };
+            await loadShopsForSelectedRep();
         }
 
-        async function loadShopsForSelectedRep() {
-            var repId = document.getElementById('repSelect').value;
+        function firstNameFromFullName(name) {
+            var clean = String(name || '').trim().replace(/\s+/g, ' ');
+            if (!clean) return '';
+            return clean.split(' ')[0];
+        }
+
+        async function loadShopsForSelectedRep(repIdOverride) {
             var shopSel = document.getElementById('shopSelect');
             shopSel.innerHTML = '<option value="">Loading…</option>';
-            if (!repId) {
-                shopSel.innerHTML = '<option value="">Select rep first…</option>';
+            var bid = String(currentBusinessId || '').trim();
+            if (!bid) {
+                shopSel.innerHTML = '<option value="">No business context</option>';
+                showFormMsg('Missing business ID — open this page from the dashboard after selecting a business.', 'err');
                 return;
             }
+            var rows = [];
             var snap = await db.collection('shops')
-                .where('businessId', '==', currentBusinessId)
-                .where('assignedRepId', '==', repId)
+                .where('businessId', '==', bid)
                 .get()
                 .catch(function () { return { forEach: function () {} }; });
-            var rows = [];
+            var byShopId = {};
             snap.forEach(function (d) {
                 var x = d.data() || {};
-                if (x.isActive === false) return;
-                rows.push({ id: d.id, name: String(x.name || '').trim() || d.id });
+                byShopId[d.id] = {
+                    id: d.id,
+                    name: String(x.name || '').trim() || d.id
+                };
+            });
+            try {
+                var cs = await db.collection('customers')
+                    .where('businessId', '==', bid)
+                    .limit(1000)
+                    .get();
+                cs.forEach(function (cd) {
+                    var x = cd.data() || {};
+                    if (x.archived === true || x.isActive === false) return;
+                    var sid = String(x.distributorShopId || '').trim();
+                    if (!sid || !byShopId[sid]) return;
+                    var fn = String(x.fullName || '').trim();
+                    if (fn) {
+                        byShopId[sid].name = fn;
+                    }
+                });
+            } catch (eCust) {
+                console.warn('loadShopsForSelectedRep: customers merge failed:', eCust);
+            }
+            Object.keys(byShopId).forEach(function (k) {
+                rows.push(byShopId[k]);
             });
             rows.sort(function (a, b) { return a.name.localeCompare(b.name); });
             shopSel.innerHTML = '<option value="">Select shop…</option>';
@@ -931,8 +1264,8 @@
                 shopSel.appendChild(o);
             });
             if (!rows.length) {
-                shopSel.innerHTML = '<option value="">No shops for this rep yet</option>';
-                showFormMsg('No shops yet for this rep — add one with “New shop / customer” below, or use Shops in the menu.', 'err');
+                shopSel.innerHTML = '<option value="">No shops for this business yet</option>';
+                showFormMsg('No shops yet — add one with “New shop / customer” below, or open Shops in the menu.', 'err');
             } else {
                 showFormMsg('', '');
             }
@@ -970,15 +1303,36 @@
             var btn = document.getElementById('newShopAddBtn');
             if (btn) btn.disabled = true;
             try {
+                var bidShop = String(currentBusinessId || '').trim();
                 var ref = await db.collection('shops').add({
                     name: name,
                     assignedRepId: repId,
-                    businessId: currentBusinessId,
+                    businessId: bidShop,
                     isActive: true,
                     createdAt: new Date()
                 });
+                var custDocId = bidShop + '_SHOP_' + ref.id;
+                try {
+                    await db.collection('customers').doc(custDocId).set({
+                        businessId: bidShop,
+                        businessType: 'distributor',
+                        fullName: name,
+                        firstName: firstNameFromFullName(name),
+                        mobile: '',
+                        address: '',
+                        type: 'customer',
+                        context: 'Customer',
+                        distributorShopId: ref.id,
+                        assignedRepId: repId,
+                        isActive: true,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+                } catch (eCustW) {
+                    console.warn('addNewShopFromOrderForm: customers mirror write failed:', eCustW);
+                }
                 if (nameInp) nameInp.value = '';
-                await loadShopsForSelectedRep();
+                await loadShopsForSelectedRep(isDistributorRepRole() && myRepDocId ? myRepDocId : repId);
                 shopSel.value = ref.id;
                 showFormMsg('Shop added and selected: ' + name, 'ok');
             } catch (err) {
@@ -1071,7 +1425,9 @@
             box.innerHTML = hits.map(function (p, idx) {
                 var fifo = fifoBatchInfo(p);
                 var up = fifo ? fifo.sellingPrice : (Number(p.unitPrice) || 0);
-                var meta = [p.brand || '—', p.productCode ? ('Code: ' + p.productCode) : '', 'Rs ' + up.toFixed(2)].filter(Boolean).join(' · ');
+                var availU = productAvailableStockUnits(p);
+                var stockBit = availU > 0 ? ('Avail: ' + availU) : '';
+                var meta = [p.brand || '—', p.productCode ? ('Code: ' + p.productCode) : '', stockBit, 'Rs ' + up.toFixed(2)].filter(Boolean).join(' · ');
                 return '<button type="button" role="option" class="' + (idx === lineSuggestActive ? 'active' : '') + '" data-idx="' + idx + '">' +
                     '<strong>' + esc(p.name || 'Item') + '</strong><span class="s-meta">' + esc(meta) + '</span></button>';
             }).join('');
@@ -1151,6 +1507,7 @@
                 var mh0 = document.getElementById('lineMetaHint');
                 if (mh0) mh0.textContent = 'Max ' + MAX_CART_LINES + ' distinct product lines';
                 updateCartTotalFooter();
+                showFormMsg('', '');
                 return;
             }
             empty.style.display = 'none';
@@ -1177,12 +1534,13 @@
                     '<button type="button" class="qty-step" data-qty-delta="-1" data-pid="' + esc(item.productId) + '" aria-label="Decrease qty">−</button>' +
                     '<input type="text" inputmode="numeric" pattern="[0-9]*" class="qty-inp" data-pid="' + esc(item.productId) + '" value="' + (Number(item.qty) || 0) + '" autocomplete="off">' +
                     '<button type="button" class="qty-step" data-qty-delta="1" data-pid="' + esc(item.productId) + '" aria-label="Increase qty">+</button>' +
-                    '</div></td>' +
+                    '</div><div class="qty-stock-warn"></div></td>' +
                     '<td class="num">' + (Number(item.unitPrice) || 0).toFixed(2) + '</td>' +
                     '<td class="num cell-line-total" data-pid="' + esc(item.productId) + '">' + (Number(item.total) || 0).toFixed(2) + '</td>' +
                     '<td><button type="button" class="btn-icon" data-remove="' + esc(item.productId) + '">Remove</button></td></tr>';
             }).join('');
             updateCartTotalFooter();
+            refreshCartStockWarnings();
             refreshLorryStockHint();
         }
 
@@ -1206,6 +1564,7 @@
                 var cell = tr && tr.querySelector('.cell-line-total');
                 if (cell) cell.textContent = (Number(row.total) || 0).toFixed(2);
                 updateCartTotalFooter();
+                refreshCartStockWarnings();
             });
             tbody.addEventListener('blur', function (ev) {
                 var inp = ev.target;
@@ -1221,6 +1580,7 @@
                 var cell = tr && tr.querySelector('.cell-line-total');
                 if (cell) cell.textContent = (Number(row.total) || 0).toFixed(2);
                 updateCartTotalFooter();
+                refreshCartStockWarnings();
             }, true);
             tbody.addEventListener('keydown', function (ev) {
                 var inp = ev.target;
@@ -1588,21 +1948,49 @@
             return db.collection('branch_stock').doc(currentBusinessId + '_' + b + '_' + p);
         }
 
-        function applyRepOnlyOrderHeader() {
-            if (normalizeRole(userRole) !== 'REP' || !myRepDocId) return;
+        async function applyRepOnlyOrderHeader() {
+            var row = document.getElementById('repSelectRow');
+            var hintEl = document.getElementById('repLockedHint');
+            if (!isDistributorRepRole() || !myRepDocId) {
+                if (row) row.style.display = '';
+                if (hintEl) { hintEl.style.display = 'none'; hintEl.textContent = ''; }
+                return;
+            }
             var sel = document.getElementById('repSelect');
             if (!sel) return;
+            var hasVal = false;
+            for (var oi = 0; oi < sel.options.length; oi++) {
+                if (sel.options[oi].value === myRepDocId) {
+                    hasVal = true;
+                    break;
+                }
+            }
+            if (!hasVal) {
+                var syn = document.createElement('option');
+                syn.value = myRepDocId;
+                syn.textContent = String(lastLoadedRepDisplayName || 'Your sales rep').trim() || 'Your sales rep';
+                sel.appendChild(syn);
+            }
             sel.value = myRepDocId;
             sel.disabled = true;
             sel.title = 'Orders are tied to your rep profile so they appear on Order status (pending).';
-            loadShopsForSelectedRep();
+            var opt = sel.options[sel.selectedIndex];
+            var repLabel = opt ? String(opt.textContent || '').trim() : '';
+            if (row) row.style.display = 'none';
+            if (hintEl) {
+                hintEl.style.display = 'block';
+                hintEl.textContent = repLabel
+                    ? ('Sales rep: ' + repLabel + ' (your profile — rep picker hidden).')
+                    : ('Sales rep locked to your profile (rep picker hidden).');
+            }
+            await loadShopsForSelectedRep(myRepDocId);
         }
 
         async function submitWebOrder() {
             var postBar = document.getElementById('mwPostSubmitBar');
             if (postBar) postBar.style.display = 'none';
             var repId = document.getElementById('repSelect').value;
-            if (normalizeRole(userRole) === 'REP' && myRepDocId) {
+            if (isDistributorRepRole() && myRepDocId) {
                 repId = myRepDocId;
             }
             var shopId = document.getElementById('shopSelect').value;
@@ -1630,7 +2018,7 @@
             if (repSel && repSel.selectedIndex >= 0 && repSel.options[repSel.selectedIndex]) {
                 repName = repSel.options[repSel.selectedIndex].textContent || '';
             }
-            if (!repName && normalizeRole(userRole) === 'REP' && myRepDocId) {
+            if (!repName && isDistributorRepRole() && myRepDocId) {
                 try {
                     var rd = await db.collection('reps').doc(myRepDocId).get();
                     if (rd.exists) {
@@ -1669,11 +2057,13 @@
             var branchName = '';
             var branchLocation = '';
             if (isLorryPilotBiz) {
-                lorryId = String(document.getElementById('lorrySelect')?.value || '').trim();
+                var lorrySelectEl = document.getElementById('lorrySelect');
+                lorryId = String((lorrySelectEl && lorrySelectEl.value) || '').trim();
                 if (!lorryId) { showFormMsg('Select a lorry for this order.', 'err'); return; }
             }
             if (isSpranzaTenant()) {
-                branchId = String(document.getElementById('branchSelect')?.value || '').trim();
+                var branchSelectEl = document.getElementById('branchSelect');
+                branchId = String((branchSelectEl && branchSelectEl.value) || '').trim();
                 if (!branchId) { showFormMsg('Select a branch/warehouse for this order.', 'err'); return; }
                 var bRow = branchRows.find(function (b) { return String(b.id) === branchId; });
                 var bData = bRow ? (bRow.data || {}) : {};
@@ -1798,7 +2188,7 @@
                                 productId: row.pid,
                                 qty: firebase.firestore.FieldValue.increment(-row.need),
                                 updatedAt: new Date(),
-                                updatedBy: firebase.auth().currentUser?.uid || ''
+                                updatedBy: (firebase.auth().currentUser && firebase.auth().currentUser.uid) || ''
                             }, { merge: true });
                         });
                         tx.set(pendingOrderRef, orderData);
@@ -1831,7 +2221,7 @@
                                     productId: row.pid,
                                     qty: firebase.firestore.FieldValue.increment(-row.need),
                                     updatedAt: new Date(),
-                                    updatedBy: firebase.auth().currentUser?.uid || ''
+                                    updatedBy: (firebase.auth().currentUser && firebase.auth().currentUser.uid) || ''
                                 }, { merge: true });
                             });
                             tx.set(pendingOrderRef, orderData);
@@ -1907,11 +2297,13 @@
 
         firebase.auth().onAuthStateChanged(async function (user) {
             if (!user) { window.location.href = '/auth/login.html'; return; }
+            myRepDocId = '';
             currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
             if (!currentBusinessId && window.dashboardCore) {
                 var ctx = await window.dashboardCore.getContext(user);
                 currentBusinessId = ctx && ctx.businessId ? ctx.businessId : '';
             }
+            currentBusinessId = String(currentBusinessId || '').trim();
             if (!currentBusinessId) {
                 alert('Select a business first');
                 window.location.href = '/modules/core/dashboard.html';
@@ -1938,15 +2330,47 @@
                 if (bu.exists && bu.data().role) userRole = String(bu.data().role).toUpperCase();
             } catch (e) { /* ignore */ }
 
-            if (normalizeRole(userRole) === 'REP') {
+            if (isDistributorRepRole()) {
+                var bidRep = String(currentBusinessId || '').trim();
                 try {
-                    var rs = await db.collection('reps').where('userId', '==', user.uid).where('businessId', '==', currentBusinessId).limit(1).get();
-                    if (rs.empty) rs = await db.collection('reps').where('userId', '==', user.uid).limit(1).get();
-                    if (rs.empty && user.email) {
-                        rs = await db.collection('reps').where('email', '==', user.email).where('businessId', '==', currentBusinessId).limit(1).get();
+                    var rsU = await db.collection('reps').where('userId', '==', user.uid).limit(40).get();
+                    for (var ui = 0; ui < rsU.docs.length; ui++) {
+                        var du = rsU.docs[ui];
+                        var xu = du.data() || {};
+                        if (String(xu.businessId || '').trim() === bidRep) {
+                            myRepDocId = du.id;
+                            break;
+                        }
                     }
-                    if (!rs.empty) myRepDocId = rs.docs[0].id;
-                } catch (e2) { console.warn(e2); }
+                } catch (eU) {
+                    console.warn('[new-order] reps userId lookup:', eU);
+                }
+                if (!myRepDocId && user.email) {
+                    try {
+                        var rsE = await db.collection('reps').where('email', '==', user.email).limit(40).get();
+                        for (var ei = 0; ei < rsE.docs.length; ei++) {
+                            var de = rsE.docs[ei];
+                            var xe = de.data() || {};
+                            if (String(xe.businessId || '').trim() === bidRep) {
+                                myRepDocId = de.id;
+                                break;
+                            }
+                        }
+                    } catch (eE) {
+                        console.warn('[new-order] reps email lookup:', eE);
+                    }
+                }
+                if (!myRepDocId) {
+                    await ensureRepFirestoreRowForRepSession();
+                }
+                console.info('[new-order] REP shell', {
+                    userRoleRaw: userRole,
+                    roleNorm: normalizeRole(userRole),
+                    roleBand: window.DigibizDistributorPermissions && window.DigibizDistributorPermissions.roleBand
+                        ? window.DigibizDistributorPermissions.roleBand(userRole) : '(n/a)',
+                    myRepDocId: myRepDocId || '(empty)',
+                    businessId: bidRep
+                });
             }
 
             try {
@@ -1977,7 +2401,16 @@
                 orderDateEl.value = new Date().toISOString().split('T')[0];
             }
             await loadRepsIntoSelect();
-            applyRepOnlyOrderHeader();
+            console.info('[new-order] after loadRepsIntoSelect', {
+                isRep: isDistributorRepRole(),
+                myRepDocId: myRepDocId || '(empty)',
+                repSelectOptions: document.getElementById('repSelect') ? document.getElementById('repSelect').options.length : 0
+            });
+            await applyRepOnlyOrderHeader();
+            console.info('[new-order] after applyRepOnlyOrderHeader', {
+                repRowDisplay: document.getElementById('repSelectRow') ? document.getElementById('repSelectRow').style.display : '',
+                selValue: document.getElementById('repSelect') ? document.getElementById('repSelect').value : ''
+            });
             await refreshMwShopNameDatalist();
             await refreshProductCatalog();
             populateOtherReturnProductSelect();

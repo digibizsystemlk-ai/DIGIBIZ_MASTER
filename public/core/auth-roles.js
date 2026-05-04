@@ -156,14 +156,16 @@ async function getUserRole(userId, businessId = null) {
         const MW_BID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
         const resolvedBusinessId = businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
 
-        // Only run MW membership sync for MW business context.
+        // MW owner bootstrap only (function no-ops for other emails; avoid misleading logs).
+        const MW_OWNER_EMAIL = 'mwtradingsolutions@gmail.com';
         if (resolvedBusinessId === MW_BID
             && typeof window.ensureMwTradingOwnerBizMembership === 'function'
             && window.auth
             && window.auth.currentUser
-            && window.auth.currentUser.uid === userId) {
+            && window.auth.currentUser.uid === userId
+            && String(window.auth.currentUser.email || '').trim().toLowerCase() === MW_OWNER_EMAIL) {
             await window.ensureMwTradingOwnerBizMembership(window.auth.currentUser);
-            console.log('[getUserRole] ensureMwTradingOwnerBizMembership invoked for uid', userId);
+            console.log('[getUserRole] ensureMwTradingOwnerBizMembership invoked for MW owner uid', userId);
         }
 
         // Check if SUPER_ADMIN first

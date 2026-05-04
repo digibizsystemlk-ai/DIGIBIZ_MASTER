@@ -517,6 +517,16 @@
         </div>
     </div>
 
+    <!-- MW Trading only: open with ?debugPrint=1 (saved to sessionStorage). Shows after 80mm print attempt. -->
+    <div id="digibizPrintDebugModal" class="modal" style="z-index:10100;display:none;" onclick="if(event.target===this)closeDigibizPrintDebugModal()">
+        <div class="modal-content" style="max-width:min(520px,96vw);">
+            <h3 style="margin:0 0 8px;">Print debug (MW)</h3>
+            <p style="font-size:11px;color:#64748b;margin:0 0 10px;line-height:1.45;">Enable: add <strong>?debugPrint=1</strong> to this page URL once (stays on for this browser tab). Disable: clear in DevTools <code>sessionStorage.removeItem('DIGIBIZ_DEBUG_PRINT')</code> or close the tab.</p>
+            <pre id="digibizPrintDebugBody" style="white-space:pre-wrap;word-break:break-word;font-size:11px;background:#f8fafc;padding:10px;border-radius:8px;max-height:48vh;overflow-y:auto;margin:0;border:1px solid #e2e8f0;"></pre>
+            <button type="button" onclick="closeDigibizPrintDebugModal()" style="margin-top:12px;padding:10px;width:100%;background:#0f766e;color:#fff;border:none;border-radius:8px;font-weight:600;">Close</button>
+        </div>
+    </div>
+
     <div id="adminEditModal" class="modal">
         <div class="modal-content" style="max-width: 640px; max-height: 85vh; overflow-y: auto;">
             <h3 id="adminEditTitle">Edit order</h3>
@@ -1066,6 +1076,48 @@
             return false;
         }
 
+        function isMwPrintDebugEnabled() {
+            if (!isMwTradingBusiness()) return false;
+            try {
+                if (new URLSearchParams(window.location.search).get('debugPrint') === '1') {
+                    sessionStorage.setItem('DIGIBIZ_DEBUG_PRINT', '1');
+                    return true;
+                }
+            } catch (eU) { /* ignore */ }
+            return sessionStorage.getItem('DIGIBIZ_DEBUG_PRINT') === '1';
+        }
+
+        /** Android/iOS system PDF often rasterizes after the print dialog; closing the popup too soon can destroy the document and show "problem printing the page". */
+        function isDigibizMobilePrintClient() {
+            try {
+                const ua = String(navigator.userAgent || '');
+                return /Android|iPhone|iPad|iPod/i.test(ua);
+            } catch (eM) {
+                return false;
+            }
+        }
+
+        function pushPrintDebugLine(line) {
+            if (!isMwPrintDebugEnabled()) return;
+            window.__DIGIBIZ_PRINT_DEBUG_LINES__ = window.__DIGIBIZ_PRINT_DEBUG_LINES__ || [];
+            window.__DIGIBIZ_PRINT_DEBUG_LINES__.push(new Date().toISOString() + ' | ' + String(line));
+        }
+
+        function showDigibizPrintDebugModal(title) {
+            if (!isMwPrintDebugEnabled()) return;
+            const box = document.getElementById('digibizPrintDebugModal');
+            const pre = document.getElementById('digibizPrintDebugBody');
+            if (!box || !pre) return;
+            const lines = window.__DIGIBIZ_PRINT_DEBUG_LINES__ || [];
+            pre.textContent = (title ? title + '\n\n' : '') + lines.join('\n');
+            box.style.display = 'flex';
+        }
+
+        function closeDigibizPrintDebugModal() {
+            const box = document.getElementById('digibizPrintDebugModal');
+            if (box) box.style.display = 'none';
+        }
+
         async function attachMwFreeIssuesAndReturns(rows) {
             if (!isMwTradingBusiness() || !Array.isArray(rows) || !rows.length) return rows;
             const enriched = await Promise.all(rows.map(async (order) => {
@@ -1113,13 +1165,20 @@
 
         function thermalBillSharedCss() {
             return `@media print {
-@page { size: 80mm auto; margin: 4mm; }
-html,body{width:72mm !important;margin:0 auto !important;}
+/* Android "Save as PDF" / system print often fails on non-standard @page sizes (e.g. 80mm). */
+@page { size: auto; margin: 8mm; }
+html,body{width:100% !important;max-width:100% !important;margin:0 !important;padding:0 !important;
+-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.bill{width:100% !important;max-width:100% !important;margin:0 !important;min-height:auto !important;}
+.meta-row,.summary-row{display:table !important;width:100% !important;table-layout:fixed !important;border-bottom:1px dotted #ccc;padding:2px 0;}
+.summary-row{border-bottom-color:#999 !important;}
+.meta-row>span,.summary-row>span{display:table-cell !important;width:50%;vertical-align:top;}
+.meta-row>span:last-child,.summary-row>span:last-child{text-align:right;}
 }
-html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Segoe UI',Arial,sans-serif;font-size:11px;}
-.bill{width:72mm;max-width:72mm;margin:0 auto;}
-.dsl-title{font-family:Impact,'Arial Black',Arial,sans-serif;font-size:15px;letter-spacing:0.04em;text-align:center;line-height:1.15;text-transform:uppercase;}
-.biz-title{font-family:Impact,'Arial Black',Arial,sans-serif;font-size:14px;text-align:center;line-height:1.2;text-transform:uppercase;}
+html,body{margin:0;padding:0;background:#fff;color:#000;font-family:system-ui,-apple-system,'Segoe UI',Arial,sans-serif;font-size:11px;min-height:100vh;}
+.bill{width:72mm;max-width:72mm;margin:0 auto;min-height:120px;}
+.dsl-title{font-family:system-ui,-apple-system,Arial,sans-serif;font-size:15px;font-weight:800;letter-spacing:0.04em;text-align:center;line-height:1.15;text-transform:uppercase;}
+.biz-title{font-family:system-ui,-apple-system,Arial,sans-serif;font-size:14px;font-weight:800;text-align:center;line-height:1.2;text-transform:uppercase;}
 .dsl-sub,.biz-sub{font-size:10px;text-align:center;margin-top:4px;line-height:1.35;}
 .meta{margin-top:8px;font-size:10px;line-height:1.45;}
 .meta-row{display:flex;justify-content:space-between;gap:4px;border-bottom:1px dotted #ccc;padding:2px 0;}
@@ -1136,57 +1195,107 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Segoe UI',A
 .softby{margin-top:8px;text-align:center;font-size:7px;color:#333;line-height:1.35;}`;
         }
 
-        function isAndroidDevice() {
-            return /android/i.test(String(navigator.userAgent || ''));
-        }
-
         async function tryMwBluetoothPrint(htmlContent) {
-            if (!isMwTradingBusiness() || !isAndroidDevice()) return false;
-            if (!navigator.bluetooth || typeof navigator.bluetooth.requestDevice !== 'function') return false;
-            try {
-                await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
-                });
-                // Web Bluetooth print pipeline varies by printer model; once selected, fall back to shared
-                // browser print layout so output stays consistent across devices.
-                return false;
-            } catch (e) {
-                if (navigator.share && navigator.canShare) {
-                    try {
-                        const file = new File([htmlContent], 'mw-invoice.html', { type: 'text/html' });
-                        if (navigator.canShare({ files: [file] })) {
-                            await navigator.share({ files: [file], title: 'MW Invoice' });
-                            return true;
-                        }
-                    } catch (_e2) { /* ignore */ }
-                }
-                return false;
-            }
+            void htmlContent;
+            // MW Trading only: never use Web Bluetooth / share shortcut here — always use
+            // openAndPrintInvoice → window.print() so Android shows the normal system print dialog.
+            if (isMwTradingBusiness()) return false;
+            // Non-MW: unchanged historical behaviour (this path was never entered for non-MW before).
+            return false;
         }
 
         async function openAndPrintInvoice(htmlContent) {
+            pushPrintDebugLine('openAndPrintInvoice: html length=' + (htmlContent ? htmlContent.length : 0));
             const handledByShare = await tryMwBluetoothPrint(htmlContent);
+            pushPrintDebugLine('tryMwBluetoothPrint handled=' + handledByShare);
             if (handledByShare) return;
-            const w = window.open('', '_blank', 'width=400,height=600');
+            const winName = 'digibizPrint_' + String(Date.now());
+            const w = window.open('', winName, 'width=420,height=700');
+            pushPrintDebugLine('window.open: ' + (w ? 'window ref OK' : 'NULL (pop-up blocked?)'));
             if (!w) {
+                pushPrintDebugLine('abort: no print window');
                 alert('Please allow pop-ups to print the bill.');
                 return;
             }
-            w.document.open();
-            w.document.write(htmlContent);
-            w.document.close();
-            setTimeout(() => {
+            try {
+                w.opener = null;
+                pushPrintDebugLine('opener cleared');
+            } catch (eOp) {
+                pushPrintDebugLine('opener clear: ' + (eOp && eOp.message));
+            }
+            try {
+                w.document.open();
+                w.document.write(htmlContent);
+                w.document.close();
+                pushPrintDebugLine('document written + closed');
+            } catch (eDoc) {
+                pushPrintDebugLine('document write ERROR: ' + (eDoc && eDoc.message));
+                throw eDoc;
+            }
+            await new Promise(function (resolve) {
+                let settled = false;
+                const finish = function () {
+                    if (settled) return;
+                    settled = true;
+                    pushPrintDebugLine('openAndPrintInvoice: print step finished (await unblocks)');
+                    resolve();
+                };
+                const runPrint = function () {
+                    try {
+                        w.focus();
+                        pushPrintDebugLine('calling w.print() readyState=' + (w.document && w.document.readyState));
+                        w.print();
+                        pushPrintDebugLine('w.print() returned (Save as PDF / printer UI should be open)');
+                    } catch (e) {
+                        pushPrintDebugLine('w.print ERROR: ' + (e && e.message));
+                        console.warn('Print failed', e);
+                    }
+                    if (isDigibizMobilePrintClient()) {
+                        pushPrintDebugLine('mobile: not auto-closing print window (close tab after saving PDF)');
+                    } else {
+                        let closed = false;
+                        const doClose = function () {
+                            if (closed) return;
+                            closed = true;
+                            try { w.close(); } catch (e2) {}
+                            pushPrintDebugLine('child window closed');
+                        };
+                        try {
+                            w.addEventListener('afterprint', function () {
+                                pushPrintDebugLine('afterprint: scheduling child close');
+                                setTimeout(doClose, 400);
+                            }, { once: true });
+                        } catch (eAp) { /* ignore */ }
+                        setTimeout(function () {
+                            pushPrintDebugLine('desktop fallback close (45s)');
+                            doClose();
+                        }, 45000);
+                    }
+                    finish();
+                };
+                let fired = false;
+                let fallbackTimer = null;
+                const runOnce = function () {
+                    if (fired) return;
+                    fired = true;
+                    if (fallbackTimer != null) clearTimeout(fallbackTimer);
+                    setTimeout(runPrint, 200);
+                };
                 try {
-                    w.focus();
-                    w.print();
-                } catch (e) {
-                    console.warn('Print failed', e);
+                    fallbackTimer = setTimeout(runOnce, 2000);
+                    if (w.document.readyState === 'complete') {
+                        runOnce();
+                    } else {
+                        w.addEventListener('load', function onLd() {
+                            w.removeEventListener('load', onLd);
+                            runOnce();
+                        });
+                    }
+                } catch (eR) {
+                    pushPrintDebugLine('ready guard: ' + (eR && eR.message));
+                    runOnce();
                 }
-                setTimeout(() => {
-                    try { w.close(); } catch (e2) {}
-                }, 500);
-            }, 350);
+            });
         }
 
         function computeBillLines(order) {
@@ -1246,7 +1355,7 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Segoe UI',A
             const { rows, subTotal, total, paidCash, balance } = computeBillLines(order);
             const meta = buildMetaBlockHtml(order, shopData);
             const tableBody = rows || '<tr><td colspan="4" style="text-align:center">No items</td></tr>';
-            return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bill ${escapeBillHtml(billNo)}</title>
+            return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bill ${escapeBillHtml(billNo)}</title>
 <style>${thermalBillSharedCss()}</style></head><body><div class="bill">
 <div class="dsl-title">${escapeBillHtml(cfg.DSL_HEADER || 'DSL ENTERPRISES')}</div>
 <div class="dsl-sub">${escapeBillHtml(cfg.DSL_SUBHEADER || '')}</div>
@@ -1276,7 +1385,7 @@ ${meta}
             const { rows, subTotal, total, paidCash, balance } = computeBillLines(order);
             const meta = buildMetaBlockHtml(order, shopData);
             const tableBody = rows || '<tr><td colspan="4" style="text-align:center">No items</td></tr>';
-            return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bill ${escapeBillHtml(billNo)}</title>
+            return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bill ${escapeBillHtml(billNo)}</title>
 <style>${thermalBillSharedCss()}</style></head><body><div class="bill">
 <div class="biz-title">${escapeBillHtml(title)}</div>
 <div class="biz-sub">${escapeBillHtml(subLine)}</div>
@@ -1297,22 +1406,46 @@ ${meta}
         }
 
         async function printDistributorThermalBill(orderId) {
-            const order = allOrders.find((o) => o.id === orderId);
-            if (!order) return;
-            let shopData = null;
+            window.__DIGIBIZ_PRINT_DEBUG_LINES__ = [];
+            pushPrintDebugLine('UA: ' + String(navigator.userAgent || '').slice(0, 120));
+            pushPrintDebugLine('printDistributorThermalBill orderId=' + orderId);
             try {
-                if (order.shopId) {
-                    const s = await db.collection('shops').doc(order.shopId).get();
-                    if (s.exists) shopData = s.data();
+                const cached = allOrders.find((o) => o.id === orderId);
+                pushPrintDebugLine('order in cache: ' + !!cached + ' status=' + (cached && cached.status) + ' items=' + (cached && Array.isArray(cached.items) ? cached.items.length : 'n/a') + ' totalAmount=' + (cached && cached.totalAmount));
+                const order = await resolveOrderForDisplay(orderId);
+                pushPrintDebugLine('after Firestore merge: items=' + (order && Array.isArray(order.items) ? order.items.length : 'n/a') + ' totalAmount=' + (order && order.totalAmount));
+                if (!order) {
+                    pushPrintDebugLine('abort: no order in cache or Firestore');
+                    if (isMwPrintDebugEnabled()) showDigibizPrintDebugModal('Print stopped');
+                    return;
                 }
-            } catch (e) {
-                console.warn('Shop lookup failed', e);
+                let shopData = null;
+                try {
+                    if (order.shopId) {
+                        const s = await db.collection('shops').doc(order.shopId).get();
+                        if (s.exists) shopData = s.data();
+                        pushPrintDebugLine('shop doc: ' + (s.exists ? 'ok' : 'missing'));
+                    } else {
+                        pushPrintDebugLine('shopId empty');
+                    }
+                } catch (e) {
+                    pushPrintDebugLine('shop lookup: ' + (e && e.message));
+                    console.warn('Shop lookup failed', e);
+                }
+                const isMw = !!(window.DigibizMwDslConfig && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
+                pushPrintDebugLine('isMw bill template: ' + isMw);
+                const html = isMw
+                    ? buildMwDslThermalBillHtml(order, shopData)
+                    : buildGenericThermalBillHtml(order, shopData, currentBusinessData);
+                await openAndPrintInvoice(html);
+                pushPrintDebugLine('openAndPrintInvoice finished (timers may still run)');
+                if (isMwPrintDebugEnabled()) showDigibizPrintDebugModal('80mm print trace — read top to bottom');
+            } catch (err) {
+                pushPrintDebugLine('FATAL: ' + (err && err.message) + '\n' + (err && err.stack));
+                console.error(err);
+                if (isMwPrintDebugEnabled()) showDigibizPrintDebugModal('Print error');
+                else alert('Print error: ' + (err && err.message ? err.message : String(err)));
             }
-            const isMw = !!(window.DigibizMwDslConfig && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
-            const html = isMw
-                ? buildMwDslThermalBillHtml(order, shopData)
-                : buildGenericThermalBillHtml(order, shopData, currentBusinessData);
-            await openAndPrintInvoice(html);
         }
 
         async function loadStats() {
@@ -1677,13 +1810,17 @@ ${meta}
             const order = doc.data();
             let repName = order.repId;
             try {
-                const repDoc = await db.collection('reps').doc(order.repId).get();
-                if (repDoc.exists) repName = repDoc.data().name;
+                if (order.repId) {
+                    const repDoc = await db.collection('reps').doc(order.repId).get();
+                    if (repDoc.exists) repName = repDoc.data().name;
+                }
             } catch (e) { /* ignore */ }
             let shopName = order.shopId;
             try {
-                const shopDoc = await db.collection('shops').doc(order.shopId).get();
-                if (shopDoc.exists) shopName = shopDoc.data().name;
+                if (order.shopId) {
+                    const shopDoc = await db.collection('shops').doc(order.shopId).get();
+                    if (shopDoc.exists) shopName = shopDoc.data().name;
+                }
             } catch (e2) { /* ignore */ }
             const normalizedStatus = forcedStatus != null ? forcedStatus : String(order.status || '').toLowerCase();
             return {
@@ -1693,6 +1830,37 @@ ${meta}
                 repName,
                 shopName
             };
+        }
+
+        /** Single-doc read for print/view — no enrichOrderRow (avoids invalid rep/shop refs). */
+        async function fetchOrderRawForPrint(orderId) {
+            const id = String(orderId || '').trim();
+            if (!id) return null;
+            try {
+                const oSnap = await db.collection('orders').doc(id).get();
+                if (oSnap.exists) return Object.assign({ id: oSnap.id }, oSnap.data() || {});
+            } catch (e) { /* ignore */ }
+            try {
+                const pSnap = await db.collection('pendingOrders').doc(id).get();
+                if (pSnap.exists) {
+                    const d = pSnap.data() || {};
+                    return Object.assign({ id: pSnap.id }, d, { status: String(d.status || 'pending').toLowerCase() });
+                }
+            } catch (e2) { /* ignore */ }
+            return null;
+        }
+
+        /** Merge Firestore doc over list cache so items/totals match server (debug showed cache items=0). */
+        async function resolveOrderForDisplay(orderId) {
+            const cached = allOrders.find((o) => o.id === orderId);
+            const fresh = await fetchOrderRawForPrint(orderId);
+            if (!fresh && !cached) return null;
+            if (!fresh) return cached;
+            const repName = (fresh.repName != null && String(fresh.repName).trim() !== '')
+                ? fresh.repName : (cached && cached.repName) || fresh.repId;
+            const shopName = (fresh.shopName != null && String(fresh.shopName).trim() !== '')
+                ? fresh.shopName : (cached && cached.shopName) || fresh.shopId;
+            return Object.assign({}, cached || {}, fresh, { id: fresh.id, repName, shopName });
         }
 
         async function loadOrders() {
@@ -2124,7 +2292,7 @@ ${meta}
         }
 
         async function viewOrder(orderId) {
-            const order = allOrders.find(o => o.id === orderId);
+            const order = await resolveOrderForDisplay(orderId);
             if (!order) return;
             
             const modal = document.getElementById('orderModal');

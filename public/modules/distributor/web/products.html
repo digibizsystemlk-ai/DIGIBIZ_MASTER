@@ -396,6 +396,41 @@
             return window.DigibizDistributorPermissions.permissionsForRole(currentUserRole);
         }
 
+        function normalizeRoleForProducts(r) {
+            return String(r || '').trim().toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+        }
+
+        function isProductsRepReadOnlyRole() {
+            if (normalizeRoleForProducts(currentUserRole) === 'REP') return true;
+            try {
+                if (window.DigibizDistributorPermissions && typeof window.DigibizDistributorPermissions.roleBand === 'function') {
+                    return window.DigibizDistributorPermissions.roleBand(currentUserRole) === 'REP';
+                }
+            } catch (e) { /* ignore */ }
+            return false;
+        }
+
+        function hideProductsCardContaining(elementId) {
+            var el = document.getElementById(elementId);
+            if (!el) return;
+            var card = el.closest('.card');
+            if (card) card.style.display = 'none';
+        }
+
+        /** REP: view/search/stock only — hide add, imports, bulk actions, per-row Edit/Delete. */
+        function applyRepReadOnlyProductsChrome() {
+            if (!isProductsRepReadOnlyRole()) return;
+            hideProductsCardContaining('addBtn');
+            hideProductsCardContaining('bulkBtn');
+            hideProductsCardContaining('pdfPreviewBtn');
+            var delAll = document.getElementById('deleteAllBtn');
+            if (delAll) delAll.style.display = 'none';
+            ['enableEditModeBtn', 'commitAllStockBtn', 'selectAllProductsBtn', 'bulkCategoryBtn', 'bulkCategoryInput'].forEach(function (id) {
+                var x = document.getElementById(id);
+                if (x) x.style.display = 'none';
+            });
+        }
+
         function canDistributorProductCreate() {
             var p = getDistributorProductPerms();
             if (p) return !!p.canProductCreate;
@@ -938,7 +973,7 @@
                 document.getElementById('productsCount').innerText = allProducts.length + ' products';
                 bindStockValueFilters();
                 var p = getDistributorProductPerms();
-                var showDel = !p || p.canProductEditDelete;
+                var showDel = (!p || p.canProductEditDelete) && !isProductsRepReadOnlyRole();
                 var codeHdr = getProductCodeColumnLabel();
                 var html = '<div class="table-responsive"><table class="products-table"><thead><tr><th><input type="checkbox" id="selectAllCheckbox"' + (showDel ? '' : ' disabled style="visibility:hidden"') + '></th><th>Name</th><th>' + codeHdr + '</th><th>Category</th><th>Brand</th><th>Barcode</th><th>Sell (Rs)</th><th>Buy (Rs)</th><th>Margin</th><th>Current Stock</th><th>Factory</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
                 for (var i = 0; i < allProducts.length; i++) {
@@ -1447,7 +1482,7 @@
             // Display filtered products directly without reloading
             var container = document.getElementById('productsList');
             var p2 = getDistributorProductPerms();
-            var showDel2 = !p2 || p2.canProductEditDelete;
+            var showDel2 = (!p2 || p2.canProductEditDelete) && !isProductsRepReadOnlyRole();
             var codeHdr2 = getProductCodeColumnLabel();
             var html = '<div class="table-responsive"><table class="products-table"><thead><tr><th><input type="checkbox" id="selectAllCheckbox"' + (showDel2 ? '' : ' disabled style="visibility:hidden"') + '></th><th>Name</th><th>' + codeHdr2 + '</th><th>Category</th><th>Brand</th><th>Barcode</th><th>Sell (Rs)</th><th>Buy (Rs)</th><th>Margin</th><th>Current Stock</th><th>Factory</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
             for (var i = 0; i < filtered.length; i++) {
@@ -1788,10 +1823,6 @@
                         console.warn('Business role lookup failed:', roleErr && (roleErr.message || roleErr));
                     }
                     currentUserRole = resolvedRole;
-                    if (resolvedRole === 'REP') {
-                        window.location.href = '/modules/distributor/mobile/order.html';
-                        return;
-                    }
                     var bizDoc = await db.collection('businesses').doc(currentBusinessId).get();
                     currentBusinessData = bizDoc.exists ? bizDoc.data() : null;
                     if (window.DigibizMwDslConfig) {
@@ -1802,6 +1833,7 @@
                     }
                     updateMwBuyingPriceUi();
                     applyDistributorProductChrome();
+                    applyRepReadOnlyProductsChrome();
                     document.getElementById('productPrice').addEventListener('input', updateSellingBuyingAutoLink);
                     updateSellingBuyingAutoLink();
                     await loadProducts();
