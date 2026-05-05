@@ -302,6 +302,34 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
                 canManageRepsWeb: false
             };
         }
+        
+        if (isRep && isMwTrading) {
+            return {
+                roleBand: b,
+                canInvoiceCreateEdit: false,
+                canInvoiceReject: false,
+                canInvoiceDelete: false,
+                canViewAccounting: false,
+                canViewReportsFull: false,
+                canViewFinancialsProfit: false,
+                canStockEdit: false,
+                canStockView: true,
+                canCustomerCreate: false,
+                canCustomerEditDelete: false,
+                canCustomerView: true,
+                canProductCreate: false,
+                canProductEditDelete: false,
+                canProductView: true,
+                canStaffMutate: false,
+                canExpensesCreate: false,
+                canExpensesEdit: false,
+                canSettingsChange: false,
+                canBusinessInfoEdit: false,
+                canOrderWorkflowApprove: false,
+                canOrderReject: false,
+                canManageRepsWeb: false
+            };
+        }
 
         return {
             roleBand: b,

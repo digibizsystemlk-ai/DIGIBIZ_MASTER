@@ -16,7 +16,7 @@ const DIGIBIZ_UPDATE_POINTS = [
 /** Only the marketing root should skip the app sidebar — not module pages named index.html */
 const SHOULD_RESERVE_SIDEBAR_SPACE = (() => {
     const raw = (window.location.pathname || '').split('?')[0];
-    const p = raw.replace(/\/+$/, '') || '/';
+    const p = raw.replace(/\/+/g, '') || '/';
     return p !== '/' && p !== '/index.html';
 })();
 
@@ -61,7 +61,7 @@ function ensureSidebarStyles() {
     const style = document.createElement('style');
     style.id = 'sidebar-main-styles';
     style.textContent = `
-        /* Body left gutter: set only in each page's first <style> (avoids duplicate margin with module CSS). */
+        /* Body left gutter: set only in each page\'s first <style> (avoids duplicate margin with module CSS). */
         .retail-navbar{position:fixed;left:0;top:0;width:${SIDEBAR_WIDTH}px;height:100vh;background:linear-gradient(135deg,#0a2a44 0%,#1e3c72 100%);color:#fff;z-index:9999 !important;overflow-y:auto;display:flex;flex-direction:column;justify-content:space-between;font-family:'Inter',sans-serif;pointer-events:auto;}
         .retail-navbar *{pointer-events:auto;}
         .digibiz-mobile-menu-toggle{position:fixed;top:15px;left:15px;z-index:10001;width:46px;height:46px;border:none;border-radius:12px;background:rgba(15,59,44,.95);color:#fff;display:none;align-items:center;justify-content:center;box-shadow:0 10px 24px rgba(0,0,0,.35);cursor:pointer;font-size:20px;padding:0;margin:0;backdrop-filter:blur(2px);}
@@ -569,7 +569,7 @@ class Sidebar {
     }
 
     isBdkAccountingTenant() {
-        const authEmail = (firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || '';
+        const authEmail = (firebase.auth && firebase.auth.currentUser && firebase.auth.currentUser.email) || '';
         const fromStorage = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
         const cached = localStorage.getItem('digibizSidebarUserEmail') || sessionStorage.getItem('digibizSidebarUserEmail') || '';
         const email = String(authEmail || fromStorage || cached || this.currentUserEmail || '').trim().toLowerCase();
@@ -581,7 +581,7 @@ class Sidebar {
     }
 
     isCommissionPilotEnabled() {
-        const authEmail = (firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || '';
+        const authEmail = (firebase.auth && firebase.auth.currentUser && firebase.auth.currentUser.email) || '';
         const fromStorage = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
         const email = String(authEmail || fromStorage || '').trim().toLowerCase();
         const bid = String(this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '').trim();
@@ -595,7 +595,7 @@ class Sidebar {
     }
 
     isWarehouseDisabledForCurrentTenant() {
-        const authEmail = (firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || '';
+        const authEmail = (firebase.auth && firebase.auth.currentUser && firebase.auth.currentUser.email) || '';
         const fromStorage = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
         const email = String(authEmail || fromStorage || '').trim().toLowerCase();
         const bid = String(this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '').trim();
@@ -749,7 +749,7 @@ class Sidebar {
             if (seen.has(k)) return;
             // KUBUKA manufacturer: keep only first menu per canonical link (prevents duplicate Raw Materials/inbound entry).
             if (this.businessId === this.kduTeaBusinessId) {
-                const canonicalLink = String((m && m.link) || '').split('?')[0].replace(/\/+$/, '');
+                const canonicalLink = String((m && m.link) || '').split('?')[0].replace(/\/+/g, '');
                 if (canonicalLink) {
                     if (seenLinks.has(canonicalLink)) return;
                     seenLinks.add(canonicalLink);
@@ -794,6 +794,9 @@ class Sidebar {
                 { icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
                 { icon: '📑', name: 'HQ orders', link: '/modules/distributor/web/index.html?tab=pending' }
             ];
+            if (this.isStrictMwTradingBusiness()) {
+                repMenus.push({ icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' });
+            }
             if (this.isCommissionPilotEnabled()) {
                 repMenus.push(
                     { icon: '🏦', name: 'Cheques', link: '/modules/distributor/web/cheques.html' },
@@ -909,8 +912,8 @@ class Sidebar {
         if (!link) return false;
         const [linkNoHash] = link.split('#');
         const [linkPathRaw, linkQueryRaw = ''] = linkNoHash.split('?');
-        const cleanLink = (linkPathRaw || '').replace(/\/+$/, '');
-        const cleanPath = (pathname || '').split('#')[0].split('?')[0].replace(/\/+$/, '');
+        const cleanLink = (linkPathRaw || '').replace(/\/+/g, '');
+        const cleanPath = (pathname || '').split('#')[0].split('?')[0].replace(/\/+/g, '');
         const currentQuery = window.location.search || '';
         const linkQuery = linkQueryRaw ? `?${linkQueryRaw}` : '';
         if (linkQuery && cleanPath === cleanLink) {
@@ -923,7 +926,7 @@ class Sidebar {
             tab = '';
         }
         const distributorOrderStatusPath = '/modules/distributor/web/index.html';
-        if (cleanLink.split('?')[0].replace(/\/+$/, '') === distributorOrderStatusPath) {
+        if (cleanLink.split('?')[0].replace(/\/+/g, '') === distributorOrderStatusPath) {
             if (cleanPath.endsWith(distributorOrderStatusPath)) return true;
             return false;
         }
