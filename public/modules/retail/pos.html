@@ -127,7 +127,18 @@
         const formatDate = (d) => d ? new Date(d.seconds * 1000).toISOString().slice(0,10) : 'N/A';
 
         async function createJournalEntryForSale(orderData, orderRefId) {
-            const { paymentMethod, total, customer, invoiceNo } = orderData;
+            const safeTotal = (orderData.items || []).reduce((sum, item) => {
+                const price = parseFloat(item.price) || 0;
+                const quantity = parseInt(item.quantity) || 0;
+                return sum + (price * quantity);
+            }, 0);
+
+            if (safeTotal === 0) {
+                console.warn('Journal entry skipped: Calculated total is zero.', orderData);
+                return;
+            }
+
+            const { paymentMethod, customer, invoiceNo } = orderData;
             let debitAccount = null;
             let memo = `Sale to ${customer.name || 'customer'}. Invoice: ${invoiceNo}`;
 
@@ -148,8 +159,8 @@
                 date: new Date(),
                 memo: memo,
                 entries: [
-                    { accountId: debitAccount, amount: total, type: 'debit' },
-                    { accountId: KUBUKA_ACCOUNTS.SALES_REVENUE, amount: total, type: 'credit' }
+                    { accountId: debitAccount, amount: safeTotal, type: 'debit' },
+                    { accountId: KUBUKA_ACCOUNTS.SALES_REVENUE, amount: safeTotal, type: 'credit' }
                 ],
                 ref: `orders/${orderRefId}`,
                 refType: 'SALE',
@@ -213,9 +224,7 @@
             if (item) {
                 item.quantity++;
             } else {
-                const priceString = String(p.price || '0');
-                const cleanPriceString = priceString.replace(/[^0-9.]/g, '');
-                const price = parseFloat(cleanPriceString) || 0;
+                const price = parseFloat(String(p.price || '0').replace(/[^0-9.]/g, '')) || 0;
                 cart.push({...p, price: price, quantity: 1});
             }
             renderCart();
