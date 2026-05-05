@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="si">
 <head>
@@ -166,29 +167,48 @@
 
         function renderJournal() {
             const body = document.getElementById('entriesBody');
-            if (!isKubuka()) { body.innerHTML = '<tr><td colspan="6">Accounting is not enabled for this business.</td></tr>'; return; }
-            
-            const groupedEntries = {};
+            if (!isKubuka()) { 
+                body.innerHTML = '<tr><td colspan="6">Accounting is not enabled for this business.</td></tr>'; 
+                return; 
+            }
+
+            const reversedEntryIds = new Set();
             state.journalEntries.forEach(entry => {
-                const key = entry.ref || entry.id;
-                if(!groupedEntries[key]) groupedEntries[key] = [];
-                groupedEntries[key].push(entry);
+                if (entry.reversalOf) {
+                    reversedEntryIds.add(entry.reversalOf);
+                }
             });
 
+            const entriesToDisplay = state.journalEntries.filter(entry => {
+                return !entry.reversalOf && !reversedEntryIds.has(entry.id);
+            });
+
+            if (entriesToDisplay.length === 0) {
+                body.innerHTML = '<tr><td colspan="6">No journal entries found.</td></tr>';
+                return;
+            }
+            
+            const sortedEntries = entriesToDisplay.sort((a, b) => b.date.toDate() - a.date.toDate());
+
             let html = '';
-            Object.values(groupedEntries).flat().sort((a,b) => b.date.toDate() - a.date.toDate()).forEach(entry => {
-                html += `<tr class="${entry.isReversed ? 'entry-reversed' : ''}">
+            sortedEntries.forEach(entry => {
+                html += `<tr>
                     <td>${entry.date.toDate().toLocaleDateString()}</td>
                     <td>${entry.memo || ''}</td>
                     <td colspan="3">
-                         ${(entry.entries || []).map(l => `${l.accountId}: ${l.type === 'debit' ? `Dr ${formatLKR(l.amount)}` : `Cr ${formatLKR(l.amount)}`}`).join('<br>')}
+                        ${(entry.entries || []).map(l => {
+                            const account = l.accountId || 'undefined';
+                            const amount = formatLKR(l.amount);
+                            const type = l.type === 'debit' ? 'Dr' : 'Cr';
+                            return `${account}: ${type} ${amount}`;
+                        }).join('<br>')}
                     </td>
                     <td>
                         ${isKubuka() && !entry.isReversed && !entry.reversalOf ? `<button onclick="deleteJournalEntry('${entry.id}')">Delete</button>` : ''}
                     </td>
                 </tr>`;
             });
-            body.innerHTML = html || '<tr><td colspan="6">No journal entries found.</td></tr>';
+            body.innerHTML = html;
         }
 
         async function deleteJournalEntry(entryId) {
@@ -197,15 +217,16 @@
             const entryRef = db.collection('journal').doc(state.context.businessId).collection('entries').doc(entryId);
             const entrySnap = await entryRef.get();
             if (!entrySnap.exists) { showToast('Entry not found.'); return; }
-            const originalEntry = entrySnap.data();
+            const originalEntry = { id: entrySnap.id, ...entrySnap.data() };
 
             const reversalEntry = {
-                ...originalEntry,
-                memo: `Reversal of: ${originalEntry.memo}`,
+                memo: `Reversal of: ${originalEntry.memo || `entry ${originalEntry.id}`}`,
                 isReversal: true,
                 reversalOf: entryId,
+                date: firebase.firestore.Timestamp.now(),
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                entries: originalEntry.entries.map(line => ({
+                businessId: originalEntry.businessId,
+                entries: (originalEntry.entries || []).map(line => ({
                     ...line,
                     type: line.type === 'debit' ? 'credit' : 'debit'
                 }))
