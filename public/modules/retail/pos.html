@@ -123,7 +123,6 @@
         
         const showToast = (msg, isError=false) => { const t = document.getElementById('toast'); t.querySelector('span').innerHTML = msg; t.style.background = isError ? '#ef4444' : '#10b981'; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 3000); };
         const formatCurrency = (amt) => 'Rs. ' + (amt||0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const amountNumber = (v) => Number(String(v||'').replace(/[^0-9\.-]+/g, '')) || 0;
         const isKubukaTenant = () => String(currentBusinessId || '') === KUBUKA_BID;
         const formatDate = (d) => d ? new Date(d.seconds * 1000).toISOString().slice(0,10) : 'N/A';
 
@@ -209,12 +208,14 @@
 
         window.addToCart = (id) => {
             const p = products.find(p => p.id === id);
-            if(!p) return;
+            if (!p) return;
             const item = cart.find(i => i.id === id);
             if (item) {
                 item.quantity++;
             } else {
-                const price = p.price && typeof p.price === 'number' ? p.price : 0;
+                const priceString = String(p.price || '0');
+                const cleanPriceString = priceString.replace(/[^0-9.]/g, '');
+                const price = parseFloat(cleanPriceString) || 0;
                 cart.push({...p, price: price, quantity: 1});
             }
             renderCart();
@@ -274,11 +275,12 @@
             if (!selectedCustomer) { showToast('Customer not selected', true); return; }
             
             const paymentMethod = document.getElementById('paymentMethod').value;
-            const total = amountNumber(document.getElementById('payTotal').innerText);
+            const total = cart.reduce((s, i) => s + ((i.price || 0) * (i.quantity || 0)), 0);
             let amountPaid = 0, balanceDue = total, dueDate = null;
 
             if (paymentMethod === 'cash') {
-                amountPaid = amountNumber(document.getElementById('cashAmount').value);
+                const cashValue = document.getElementById('cashAmount').value || '0';
+                amountPaid = parseFloat(cashValue) || 0;
                 if (amountPaid < total) { showToast('Cash received is less than total', true); return; }
                 balanceDue = 0;
             } else if (paymentMethod === 'card') {
