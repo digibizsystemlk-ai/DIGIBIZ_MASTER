@@ -7,9 +7,9 @@
     <title>KUBUKA TEA FACTORY Sales</title>
     <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:900px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
     <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
-    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="/core/firebase-init.js?v=2"></script>
     <script src="/core/event-validation.js?v=2"></script>
     <script src="/core/event-bus.js?v=2"></script>
@@ -50,23 +50,7 @@
         .sales-toast{position:fixed;right:20px;bottom:20px;background:#0f766e;color:#fff;padding:10px 14px;border-radius:10px;display:none;z-index:9999;}
         .sales-toast.show{display:block;}
         .sales-toast.err{background:#b91c1c;}
-        /* Dropdown placeholder/text color fix */
-        .sales-dropdown,
-        select.form-select,
-        .showroom-product-select {
-            color:#000000 !important;
-            background-color:#ffffff;
-        }
-        select.form-select option {
-            color:#000000;
-            background-color:#ffffff;
-        }
-        /* Keep contrast on active interaction */
-        select.form-select:focus,
-        select.form-select:active {
-            color:#ffffff !important;
-            background-color:#333333;
-        }
+        .sales-dropdown,select.form-select,.showroom-product-select{color:#000 !important;background-color:#fff}select.form-select option{color:#000;background-color:#fff}select.form-select:focus,select.form-select:active{color:#fff !important;background-color:#333}
         @media (max-width:1000px){.grid{grid-template-columns:1fr;} .g3,.sum{grid-template-columns:1fr 1fr;} }
     </style>
 </head>
@@ -83,13 +67,12 @@
 
     <div id="shopPanel" class="panel">
         <h3>Shop Sales (Wholesale)</h3>
-    <div class="g3" style="margin-top:8px;">
-        <div><label>Shop Name *</label><input id="shopName" list="shopNameSuggestions" required></div>
-        <datalist id="shopNameSuggestions"></datalist>
+        <div class="g3" style="margin-top:8px;">
+            <div><label>Shop Name *</label><input id="shopName" list="shopNameSuggestions" required></div>
+            <datalist id="shopNameSuggestions"></datalist>
             <div><label>Contact (optional)</label><input id="shopContact" placeholder="Phone"></div>
             <div><label>Address (optional)</label><input id="shopAddress" placeholder="Address"></div>
         </div>
-    <!-- Rest of shop panel fields (credit limit, product, etc.) keep as is -->
         <div class="g3" style="margin-top:8px;">
             <div><label>Credit Limit</label><input id="shopCreditLimit" readonly></div>
             <div><label>Outstanding Credit</label><input id="shopOutstanding" readonly></div>
@@ -205,48 +188,68 @@
 <script src="/modules/manufacturer/sales.js?v=7"></script>
 <script>
     (function () {
-        const currentBusinessId =
-            localStorage.getItem('currentBusinessId') ||
-            sessionStorage.getItem('selectedBusinessId') ||
-            sessionStorage.getItem('currentBusinessId');
+        const currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('selectedBusinessId') || sessionStorage.getItem('currentBusinessId');
         const isKDU = (currentBusinessId === '0Uled5estVeQVN8cChmMTNRDNIE3');
         if (!isKDU) {
-            // Skip all fixes for other businesses
             return;
         }
 
+        const db = firebase.firestore();
+
+        async function loadCustomerSuggestions() {
+            const suggestionsDatalist = document.getElementById('shopNameSuggestions');
+            if (!suggestionsDatalist) return;
+
+            try {
+                const snapshot = await db.collection('customers').where('businessId', '==', currentBusinessId).where('isActive', '==', true).limit(250).get();
+                let options = '';
+                snapshot.forEach(doc => {
+                    const customer = doc.data();
+                    const customerName = (customer.fullName || customer.name || '').trim();
+                    if (customerName) {
+                        options += `<option value="${customerName}"></option>`;
+                    }
+                });
+                suggestionsDatalist.innerHTML = options;
+            } catch (error) {
+                console.error("Error loading customer suggestions:", error);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
-            // Prevent duplicate Shop Name injection
+            loadCustomerSuggestions();
+
             const shopNameInput = document.getElementById('shopName');
             if (shopNameInput) {
                 shopNameInput.required = true;
-                shopNameInput.setAttribute('required', 'required');
             }
-
-            // Contact and Address stay optional for KDU.
             const shopContactInput = document.getElementById('shopContact');
             const shopAddressInput = document.getElementById('shopAddress');
             if (shopContactInput) {
                 shopContactInput.required = false;
-                shopContactInput.removeAttribute('required');
             }
             if (shopAddressInput) {
                 shopAddressInput.required = false;
-                shopAddressInput.removeAttribute('required');
             }
 
-            // Remove any dynamically added duplicate fields.
-            const removeDuplicates = () => {
-                const panel = document.getElementById('shopPanel');
-                if (!panel) return;
-                const nameInputs = panel.querySelectorAll('input#shopName');
-                for (let i = 1; i < nameInputs.length; i++) nameInputs[i].remove();
-                const datalists = panel.querySelectorAll('datalist#shopNameSuggestions');
-                for (let i = 1; i < datalists.length; i++) datalists[i].remove();
-            };
+            // Fix for Showroom Change Calculation for KDU
+            const showroomPaidInput = document.getElementById('showroomPaid');
+            const showroomTotalInput = document.getElementById('showroomTotal');
+            const showroomChangeInput = document.getElementById('showroomChange');
 
-            removeDuplicates();
-            setInterval(removeDuplicates, 500); // aggressive cleanup
+            if (showroomPaidInput && showroomTotalInput && showroomChangeInput) {
+                showroomPaidInput.addEventListener('input', function() {
+                    const total = parseFloat(showroomTotalInput.value) || 0;
+                    const paid = parseFloat(this.value) || 0;
+                    
+                    let change = 0;
+                    if (paid > total) {
+                        change = paid - total;
+                    }
+                    
+                    showroomChangeInput.value = change.toFixed(2);
+                });
+            }
         });
     })();
 </script>

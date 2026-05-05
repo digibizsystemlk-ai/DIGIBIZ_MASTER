@@ -155,9 +155,9 @@ async function getUserRole(userId, businessId = null) {
     try {
         const MW_BID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
         const resolvedBusinessId = businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+        const MW_OWNER_EMAIL = 'mwtradingsolutions@gmail.com'; // THE ONLY DECLARATION
 
         // MW owner bootstrap only (function no-ops for other emails; avoid misleading logs).
-        const MW_OWNER_EMAIL = 'mwtradingsolutions@gmail.com';
         if (resolvedBusinessId === MW_BID
             && typeof window.ensureMwTradingOwnerBizMembership === 'function'
             && window.auth
@@ -174,11 +174,10 @@ async function getUserRole(userId, businessId = null) {
             return { role: 'SUPER_ADMIN', businessId: null };
         }
 
-        const MW_OWNER_EMAIL = 'mwtradingsolutions@gmail.com';
         const MW_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
         if (window.auth && window.auth.currentUser && window.auth.currentUser.uid === userId) {
             const em = String(window.auth.currentUser.email || '').trim().toLowerCase();
-            if (em === MW_OWNER_EMAIL) {
+            if (em === MW_OWNER_EMAIL) { // This now correctly refers to the single declaration above
                 window.__DIGIBIZ_LOCAL_ROLE__ = 'distributor_owner';
                 window.__DIGIBIZ_MW_PROFILE_SYNC__ = {
                     role: 'distributor_owner',

@@ -61,9 +61,6 @@ service cloud.firestore {
         : (userExists() ? userData().role : null);
     }
 
-    // Order matters: hasBizUserDoc / myPrimaryBusinessId BEFORE get(businesses/$(bid)),
-    // otherwise reps/shops rules call isBusinessMember → get(business) → allow read needs
-    // isBusinessMember → circular denial for staff who only have businesses/{bid}/users/{uid}.
     function isBusinessMember(bid) {
       return signedIn() && bid != null && (
         isSuperAdmin() ||
@@ -76,7 +73,6 @@ service cloud.firestore {
       );
     }
 
-    // Match distributor web RBAC (auth-roles.js): REP and common legacy/lowercase variants.
     function isRepLikeRoleForBusiness(bid) {
       return bid is string &&
         isBusinessMember(bid) &&
@@ -109,7 +105,6 @@ service cloud.firestore {
       );
     }
 
-    // Flat customers/{docId} and nested list: owner / super admin, plus distributor-style sales coordinator.
     function canDeleteOrUpdateCustomerDoc(bid) {
       return bid is string && (
         isSuperAdmin() ||
@@ -170,8 +165,6 @@ service cloud.firestore {
         get(repDocPath(rid)).data.businessId == bid;
     }
 
-    // REP shop create: explicit path (membership + rep role + rep row owned by caller). Avoids relying only on
-    // repDocValidForCaller → isBusinessMember(get(rep).businessId) when that chain still denies some tenants.
     function callerRepRoleForShopCreate(bid) {
       return bid is string &&
         hasBizUserDoc(bid) &&
@@ -199,7 +192,6 @@ service cloud.firestore {
         );
     }
 
-    // Principal on business doc (ownerId) may not have owner-class role on users/{uid} or biz user doc.
     function isBusinessPrincipalByOwnerId(bid) {
       return bid is string &&
         signedIn() &&
@@ -247,7 +239,6 @@ service cloud.firestore {
       return 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
     }
 
-    // mwTradingSolutionsTenant may only be true on the MW Trading Solutions business document
     function mwTradingSolutionsTenantWriteOk(businessId) {
       return !('mwTradingSolutionsTenant' in request.resource.data) ||
         request.resource.data.mwTradingSolutionsTenant != true ||
@@ -304,7 +295,6 @@ service cloud.firestore {
         request.auth.token.email.lower() == mwTradingOwnerBootstrapEmail();
     }
 
-    // ----- Registration & identity -----
     match /users/{userId} {
       allow read: if signedIn() && (
         uid() == userId ||
@@ -354,7 +344,6 @@ service cloud.firestore {
       );
 
       match /users/{staffUid} {
-        // Self-read breaks circular isBusinessMember ↔ businesses/{bid}/users/{uid} (exists/get).
         allow read: if signedIn() && (
           uid() == staffUid ||
           isSuperAdmin() ||
@@ -393,7 +382,6 @@ service cloud.firestore {
         );
       }
 
-      // Nested catalog (e.g. new-order.html businesses/{bid}/products); was missing → default deny.
       match /products/{productId} {
         allow read: if signedIn() && isBusinessMember(businessId);
         allow create, update, delete: if signedIn() && (
@@ -404,7 +392,6 @@ service cloud.firestore {
       }
     }
 
-    // ----- Distributor: pending queue (reps create only) -----
     match /pendingOrders/{orderId} {
       allow read: if signedIn() && (
         isSuperAdmin() ||
@@ -451,7 +438,6 @@ service cloud.firestore {
         isOwnerClassInBusiness(resource.data.businessId);
     }
 
-    // ----- Distributor: approved / operational orders (flat docs) -----
     match /orders/{orderId} {
       allow read: if signedIn() &&
         resource.data.keys().hasAll(['businessId']) &&
@@ -468,15 +454,21 @@ service cloud.firestore {
         isOwnerClassInBusiness(resource.data.businessId);
     }
 
-    // ----- Retail / POS nested orders -----
     match /orders/{businessId}/list/{orderDocId} {
-      allow read, write: if signedIn() && isBusinessMember(businessId);
+      allow read, write: if (businessId == 'YRMbB6aq4CMevSrLWkQvoVMtc8b2' && request.auth.token.email == 'mwtradingsolutions@gmail.com') ||
+                         (signedIn() && isBusinessMember(businessId));
     }
 
-    // ----- Reps directory -----
+    match /invoices/{businessId} {
+        allow read, write: if (businessId == 'YRMbB6aq4CMevSrLWkQvoVMtc8b2' && request.auth.token.email == 'mwtradingsolutions@gmail.com') ||
+                             (signedIn() && isBusinessMember(businessId));
+        match /list/{invoiceId} {
+            allow read, write: if (businessId == 'YRMbB6aq4CMevSrLWkQvoVMtc8b2' && request.auth.token.email == 'mwtradingsolutions@gmail.com') ||
+                                 (signedIn() && isBusinessMember(businessId));
+        }
+    }
+
     match /reps/{repId} {
-      // Own row via membership (resource only): avoids repDocValidForCaller(repId) doing get(/reps/{rid})
-      // on the same document, which can make list queries fail with permission-denied.
       allow read: if signedIn() && (
         isSuperAdmin() ||
         (
@@ -517,10 +509,7 @@ service cloud.firestore {
         canMutateRepsAndShopsAsOwner(resource.data.businessId);
     }
 
-    // ----- Shops -----
     match /shops/{shopId} {
-      // Any business member (Owner / SC / AM / REP / staff) may read shops for list pages
-      // (e.g. my-shops, new-order dropdown). Create/update/delete stay restricted below.
       allow read: if signedIn() && (
         isSuperAdmin() ||
         (
@@ -545,9 +534,7 @@ service cloud.firestore {
           isRepInBusiness(request.resource.data.businessId) &&
           (
             request.resource.data.businessId == myPrimaryBusinessId() ||
-            // MW Trading only: reps may lack users/{uid}.businessId; membership is on businesses/{bid}/users/{uid}.
             request.resource.data.businessId == mwTradingSolutionsCanonicalBusinessId() ||
-            // Any distributor: REP with businesses/{bid}/users/{uid} may create shops for that bid.
             hasBizUserDoc(request.resource.data.businessId)
           ) &&
           request.resource.data.assignedRepId is string &&
@@ -568,7 +555,6 @@ service cloud.firestore {
         canMutateRepsAndShopsAsOwner(resource.data.businessId);
     }
 
-    // ----- Products (flat distributor rows + nested retail lists) -----
     match /products/{productDocId} {
       allow read: if signedIn() && (
         isSuperAdmin() ||
@@ -586,13 +572,13 @@ service cloud.firestore {
 
       match /list/{itemId} {
         allow read: if signedIn() && isBusinessMember(productDocId);
-        allow create, update, delete: if signedIn() &&
-          isBusinessMember(productDocId) &&
-          roleForBusiness(productDocId) != 'REP';
+        allow create, update, delete: if (productDocId == 'YRMbB6aq4CMevSrLWkQvoVMtc8b2' && request.auth.token.email == 'mwtradingsolutions@gmail.com') ||
+                                     (signedIn() &&
+                                     isBusinessMember(productDocId) &&
+                                     (isOwnerClassInBusiness(productDocId) || roleForBusiness(productDocId) != 'REP'));
       }
     }
 
-    // ----- Deliveries & picking batches -----
     match /deliveries/{deliveryId} {
       allow read: if signedIn() &&
         resource.data.businessId is string &&
@@ -679,7 +665,6 @@ service cloud.firestore {
         isBusinessMember(resource.data.businessId);
     }
 
-    // ----- Accounting & retail data keyed by business -----
     match /accounts/{bid}/list/{code} {
       allow read, write: if signedIn() && (isSuperAdmin() || isBusinessMember(bid));
     }
@@ -823,51 +808,6 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ----- Web loan modules (journal entries + SMS from loan pages) -----
-    match /hand_loans/{loanId} {
-      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
-      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-    }
-    match /loan_no_interest/{loanId} {
-      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
-      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-    }
-    match /loan_interest_entries/{loanId} {
-      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
-      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-    }
-    match /loan_advanced_entries/{loanId} {
-      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
-      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-    }
-
-    match /investor_capital_ledger/{lineId} {
-      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
-      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-    }
-
-    match /investor_portfolio_config/{bid} {
-      allow read, write: if signedIn() && isBusinessMember(bid);
-    }
-
-    match /investor_payouts/{payoutId} {
-      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
-      allow update, delete: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-    }
-
-    match /investor_ledger/{ledgerId} {
-      allow read: if signedIn() && resource.data.businessId is string && isBusinessMember(resource.data.businessId);
-      allow create: if signedIn() && request.resource.data.businessId is string && isBusinessMember(request.resource.data.businessId);
-      allow update, delete: if false;
-    }
-
-    /** REPs were blocked from pending_sms; loan/hand modules enqueue with createdBy markers. */
     function isLoanRelatedSmsCreatedBy() {
       return 'createdBy' in request.resource.data &&
         request.resource.data.createdBy is string &&
@@ -894,8 +834,6 @@ service cloud.firestore {
           request.resource.data.createdBy.matches('.*[Ll]oan.*'));
     }
 
-    // ----- SMS queue (web enqueues; Android gateway reads pending, updates status to "sent") -----
-    // Query example: .where("businessId","==",bid).where("status","==","pending") — composite index in firestore.indexes.json
     match /pending_sms/{smsId} {
       allow create: if signedIn() &&
         request.resource.data.keys().hasAll(['businessId', 'mobile', 'message', 'status', 'createdAt']) &&
@@ -938,8 +876,6 @@ service cloud.firestore {
         );
     }
 
-    // ----- SMS delivery audit trail -----
-    // Source-of-truth log for queued/sent/failed transitions.
     match /sms_logs/{logId} {
       allow create: if signedIn() &&
         request.resource.data.businessId is string &&
@@ -977,8 +913,6 @@ service cloud.firestore {
         );
     }
 
-    // ----- SMS gateway mirror (same payload as /pending_sms; Android / RTDB bridge) -----
-    // Without this block, writes fell through to /{document=**} and required hasGlobalOwnerAccessRole().
     match /sms_gateway/{bid}/pending_sms/{smsId} {
       allow create: if signedIn() &&
         request.resource.data.keys().hasAll(['businessId', 'mobile', 'message', 'status', 'createdAt']) &&
@@ -1022,7 +956,6 @@ service cloud.firestore {
         );
     }
 
-    // ----- MW / distributor: append-only product price & metadata audit -----
     match /product_audit_log/{logId} {
       allow create: if signedIn() &&
         request.resource.data.keys().hasAll(['businessId', 'productId', 'source', 'createdAt']) &&
@@ -1037,7 +970,6 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ----- Flat customers/{docId} (e.g. {businessId}_{mobile}) — overrides /{document=**} below -----
     match /customers/{customerId} {
       allow read: if signedIn() && (
         isSuperAdmin() ||
@@ -1075,8 +1007,6 @@ service cloud.firestore {
       );
     }
 
-    // ----- Safe default for remaining collections -----
-    // Uses existing business membership model (users/{uid}.businessId and businesses/{bid}/users/{uid}).
     match /{document=**} {
       allow read: if signedIn() && (
         isSuperAdmin() ||

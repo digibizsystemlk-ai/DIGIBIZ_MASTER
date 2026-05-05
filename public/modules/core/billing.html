@@ -10,12 +10,12 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
-    <script src="../../core/firebase-init.js?v=1"></script>
-    <script src="../../core/auth-roles.js?v=30"></script>
-    <script src="../../core/dashboard-core.js?v=62"></script>
-    <script src="../../core/sms-wallet-core.js?v=4"></script>
-    <script src="../../core/subscription-manager.js?v=2"></script>
-    <script src="../../core/sidebar.js?v=62"></script>
+    <script src="/core/firebase-init.js?v=1"></script>
+    <script src="/core/auth-roles.js?v=30"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/sms-wallet-core.js?v=4"></script>
+    <script src="/core/subscription-manager.js?v=2"></script>
+    <script src="/core/sidebar.js?v=62"></script>
     <style>
         :root{
             --bg:#f3f6fb;
@@ -112,9 +112,9 @@
             </div>
             <div class="meta">Total SMS credits (usable now)</div>
             <div id="smsBalanceValue" class="wallet-balance">0</div>
-            <div class="line-small">Trial credits left: <b id="trialCreditsEffective">0</b> · Paid credits: <b id="paidCreditsOnly">0</b></div>
+            <div class="line-small">Trial credits left: <b id="trialCreditsEffective">0</b> &middot; Paid credits: <b id="paidCreditsOnly">0</b></div>
             <div class="line-small">Trial SMS pack ends: <span id="trialSmsEnds">-</span> (then trial pool becomes 0; paid credits stay.)</div>
-            <div class="line-small">Each queued SMS uses <b>1 credit</b> — see SMS Log for credit and balance after each send.</div>
+            <div class="line-small">Each queued SMS uses <b>1 credit</b> &mdash; see SMS Log for credit and balance after each send.</div>
             <div class="muted">Select top-up units</div>
             <div class="preset-wrap">
                 <button class="preset" data-units="100">100</button>
@@ -163,6 +163,7 @@
 let context = null;
 let monthlyFee = 1000;
 let selectedUnits = 100;
+let refreshInterval = null;
 
 function fmt(n){ return `Rs. ${Number(n || 0).toLocaleString()}`; }
 function setMsg(t, ok){
@@ -203,31 +204,36 @@ document.querySelectorAll('.preset').forEach((btn) => {
 async function refreshState(){
     const user = firebase.auth().currentUser;
     if (!user || !context) return;
-    const st = await window.subscriptionManager.initializeForUser(user, context.role, context.businessId);
-    document.getElementById('planValue').textContent = st && st.plan ? st.plan : 'TRIAL';
-    document.getElementById('statusBadge').textContent = st && st.statusText ? st.statusText : 'Unknown';
-    document.getElementById('expiryValue').textContent = st && st.expireDate ? new Date(st.expireDate).toLocaleDateString() : '-';
-    updateRing(st && Number.isFinite(st.remainingDays) ? st.remainingDays : 0);
+    try {
+      const st = await window.subscriptionManager.initializeForUser(user, context.role, context.businessId);
+      document.getElementById('planValue').textContent = st && st.plan ? st.plan : 'TRIAL';
+      document.getElementById('statusBadge').textContent = st && st.statusText ? st.statusText : 'Unknown';
+      document.getElementById('expiryValue').textContent = st && st.expireDate ? new Date(st.expireDate).toLocaleDateString() : '-';
+      updateRing(st && Number.isFinite(st.remainingDays) ? st.remainingDays : 0);
 
-    if (window.SmsWalletCore && typeof window.SmsWalletCore.ensureSeeded === 'function') {
-        try { await window.SmsWalletCore.ensureSeeded(context.businessId); } catch (e) { console.warn('ensureSeeded failed:', e && (e.message || e)); }
+      if (window.SmsWalletCore && typeof window.SmsWalletCore.ensureSeeded === 'function') {
+          try { await window.SmsWalletCore.ensureSeeded(context.businessId); } catch (e) { console.warn('ensureSeeded failed:', e && (e.message || e)); }
+      }
+
+      const settingsDoc = await db.collection('settings').doc(context.businessId).get().catch(() => null);
+      const settingsData = settingsDoc && settingsDoc.exists ? settingsDoc.data() || {} : {};
+      const wallet = settingsData.smsWallet || {};
+      monthlyFee = Number((wallet && wallet.monthlyFee) || 1000);
+      const sw = window.SmsWalletCore ? window.SmsWalletCore.normalizeWallet(wallet, settingsData.smsBalance) : wallet;
+      const total = window.SmsWalletCore ? window.SmsWalletCore.effectiveTotal(sw) : Number(wallet.smsBalance ?? settingsData.smsBalance ?? 0);
+      const trialE = window.SmsWalletCore ? window.SmsWalletCore.effectiveTrialBalance(sw) : 0;
+      const paidE = window.SmsWalletCore ? window.SmsWalletCore.effectivePaidBalance(sw) : Math.max(0, total - trialE);
+      document.getElementById('smsBalanceValue').textContent = String(Math.max(0, Math.floor(total)));
+      document.getElementById('trialCreditsEffective').textContent = String(Math.max(0, Math.floor(trialE)));
+      document.getElementById('paidCreditsOnly').textContent = String(Math.max(0, Math.floor(paidE)));
+      const exp = sw.trialSmsExpiresAt || sw.trialExpiresAt;
+      document.getElementById('trialSmsEnds').textContent = exp ? new Date(exp).toLocaleString() : '-';
+      document.getElementById('smsHeaderInput').value = normalizedHeader(settingsData.smsHeader || '');
+      updatePayableUI();
+    } catch (error) {
+        console.error("Billing page refreshState failed:", error);
+        // We can show a small, non-intrusive error to the user if needed
     }
-
-    const settingsDoc = await db.collection('settings').doc(context.businessId).get().catch(() => null);
-    const settingsData = settingsDoc && settingsDoc.exists ? settingsDoc.data() || {} : {};
-    const wallet = settingsData.smsWallet || {};
-    monthlyFee = Number((wallet && wallet.monthlyFee) || 1000);
-    const sw = window.SmsWalletCore ? window.SmsWalletCore.normalizeWallet(wallet, settingsData.smsBalance) : wallet;
-    const total = window.SmsWalletCore ? window.SmsWalletCore.effectiveTotal(sw) : Number(wallet.smsBalance ?? settingsData.smsBalance ?? 0);
-    const trialE = window.SmsWalletCore ? window.SmsWalletCore.effectiveTrialBalance(sw) : 0;
-    const paidE = window.SmsWalletCore ? window.SmsWalletCore.effectivePaidBalance(sw) : Math.max(0, total - trialE);
-    document.getElementById('smsBalanceValue').textContent = String(Math.max(0, Math.floor(total)));
-    document.getElementById('trialCreditsEffective').textContent = String(Math.max(0, Math.floor(trialE)));
-    document.getElementById('paidCreditsOnly').textContent = String(Math.max(0, Math.floor(paidE)));
-    const exp = sw.trialSmsExpiresAt || sw.trialExpiresAt;
-    document.getElementById('trialSmsEnds').textContent = exp ? new Date(exp).toLocaleString() : '-';
-    document.getElementById('smsHeaderInput').value = normalizedHeader(settingsData.smsHeader || '');
-    updatePayableUI();
 }
 async function updateQuickRechargeVisibility(){
     const can = context && context.role === 'SUPER_ADMIN';
@@ -359,7 +365,8 @@ document.getElementById('quickRechargeBtn').addEventListener('click', async () =
 
 firebase.auth().onAuthStateChanged(async (u) => {
     if (!u) {
-        window.location.href = '../../auth/login.html';
+        if (refreshInterval) clearInterval(refreshInterval);
+        window.location.href = '/auth/login.html';
         return;
     }
     const c = await window.dashboardCore.getContext(u);
@@ -368,7 +375,15 @@ firebase.auth().onAuthStateChanged(async (u) => {
     setUnits(100);
     await refreshState();
     await updateQuickRechargeVisibility();
+
+    if (refreshInterval) clearInterval(refreshInterval);
+    refreshInterval = setInterval(refreshState, 5000);
 });
+
+window.addEventListener('beforeunload', () => {
+    if(refreshInterval) clearInterval(refreshInterval);
+});
+
 </script>
 </body>
 </html>
