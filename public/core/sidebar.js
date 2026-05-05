@@ -833,6 +833,7 @@ class Sidebar {
                         { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
                         { icon: '📦', name: 'Inventory', link: '/modules/retail/inventory.html' },
                         { icon: '🛒', name: 'Point of Sale', link: '/modules/retail/pos.html' },
+                        { icon: '📜', name: 'Sales History', link: '/modules/retail/sales-history.html' },
                         { icon: '🧾', name: 'Expenses', link: '/modules/retail/expenses.html' },
                         { icon: '📁', name: 'Accounting Dashboard', link: '/modules/accounts/advanced-accounting-dashboard.html' },
                         { icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },

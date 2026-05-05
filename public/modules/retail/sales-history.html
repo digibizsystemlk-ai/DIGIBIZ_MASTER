@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales History - DIGIBIZ Retail</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    
+    <script src="../../core/firebase-init.js?v=3"></script>
+    <script src="../../core/auth-roles.js?v=3"></script>
+    <script src="../../core/ui-helpers.js?v=1"></script>
+    <script src="../../core/sidebar.js?v=30"></script>
+
+    <style>
+        html.digibiz-sidebar-reserved body {
+            margin-left: 260px;
+        }
+        @media (max-width: 768px) {
+            html.digibiz-sidebar-reserved body {
+                margin-left: 0;
+            }
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f9fa;
+        }
+        .main-content {
+            padding: 30px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .filters {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .filters input, .filters select {
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .sales-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .sales-table th, .sales-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #f1f3f5;
+        }
+        .sales-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        .sales-table td {
+            font-size: 14px;
+        }
+        .status-pill {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-completed {
+            background-color: #e6f9f0;
+            color: #10b981;
+        }
+        .status-credited {
+            background-color: #fff4e6;
+            color: #f59e0b;
+        }
+         .btn-sm {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            background-color: #0d6efd;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="header">
+            <h1>Sales History</h1>
+        </div>
+
+        <div class="filters">
+            <input type="date" id="dateFrom">
+            <input type="date" id="dateTo">
+            <input type="text" id="searchInput" placeholder="Search by Invoice No or Customer...">
+            <button class="btn-sm" id="filterBtn">Filter</button>
+        </div>
+
+        <div style="overflow-x:auto;">
+            <table class="sales-table">
+                <thead>
+                    <tr>
+                        <th>Invoice No</th>
+                        <th>Date</th>
+                        <th>Customer</th>
+                        <th>Total Amount</th>
+                        <th>Payment Method</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="historyTableBody">
+                    <tr><td colspan="7" style="text-align:center; padding: 40px;">Loading sales records...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let currentBusinessId = null;
+        const KUBUKA_BUSINESS_ID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+
+        async function fetchSalesHistory() {
+            if (!currentBusinessId) {
+                console.log('Business ID not set. Cannot fetch history.');
+                return;
+            }
+
+            const tableBody = document.getElementById('historyTableBody');
+            tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 40px;">Loading sales records...</td></tr>';
+
+            try {
+                let query = db.collection('orders').doc(currentBusinessId).collection('list').orderBy('createdAt', 'desc');
+
+                const dateFrom = document.getElementById('dateFrom').value;
+                const dateTo = document.getElementById('dateTo').value;
+
+                if (dateFrom) {
+                    query = query.where('createdAt', '>=', new Date(dateFrom));
+                }
+                if (dateTo) {
+                    query = query.where('createdAt', '<=', new Date(dateTo + 'T23:59:59'));
+                }
+
+                const snapshot = await query.get();
+
+                if (snapshot.empty) {
+                    tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 40px;">No sales records found for the selected period.</td></tr>';
+                    return;
+                }
+
+                let sales = [];
+                snapshot.forEach(doc => {
+                    sales.push({ id: doc.id, ...doc.data() });
+                });
+
+                const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+                if (searchTerm) {
+                    sales = sales.filter(sale => 
+                        (sale.invoiceNo && sale.invoiceNo.toLowerCase().includes(searchTerm)) ||
+                        (sale.customer && sale.customer.name && sale.customer.name.toLowerCase().includes(searchTerm))
+                    );
+                }
+
+                renderTable(sales);
+
+            } catch (error) {
+                console.error("Error fetching sales history: ", error);
+                tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 40px; color: red;">Error loading data: ${error.message}</td></tr>`;
+            }
+        }
+
+        function renderTable(sales) {
+            const tableBody = document.getElementById('historyTableBody');
+            if (!sales || sales.length === 0) {
+                 tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 40px;">No sales records found.</td></tr>';
+                return;
+            }
+
+            tableBody.innerHTML = sales.map(sale => {
+                const createdAt = sale.createdAt && sale.createdAt.toDate ? sale.createdAt.toDate() : new Date();
+                const formattedDate = createdAt.toLocaleDateString('en-CA'); // YYYY-MM-DD
+                const total = (sale.total || 0).toLocaleString('en-LK', { style: 'currency', currency: 'LKR' });
+                const paymentMethod = sale.paymentMethod || 'N/A';
+                const customerName = (sale.customer && sale.customer.name) ? sale.customer.name : 'Walk-in Customer';
+                
+                let statusPill = '';
+                if (paymentMethod.toLowerCase() === 'credit') {
+                    statusPill = `<span class="status-pill status-credited">Credited</span>`;
+                } else {
+                    statusPill = `<span class="status-pill status-completed">Completed</span>`;
+                }
+
+                return `
+                    <tr>
+                        <td>${sale.invoiceNo || 'N/A'}</td>
+                        <td>${formattedDate}</td>
+                        <td>${customerName}</td>
+                        <td>${total}</td>
+                        <td>${paymentMethod}</td>
+                        <td>${statusPill}</td>
+                        <td><button class="btn-sm" onclick="viewInvoice('${sale.id}')">View</button></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function viewInvoice(orderId) {
+            // In a real app, this would open a modal or new page with invoice details.
+            // For now, we can just log it.
+            console.log('Viewing invoice for order:', orderId);
+            alert('Invoice viewing functionality to be implemented.');
+        }
+
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = '../../auth/login.html';
+                return;
+            }
+            
+            if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+                const ctx = await window.dashboardCore.getContext(user);
+                if (ctx && ctx.businessId === KUBUKA_BUSINESS_ID) {
+                    currentBusinessId = ctx.businessId;
+                    document.documentElement.classList.add('digibiz-sidebar-reserved');
+                    fetchSalesHistory();
+                } else {
+                     // If not Kubuka, redirect or show an error
+                    document.body.innerHTML = '<h1 style="text-align:center;margin-top:50px;">Access Denied</h1><p style="text-align:center;">This page is not available for your business.</p>';
+                }
+            } else {
+                 document.body.innerHTML = '<h1 style="text-align:center;margin-top:50px;">Error</h1><p style="text-align:center;">Could not determine business context.</p>';
+            }
+        });
+
+        document.getElementById('filterBtn').addEventListener('click', fetchSalesHistory);
+
+    </script>
+
+</body>
+</html>
