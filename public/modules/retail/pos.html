@@ -39,7 +39,11 @@
         .category-btn{background:white;border:1px solid #e9ecef;padding:8px 16px;border-radius:30px;cursor:pointer;font-size:13px;}
         .category-btn.active{background:#10b981;color:white;border-color:#10b981;}
         .products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:15px;max-height:500px;overflow-y:auto;padding:5px;}
-        .product-card:hover{transform:translateY(-3px);box-shadow:0 5px 20px rgba(0,0,0,0.1);border-color:#10b981;}
+        .product-card{background:#fff;border:1px solid #e9ecef;border-radius:12px;padding:15px;text-align:center;cursor:pointer;transition:all .2s ease}
+        .product-card:hover{transform:translateY(-3px);box-shadow:0 5px 20px rgba(0,0,0,.1);border-color:#10b981}
+        .product-card .product-name{font-weight:600;font-size:14px;margin-bottom:8px;min-height:40px}
+        .product-card .price{font-weight:700;font-size:16px;color:#10b981;margin-bottom:8px}
+        .product-card .stock{font-size:12px;color:#6c757d}
         .cart-panel{background:white;border-radius:20px;border:1px solid #e9ecef;display:flex;flex-direction:column;height:fit-content;position:sticky;top:30px;}
         .cart-items{max-height:350px;overflow-y:auto;}
         .cart-summary{padding:16px;border-top:1px solid #e9ecef;background:#fafbfc;}
@@ -191,6 +195,10 @@
 
         function renderProducts(prods) {
             const grid = document.getElementById('productsGrid');
+            if(!prods || prods.length === 0) {
+                grid.innerHTML = 'No products found.';
+                return;
+            }
             grid.innerHTML = prods.map(p => `
                 <div class="product-card" onclick="addToCart('${p.id}')">
                     <div class="product-name">${p.name}</div>
@@ -201,14 +209,14 @@
 
         window.addToCart = (id) => {
             const p = products.find(p => p.id === id);
+            if(!p) return;
             const item = cart.find(i => i.id === id);
-if (item) {
-    item.quantity++;
-} else {
-    // Add a check for price existence and default to 0 if not present
-    const price = p.price && typeof p.price === 'number' ? p.price : 0;
-    cart.push({...p, price: price, quantity: 1});
-}
+            if (item) {
+                item.quantity++;
+            } else {
+                const price = p.price && typeof p.price === 'number' ? p.price : 0;
+                cart.push({...p, price: price, quantity: 1});
+            }
             renderCart();
         };
         
@@ -294,7 +302,7 @@ if (item) {
                     paymentMethod: paymentMethod,
                     orderType: document.querySelector('input[name="orderType"]:checked').value,
                     status: balanceDue > 0 ? 'unpaid' : 'completed',
-                    createdAt: new Date(),
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     businessId: currentBusinessId,
                     amountPaid: amountPaid,
                     balanceDue: balanceDue,
@@ -303,10 +311,10 @@ if (item) {
 
                 const orderRef = await db.collection('orders').doc(currentBusinessId).collection('list').add(orderData);
                 const invoiceNo = 'INV-' + orderRef.id.substring(0, 6).toUpperCase();
-                await db.collection('orders').doc(currentBusinessId).collection('list').doc(orderRef.id).update({ invoiceNo: invoiceNo });
+                await orderRef.update({ invoiceNo: invoiceNo });
                 
                 if (isKubukaTenant()) {
-                    await createJournalEntryForSale({...orderData, invoiceNo: invoiceNo, total: total}, orderRef.id);
+                    await createJournalEntryForSale({...orderData, invoiceNo: invoiceNo}, orderRef.id);
                 }
                 
                 showToast('Sale Completed Successfully!');
@@ -346,7 +354,7 @@ if (item) {
                 if (createdAtDate.toDateString() === today.toDateString()) rowClass = 'row-today';
                 if (!isPaid && dueDate && dueDate < today) rowClass = 'row-overdue';
 
-                return `<tr class="${rowClass}">
+                return `<tr class="row-today">
                     <td>${s.invoiceNo || 'N/A'}</td>
                     <td>${s.customer.name}</td>
                     <td>${formatCurrency(s.total)}</td>
