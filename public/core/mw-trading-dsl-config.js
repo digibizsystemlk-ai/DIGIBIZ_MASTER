@@ -8,6 +8,10 @@
         DSL_SUBHEADER: '147/1 Agulana Station Road Moratuwa | 0760817149',
         AGENT_FOOTER_NOTE: 'Agent: SPRANZA_PVT_LTD',
         COST_TO_SELL_MULTIPLIER: 1.07,
+        getTenantDisplayName(bizData) {
+            if (bizData && bizData.name) return bizData.name;
+            return 'MW Trading';
+        },
 
         _cachedMwId: undefined,
 
@@ -41,8 +45,9 @@
         },
 
         isMwTradingTenantActive(businessId, bizData) {
-            const idMatch = String(businessId) === 'YRMbB6aq4CMevSrLWkQvoVMtc8b2' || String(businessId) === 'SPRANZA_PVT_LTD';
-            const tenantOn = !!(bizData && bizData.mwTradingSolutionsTenant === true);
+            const bid = String(businessId || '').trim().toUpperCase();
+            const idMatch = bid === 'YRMbB6aq4CMevSrLWkQvoVMtc8b2' || bid === 'SPRANZA_PVT_LTD';
+            const tenantOn = !!(bizData && (bizData.mwTradingSolutionsTenant === true || String(bizData.name || '').toUpperCase() === 'SPRANZA_PVT_LTD'));
             return tenantOn || idMatch;
         },
 

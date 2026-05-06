@@ -3,7 +3,8 @@
     const state = { db: null, user: null, businessId: '' };
 
     function isMwCreditAging() {
-        return String(state.businessId || '') === MW_BUSINESS_ID;
+        const bid = String(state.businessId || '');
+        return bid === MW_BUSINESS_ID || bid === 'SPRANZA_PVT_LTD';
     }
 
     function esc(s) {

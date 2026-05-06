@@ -48,6 +48,7 @@ const auth = window.auth;
     const DEFAULT_TEST_BUSINESS_ID = 'DEFAULT_TEST_BUSINESS';
     const KUBUKA_OWNER_EMAIL = 'kdkumbukaagro@gmail.com';
     const KUBUKA_BUSINESS_ID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+    const SPRANZA_BUSINESS_ID = 'SPRANZA_PVT_LTD';
 
     /**
      * Ensures MW Trading business profile is pinned to distributor mode.
@@ -84,6 +85,25 @@ const auth = window.auth;
             );
         } catch (e) {
             console.warn('[DigiBiz] KUBUKA business profile bootstrap failed:', e && (e.message || e));
+        }
+    };
+
+    /**
+     * Ensure SPRANZA business name is correct in Firestore.
+     */
+    window.ensureSpranzaBusinessProfile = async function () {
+        if (!window.db) return;
+        try {
+            await window.db.collection('businesses').doc(SPRANZA_BUSINESS_ID).set(
+                {
+                    name: 'SPRANZA_PVT_LTD',
+                    businessType: 'distributor',
+                    mwTradingSolutionsTenant: true
+                },
+                { merge: true }
+            );
+        } catch (e) {
+            console.warn('[DigiBiz] SPRANZA business profile bootstrap failed:', e && (e.message || e));
         }
     };
 

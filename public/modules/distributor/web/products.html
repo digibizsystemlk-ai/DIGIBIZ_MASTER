@@ -162,8 +162,8 @@
         <div class="card">
             <div class="card-header"><h3>📤 Bulk Import Products</h3></div>
             <div class="card-body">
-                <p style="margin-bottom:12px; font-size:13px; color:#6b7280;">Format: <strong>Name, Category, Price, Stock</strong> or <strong>Name, Category, Brand, Price, Stock</strong> (one per line). MW: optional last column <strong>Buying (cost)</strong> when using 5-column (no brand) or 6-column (with brand) rows.</p>
-                <p id="mwBulkImportHint" style="display:none; margin-bottom:12px; font-size:13px; color:#92400e;">MW Trading: each line must start with a unique <strong>Item Code</strong>, then <strong>Name, Category, Brand, Price, Stock</strong> (7 columns) or <strong>Name, Category, Price, Stock</strong> (6 columns, no brand). Optional last column: <strong>Buying (cost)</strong>.</p>
+                <p style="margin-bottom:12px; font-size:13px; color:#6b7280;">Format: <strong>Name, Category, Price, Stock</strong> or <strong>Name, Category, Brand, Price, Stock</strong> (one per line). Optional last column <strong>Buying (cost)</strong> when using 5-column (no brand) or 6-column (with brand) rows.</p>
+                <p id="mwBulkImportHint" style="display:none; margin-bottom:12px; font-size:13px; color:#92400e;">Tenant Specific: each line must start with a unique <strong>Item Code</strong>, then <strong>Name, Category, Brand, Price, Stock</strong> (7 columns) or <strong>Name, Category, Price, Stock</strong> (6 columns, no brand). Optional last column: <strong>Buying (cost)</strong>.</p>
                 <div class="bulk-area">
                     <textarea id="bulkData" rows="6" placeholder="Example:&#10;Sunlight Soap, Detergent, Unilever, 250, 100&#10;Dove Shampoo, Hair Care, 450, 50"></textarea>
                     <input type="file" id="bulkFile" accept=".csv,text/csv" style="margin-top:10px;">
@@ -264,22 +264,32 @@
         var searchFrame = 0;
         var addProductIndex = [];
         var addProductSuggestState = { items: [], active: 0 };
-        var selectedCategoryFilter = \'\';
-        var selectedBrandFilter = \'\';
-        var selectedProductFilter = \'\';
+        var selectedCategoryFilter = '';
+        var selectedBrandFilter = '';
+        var selectedProductFilter = '';
         var activeProductEdit = null;
 
         function isMwTradingBusiness() {
-            return !!(window.DigibizMwDslConfig && currentBusinessId
-                && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
+            var bid = String(currentBusinessId || '').trim().toUpperCase();
+            if (bid === 'SPRANZA_PVT_LTD') return true;
+            if (currentBusinessData && String(currentBusinessData.name || '').toUpperCase().indexOf('SPRANZA') !== -1) return true;
+            return !!(window.DigibizMwDslConfig && bid
+                && window.DigibizMwDslConfig.isMwTradingTenantActive(bid, currentBusinessData));
         }
 
         function normalizeMwItemCode(v) {
-            return String(v || \'\').trim().toUpperCase().replace(/\\s+/g, \'\');
+            return String(v || '').trim().toUpperCase().replace(/\s+/g, '');
         }
 
         function getProductCodeColumnLabel() {
-            return isMwTradingBusiness() ? \'Item Code\' : \'Code\';
+            return isMwTradingBusiness() ? 'Item Code' : 'Code';
+        }
+
+        function getTenantName() {
+            if (window.DigibizMwDslConfig) {
+                return window.DigibizMwDslConfig.getTenantDisplayName(currentBusinessData);
+            }
+            return 'MW Trading';
         }
 
         function isMwItemCodeTaken(code, excludeProductId) {
@@ -296,23 +306,23 @@
         }
 
         function looksMwBulkItemCodePart(s) {
-            s = String(s || \'\').trim();
+            s = String(s || '').trim();
             if (s.length < 2 || s.length > 48) return false;
-            if (/[,\"\\n]/.test(s)) return false;
-            return /^[A-Z0-9.\\-_\\/]+$/i.test(s);
+            if (/[,"\\n]/.test(s)) return false;
+            return /^[A-Z0-9.\-_/]+$/i.test(s);
         }
 
         /** MW: ItemCode,Name,Category,Brand,Price,Stock[,Buying] or ItemCode,Name,Category,Price,Stock[,Buying] */
         function parseMwBulkProductLine(parts) {
             if (!parts || parts.length < 5) return null;
             if (!looksMwBulkItemCodePart(parts[0])) return null;
-            if (!isNaN(parseFloat(parts[1])) && String(parts[1]).trim() !== \'\') return null;
+            if (!isNaN(parseFloat(parts[1])) && String(parts[1]).trim() !== '') return null;
             if (parts.length >= 7) {
                 return {
                     itemCode: parts[0].trim(),
                     name: parts[1],
-                    category: parts[2] || \'\',
-                    brand: parts[3] || \'\',
+                    category: parts[2] || '',
+                    brand: parts[3] || '',
                     price: parseFloat(parts[4]),
                     stock: parseInt(parts[5], 10) || 0,
                     buyingCsv: parseFloat(parts[6])
@@ -325,8 +335,8 @@
                     return {
                         itemCode: parts[0].trim(),
                         name: parts[1],
-                        category: parts[2] || \'\',
-                        brand: \'\',
+                        category: parts[2] || '',
+                        brand: '',
                         price: p3n,
                         stock: p4i,
                         buyingCsv: parseFloat(parts[5])
@@ -338,8 +348,8 @@
                     return {
                         itemCode: parts[0].trim(),
                         name: parts[1],
-                        category: parts[2] || \'\',
-                        brand: parts[3] || \'\',
+                        category: parts[2] || '',
+                        brand: parts[3] || '',
                         price: p4n,
                         stock: p5i,
                         buyingCsv: NaN
@@ -350,8 +360,8 @@
             return {
                 itemCode: parts[0].trim(),
                 name: parts[1],
-                category: parts[2] || \'\',
-                brand: \'\',
+                category: parts[2] || '',
+                brand: '',
                 price: parseFloat(parts[3]),
                 stock: parseInt(parts[4], 10) || 0,
                 buyingCsv: NaN
@@ -364,32 +374,38 @@
         }
 
         function updateMwBuyingPriceUi() {
-            var row = document.getElementById(\'mwBuyingPriceGroup\');
+            var row = document.getElementById('mwBuyingPriceGroup');
             if (!row) return;
-            row.style.display = \'block\';
-            var hint = document.getElementById(\'mwStockFormulaNote\');
-            if (hint) hint.style.display = isMwTradingBusiness() ? \'block\' : \'none\';
-            var icg = document.getElementById(\'mwProductItemCodeGroup\');
-            if (icg) icg.style.display = isMwTradingBusiness() ? \'\' : \'none\';
-            var bh = document.getElementById(\'mwBulkImportHint\');
-            if (bh) bh.style.display = isMwTradingBusiness() ? \'block\' : \'none\';
-            var sp = document.getElementById(\'searchProduct\');
+            row.style.display = 'block';
+            var hint = document.getElementById('mwStockFormulaNote');
+            if (hint) hint.style.display = isMwTradingBusiness() ? 'block' : 'none';
+            var icg = document.getElementById('mwProductItemCodeGroup');
+            if (icg) icg.style.display = 'block';
+            var bh = document.getElementById('mwBulkImportHint');
+            if (bh) {
+                bh.style.display = isMwTradingBusiness() ? 'block' : 'none';
+                if (isMwTradingBusiness()) {
+                    var tName = getTenantName();
+                    bh.innerHTML = tName + ': each line must start with a unique <strong>Item Code</strong>, then <strong>Name, Category, Brand, Price, Stock</strong> (7 columns) or <strong>Name, Category, Price, Stock</strong> (6 columns, no brand). Optional last column: <strong>Buying (cost)</strong>.';
+                }
+            }
+            var sp = document.getElementById('searchProduct');
             if (sp) {
                 sp.placeholder = isMwTradingBusiness()
-                    ? \'🔍 Search name / item code / brand / barcode…\'
-                    : \'🔍 Search products…\';
+                    ? '🔍 Search name / item code / brand / barcode…'
+                    : '🔍 Search products…';
             }
-            var pn = document.getElementById(\'productName\');
+            var pn = document.getElementById('productName');
             if (pn) {
                 pn.placeholder = isMwTradingBusiness()
-                    ? \'Search name / item code / brand / model / barcode\'
-                    : \'Search name / brand / model / barcode\';
+                    ? 'Search name / item code / brand / model / barcode'
+                    : 'Search name / brand / model / barcode';
             }
         }
 
         function isMobileDevice() {
-            return window.matchMedia(\'(max-width: 900px)\').matches ||
-                /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || \'\');
+            return window.matchMedia('(max-width: 900px)').matches ||
+                /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
         }
 
         function getDistributorProductPerms() {
@@ -398,14 +414,14 @@
         }
 
         function normalizeRoleForProducts(r) {
-            return String(r || \'\').trim().toUpperCase().replace(/\\s+/g, \'_\').replace(/[^A-Z0-9_]/g, \'\');
+            return String(r || '').trim().toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
         }
 
         function isProductsRepReadOnlyRole() {
-            if (normalizeRoleForProducts(currentUserRole) === \'REP\') return true;
+            if (normalizeRoleForProducts(currentUserRole) === 'REP') return true;
             try {
-                if (window.DigibizDistributorPermissions && typeof window.DigibizDistributorPermissions.roleBand === \'function\') {
-                    return window.DigibizDistributorPermissions.roleBand(currentUserRole) === \'REP\';
+                if (window.DigibizDistributorPermissions && typeof window.DigibizDistributorPermissions.roleBand === 'function') {
+                    return window.DigibizDistributorPermissions.roleBand(currentUserRole) === 'REP';
                 }
             } catch (e) { /* ignore */ }
             return false;
@@ -414,34 +430,34 @@
         function hideProductsCardContaining(elementId) {
             var el = document.getElementById(elementId);
             if (!el) return;
-            var card = el.closest(\'.card\');
-            if (card) card.style.display = \'none\';
+            var card = el.closest('.card');
+            if (card) card.style.display = 'none';
         }
 
         /** REP: view/search/stock only — hide add, imports, bulk actions, per-row Edit/Delete. */
         function applyRepReadOnlyProductsChrome() {
             if (!isProductsRepReadOnlyRole()) return;
-            hideProductsCardContaining(\'addBtn\');
-            hideProductsCardContaining(\'bulkBtn\');
-            hideProductsCardContaining(\'pdfPreviewBtn\');
-            var delAll = document.getElementById(\'deleteAllBtn\');
-            if (delAll) delAll.style.display = \'none\';
-            [\'enableEditModeBtn\', \'commitAllStockBtn\', \'selectAllProductsBtn\', \'bulkCategoryBtn\', \'bulkCategoryInput\'].forEach(function (id) {
+            hideProductsCardContaining('addBtn');
+            hideProductsCardContaining('bulkBtn');
+            hideProductsCardContaining('pdfPreviewBtn');
+            var delAll = document.getElementById('deleteAllBtn');
+            if (delAll) delAll.style.display = 'none';
+            ['enableEditModeBtn', 'commitAllStockBtn', 'selectAllProductsBtn', 'bulkCategoryBtn', 'bulkCategoryInput'].forEach(function (id) {
                 var x = document.getElementById(id);
-                if (x) x.style.display = \'none\';
+                if (x) x.style.display = 'none';
             });
         }
 
         function canDistributorProductCreate() {
             var p = getDistributorProductPerms();
             if (p) return !!p.canProductCreate;
-            return [\'OWNER\', \'MANAGER\', \'DISTRIBUTOR_OWNER\', \'BUSINESS_OWNER\', \'SUPER_ADMIN\'].includes(String(currentUserRole || \'\').toUpperCase());
+            return ['OWNER', 'MANAGER', 'DISTRIBUTOR_OWNER', 'BUSINESS_OWNER', 'SUPER_ADMIN'].includes(String(currentUserRole || '').toUpperCase());
         }
 
         function canDistributorProductEditDelete() {
             var p = getDistributorProductPerms();
             if (p) return !!p.canProductEditDelete;
-            return [\'OWNER\', \'MANAGER\', \'DISTRIBUTOR_OWNER\', \'BUSINESS_OWNER\', \'SUPER_ADMIN\'].includes(String(currentUserRole || \'\').toUpperCase());
+            return ['OWNER', 'MANAGER', 'DISTRIBUTOR_OWNER', 'BUSINESS_OWNER', 'SUPER_ADMIN'].includes(String(currentUserRole || '').toUpperCase());
         }
 
         function canDistributorStockEdit() {
@@ -454,89 +470,89 @@
             var p = getDistributorProductPerms();
             function vis(id, on) {
                 var el = document.getElementById(id);
-                if (el) el.style.display = on ? \'\' : \'none\';
+                if (el) el.style.display = on ? '' : 'none';
             }
             if (!p) return;
-            vis(\'addBtn\', p.canProductCreate);
-            vis(\'bulkBtn\', p.canProductCreate);
-            vis(\'templateBtn\', p.canProductCreate);
-            vis(\'deleteAllBtn\', p.canProductEditDelete);
-            vis(\'enableEditModeBtn\', p.canProductEditDelete);
-            vis(\'bulkCategoryBtn\', p.canProductEditDelete);
-            vis(\'selectAllProductsBtn\', p.canProductEditDelete);
-            vis(\'commitAllStockBtn\', p.canStockEdit || p.canProductEditDelete);
-            vis(\'pdfPreviewBtn\', p.canProductCreate);
-            vis(\'pdfImportBtn\', p.canProductCreate);
+            vis('addBtn', p.canProductCreate);
+            vis('bulkBtn', p.canProductCreate);
+            vis('templateBtn', p.canProductCreate);
+            vis('deleteAllBtn', p.canProductEditDelete);
+            vis('enableEditModeBtn', p.canProductEditDelete);
+            vis('bulkCategoryBtn', p.canProductEditDelete);
+            vis('selectAllProductsBtn', p.canProductEditDelete);
+            vis('commitAllStockBtn', p.canStockEdit || p.canProductEditDelete);
+            vis('pdfPreviewBtn', p.canProductCreate);
+            vis('pdfImportBtn', p.canProductCreate);
         }
 
         function openMobileEditBlockModal() {
-            var m = document.getElementById(\'mobileEditBlockModal\');
-            if (m) m.style.display = \'flex\';
+            var m = document.getElementById('mobileEditBlockModal');
+            if (m) m.style.display = 'flex';
         }
 
         function toggleEditMode(force) {
             if (!canDistributorProductEditDelete()) {
-                showMessage(\'Only the business owner can edit or delete products.\', \'error\');
+                showMessage('Only the business owner can edit or delete products.', 'error');
                 return;
             }
             if (isMobileDevice()) {
                 openMobileEditBlockModal();
                 return;
             }
-            editModeEnabled = typeof force === \'boolean\' ? force : !editModeEnabled;
-            var btn = document.getElementById(\'enableEditModeBtn\');
-            if (btn) btn.textContent = editModeEnabled ? \'🔒 Lock Editing\' : \'✏️ Edit Products\';
+            editModeEnabled = typeof force === 'boolean' ? force : !editModeEnabled;
+            var btn = document.getElementById('enableEditModeBtn');
+            if (btn) btn.textContent = editModeEnabled ? '🔒 Lock Editing' : '✏️ Edit Products';
             loadProducts();
         }
 
         function updateSellingBuyingAutoLink() {
-            var sellingEl = document.getElementById(\'productPrice\');
-            var buyingEl = document.getElementById(\'productBuyingPrice\');
+            var sellingEl = document.getElementById('productPrice');
+            var buyingEl = document.getElementById('productBuyingPrice');
             if (!sellingEl || !buyingEl) return;
             var sell = parseFloat(sellingEl.value);
             if (!isNaN(sell) && sell >= 0) {
                 buyingEl.value = (sell * 0.93).toFixed(2);
             } else {
-                buyingEl.value = \'\';
+                buyingEl.value = '';
             }
             updateAddProductProfitPreview();
         }
 
         function updateAddProductProfitPreview() {
-            var sellingEl = document.getElementById(\'productPrice\');
-            var buyingEl = document.getElementById(\'productBuyingPrice\');
-            var el = document.getElementById(\'addProductProfitPreview\');
+            var sellingEl = document.getElementById('productPrice');
+            var buyingEl = document.getElementById('productBuyingPrice');
+            var el = document.getElementById('addProductProfitPreview');
             if (!el || !sellingEl) return;
             var sell = parseFloat(sellingEl.value);
             if (isNaN(sell) || sell <= 0) {
-                el.textContent = \'\';
+                el.textContent = '';
                 return;
             }
             var buy = buyingEl ? parseFloat(buyingEl.value) : NaN;
             if (isNaN(buy) || buy < 0) buy = sell * 0.93;
             var v = sell - buy;
             var pct = sell > 0 ? (v / sell) * 100 : 0;
-            el.textContent = \'Profit preview: Rs \' + v.toFixed(2) + \' (\' + pct.toFixed(1) + \'%)\';
+            el.textContent = 'Profit preview: Rs ' + v.toFixed(2) + ' (' + pct.toFixed(1) + '%)';
         }
 
         function computeRowMarginText(sell, buy) {
             var s = Number(sell) || 0;
-            if (s <= 0) return \'—\';
+            if (s <= 0) return '—';
             var b = Number(buy);
             if (isNaN(b)) b = s * 0.93;
             var v = s - b;
-            return \'Rs \' + v.toFixed(2) + \' (\' + ((v / s) * 100).toFixed(1) + \'%)\';
+            return 'Rs ' + v.toFixed(2) + ' (' + ((v / s) * 100).toFixed(1) + '%)';
         }
 
         function syncMarginFromRow(tr) {
             if (!tr) return;
-            var sellInp = tr.querySelector(\'[data-field="unitPrice"]\');
-            var buyInp = tr.querySelector(\'[data-field="buyingPrice"]\');
-            var mcell = tr.querySelector(\'.margin-cell\');
+            var sellInp = tr.querySelector('[data-field="unitPrice"]');
+            var buyInp = tr.querySelector('[data-field="buyingPrice"]');
+            var mcell = tr.querySelector('.margin-cell');
             if (!mcell || !sellInp) return;
             var s = Number(sellInp.value) || 0;
-            var bRaw = buyInp ? buyInp.value : \'\';
-            var b = bRaw === \'\' ? NaN : Number(bRaw);
+            var bRaw = buyInp ? buyInp.value : '';
+            var b = bRaw === '' ? NaN : Number(bRaw);
             mcell.textContent = computeRowMarginText(s, b);
         }
 
@@ -557,20 +573,20 @@
         }
 
         function showMessage(msg, type) {
-            var div = document.getElementById(\'alertMessage\');
-            div.innerHTML = \'<div class="alert alert-\' + type + \'\">\' + msg + \'</div>\';
-            setTimeout(function() { div.innerHTML = \'\'; }, 5000);
+            var div = document.getElementById('alertMessage');
+            div.innerHTML = '<div class="alert alert-' + type + '">' + msg + '</div>';
+            setTimeout(function() { div.innerHTML = ''; }, 5000);
         }
 
         function escapeHtml(text) {
-            if (!text) return \'\';
-            var div = document.createElement(\'div\');
+            if (!text) return '';
+            var div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
         function toMillis(v) {
             if (!v) return 0;
-            if (typeof v.toDate === \'function\') return v.toDate().getTime();
+            if (typeof v.toDate === 'function') return v.toDate().getTime();
             if (v.seconds) return Number(v.seconds) * 1000;
             var d = new Date(v);
             return Number.isNaN(d.getTime()) ? 0 : d.getTime();
@@ -588,7 +604,7 @@
             var d = new Date();
             for (var k = 5; k >= 0; k--) {
                 var x = new Date(d.getFullYear(), d.getMonth() - k, 1);
-                out.push(x.getFullYear() + \'-\' + String(x.getMonth() + 1).padStart(2, \'0\'));
+                out.push(x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0'));
             }
             return out;
         }
@@ -601,7 +617,7 @@
                 var t = toMillis(b && b.createdAt);
                 if (!t) return;
                 var dt = new Date(t);
-                var mk = dt.getFullYear() + \'-\' + String(dt.getMonth() + 1).padStart(2, \'0\');
+                var mk = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
                 if (!buckets[mk]) return;
                 var bp = Number(b && b.buyingPrice);
                 if (isNaN(bp) || bp <= 0) bp = Number(b && b.sellingPrice) * 0.93;
@@ -612,14 +628,14 @@
         }
         function drawSparkline(canvas, values) {
             if (!canvas) return;
-            var ctx = canvas.getContext(\'2d\');
+            var ctx = canvas.getContext('2d');
             var w = canvas.width, h = canvas.height;
             ctx.clearRect(0, 0, w, h);
-            ctx.strokeStyle = \'rgba(52,211,153,.9)\';
+            ctx.strokeStyle = 'rgba(52,211,153,.9)';
             ctx.lineWidth = 2;
             var nums = values.map(function (v) { return v == null ? null : Number(v); });
             var flat = nums.filter(function (v) { return v != null && !isNaN(v); });
-            if (!flat.length) { ctx.fillStyle = \'#64748b\'; ctx.font = \'11px system-ui\'; ctx.fillText(\'No batch purchase history yet\', 8, h / 2); return; }
+            if (!flat.length) { ctx.fillStyle = '#64748b'; ctx.font = '11px system-ui'; ctx.fillText('No batch purchase history yet', 8, h / 2); return; }
             var min = Math.min.apply(null, flat), max = Math.max.apply(null, flat);
             if (max === min) { min *= 0.95; max *= 1.05; }
             var pad = 8; ctx.beginPath(); var first = true;
@@ -632,43 +648,43 @@
             ctx.stroke();
         }
         function closeProductIntelDrawer() {
-            var bd = document.getElementById(\'productIntelBackdrop\');
-            var dr = document.getElementById(\'productIntelDrawer\');
-            if (bd) bd.style.display = \'none\';
-            if (dr) dr.style.display = \'none\';
+            var bd = document.getElementById('productIntelBackdrop');
+            var dr = document.getElementById('productIntelDrawer');
+            if (bd) bd.style.display = 'none';
+            if (dr) dr.style.display = 'none';
         }
         async function openProductIntelDrawer(productId) {
             var product = allProducts.find(function (x) { return String(x.id) === String(productId); });
             if (!product) return;
-            var bd = document.getElementById(\'productIntelBackdrop\');
-            var dr = document.getElementById(\'productIntelDrawer\');
-            var body = document.getElementById(\'productIntelBody\');
+            var bd = document.getElementById('productIntelBackdrop');
+            var dr = document.getElementById('productIntelDrawer');
+            var body = document.getElementById('productIntelBody');
             if (!bd || !dr || !body) return;
-            var desc = String(product.description || product.details || product.name || \'\');
-            body.innerHTML = \'<div class="intel-row"><span class="intel-k">Name</span>\' + escapeHtml(product.name || \'—\') + \'</div>\' +
-                \'<div class="intel-row"><span class="intel-k">Brand</span>\' + escapeHtml(product.brand || \'—\') + \'</div>\' +
-                \'<div class="intel-row"><span class="intel-k">Category</span>\' + escapeHtml(product.category || \'—\') + \'</div>\' +
-                \'<div class="intel-row"><span class="intel-k">Barcode</span>\' + escapeHtml(product.barcode || \'—\') + \'</div>\' +
-                \'<div class="intel-row"><span class="intel-k">\' + (isMwTradingBusiness() ? \'Item Code\' : \'Code\') + \'</span>\' + escapeHtml(product.productCode || \'—\') + \'</div>\' +
-                \'<div class="intel-row"><span class="intel-k">Stock</span>\' + displayStockUnits(product) + \' units</div>\' +
-                \'<div class="intel-row"><span class="intel-k">Value</span>Rs \' + money(displayStockUnits(product) * getSellingPrice(product)) + \'</div>\' +
-                \'<div class="intel-row" style="margin-top:8px;"><span class="intel-k">Description</span></div>\' +
-                \'<div style="font-size:11px;color:#e2e8f0;line-height:1.35;max-height:72px;overflow:auto;">\' + escapeHtml(desc) + \'</div>\' +
-                \'<div style="margin-top:10px;font-size:12px;color:#fde68a;">Purchase price trend (6 mo)</div>\' +
-                \'<canvas id="productIntelSpark" width="320" height="72"></canvas>\' +
-                \'<div id="productIntelMove" style="font-size:12px;color:#cbd5e1;">Loading movement…</div>\' +
-                \'<div id="productIntelDead"></div>\';
-            bd.style.display = \'block\'; dr.style.display = \'block\';
-            drawSparkline(document.getElementById(\'productIntelSpark\'), monthlyAvgBuyingFromBatches(product));
+            var desc = String(product.description || product.details || product.name || '');
+            body.innerHTML = '<div class="intel-row"><span class="intel-k">Name</span>' + escapeHtml(product.name || '—') + '</div>' +
+                '<div class="intel-row"><span class="intel-k">Brand</span>' + escapeHtml(product.brand || '—') + '</div>' +
+                '<div class="intel-row"><span class="intel-k">Category</span>' + escapeHtml(product.category || '—') + '</div>' +
+                '<div class="intel-row"><span class="intel-k">Barcode</span>' + escapeHtml(product.barcode || '—') + '</div>' +
+                '<div class="intel-row"><span class="intel-k">' + (isMwTradingBusiness() ? 'Item Code' : 'Code') + '</span>' + escapeHtml(product.productCode || '—') + '</div>' +
+                '<div class="intel-row"><span class="intel-k">Stock</span>' + displayStockUnits(product) + ' units</div>' +
+                '<div class="intel-row"><span class="intel-k">Value</span>Rs ' + money(displayStockUnits(product) * getSellingPrice(product)) + '</div>' +
+                '<div class="intel-row" style="margin-top:8px;"><span class="intel-k">Description</span></div>' +
+                '<div style="font-size:11px;color:#e2e8f0;line-height:1.35;max-height:72px;overflow:auto;">' + escapeHtml(desc) + '</div>' +
+                '<div style="margin-top:10px;font-size:12px;color:#fde68a;">Purchase price trend (6 mo)</div>' +
+                '<canvas id="productIntelSpark" width="320" height="72"></canvas>' +
+                '<div id="productIntelMove" style="font-size:12px;color:#cbd5e1;">Loading movement…</div>' +
+                '<div id="productIntelDead"></div>';
+            bd.style.display = 'block'; dr.style.display = 'block';
+            drawSparkline(document.getElementById('productIntelSpark'), monthlyAvgBuyingFromBatches(product));
             var now = Date.now();
             var d30 = now - 30 * 864e5;
             var d90 = now - 90 * 864e5;
-            var moveEl = document.getElementById(\'productIntelMove\');
-            var deadEl = document.getElementById(\'productIntelDead\');
+            var moveEl = document.getElementById('productIntelMove');
+            var deadEl = document.getElementById('productIntelDead');
             try {
                 var pair = await Promise.all([
-                    db.collection(\'orders\').where(\'businessId\', \'==\', currentBusinessId).orderBy(\'orderDate\', \'desc\').limit(220).get().catch(function () { return { docs: [] }; }),
-                    db.collection(\'grns\').where(\'businessId\', \'==\', currentBusinessId).limit(150).get().catch(function () { return { docs: [] }; })
+                    db.collection('orders').where('businessId', '==', currentBusinessId).orderBy('orderDate', 'desc').limit(220).get().catch(function () { return { docs: [] }; }),
+                    db.collection('grns').where('businessId', '==', currentBusinessId).limit(150).get().catch(function () { return { docs: [] }; })
                 ]);
                 var stockIn30 = 0, stockOut30 = 0, lastSaleMs = 0;
                 pair[1].docs.forEach(function (doc) {
@@ -683,8 +699,8 @@
                 });
                 pair[0].docs.forEach(function (doc) {
                     var o = doc.data() || {};
-                    var st = String(o.status || \'\').toLowerCase();
-                    if (st !== \'approved\' && st !== \'dispatched\' && st !== \'delivered\') return;
+                    var st = String(o.status || '').toLowerCase();
+                    if (st !== 'approved' && st !== 'dispatched' && st !== 'delivered') return;
                     var t = toMillis(o.orderDate || o.approvedAt || o.createdAt);
                     var items = Array.isArray(o.items) ? o.items : [];
                     items.forEach(function (it) {
@@ -695,27 +711,27 @@
                         if (t > lastSaleMs) lastSaleMs = t;
                     });
                 });
-                if (moveEl) moveEl.innerHTML = \'<strong style="color:#fde68a;">30-day stock movement</strong><br>In (GRN): \' + stockIn30 + \' units · Out (orders): \' + stockOut30 + \' units\';
+                if (moveEl) moveEl.innerHTML = '<strong style="color:#fde68a;">30-day stock movement</strong><br>In (GRN): ' + stockIn30 + ' units · Out (orders): ' + stockOut30 + ' units';
                 if (deadEl) {
                     if (lastSaleMs === 0 || lastSaleMs < d90) {
-                        deadEl.className = \'intel-dead\';
-                        deadEl.textContent = \'Dead stock alert: no sales recorded in the last 3 months (or never sold).\';
-                    } else { deadEl.className = \'\'; deadEl.textContent = \'\'; }
+                        deadEl.className = 'intel-dead';
+                        deadEl.textContent = 'Dead stock alert: no sales recorded in the last 3 months (or never sold).';
+                    } else { deadEl.className = ''; deadEl.textContent = ''; }
                 }
             } catch (e) {
-                if (moveEl) moveEl.textContent = \'Could not load movement data.\';
+                if (moveEl) moveEl.textContent = 'Could not load movement data.';
             }
         }
         function bindStockValueFilters() {
-            var catEl = document.getElementById(\'stockFilterCategory\');
-            var brandEl = document.getElementById(\'stockFilterBrand\');
-            var prodEl = document.getElementById(\'stockFilterProduct\');
+            var catEl = document.getElementById('stockFilterCategory');
+            var brandEl = document.getElementById('stockFilterBrand');
+            var prodEl = document.getElementById('stockFilterProduct');
             if (!catEl || !brandEl || !prodEl) return;
-            var categories = Array.from(new Set(allProducts.map(function (p) { return String(p.category || \'\').trim(); }).filter(Boolean))).sort();
-            var brands = Array.from(new Set(allProducts.map(function (p) { return String(p.brand || \'\').trim(); }).filter(Boolean))).sort();
-            catEl.innerHTML = \'<option value="">All Categories</option>\' + categories.map(function (x) { return \'<option value="\' + escapeHtml(x) + \'">\' + escapeHtml(x) + \'</option>\'; }).join(\'\');
-            brandEl.innerHTML = \'<option value="">All Brands</option>\' + brands.map(function (x) { return \'<option value="\' + escapeHtml(x) + \'">\' + escapeHtml(x) + \'</option>\'; }).join(\'\');
-            prodEl.innerHTML = \'<option value="">All Products</option>\' + allProducts.map(function (p) { return \'<option value="\' + escapeHtml(p.id) + \'">\' + escapeHtml(p.name || p.productCode || p.id) + \'</option>\'; }).join(\'\');
+            var categories = Array.from(new Set(allProducts.map(function (p) { return String(p.category || '').trim(); }).filter(Boolean))).sort();
+            var brands = Array.from(new Set(allProducts.map(function (p) { return String(p.brand || '').trim(); }).filter(Boolean))).sort();
+            catEl.innerHTML = '<option value="">All Categories</option>' + categories.map(function (x) { return '<option value="' + escapeHtml(x) + '">' + escapeHtml(x) + '</option>'; }).join('');
+            brandEl.innerHTML = '<option value="">All Brands</option>' + brands.map(function (x) { return '<option value="' + escapeHtml(x) + '">' + escapeHtml(x) + '</option>'; }).join('');
+            prodEl.innerHTML = '<option value="">All Products</option>' + allProducts.map(function (p) { return '<option value="' + escapeHtml(p.id) + '">' + escapeHtml(p.name || p.productCode || p.id) + '</option>'; }).join('');
             catEl.value = selectedCategoryFilter;
             brandEl.value = selectedBrandFilter;
             prodEl.value = selectedProductFilter;
@@ -723,23 +739,23 @@
         }
         function getFilterSelectedProducts() {
             return allProducts.filter(function (p) {
-                if (selectedCategoryFilter && String(p.category || \'\') !== selectedCategoryFilter) return false;
-                if (selectedBrandFilter && String(p.brand || \'\') !== selectedBrandFilter) return false;
-                if (selectedProductFilter && String(p.id || \'\') !== selectedProductFilter) return false;
+                if (selectedCategoryFilter && String(p.category || '') !== selectedCategoryFilter) return false;
+                if (selectedBrandFilter && String(p.brand || '') !== selectedBrandFilter) return false;
+                if (selectedProductFilter && String(p.id || '') !== selectedProductFilter) return false;
                 return true;
             });
         }
         function updateStockValueMetrics() {
             var total = computeStockValue(allProducts);
             var filtered = computeStockValue(getFilterSelectedProducts());
-            var filteredChip = document.getElementById(\'stockFilteredValueChip\');
-            var totalChip = document.getElementById(\'stockTotalValueChip\');
-            if (filteredChip) filteredChip.textContent = \'Filtered Stock Value: Rs \' + money(filtered);
-            if (totalChip) totalChip.textContent = \'Total Stock Value: Rs \' + money(total);
+            var filteredChip = document.getElementById('stockFilteredValueChip');
+            var totalChip = document.getElementById('stockTotalValueChip');
+            if (filteredChip) filteredChip.textContent = 'Filtered Stock Value: Rs ' + money(filtered);
+            if (totalChip) totalChip.textContent = 'Total Stock Value: Rs ' + money(total);
         }
 
         function normalizeFastText(v) {
-            return String(v || \'\').trim().toLowerCase().replace(/\\s+/g, \' \');
+            return String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
         }
         function findAddProductBySearch(text) {
             var q = normalizeFastText(text);
@@ -762,8 +778,8 @@
             var latest = Number(product && product.unitPrice);
             var batches = Array.isArray(product && product.stockBatches) ? product.stockBatches.slice() : [];
             batches.sort(function (a, b) {
-                var at = a && a.createdAt && typeof a.createdAt.toDate === \'function\' ? a.createdAt.toDate().getTime() : new Date(a && a.createdAt || 0).getTime();
-                var bt = b && b.createdAt && typeof b.createdAt.toDate === \'function\' ? b.createdAt.toDate().getTime() : new Date(b && b.createdAt || 0).getTime();
+                var at = a && a.createdAt && typeof a.createdAt.toDate === 'function' ? a.createdAt.toDate().getTime() : new Date(a && a.createdAt || 0).getTime();
+                var bt = b && b.createdAt && typeof b.createdAt.toDate === 'function' ? b.createdAt.toDate().getTime() : new Date(b && b.createdAt || 0).getTime();
                 return bt - at;
             });
             if (batches.length && !isNaN(Number(batches[0].sellingPrice))) {
@@ -773,11 +789,11 @@
         }
 
         function hideAddProductSuggest(immediate) {
-            var box = document.getElementById(\'productNameSuggest\');
+            var box = document.getElementById('productNameSuggest');
             var fn = function () {
                 if (!box) return;
-                box.style.display = \'none\';
-                box.innerHTML = \'\';
+                box.style.display = 'none';
+                box.innerHTML = '';
                 addProductSuggestState = { items: [], active: 0 };
             };
             if (immediate) fn();
@@ -788,44 +804,44 @@
             var row = addProductIndex.find(function (x) { return x.key === sourceKey; });
             if (!row) return;
             var p = row.product || {};
-            document.getElementById(\'productName\').value = p.name || \'\';
-            document.getElementById(\'productCategory\').value = p.category || \'\';
-            document.getElementById(\'productBrand\').value = p.brand || \'\';
-            var barcodeEl = document.getElementById(\'productBarcode\'); if (barcodeEl) barcodeEl.value = p.barcode || \'\';
-            var itemCodeEl = document.getElementById(\'productItemCode\');
-            if (itemCodeEl) itemCodeEl.value = isMwTradingBusiness() ? (p.productCode || \'\') : \'\';
+            document.getElementById('productName').value = p.name || '';
+            document.getElementById('productCategory').value = p.category || '';
+            document.getElementById('productBrand').value = p.brand || '';
+            var barcodeEl = document.getElementById('productBarcode'); if (barcodeEl) barcodeEl.value = p.barcode || '';
+            var itemCodeEl = document.getElementById('productItemCode');
+            if (itemCodeEl) itemCodeEl.value = isMwTradingBusiness() ? (p.productCode || '') : '';
             var latest = getLatestSellingPrice(p);
-            document.getElementById(\'productPrice\').value = latest ? latest.toFixed(2) : \'\';
+            document.getElementById('productPrice').value = latest ? latest.toFixed(2) : '';
             updateSellingBuyingAutoLink();
             var stock = displayStockUnits(p);
-            var strip = document.getElementById(\'addProductStockStrip\');
+            var strip = document.getElementById('addProductStockStrip');
             if (strip) {
-                strip.style.display = \'inline-block\';
-                strip.textContent = \'Current Stock: \' + stock;
+                strip.style.display = 'inline-block';
+                strip.textContent = 'Current Stock: ' + stock;
             }
-            var meta = document.getElementById(\'addProductMetaStatus\');
+            var meta = document.getElementById('addProductMetaStatus');
             var prices = getHistoryPrices(p);
             var multi = prices.length > 1;
             if (meta) {
-                meta.innerHTML = multi ? \'<span class="tiny-badge warn">Multiple prices exist</span>\' : \'\';
+                meta.innerHTML = multi ? '<span class="tiny-badge warn">Multiple prices exist</span>' : '';
             }
-            var metaLine = document.getElementById(\'addProductMetaLine\');
-            if (metaLine) metaLine.textContent = [p.brand || \'\', p.category || \'\', p.model || \'\', p.barcode ? (\'Barcode: \' + p.barcode) : \'\'].filter(Boolean).join(\' | \');
-            var notice = document.getElementById(\'addProductPriceNotice\');
-            if (notice) notice.textContent = multi ? \'Multiple prices exist in history. Latest selling price is auto-filled.\' : \'\';
+            var metaLine = document.getElementById('addProductMetaLine');
+            if (metaLine) metaLine.textContent = [p.brand || '', p.category || '', p.model || '', p.barcode ? ('Barcode: ' + p.barcode) : ''].filter(Boolean).join(' | ');
+            var notice = document.getElementById('addProductPriceNotice');
+            if (notice) notice.textContent = multi ? 'Multiple prices exist in history. Latest selling price is auto-filled.' : '';
             hideAddProductSuggest(true);
             requestAnimationFrame(function () {
                 requestAnimationFrame(function () {
-                    var next = document.getElementById(\'productPrice\');
-                    if (next) { next.focus(); if (next.select) next.select(); }\
+                    var next = document.getElementById('productPrice');
+                    if (next) { next.focus(); if (next.select) next.select(); }
                 });
             });
         }
 
         function renderAddProductSuggest() {
-            var box = document.getElementById(\'productNameSuggest\');
+            var box = document.getElementById('productNameSuggest');
             if (!box) return;
-            var q = normalizeFastText(document.getElementById(\'productName\').value);
+            var q = normalizeFastText(document.getElementById('productName').value);
             if (!q) { hideAddProductSuggest(true); return; }
             var hits = [];
             for (var i = 0; i < addProductIndex.length; i++) {
@@ -839,51 +855,51 @@
             addProductSuggestState.items = hits;
             box.innerHTML = hits.map(function (h, idx) {
                 var p = h.product || {};
-                return \'<button type="button" class="\' + (idx === addProductSuggestState.active ? \'active\' : \'\') + \'" onmousedown="selectAddProductSuggestion(\\\'\' + h.key.replace(/\'/g, "\\\\\'") + \'\\\')">\' +
-                    \'<strong>\' + escapeHtml(p.name || p.productCode || p.id) + \'</strong>\' +
-                    \'<small>\' + escapeHtml([p.brand || \'\', p.category || \'\', p.model || \'\', p.barcode || \'\', p.productCode || \'\'].filter(Boolean).join(\' | \')) + \'</small>\' +
-                    \'</button>\';
-            }).join(\'\');
-            box.style.display = \'block\';
+                return '<button type="button" class="' + (idx === addProductSuggestState.active ? 'active' : '') + '" onmousedown="selectAddProductSuggestion(\'' + h.key.replace(/'/g, "\\'") + '\')">' +
+                    '<strong>' + escapeHtml(p.name || p.productCode || p.id) + '</strong>' +
+                    '<small>' + escapeHtml([p.brand || '', p.category || '', p.model || '', p.barcode || '', p.productCode || ''].filter(Boolean).join(' | ')) + '</small>' +
+                    '</button>';
+            }).join('');
+            box.style.display = 'block';
         }
 
         function handleAddProductNameKeydown(e) {
-            if (e.key === \'ArrowDown\' || e.key === \'ArrowUp\') {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 if (!addProductSuggestState.items.length) {
                     renderAddProductSuggest();
                 }
                 if (!addProductSuggestState.items.length) return;
                 e.preventDefault();
-                var delta = e.key === \'ArrowDown\' ? 1 : -1;
+                var delta = e.key === 'ArrowDown' ? 1 : -1;
                 var next = addProductSuggestState.active + delta;
                 if (next < 0) next = addProductSuggestState.items.length - 1;
                 if (next >= addProductSuggestState.items.length) next = 0;
                 addProductSuggestState.active = next;
                 renderAddProductSuggest();
-                var btn = document.querySelector(\'#productNameSuggest button.active\');
-                if (btn) btn.scrollIntoView({ block: \'nearest\' });
+                var btn = document.querySelector('#productNameSuggest button.active');
+                if (btn) btn.scrollIntoView({ block: 'nearest' });
                 return;
             }
-            if (e.key === \'Enter\') {
+            if (e.key === 'Enter') {
                 if (!addProductSuggestState.items.length) {
                     renderAddProductSuggest();
                 }
                 if (addProductSuggestState.items.length) {
                     e.preventDefault();
                     var pick = addProductSuggestState.items[addProductSuggestState.active] || addProductSuggestState.items[0];
-                    if (pick) selectAddProductSuggestion(pick.key);\
+                    if (pick) selectAddProductSuggestion(pick.key);
                 }
                 return;
             }
-            if (e.key === \'Escape\') {
+            if (e.key === 'Escape') {
                 e.preventDefault();
                 hideAddProductSuggest(true);
             }
         }
 
         async function loadProducts() {
-            var container = document.getElementById(\'productsList\');
-            container.innerHTML = \'<div class="loading">Loading...</div>\';
+            var container = document.getElementById('productsList');
+            container.innerHTML = '<div class="loading">Loading...</div>';
             if (!currentBusinessId) return;
             
             try {
@@ -891,201 +907,205 @@
                 var nestedSnap = null;
                 var bizScopedSnap = null;
                 try {
-                    snap = await db.collection(\'products\').where(\'businessId\', \'==\', currentBusinessId).get();
+                    snap = await db.collection('products').where('businessId', '==', currentBusinessId).get();
                 } catch (eFlat) {
-                    console.warn(\'Flat products query denied/failed:\', eFlat && (eFlat.message || eFlat));
+                    console.warn('Flat products query denied/failed:', eFlat && (eFlat.message || eFlat));
                 }
                 try {
-                    nestedSnap = await db.collection(\'products\').doc(currentBusinessId).collection(\'list\').get();
+                    nestedSnap = await db.collection('products').doc(currentBusinessId).collection('list').get();
                 } catch (eNested) {
-                    console.warn(\'Nested products query denied/failed:\', eNested && (eNested.message || eNested));
+                    console.warn('Nested products query denied/failed:', eNested && (eNested.message || eNested));
                 }
                 try {
-                    bizScopedSnap = await db.collection(\'businesses\').doc(currentBusinessId).collection(\'products\').get();
+                    bizScopedSnap = await db.collection('businesses').doc(currentBusinessId).collection('products').get();
                 } catch (eBizScoped) {
-                    console.warn(\'Business-scoped products query denied/failed:\', eBizScoped && (eBizScoped.message || eBizScoped));
+                    console.warn('Business-scoped products query denied/failed:', eBizScoped && (eBizScoped.message || eBizScoped));
                 }
                 allProducts = [];
                 if (snap) {
                     snap.forEach(function(doc) {
-                        allProducts.push({ id: doc.id, source: \'flat\', ...doc.data() });
+                        allProducts.push({ id: doc.id, source: 'flat', ...doc.data() });
                     });
                 }
                 if (nestedSnap) {
                     nestedSnap.forEach(function(doc) {
-                        allProducts.push({ id: doc.id, source: \'nested\', ...doc.data() });
+                        allProducts.push({ id: doc.id, source: 'nested', ...doc.data() });
                     });
                 }
                 if (bizScopedSnap) {
                     bizScopedSnap.forEach(function(doc) {
-                        allProducts.push({ id: doc.id, source: \'businessScoped\', ...doc.data() });
+                        allProducts.push({ id: doc.id, source: 'businessScoped', ...doc.data() });
                     });
                 }
                 const byKey = {};
                 for (var k = 0; k < allProducts.length; k++) {
                     var row = allProducts[k] || {};
                     var key;
-                    if (isMwTradingBusiness() && String(row.productCode || \'\').trim()) {
+                    if (isMwTradingBusiness() && String(row.productCode || '').trim()) {
                         key = normalizeMwItemCode(row.productCode);
                     } else {
-                        key = String((row.productCode || \'\').toUpperCase() + \'::\' + (row.brand || \'\').toUpperCase());
-                        if (!key || key === \'::\') key = String(row.id || (\'fallback_\' + k));
+                        key = String((row.productCode || '').toUpperCase() + '::' + (row.brand || '').toUpperCase());
+                        if (!key || key === '::') key = String(row.id || ('fallback_' + k));
                     }
                     if (!byKey[key]) byKey[key] = row;
                 }
                 allProducts = Object.values(byKey);
                 
                 allProducts.sort(function(a, b) {
-                    return (a.name || \'\').localeCompare(b.name || \'\');
+                    return (a.name || '').localeCompare(b.name || '');
                 });
                 productSearchRows = allProducts.map(function (p) {
                     return {
-                        key: p.source + \'::\' + p.id,
+                        key: p.source + '::' + p.id,
                         hay: String([
-                            p.name || \'\',
-                            p.brand || \'\',
-                            p.model || \'\',
-                            p.barcode || \'\',
-                            p.productCode || \'\'
-                        ].join(\' \')).toLowerCase()
+                            p.name || '',
+                            p.brand || '',
+                            p.model || '',
+                            p.barcode || '',
+                            p.productCode || ''
+                        ].join(' ')).toLowerCase()
                     };
                 });
                 addProductIndex = allProducts.map(function (p) {
-                    var alias = normalizeFastText([p.name || \'\', p.productCode || \'\', p.brand || \'\', p.category || \'\', p.model || \'\', p.barcode || \'\'].filter(Boolean).join(\' | \'));
+                    var alias = normalizeFastText([p.name || '', p.productCode || '', p.brand || '', p.category || '', p.model || '', p.barcode || ''].filter(Boolean).join(' | '));
                     return {
-                        key: p.source + \'::\' + p.id,
+                        key: p.source + '::' + p.id,
                         product: p,
                         alias: alias,
                         searchText: normalizeFastText([
-                            p.name || \'\',
-                            p.brand || \'\',
-                            p.model || \'\',
-                            p.barcode || \'\',
-                            p.productCode || \'\'
-                        ].join(\' \'))
+                            p.name || '',
+                            p.brand || '',
+                            p.model || '',
+                            p.barcode || '',
+                            p.productCode || ''
+                        ].join(' '))
                     };
                 });
                 
                 if (allProducts.length === 0) {
-                    container.innerHTML = \'<div class="loading">No products. Add one above.</div>\';
-                    document.getElementById(\'productsCount\').innerText = \'0 products\';
+                    container.innerHTML = '<div class="loading">No products. Add one above.</div>';
+                    document.getElementById('productsCount').innerText = '0 products';
                     return;
                 }
-                document.getElementById(\'productsCount\').innerText = allProducts.length + \' products\';
+                document.getElementById('productsCount').innerText = allProducts.length + ' products';
                 bindStockValueFilters();
                 var p = getDistributorProductPerms();
                 var showDel = (!p || p.canProductEditDelete) && !isProductsRepReadOnlyRole();
                 var codeHdr = getProductCodeColumnLabel();
-                var html = \'<div class="table-responsive"><table class="products-table"><thead><tr><th><input type="checkbox" id="selectAllCheckbox"\' + (showDel ? \'\' : \' disabled style="visibility:hidden"\') + \'></th><th>Name</th><th>\' + codeHdr + \'</th><th>Category</th><th>Brand</th><th>Barcode</th><th>Sell (Rs)</th><th>Buy (Rs)</th><th>Margin</th><th>Current Stock</th><th>Factory</th><th>Status</th><th>Actions</th></tr></thead><tbody>\';
+                var html = '<div class="table-responsive"><table class="products-table"><thead><tr><th><input type="checkbox" id="selectAllCheckbox"' + (showDel ? '' : ' disabled style="visibility:hidden"') + '></th><th>Name</th><th>' + codeHdr + '</th><th>Category</th><th>Brand</th><th>Barcode</th><th>Sell (Rs)</th><th>Buy (Rs)</th><th>Margin</th><th>Current Stock</th><th>Factory</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
                 for (var i = 0; i < allProducts.length; i++) {
                     var p = allProducts[i];
                     var units = displayStockUnits(p);
                     var isLow = units <= (p.minStockLevel || 10);
                     var fb = Number(p.factoryReturnBucket) || 0;
-                    var key = p.source + \'::\' + p.id;
+                    var key = p.source + '::' + p.id;
                     var effectiveUnits = pendingStockChanges.hasOwnProperty(key) ? pendingStockChanges[key] : units;
-                    var stockCell = \'<input type="number" min="0" class="quick-stock-input" data-id="\' + p.id + \'" data-source="\' + p.source + \'" data-original="\' + units + \'" value="\' + effectiveUnits + \'" style="width:100px;padding:6px;border:1px solid #e5e7eb;border-radius:6px;" \' + (editModeEnabled ? \'\' : \'disabled\') + \'>\';
-                    var editKey = p.source + \'::\' + p.id;
+                    var stockCell = '<input type="number" min="0" class="quick-stock-input" data-id="' + p.id + '" data-source="' + p.source + '" data-original="' + units + '" value="' + effectiveUnits + '" style="width:100px;padding:6px;border:1px solid #e5e7eb;border-radius:6px;" ' + (editModeEnabled ? '' : 'disabled') + '>';
+                    var editKey = p.source + '::' + p.id;
                     var edits = pendingProductEdits[editKey] || {};
-                    var eName = edits.name != null ? edits.name : (p.name || \'\');
-                    var eCategory = edits.category != null ? edits.category : (p.category || \'\');
-                    var eBrand = edits.brand != null ? edits.brand : (p.brand || \'\');
-                    var eBarcode = edits.barcode != null ? edits.barcode : (p.barcode || \'\');
-                    var eProductCode = edits.productCode != null ? edits.productCode : (p.productCode || \'\');
+                    var eName = edits.name != null ? edits.name : (p.name || '');
+                    var eCategory = edits.category != null ? edits.category : (p.category || '');
+                    var eBrand = edits.brand != null ? edits.brand : (p.brand || '');
+                    var eBarcode = edits.barcode != null ? edits.barcode : (p.barcode || '');
+                    var eProductCode = edits.productCode != null ? edits.productCode : (p.productCode || '');
                     var ePrice = edits.unitPrice != null ? edits.unitPrice : (p.unitPrice || 0);
-                    var eBuy = edits.buyingPrice != null ? edits.buyingPrice : (p.buyingPrice != null ? p.buyingPrice : \'\');
-                    var marginTxt = computeRowMarginText(Number(ePrice), eBuy === \'\' ? NaN : Number(eBuy));
+                    var eBuy = edits.buyingPrice != null ? edits.buyingPrice : (p.buyingPrice != null ? p.buyingPrice : '');
+                    var marginTxt = computeRowMarginText(Number(ePrice), eBuy === '' ? NaN : Number(eBuy));
                     var nameCell = editModeEnabled
-                        ? \'<input class="table-input product-edit-input" data-field="name" data-id="\' + p.id + \'" data-source="\' + p.source + \'" value="\' + escapeHtml(eName) + \'">\'
-                        : \'<button type="button" class="table-input product-name-trigger" data-id="\' + p.id + \'" style="text-align:left;cursor:pointer;">\' + escapeHtml(eName || \'—\') + \'</button>\';
+                        ? '<input class="table-input product-edit-input" data-field="name" data-id="' + p.id + '" data-source="' + p.source + '" value="' + escapeHtml(eName) + '">'
+                        : '<button type="button" class="table-input product-name-trigger" data-id="' + p.id + '" style="text-align:left;cursor:pointer;">' + escapeHtml(eName || '—') + '</button>';
                     var codeCell = (editModeEnabled && isMwTradingBusiness())
-                        ? \'<input class="table-input product-edit-input" data-field="productCode" data-id="\' + p.id + \'" data-source="\' + p.source + \'" value="\' + escapeHtml(eProductCode) + \'">\'
-                        : \'<span style="font-size:11px;">\' + escapeHtml(eProductCode || \'—\') + \'</span>\';
-                    html += \'<tr>\' +
-                        \'<td>\' + (showDel ? \'<input type="checkbox" class="product-checkbox" data-id="\' + p.id + \'" data-source="\' + p.source + \'">\' : \'\') + \'</td>\' +
-                        \'<td class="name-cell">\' + nameCell + \'</td>\' +
-                        \'<td>\' + codeCell + \'</td>\' +
-                        \'<td><input class="table-input product-edit-input" data-field="category" data-id="\' + p.id + \'" data-source="\' + p.source + \'" value="\' + escapeHtml(eCategory) + \'" \' + (editModeEnabled ? \'\' : \'disabled\') + \'></td>\' +
-                        \'<td><input class="table-input product-edit-input" data-field="brand" data-id="\' + p.id + \'" data-source="\' + p.source + \'" value="\' + escapeHtml(eBrand) + \'" \' + (editModeEnabled ? \'\' : \'disabled\') + \'></td>\' +
-                        \'<td><input class="table-input product-edit-input" data-field="barcode" data-id="\' + p.id + \'" data-source="\' + p.source + \'" value="\' + escapeHtml(eBarcode) + \'" \' + (editModeEnabled ? \'\' : \'disabled\') + \'></td>\' +
-                        \'<td><input type="number" step="0.01" class="table-input product-edit-input" data-field="unitPrice" data-id="\' + p.id + \'" data-source="\' + p.source + \'" value="\' + Number(ePrice) + \'" \' + (editModeEnabled ? \'\' : \'disabled\') + \'></td>\' +
-                        \'<td><input type="number" step="0.01" class="table-input product-edit-input" data-field="buyingPrice" data-id="\' + p.id + \'" data-source="\' + p.source + \'" value="\' + (eBuy === \'\' ? \'\' : Number(eBuy)) + \'" \' + (editModeEnabled ? \'\' : \'disabled\') + \'></td>\' +
-                        \'<td class="margin-cell">\' + marginTxt + \'</td>\' +
-                        \'<td>\' + stockCell + \'</td>\' +
-                        \'<td style="font-size:12px;color:#b45309;">\' + fb + \'</td>\' +
-                        \'<td>\' + (isLow ? \'<span class="status-low">⚠️ Low Stock</span>\' : \'<span class="status-ok">✅ OK</span>\') + \'</td>\' +
+                        ? '<input class="table-input product-edit-input" data-field="productCode" data-id="' + p.id + '" data-source="' + p.source + '" value="' + escapeHtml(eProductCode) + '">'
+                        : '<span style="font-size:11px;">' + escapeHtml(eProductCode || '—') + '</span>';
+                    html += '<tr>' +
+                        '<td>' + (showDel ? '<input type="checkbox" class="product-checkbox" data-id="' + p.id + '" data-source="' + p.source + '">' : '') + '</td>' +
+                        '<td class="name-cell">' + nameCell + '</td>' +
+                        '<td>' + codeCell + '</td>' +
+                        '<td><input class="table-input product-edit-input" data-field="category" data-id="' + p.id + '" data-source="' + p.source + '" value="' + escapeHtml(eCategory) + '" ' + (editModeEnabled ? '' : 'disabled') + '></td>' +
+                        '<td><input class="table-input product-edit-input" data-field="brand" data-id="' + p.id + '" data-source="' + p.source + '" value="' + escapeHtml(eBrand) + '" ' + (editModeEnabled ? '' : 'disabled') + '></td>' +
+                        '<td><input class="table-input product-edit-input" data-field="barcode" data-id="' + p.id + '" data-source="' + p.source + '" value="' + escapeHtml(eBarcode) + '" ' + (editModeEnabled ? '' : 'disabled') + '></td>' +
+                        '<td><input type="number" step="0.01" class="table-input product-edit-input" data-field="unitPrice" data-id="' + p.id + '" data-source="' + p.source + '" value="' + Number(ePrice) + '" ' + (editModeEnabled ? '' : 'disabled') + '></td>' +
+                        '<td><input type="number" step="0.01" class="table-input product-edit-input" data-field="buyingPrice" data-id="' + p.id + '" data-source="' + p.source + '" value="' + (eBuy === '' ? '' : Number(eBuy)) + '" ' + (editModeEnabled ? '' : 'disabled') + '></td>' +
+                        '<td class="margin-cell">' + marginTxt + '</td>' +
+                        '<td>' + stockCell + '</td>' +
+                        '<td style="font-size:12px;color:#b45309;">' + fb + '</td>' +
+                        '<td>' + (isLow ? '<span class="status-low">⚠️ Low Stock</span>' : '<span class="status-ok">✅ OK</span>') + '</td>' +
                         (showDel
-                            ? \'<td><div class="row-actions"><button class="btn-warning" onclick="openEditProductModal(\\\'\' + p.id + \'\\\')">✏️ Edit</button><button class="btn-danger" onclick="deleteProduct(\\\'\' + p.id + \'\\\')\">🗑️ Delete</button></div></td>\'
-                            : \'<td>—</td>\') +
-                    \'</tr>\';
+                            ? '<td><div class="row-actions"><button class="btn-warning" onclick="openEditProductModal(\'' + p.id + '\')">✏️ Edit</button><button class="btn-danger" onclick="deleteProduct(\'' + p.id + '\')">🗑️ Delete</button></div></td>'
+                            : '<td>—</td>') +
+                    '</tr>';
                 }
-                html += \'</tbody></table></div>\';
+                html += '</tbody></table></div>';
                 container.innerHTML = html;
-                var selectAllCb = document.getElementById(\'selectAllCheckbox\');
+                var selectAllCb = document.getElementById('selectAllCheckbox');
                 if (selectAllCb) {
                     selectAllCb.onchange = function () {
-                        document.querySelectorAll(\'.product-checkbox\').forEach(function (cb) { cb.checked = selectAllCb.checked; });
+                        document.querySelectorAll('.product-checkbox').forEach(function (cb) { cb.checked = selectAllCb.checked; });
                     };
                 }
                 bindStockEditors();
                 bindProductEditors();
                 bindProductIntelTriggers();
             } catch(e) {
-                console.error(\'Load error:\', e);
-                container.innerHTML = \'<div class="loading">Error: \' + e.message + \'</div>\';
+                console.error('Load error:', e);
+                container.innerHTML = '<div class="loading">Error: ' + e.message + '</div>';
             }
         }
 
         function bindProductIntelTriggers() {
-            document.querySelectorAll(\'.product-name-trigger\').forEach(function (el) {
+            document.querySelectorAll('.product-name-trigger').forEach(function (el) {
                 el.onclick = function () {
-                    openProductIntelDrawer(el.getAttribute(\'data-id\'));
-                };\
+                    openProductIntelDrawer(el.getAttribute('data-id'));
+                };
             });
         }
 
         window.addProduct = async function() {
             var pAdd = getDistributorProductPerms();
             if (pAdd && !pAdd.canProductCreate) {
-                showMessage(\'Your role cannot create products.\', \'error\');
+                showMessage('Your role cannot create products.', 'error');
                 return;
             }
-            var name = document.getElementById(\'productName\').value.trim();
-            var price = parseFloat(document.getElementById(\'productPrice\').value);
-            var buyingEl = document.getElementById(\'productBuyingPrice\');
+            var name = document.getElementById('productName').value.trim();
+            var price = parseFloat(document.getElementById('productPrice').value);
+            var buyingEl = document.getElementById('productBuyingPrice');
             var buyingRaw = buyingEl ? parseFloat(buyingEl.value) : NaN;
             if ((isNaN(buyingRaw) || buyingRaw < 0) && !isNaN(price) && price >= 0) {
                 buyingRaw = Number((price * 0.93).toFixed(2));
-                if (buyingEl) buyingEl.value = String(buyingRaw);\
+                if (buyingEl) buyingEl.value = String(buyingRaw);
             }
             if (!name || isNaN(price) || price <= 0) {
-                showMessage(\'Product Name and valid Price required\', \'error\');
+                showMessage('Product Name and valid Price required', 'error');
                 return;
             }
-            var itemCodeEl = document.getElementById(\'productItemCode\');
-            var itemCodeVal = itemCodeEl ? String(itemCodeEl.value || \'\').trim() : \'\';
+            var itemCodeEl = document.getElementById('productItemCode');
+            var itemCodeVal = itemCodeEl ? String(itemCodeEl.value || '').trim() : '';
             if (isMwTradingBusiness()) {
-                if (!itemCodeVal) {
-                    showMessage(\'Item Code is required for MW Trading.\', \'error\');
-                    return;
-                }
-                if (isMwItemCodeTaken(itemCodeVal, null)) {
-                    showMessage(\'This Item Code is already in use. Each item must have a unique Item Code.\', \'error\');
+                if (itemCodeVal && isMwItemCodeTaken(itemCodeVal, null)) {
+                    showMessage('This Item Code is already in use. Each item must have a unique Item Code.', 'error');
                     return;
                 }
             }
             try {
+                if (!currentBusinessId || currentBusinessId === 'NULL' || currentBusinessId === 'UNDEFINED') {
+                    currentBusinessId = (firebase.auth().currentUser || {}).uid || '';
+                }
+                if (!currentBusinessId) {
+                    showMessage('Session expired or business not found. Please log in again.', 'error');
+                    return;
+                }
                 var payload = {
                     businessId: currentBusinessId,
                     name: name,
-                    category: document.getElementById(\'productCategory\').value.trim(),
-                    brand: (document.getElementById(\'productBrand\') && document.getElementById(\'productBrand\').value.trim()) || \'\',
-                    barcode: (document.getElementById(\'productBarcode\') && document.getElementById(\'productBarcode\').value.trim()) || \'\',
+                    category: document.getElementById('productCategory').value.trim(),
+                    brand: (document.getElementById('productBrand') && document.getElementById('productBrand').value.trim()) || '',
+                    barcode: (document.getElementById('productBarcode') && document.getElementById('productBarcode').value.trim()) || '',
                     unitPrice: price,
-                    minStockLevel: parseInt(document.getElementById(\'productMinStock\').value) || 10,
+                    minStockLevel: parseInt(document.getElementById('productMinStock').value) || 10,
                     isActive: true,
                     createdAt: new Date()
                 };
+
                 if (isMwTradingBusiness() && itemCodeVal) {
                     payload.productCode = itemCodeVal;
                 }
@@ -1475,7 +1495,7 @@
             } else {
                 var rows = [];
                 for (var i = 0; i < productSearchRows.length; i++) {
-                    if (productSearchRows[i].hay.indexOf(term) !== -1) rows.push(productSearchRows[i].key);\
+                    if (productSearchRows[i].hay.indexOf(term) !== -1) rows.push(productSearchRows[i].key);
                 }
                 var wanted = new Set(rows);
                 filtered = base.filter(function (p) { return wanted.has(p.source + \'::\' + p.id); });
@@ -1534,7 +1554,7 @@
             if (selectAllCb2) {
                 selectAllCb2.onchange = function () {
                     document.querySelectorAll(\'.product-checkbox\').forEach(function (cb) { cb.checked = selectAllCb2.checked; });
-                };\
+                };
             }
             bindStockEditors();
             bindProductEditors();
@@ -1561,7 +1581,7 @@
                     if (value === original) delete pendingStockChanges[key];
                     else pendingStockChanges[key] = value;
                     refreshCommitLabel();
-                };\
+                };
             });
             refreshCommitLabel();
         }
@@ -1590,7 +1610,7 @@
                     }
                     syncMarginFromRow(input.closest(\'tr\'));
                     refreshCommitLabel();
-                };\
+                };
             });
             document.querySelectorAll(\'.products-table tbody tr\').forEach(function (tr) { syncMarginFromRow(tr); });
         }
@@ -1823,6 +1843,7 @@
                     } catch (roleErr) {
                         console.warn(\'Business role lookup failed:\', roleErr && (roleErr.message || roleErr));
                     }
+                    currentBusinessId = String(currentBusinessId || '').trim().toUpperCase();
                     currentUserRole = resolvedRole;
                     var bizDoc = await db.collection(\'businesses\').doc(currentBusinessId).get();
                     currentBusinessData = bizDoc.exists ? bizDoc.data() : null;
@@ -1865,7 +1886,7 @@
         });
 
         // Attach button listeners
-        document.getElementById(\'addBtn\').onclick = window.addProduct;
+        document.getElementById('addBtn').onclick = window.addProduct;
         document.getElementById(\'bulkBtn\').onclick = window.bulkImport;
         document.getElementById(\'templateBtn\').onclick = window.downloadTemplate;
         document.getElementById(\'deleteAllBtn\').onclick = window.deleteAllProducts;

@@ -544,9 +544,10 @@
             });
             return 'ORD-' + String(nextNum).padStart(7, '0');
         }
-        /** MW Trading canonical Firestore business id only (YRMbB6…). */
+        /** MW Trading canonical Firestore business id only (YRMbB6…) or SPRANZA. */
         function isMwTradingSolutionsBusiness() {
-            return String(currentBusinessId || '').trim() === MW_TRADING_BILLING_BID;
+            var bid = String(currentBusinessId || '').trim();
+            return bid === MW_TRADING_BILLING_BID || bid === SPRANZA_BILLING_BID;
         }
         /** Billed line Rs for MW submit payload (sales qty minus line returns) × unit. */
         function mwBilledLineAmountForSubmit(item) {
@@ -627,7 +628,7 @@
         }
         async function postMwReceivableSalesForOrder(orderData, orderId, shopId) {
             var bid = String(orderData && orderData.businessId || '').trim();
-            if (bid !== MW_TRADING_BILLING_BID) return;
+            if (bid !== MW_TRADING_BILLING_BID && bid !== SPRANZA_BILLING_BID) return;
             var pay = String(orderData && orderData.paymentMethod || '').toUpperCase();
             if (pay !== 'CREDIT' && pay !== 'CHEQUE') return;
             var amount = Number(orderData && orderData.totalAmount) || 0;
@@ -640,8 +641,10 @@
             var refText = 'ORDER/' + String(orderData.orderNumber || orderId || '').trim();
             var postingDate = toYmd(orderData.orderDate || orderData.createdAt);
             var now = new Date();
-            var arDocId = 'MW_AR_ORDER_' + String(orderId || '').replace(/[^A-Za-z0-9_-]/g, '_') + '_DR';
-            var revDocId = 'MW_AR_ORDER_' + String(orderId || '').replace(/[^A-Za-z0-9_-]/g, '_') + '_CR';
+            var docPrefix = bid === SPRANZA_BILLING_BID ? 'SPRANZA_AR_ORDER_' : 'MW_AR_ORDER_';
+            var arDocId = docPrefix + String(orderId || '').replace(/[^A-Za-z0-9_-]/g, '_') + '_DR';
+            var revDocId = docPrefix + String(orderId || '').replace(/[^A-Za-z0-9_-]/g, '_') + '_CR';
+            var scopeStr = bid === SPRANZA_BILLING_BID ? 'SPRANZA_ONLY' : 'MW_TRADING_ONLY';
             await Promise.all([
                 db.collection('journal_entries').doc(arDocId).set({
                     businessId: bid,
@@ -658,7 +661,7 @@
                         paymentMethod: pay,
                         customerId: String(shopId || ''),
                         customerName: customerName || '',
-                        businessScope: 'MW_TRADING_ONLY'
+                        businessScope: scopeStr
                     }
                 }, { merge: true }),
                 db.collection('journal_entries').doc(revDocId).set({
@@ -676,7 +679,7 @@
                         paymentMethod: pay,
                         customerId: String(shopId || ''),
                         customerName: customerName || '',
-                        businessScope: 'MW_TRADING_ONLY'
+                        businessScope: scopeStr
                     }
                 }, { merge: true }),
                 db.collection('pendingOrders').doc(String(orderId || '')).set({
@@ -684,7 +687,7 @@
                         receivableEntryId: arDocId,
                         salesRevenueEntryId: revDocId,
                         postedAt: now,
-                        scope: 'MW_TRADING_ONLY'
+                        scope: scopeStr
                     }
                 }, { merge: true })
             ]);

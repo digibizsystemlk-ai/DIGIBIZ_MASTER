@@ -117,6 +117,9 @@ class DashboardCore {
         if (typeof window.ensureMwTradingBusinessProfile === 'function' && this.isMwTradingOwner(user)) {
             await window.ensureMwTradingBusinessProfile();
         }
+        if (typeof window.ensureSpranzaBusinessProfile === 'function' && (businessId === 'SPRANZA_PVT_LTD' || (userDocData && userDocData.businessId === 'SPRANZA_PVT_LTD'))) {
+            await window.ensureSpranzaBusinessProfile();
+        }
 
         const userDoc = await window.db.collection('users').doc(user.uid).get();
         const userDocData = userDoc.exists ? (userDoc.data() || {}) : {};
@@ -151,6 +154,12 @@ class DashboardCore {
             businessType = 'distributor';
             if (typeof window.ensureMwTradingBusinessProfile === 'function') {
                 await window.ensureMwTradingBusinessProfile();
+            }
+        }
+        if (businessId === 'SPRANZA_PVT_LTD') {
+            businessType = 'distributor';
+            if (typeof window.ensureSpranzaBusinessProfile === 'function') {
+                await window.ensureSpranzaBusinessProfile();
             }
         }
         if (shouldPreferManufacturer && businessType !== 'distributor' && businessType !== 'scrap_collection_center') {
