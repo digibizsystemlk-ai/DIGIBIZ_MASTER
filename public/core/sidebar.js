@@ -360,9 +360,10 @@ class Sidebar {
 
         if (!hasNewFeatures) {
             // Check if Sidebar Config is available and "new" (it is currently hardcoded as new in render)
-            const role = this.currentRole;
-            const isOwner = this.isSuperAdminUser() || role === 'distributor_owner' || role === 'RETAIL_OWNER';
-            if (isOwner && !this.isRepRole()) {
+            const roleNorm = String(this.currentRole || '').toUpperCase();
+            const isDistributor = this.businessType === 'distributor' || this.isMwTradingContext();
+            const isOwner = this.isSuperAdminUser() || roleNorm === 'DISTRIBUTOR_OWNER' || roleNorm === 'BUSINESS_OWNER';
+            if (isDistributor && isOwner && !this.isRepRole()) {
                 hasNewFeatures = true; // Sidebar Config is the new feature we want to announce Base
             }
         }
