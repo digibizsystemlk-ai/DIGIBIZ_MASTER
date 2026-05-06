@@ -46,7 +46,7 @@
 
         isMwTradingTenantActive(businessId, bizData) {
             const bid = String(businessId || '').trim().toUpperCase();
-            const idMatch = bid === 'YRMbB6aq4CMevSrLWkQvoVMtc8b2' || bid === 'SPRANZA_PVT_LTD';
+            const idMatch = bid === 'YRMBB6AQ4CMEVSRLWKQVOVMTC8B2' || bid === 'SPRANZA_PVT_LTD';
             const tenantOn = !!(bizData && (bizData.mwTradingSolutionsTenant === true || String(bizData.name || '').toUpperCase() === 'SPRANZA_PVT_LTD'));
             return tenantOn || idMatch;
         },
