@@ -393,8 +393,8 @@ class Sidebar {
                     this.businessId = ctx && ctx.businessId ? ctx.businessId : this.businessId;
                 } catch (ctxErr) { /* ignore */ }
             }
-            if (this.businessId) {
-                const businessDoc = await db.collection('businesses').doc(this.businessId).get();
+            if (this.businessId && String(this.businessId).trim()) {
+                const businessDoc = await db.collection('businesses').doc(String(this.businessId).trim()).get();
                 if (businessDoc.exists) {
                     this.businessType = this.normalizeBusinessType(businessDoc.data().businessType || userData.businessType || 'retail');
                 } else {
@@ -552,13 +552,13 @@ class Sidebar {
     }
 
     isMwTradingContext() {
-        const bid = String(this.businessId || '');
-        return bid === this.mwBusinessId || bid === this.spranzaBusinessId;
+        const bid = String(this.businessId || '').trim().toUpperCase();
+        return bid === String(this.mwBusinessId || '').toUpperCase() || bid === String(this.spranzaBusinessId || '').toUpperCase();
     }
 
     isStrictMwTradingBusiness() {
-        const bid = String(this.businessId || '');
-        return bid === this.mwBusinessId || bid === this.spranzaBusinessId;
+        const bid = String(this.businessId || '').trim().toUpperCase();
+        return bid === String(this.mwBusinessId || '').toUpperCase() || bid === String(this.spranzaBusinessId || '').toUpperCase();
     }
 
     isPilotTenant(email, businessId) {

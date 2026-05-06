@@ -158,7 +158,7 @@ async function getUserRole(userId, businessId = null) {
         const MW_OWNER_EMAIL = 'mwtradingsolutions@gmail.com'; // THE ONLY DECLARATION
 
         // MW owner bootstrap only (function no-ops for other emails; avoid misleading logs).
-        if (resolvedBusinessId === MW_BID
+        if (String(resolvedBusinessId || '').toUpperCase() === String(MW_BID).toUpperCase()
             && typeof window.ensureMwTradingOwnerBizMembership === 'function'
             && window.auth
             && window.auth.currentUser
@@ -266,9 +266,9 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
 
     function permissionsForRole(roleRaw, businessId) {
         const b = roleBand(roleRaw);
-        const bid = String(businessId || '').trim();
-        const isMwTrading = bid === MW_BUSINESS_ID;
-        const isSpranza = bid === SPRANZA_BUSINESS_ID;
+        const bid = String(businessId || '').trim().toUpperCase();
+        const isMwTrading = bid === String(MW_BUSINESS_ID).toUpperCase();
+        const isSpranza = bid === String(SPRANZA_BUSINESS_ID).toUpperCase();
         const isOwner = b === 'OWNER';
         const isSC = b === 'SALES_COORDINATOR';
         const isAM = b === 'AREA_MANAGER';
