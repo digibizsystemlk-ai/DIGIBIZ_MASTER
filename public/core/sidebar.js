@@ -354,18 +354,29 @@ class Sidebar {
 
     showNewFeatureAnnouncement(user) {
         if (!user) return;
+
         const menus = this.getMenus();
-        const hasNewFeatures = menus.some(m => m.isNew);
+        let hasNewFeatures = menus.some(m => m.isNew);
+
+        if (!hasNewFeatures) {
+            // Check if Sidebar Config is available and "new" (it is currently hardcoded as new in render)
+            const role = this.currentRole;
+            const isOwner = this.isSuperAdminUser() || role === 'distributor_owner' || role === 'RETAIL_OWNER';
+            if (isOwner && !this.isRepRole()) {
+                hasNewFeatures = true; // Sidebar Config is the new feature we want to announce Base
+            }
+        }
+
         if (!hasNewFeatures) return;
 
         const countKey = `new_feature_announce_count_${user.uid}`;
         const hideKey = `new_feature_announce_hide_${user.uid}`;
-        
+
         if (localStorage.getItem(hideKey) === 'true') return;
-        
+
         let count = parseInt(localStorage.getItem(countKey) || '0');
         if (count >= 10) return;
-        
+
         if (window.location.pathname.includes('sidebar-config.html')) return;
 
         const modalId = 'newFeatureAnnouncementModal';
@@ -407,7 +418,6 @@ class Sidebar {
         document.body.appendChild(overlay);
 
         document.getElementById('goConfigBtn').onclick = () => {
-            localStorage.setItem(hideKey, 'true');
             window.location.href = '/modules/core/sidebar-config.html';
         };
 
@@ -897,7 +907,7 @@ class Sidebar {
             // Apply new dynamic pool logic for Distributor
             const pool = DISTRIBUTOR_MENU_POOL;
             const perms = this.getDistributorPermissionProfile();
-            
+
             // Filter pool by hard permissions first (RBAC safety)
             const availableMenus = pool.map(m => {
                 // Handle dynamic links
@@ -1422,4 +1432,5 @@ bootstrapSidebarImmediate();
 // Safety fallback for unusual parser timing.
 document.addEventListener('DOMContentLoaded', bootstrapSidebarImmediate);
 
-console.log('✅ Sidebar Component Initialized - Retail Navbar');
+console.log('✅ Sidebar Component Initialized - Retail Navbar v2');
+console.log('Sidebar SHOULD_RESERVE_SIDEBAR_SPACE:', SHOULD_RESERVE_SIDEBAR_SPACE);
