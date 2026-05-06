@@ -113,6 +113,18 @@ class DashboardCore {
     async getContext(user) {
         if (!user) return null;
 
+        const userDoc = await window.db.collection('users').doc(user.uid).get();
+        const userDocData = userDoc.exists ? (userDoc.data() || {}) : {};
+        const storedBusinessId = this.getStoredBusinessId();
+        
+        let businessId = '';
+        if (storedBusinessId && await this.canAccessBusiness(user, storedBusinessId, userDocData)) {
+            businessId = storedBusinessId;
+        } else {
+            const fallbackBusinessId = await this.resolveFallbackBusinessId(user, userDocData);
+            businessId = fallbackBusinessId || user.uid;
+        }
+
         await this.ensureMwTradingOwnerBizMembership(user);
         if (typeof window.ensureMwTradingBusinessProfile === 'function' && this.isMwTradingOwner(user)) {
             await window.ensureMwTradingBusinessProfile();
@@ -121,17 +133,6 @@ class DashboardCore {
             await window.ensureSpranzaBusinessProfile();
         }
 
-        const userDoc = await window.db.collection('users').doc(user.uid).get();
-        const userDocData = userDoc.exists ? (userDoc.data() || {}) : {};
-        const storedBusinessId = this.getStoredBusinessId();
-        // Prefer selected business only if caller can actually access it.
-        let businessId = '';
-        if (storedBusinessId && await this.canAccessBusiness(user, storedBusinessId, userDocData)) {
-            businessId = storedBusinessId;
-        } else {
-            const fallbackBusinessId = await this.resolveFallbackBusinessId(user, userDocData);
-            businessId = fallbackBusinessId || user.uid;
-        }
         if (this.isMwTradingOwner(user)) {
             businessId = this.getMwTradingCanonicalBusinessId();
         }
