@@ -417,7 +417,8 @@ class Sidebar {
                     localStorage.setItem('currentBusinessType', this.businessType);
                     sessionStorage.setItem('currentBusinessType', this.businessType);
                 }
-                if (this.businessId === 'YRMbB6aq4CMevSrLWkQvoVMtc8b2' && this.businessType !== 'scrap_collection_center') {
+                const isDistributorTenant = this.businessId === this.mwBusinessId || this.businessId === this.spranzaBusinessId;
+                if (isDistributorTenant && this.businessType !== 'scrap_collection_center') {
                     this.businessType = 'distributor';
                     localStorage.setItem('currentBusinessType', 'distributor');
                     sessionStorage.setItem('currentBusinessType', 'distributor');
@@ -551,15 +552,13 @@ class Sidebar {
     }
 
     isMwTradingContext() {
-        return this.businessId === this.mwBusinessId;
-    }
-
-    isSpranzaContext() {
-        return String(this.businessId || '') === this.spranzaBusinessId;
+        const bid = String(this.businessId || '');
+        return bid === this.mwBusinessId || bid === this.spranzaBusinessId;
     }
 
     isStrictMwTradingBusiness() {
-        return String(this.businessId || '') === this.mwBusinessId;
+        const bid = String(this.businessId || '');
+        return bid === this.mwBusinessId || bid === this.spranzaBusinessId;
     }
 
     isPilotTenant(email, businessId) {
@@ -634,13 +633,6 @@ class Sidebar {
             { icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
             { icon: '📈', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' }
         ];
-        if (String(this.businessId || '') === this.spranzaBusinessId) {
-            base.splice(base.length - 1, 0,
-                { icon: '🏬', name: 'Branches', link: '/modules/distributor/web/branches.html' },
-                { icon: '🔁', name: 'Stock Transfers', link: '/modules/distributor/web/branches.html#transfers' },
-                { icon: '📊', name: 'Branch Reports', link: '/modules/distributor/web/branches.html#reports' }
-            );
-        }
         if (this.isBdkAccountingTenant()) {
             base.splice(base.length - 1, 0, { icon: '📊', name: 'Accounting', link: '/modules/distributor/web/accounting.html' });
         }
@@ -807,7 +799,7 @@ class Sidebar {
             return repMenus;
         }
 
-        if (!onManufacturerModule && ((this.isMwTradingContext() || this.isSpranzaContext()) || normalizedBusinessType === 'distributor')) {
+        if (!onManufacturerModule && (this.isMwTradingContext() || normalizedBusinessType === 'distributor')) {
             return this.buildDistributorMenusForCurrentRole();
         }
 

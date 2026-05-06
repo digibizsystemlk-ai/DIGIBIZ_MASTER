@@ -6,7 +6,6 @@
  * Product docs keep synced numeric fields: currentStock + stock.
  */
 (function (global) {
-    const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
     const MOVEMENT_TYPES = {
         GRN: 'GRN',
         RETURN_TO_COMPANY: 'RETURN_TO_COMPANY',
@@ -59,7 +58,7 @@
     function isMwTradingBusiness(businessId, businessName) {
         const bid = String(businessId || '').trim();
         const bname = String(businessName || '').trim().toUpperCase();
-        return bid === MW_TRADING_BUSINESS_ID || bname === 'M W TRADING';
+        return bid === 'YRMbB6aq4CMevSrLWkQvoVMtc8b2' || bname === 'M W TRADING' || bid === 'SPRANZA_PVT_LTD';
     }
 
     function extractFreeIssueRowsFromOrder(order, orderId) {
@@ -178,7 +177,6 @@
         syncStockPayload: syncStockPayload,
         orderApprovalStockDelta: orderApprovalStockDelta,
         factoryReturnUnitsFromLine: factoryReturnUnitsFromLine,
-        MW_TRADING_BUSINESS_ID: MW_TRADING_BUSINESS_ID,
         isMwTradingBusiness: isMwTradingBusiness,
         extractFreeIssueRowsFromOrder: extractFreeIssueRowsFromOrder,
         extractReturnRowsFromOrder: extractReturnRowsFromOrder

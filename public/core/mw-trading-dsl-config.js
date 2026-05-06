@@ -1,9 +1,4 @@
-/**
- * MW Trading Solutions × DSL thermal bill & 7% cost→sell margin — strictly scoped.
- *
- * MW UI (7% margin + DSL thermal): mwTradingSolutionsTenant === true OR businessId === MW_TRADING_SOLUTIONS_BUSINESS_ID.
- * Firestore rules restrict mwTradingSolutionsTenant == true to the canonical MW business id so other tenants stay generic.
- */
+
 (function (global) {
     const STORAGE_KEY = 'DIGIBIZ_MW_TRADING_SOLUTIONS_BUSINESS_ID';
 
@@ -11,11 +6,8 @@
         FOOTER_DIGIBIZ: 'Software Solution by DIGIBIZ - 0713446500',
         DSL_HEADER: 'DSL ENTERPRISES',
         DSL_SUBHEADER: '147/1 Agulana Station Road Moratuwa | 0760817149',
-        AGENT_FOOTER_NOTE: 'Agent: MW Trading Solutions',
+        AGENT_FOOTER_NOTE: 'Agent: SPRANZA_PVT_LTD',
         COST_TO_SELL_MULTIPLIER: 1.07,
-
-        /** Canonical Firestore businesses/{id} for MW Trading Solutions */
-        MW_TRADING_SOLUTIONS_BUSINESS_ID: 'YRMbB6aq4CMevSrLWkQvoVMtc8b2',
 
         _cachedMwId: undefined,
 
@@ -24,16 +16,12 @@
         },
 
         mwId() {
-            return String(this.MW_TRADING_SOLUTIONS_BUSINESS_ID || '').trim();
+            return 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
         },
 
-        /**
-         * If logged-in business is the MW id and mwTradingSolutionsTenant is missing/false, set it true.
-         * @returns {boolean} true if an update was written
-         */
         async ensureMwTradingTenantProvisioned(db, businessId) {
             const fixed = this.mwId();
-            if (!db || !businessId || !fixed || String(businessId) !== fixed) return false;
+            if (!db || !businessId || !fixed || (String(businessId) !== fixed && String(businessId) !== 'SPRANZA_PVT_LTD')) return false;
             try {
                 const ref = db.collection('businesses').doc(businessId);
                 const snap = await ref.get();
@@ -52,20 +40,10 @@
             }
         },
 
-        /**
-         * DSL bill + 7% margin: tenant flag or canonical MW business id (Firestore rules block tenant=true off the MW doc).
-         */
         isMwTradingTenantActive(businessId, bizData) {
-            const fixed = this.mwId();
-            if (!businessId || !fixed) return false;
-            const idMatch = String(businessId) === fixed;
+            const idMatch = String(businessId) === 'YRMbB6aq4CMevSrLWkQvoVMtc8b2' || String(businessId) === 'SPRANZA_PVT_LTD';
             const tenantOn = !!(bizData && bizData.mwTradingSolutionsTenant === true);
             return tenantOn || idMatch;
-        },
-
-        /** @deprecated use isMwTradingTenantActive(businessId, bizData) */
-        isMwTradingBusinessId(currentBusinessId) {
-            return this.isMwTradingTenantActive(currentBusinessId, null);
         },
 
         async resolveMwTradingBusinessId(db) {
@@ -93,7 +71,7 @@
                     this._cachedMwId = id;
                     return id;
                 }
-                const names = ['MW Trading Solutions', 'MW TRADING SOLUTIONS', 'Mw Trading Solutions'];
+                const names = ['MW Trading', 'MW TRADING', 'M W TRADING', 'SPRANZA_PVT_LTD'];
                 for (let i = 0; i < names.length; i++) {
                     const snap = await db.collection('businesses').where('name', '==', names[i]).limit(1).get();
                     if (!snap.empty) {
@@ -116,11 +94,6 @@
             return Math.round(bp * this.COST_TO_SELL_MULTIPLIER * 100) / 100;
         },
 
-        /**
-         * Distributor: on MW tenant, allow creating a **new** customer row for anyone who can view
-         * the customer module (matrix + warehouse-style roles with canCustomerView only).
-         * Editing/deleting existing rows stays gated by canCustomerEditDelete in the page logic.
-         */
         mwTradingDistributorCanCreateNewCustomer(perms, isMwActive) {
             if (!perms) return false;
             if (perms.canCustomerCreate) return true;
