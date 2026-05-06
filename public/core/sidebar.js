@@ -291,13 +291,13 @@ class Sidebar {
                 this.render();
                 this.attachEvents();
                 // Non-critical tasks continue after first paint.
-                Promise.resolve().then(() => this.maybeShowUpdateAnnouncement(user)).catch(() => {});
+                Promise.resolve().then(() => this.maybeShowUpdateAnnouncement(user)).catch(() => { });
                 Promise.resolve(subscriptionReady).then(async () => {
                     this.subscriptionState = window.subscriptionManager
                         ? await window.subscriptionManager.initializeForUser(user, this.currentRole, this.businessId || user.uid)
                         : null;
                     this.updateUserInfo();
-                }).catch(() => {});
+                }).catch(() => { });
             }
         });
     }

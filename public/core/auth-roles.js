@@ -200,6 +200,11 @@ async function getUserRole(userId, businessId = null) {
         
         // Check business-specific role
         if (resolvedBusinessId) {
+            const bizDoc = await db.collection('businesses').doc(resolvedBusinessId).get();
+            const bizData = bizDoc.exists ? bizDoc.data() : {};
+            if (bizData.ownerId === userId) {
+                return { role: 'distributor_owner', businessId: resolvedBusinessId };
+            }
             const businessUserDoc = await db.collection('businesses').doc(resolvedBusinessId)
                 .collection('users').doc(userId).get();
             if (businessUserDoc.exists) {
