@@ -666,18 +666,6 @@ class Sidebar {
             if (m.name === 'Reps') return !!perms.canManageRepsWeb;
             return true;
         });
-        if (this.isStrictMwTradingBusiness()) {
-            const blockedLinks = new Set([
-                '/modules/distributor/web/invoices.html',
-                '/modules/distributor/web/warehouse.html',
-                '/modules/distributor/web/deliveries.html',
-                '/modules/distributor/web/commission-config.html',
-                '/modules/distributor/web/reports.html',
-                '/modules/core/finance-ledger.html'
-            ]);
-            menus = menus.filter((m) => !blockedLinks.has(String((m && m.link) || '')));
-            tail = tail.filter((m) => String((m && m.link) || '') !== '/modules/core/finance-ledger.html');
-        }
         return this.assembleSidebarMenus(menus, tail);
     }
 
