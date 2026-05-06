@@ -13,6 +13,35 @@ const DIGIBIZ_UPDATE_POINTS = [
     'Manufacturer account, reports, and SMS queue logging are restored.',
     'SMS wallet: 300 trial credits (7 days) + paid credits; Billing & Super Admin show usage (1 credit per SMS).'
 ];
+
+/** 
+ * Comprehensive pool of all available menus for Distributor.
+ * IDs are used for persistence in sidebarConfig.
+ */
+const DISTRIBUTOR_MENU_POOL = [
+    { id: 'dashboard', icon: '📊', name: 'Dashboard', link: '/modules/core/dashboard.html' },
+    { id: 'new_sales_order', icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
+    { id: 'shops', icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
+    { id: 'orders', icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
+    { id: 'sales', icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
+    { id: 'invoices', icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
+    { id: 'grn', icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
+    { id: 'products', icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
+    { id: 'reps', icon: '👥', name: 'Reps', link: '/modules/distributor/web/reps.html' },
+    { id: 'warehouse', icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
+    { id: 'deliveries', icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
+    { id: 'free_issues', icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
+    { id: 'returns', icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
+    { id: 'cheques', icon: '🏦', name: 'Cheques', link: '/modules/distributor/web/cheques.html' },
+    { id: 'credit_aging', icon: '📉', name: 'Credit Aging', link: '/modules/distributor/web/credit-aging.html' },
+    { id: 'commission_config', icon: '⚙️', name: 'Commission Config', link: '/modules/distributor/web/commission-config.html' },
+    { id: 'rep_commission', icon: '💸', name: 'Rep Commission', link: '/modules/distributor/web/rep-commission-report.html' },
+    { id: 'distributor_reports', icon: '📊', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' },
+    { id: 'customers', icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
+    { id: 'finance', icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+    { id: 'accounting', icon: '📁', name: 'Accounting', link: '/modules/accounts/advanced-accounting-dashboard.html' },
+    { id: 'reports', icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
+];
 /** Only the marketing root should skip the app sidebar — not module pages named index.html */
 const SHOULD_RESERVE_SIDEBAR_SPACE = (() => {
     const raw = (window.location.pathname || '').split('?')[0];
@@ -95,6 +124,8 @@ function ensureSidebarStyles() {
         .menu-section-label{padding:8px 24px;font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.6);font-weight:700;}
         .menu-item{padding:12px 24px;display:flex;align-items:center;gap:14px;color:rgba(255,255,255,.85);text-decoration:none;font-size:14px;transition:all .2s;}
         .menu-item:hover,.menu-item.active{background:rgba(255,255,255,.12);color:#ffd966;border-left:3px solid #ffd966;}
+        .menu-badge-new{background:#10b981;color:#fff;font-size:9px;font-weight:900;padding:2px 6px;border-radius:6px;margin-left:auto;text-transform:uppercase;animation:pulseGreen 2s infinite;}
+        @keyframes pulseGreen{0%{box-shadow:0 0 0 0 rgba(16,185,129,0.7);}70%{box-shadow:0 0 0 6px rgba(16,185,129,0);}100%{box-shadow:0 0 0 0 rgba(16,185,129,0);}}
         .menu-dropdown-toggle{width:100%;text-align:left;background:transparent;border:none;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:14px;color:rgba(255,255,255,.85);font-size:14px;cursor:pointer;}
         .menu-dropdown-toggle:hover{background:rgba(255,255,255,.12);color:#ffd966;border-left:3px solid #ffd966;}
         .menu-dropdown-items{display:none;background:rgba(255,255,255,.06);}
@@ -179,6 +210,7 @@ class Sidebar {
         this.scrapOwnerUid = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
         this.superAdmin = false;
         this.businessLogoUrl = '';
+        this.sidebarConfig = null; // Stores array of menu IDs and visibility Base
         if (SHOULD_RESERVE_SIDEBAR_SPACE) {
             // Paint cached sidebar immediately at bootstrap (no auth/db wait).
             this.bootCachedSidebarNow();
@@ -292,6 +324,7 @@ class Sidebar {
                 this.attachEvents();
                 // Non-critical tasks continue after first paint.
                 Promise.resolve().then(() => this.maybeShowUpdateAnnouncement(user)).catch(() => { });
+                Promise.resolve().then(() => this.showNewFeatureAnnouncement(user)).catch(() => { });
                 Promise.resolve(subscriptionReady).then(async () => {
                     this.subscriptionState = window.subscriptionManager
                         ? await window.subscriptionManager.initializeForUser(user, this.currentRole, this.businessId || user.uid)
@@ -317,6 +350,77 @@ class Sidebar {
             if (x < y) return false;
         }
         return false;
+    }
+
+    showNewFeatureAnnouncement(user) {
+        if (!user) return;
+        const menus = this.getMenus();
+        const hasNewFeatures = menus.some(m => m.isNew);
+        if (!hasNewFeatures) return;
+
+        const countKey = `new_feature_announce_count_${user.uid}`;
+        const hideKey = `new_feature_announce_hide_${user.uid}`;
+        
+        if (localStorage.getItem(hideKey) === 'true') return;
+        
+        let count = parseInt(localStorage.getItem(countKey) || '0');
+        if (count >= 10) return;
+        
+        if (window.location.pathname.includes('sidebar-config.html')) return;
+
+        const modalId = 'newFeatureAnnouncementModal';
+        if (document.getElementById(modalId)) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = modalId;
+        overlay.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7); display: flex; align-items: center;
+            justify-content: center; z-index: 10005; backdrop-filter: blur(4px); padding: 20px;
+        `;
+
+        const content = document.createElement('div');
+        content.style.cssText = `
+            background: #fff; padding: 30px; border-radius: 20px; max-width: 450px;
+            width: 100%; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);
+            animation: fadeInScale 0.3s ease-out;
+        `;
+
+        content.innerHTML = `
+            <div style="font-size: 50px; margin-bottom: 15px;">🚀</div>
+            <h2 style="color: #0f172a; margin-bottom: 15px; font-size: 20px; font-weight: 800;">අලුත් පහසුකම් කිහිපයක් එක් කර ඇත!</h2>
+            <p style="color: #475569; font-size: 15px; line-height: 1.6; margin-bottom: 25px;">
+                ඔබගේ ව්‍යාපාරික කටයුතු වඩාත් පහසු කිරීම සඳහා පද්ධතියට නව විශේෂාංග කිහිපයක් එක් කර ඇත. ඒවා සයිඩ්බාර් එකේ <b>"NEW"</b> ලේබලය සමඟ ඔබට දැක ගත හැකියි. <br><br>
+                මෙම මෙනු ඔබට අවශ්‍ය පරිදි සකසා ගැනීමට <b>Settings > Sidebar Config</b> වෙත පිවිසෙන්න.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button id="goConfigBtn" style="background: #2563eb; color: #fff; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer;">සැකසුම් වෙත යන්න →</button>
+                <button id="hideAnnounceBtn" style="background: #f1f5f9; color: #475569; border: none; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer;">මීට පසු පෙන්වන්න එපා</button>
+                <button id="closeAnnounceBtn" style="background: transparent; color: #94a3b8; border: none; font-size: 13px; cursor: pointer; margin-top: 5px;">පසුව බලන්න</button>
+            </div>
+            <style>
+                @keyframes fadeInScale { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+            </style>
+        `;
+
+        overlay.appendChild(content);
+        document.body.appendChild(overlay);
+
+        document.getElementById('goConfigBtn').onclick = () => {
+            localStorage.setItem(hideKey, 'true');
+            window.location.href = '/modules/core/sidebar-config.html';
+        };
+
+        document.getElementById('hideAnnounceBtn').onclick = () => {
+            localStorage.setItem(hideKey, 'true');
+            overlay.remove();
+        };
+
+        document.getElementById('closeAnnounceBtn').onclick = () => {
+            overlay.remove();
+        };
+
+        localStorage.setItem(countKey, (count + 1).toString());
     }
 
     async maybeShowUpdateAnnouncement(user) {
@@ -397,8 +501,10 @@ class Sidebar {
                 const businessDoc = await db.collection('businesses').doc(String(this.businessId).trim()).get();
                 if (businessDoc.exists) {
                     this.businessType = this.normalizeBusinessType(businessDoc.data().businessType || userData.businessType || 'retail');
+                    this.sidebarConfig = businessDoc.data().sidebarConfig || null;
                 } else {
                     this.businessType = this.normalizeBusinessType(userData.businessType || 'retail');
+                    this.sidebarConfig = null;
                 }
                 this.businessName = businessDoc.exists ? businessDoc.data().name : 'My Business';
                 if (businessDoc.exists && businessDoc.data().ownerName) this.ownerName = businessDoc.data().ownerName;
@@ -788,9 +894,77 @@ class Sidebar {
         }
 
         if (!onManufacturerModule && (this.isMwTradingContext() || normalizedBusinessType === 'distributor')) {
-            return this.buildDistributorMenusForCurrentRole();
+            // Apply new dynamic pool logic for Distributor
+            const pool = DISTRIBUTOR_MENU_POOL;
+            const perms = this.getDistributorPermissionProfile();
+            
+            // Filter pool by hard permissions first (RBAC safety)
+            const availableMenus = pool.map(m => {
+                // Handle dynamic links
+                if (m.id === 'accounting' && this.isBdkAccountingTenant()) {
+                    return { ...m, link: '/modules/distributor/web/accounting.html' };
+                }
+                return m;
+            }).filter(m => {
+                if (m.id === 'finance') return !!perms.canViewFinancialsProfit;
+                if (m.id === 'orders') return !!(perms.canStockView || perms.canInvoiceCreateEdit);
+                if (m.id === 'new_sales_order') return !!perms.canInvoiceCreateEdit;
+                if (m.id === 'reps') return !!perms.canManageRepsWeb;
+                if (m.id === 'accounting') return !!perms.canViewAccounting;
+                if (m.id === 'reports') return !!perms.canViewReportsFull;
+                if (m.id === 'warehouse') return !this.isWarehouseDisabledForCurrentTenant();
+                if (m.id === 'cheques' || m.id === 'credit_aging' || m.id === 'rep_commission') return this.isCommissionPilotEnabled();
+                return true;
+            });
+
+            // If user has no custom config, return all available standard menus in pool order
+            if (!this.sidebarConfig || !Array.isArray(this.sidebarConfig)) {
+                return availableMenus;
+            }
+
+            // Apply custom config: sort and filter by visibility
+            // sidebarConfig is expected to be an array of objects: { id, visible } or just strings of visible IDs
+            const configMap = new Map();
+            this.sidebarConfig.forEach((item, index) => {
+                if (typeof item === 'string') {
+                    configMap.set(item, { visible: true, order: index });
+                } else if (item && item.id) {
+                    configMap.set(item.id, { visible: item.visible !== false, order: index });
+                }
+            });
+
+            // New menus added to the pool that are NOT in the config yet should be "FORCED" at the end (with NEW badge)
+            const result = [];
+            const newMenuItems = [];
+
+            availableMenus.forEach(m => {
+                if (configMap.has(m.id)) {
+                    const cfg = configMap.get(m.id);
+                    if (cfg.visible) {
+                        result.push({ ...m, order: cfg.order });
+                    }
+                } else {
+                    // This is a NEW menu not yet in user's config
+                    newMenuItems.push({ ...m, isNew: true, order: 9999 });
+                }
+            });
+
+            result.sort((a, b) => a.order - b.order);
+            return [...result, ...newMenuItems];
         }
 
+        // 1. Try dynamic configuration from BUSINESS_TYPES
+        const dynamicConfig = window.BUSINESS_TYPES ? window.BUSINESS_TYPES[menuBusinessType] : null;
+        if (dynamicConfig && dynamicConfig.menus && this.businessId !== this.kduTeaBusinessId) {
+            const role = this.currentRole || 'VIEWER';
+            let menus = dynamicConfig.menus.filter(m => {
+                if (!m.role) return true;
+                return m.role.includes(role);
+            });
+            return this.assembleSidebarMenus(menus);
+        }
+
+        // 2. Fallback to legacy hardcoded logic for special tenants (like KUBUKA)
         let menus;
         if (menuBusinessType === 'pharmacy') {
             menus = [
@@ -1038,6 +1212,7 @@ class Sidebar {
         const settingsItemsBase = [
             { icon: '🏢', name: 'Business Profile', link: '/modules/company/profile.html' },
             { icon: '👥', name: 'Staff', link: '/modules/company/staff.html' },
+            { icon: '🎨', name: 'Sidebar Config', link: '/modules/core/sidebar-config.html', isNew: true },
             { icon: '🔐', name: 'Change Password', link: '/modules/core/change-password.html' },
             { icon: '⚙️', name: 'Settings', link: '/modules/company/settings.html' },
             { icon: '📲', name: 'SMS Settings', link: '/modules/company/sms-settings.html' },
@@ -1091,7 +1266,13 @@ class Sidebar {
                         </div>
                     </div>
                     <div class="nav-links" id="sidebarNavLinks">
-                        ${menuItems.map((item) => `<a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
+                        ${menuItems.map((item) => `
+                            <a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}">
+                                <span class="menu-icon">${item.icon}</span>
+                                <span>${item.name}</span>
+                                ${item.isNew ? '<span class="menu-badge-new">NEW</span>' : ''}
+                            </a>
+                        `).join('')}
                         ${this.isSuperAdminUser() ? `<div class="menu-dropdown ${loansActive ? 'open' : ''}" id="loansDropdown">
                             <button type="button" class="menu-dropdown-toggle ${loansActive ? 'active' : ''}" id="loansDropdownToggle">
                                 <span><span class="menu-icon">💸</span><span>Loans</span></span><span>${loansActive ? '▾' : '▸'}</span>
@@ -1100,12 +1281,24 @@ class Sidebar {
                                 ${loanItems.map((item) => `<a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
                             </div>
                         </div>` : ''}
-                        ${settingsItems.length ? `<div class="menu-dropdown ${settingsActive ? 'open' : ''}" id="settingsDropdown">
+                        ${settingsItems.length ? `
+                        <div class="menu-dropdown ${settingsActive ? 'open' : ''}" id="settingsDropdown">
                             <button type="button" class="menu-dropdown-toggle ${settingsActive ? 'active' : ''}" id="settingsDropdownToggle">
-                                <span><span class="menu-icon">⚙️</span><span>Settings</span></span><span>${settingsActive ? '▾' : '▸'}</span>
+                                <span>
+                                    <span class="menu-icon">⚙️</span>
+                                    <span>Settings</span>
+                                    ${settingsItems.some(si => si.isNew) ? '<span class="menu-badge-new" style="margin-left:8px; background:#ef4444;">NEW</span>' : ''}
+                                </span>
+                                <span>${settingsActive ? '▾' : '▸'}</span>
                             </button>
                             <div class="menu-dropdown-items">
-                                ${settingsItems.map((item) => `<a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
+                                ${settingsItems.map((item) => `
+                                    <a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}">
+                                        <span class="menu-icon">${item.icon}</span>
+                                        <span>${item.name}</span>
+                                        ${item.isNew ? '<span class="menu-badge-new">NEW</span>' : ''}
+                                    </a>
+                                `).join('')}
                             </div>
                         </div>` : ''}
                         ${this.isSuperAdminUser() ? `<div class="menu-section-label">Super Admin</div>

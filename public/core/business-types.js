@@ -17,7 +17,8 @@ const BUSINESS_TYPES = {
             { icon: "📁", name: "Accounting", link: "/modules/accounts/accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
             { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
         ],
-        dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"]
+        dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
+        isReady: true
     },
     
     pharmacy: {
@@ -171,6 +172,7 @@ const BUSINESS_TYPES = {
             routePlanning: true,
             creditControl: true
         },
+        isReady: true,
         // Mobile specific settings
         mobile: {
             loginUrl: "/modules/distributor/mobile/order.html",
@@ -212,7 +214,8 @@ const BUSINESS_TYPES = {
             productionIntelligence: true,
             manufacturingCostSheets: true,
             supplierPriceTracking: true
-        }
+        },
+        isReady: true
     },
 
     scrap_collection_center: {
@@ -234,7 +237,8 @@ const BUSINESS_TYPES = {
             { icon: "📁", name: "ACCOUNTING", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN"] },
             { icon: "📈", name: "REPORTS", link: "/modules/reports/index.html", role: ["SUPER_ADMIN"] }
         ],
-        dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"]
+        dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
+        isReady: true
     }
 };
 

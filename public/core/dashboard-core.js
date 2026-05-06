@@ -1257,6 +1257,76 @@ class DashboardCore {
         if (context.businessType === 'scrap_collection_center') return this.getScrapMetrics(context);
         return this.getRetailMetrics(context);
     }
+    showDemoSystemNotice() {
+        const modalId = 'demoSystemNoticeModal';
+        if (document.getElementById(modalId)) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = modalId;
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(8px);
+            padding: 20px;
+        `;
+
+        const content = document.createElement('div');
+        content.style.cssText = `
+            background: #fff;
+            padding: 35px;
+            border-radius: 24px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        `;
+
+        content.innerHTML = `
+            <div style="font-size: 50px; margin-bottom: 20px;">ℹ️</div>
+            <h2 style="color: #0f3b2c; margin-bottom: 20px; font-size: 22px; font-weight: 800; line-height: 1.4;">පද්ධති දැනුම්දීමයි</h2>
+            <p style="color: #4b5563; font-size: 16px; line-height: 1.8; margin-bottom: 30px;">
+                මේ ඔබව යොමු කරන්නේ අපගේ පද්ධතිවල ස්වභාවය පරික්ෂා කිරීම සදහා වන <b>තාවකාලික පද්ධතියක් (Demo System)</b> වෙතයි.<br><br>
+                පද්ධතියේ ක්‍රියාකාරිත්වය පිළිබඳව අවබෝධයක් ලබා ගැනීමට මෙය භාවිතා කරන්න. එසේම <b>ඔබේ ව්‍යාපාරයටම අනන්‍ය වූ පද්ධතියක්</b> නිර්මාණය කර දීමට අපට හැකියාව ඇත.
+            </p>
+            <button id="closeDemoNotice" style="
+                background: #0f3b2c;
+                color: white;
+                border: none;
+                padding: 14px 30px;
+                border-radius: 12px;
+                font-size: 16px;
+                font-weight: 700;
+                cursor: pointer;
+                width: 100%;
+                transition: transform 0.2s;
+            ">පද්ධතිය පරීක්ෂා කිරීම අරඹන්න →</button>
+            <style>
+                @keyframes slideUp {
+                    from { transform: translateY(30px); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                }
+                #closeDemoNotice:hover { transform: scale(1.02); }
+            </style>
+        `;
+
+        overlay.appendChild(content);
+        document.body.appendChild(overlay);
+
+        document.getElementById('closeDemoNotice').onclick = () => {
+            overlay.style.opacity = '0';
+            overlay.style.transition = 'opacity 0.3s';
+            setTimeout(() => overlay.remove(), 300);
+        };
+    }
 }
 
 window.dashboardCore = new DashboardCore();
