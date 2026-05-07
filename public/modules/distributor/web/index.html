@@ -2395,7 +2395,6 @@ ${meta}
             const order = await resolveOrderForDisplay(orderId);
             if (!order) return;
 
-            // Fetch shop details for invoice header
             let shopData = null;
             if (order.shopId) {
                 try {
@@ -2414,6 +2413,9 @@ ${meta}
             let subtotal = 0;
             let freeQtyTotal = 0;
 
+            const freeIssuesSummary = [];
+            const returnsSummary = [];
+
             const items = Array.isArray(order.items) ? order.items : [];
             items.forEach((item, idx) => {
                 const qty = Number(item.orderedQty) || 0;
@@ -2428,11 +2430,22 @@ ${meta}
                 const rr = Number(item.returnResellQty) || 0;
                 const leg = Number(item.returnQty) || 0;
 
+                if (free > 0) {
+                    freeIssuesSummary.push({ name: item.productName, qty: free, price: price, reason: item.freeReason || '-' });
+                }
+                if (rc > 0) {
+                    returnsSummary.push({ name: item.productName, qty: rc, price: price, type: 'To Company (Non-sellable)', reason: item.returnReason || '-' });
+                }
+                if (rr > 0) {
+                    returnsSummary.push({ name: item.productName, qty: rr, price: price, type: 'To Stock (Resell)', reason: item.returnReason || '-' });
+                }
+                if (!rc && !rr && leg > 0) {
+                    returnsSummary.push({ name: item.productName, qty: leg, price: price, type: 'General Return', reason: item.returnReason || '-' });
+                }
+
                 let extra = '';
-                if (free > 0) extra += `<div><span class="badge-free">Free Issue: ${free}</span> ${item.freeReason ? `<small>(${item.freeReason})</small>` : ''}</div>`;
-                if (rc > 0) extra += `<div><span class="badge-return">Return (Company): ${rc}</span></div>`;
-                if (rr > 0) extra += `<div><span class="badge-return">Return (Resell): ${rr}</span></div>`;
-                if (!rc && !rr && leg > 0) extra += `<div><span class="badge-return">Return: ${leg}</span> <small>(${item.returnReason || ''})</small></div>`;
+                if (free > 0) extra += `<div><span class="badge-free">Free: ${free}</span></div>`;
+                if (rc > 0 || rr > 0 || leg > 0) extra += `<div><span class="badge-return">Return: ${rc + rr + leg}</span></div>`;
 
                 itemsRows += `
                     <tr>
@@ -2449,25 +2462,64 @@ ${meta}
                 `;
             });
 
-            const returns = Array.isArray(order.returns) ? order.returns : [];
-            let returnsSection = '';
-            if (returns.length > 0) {
-                let returnRows = '';
-                returns.forEach((ret, idx) => {
-                    returnRows += `
+            // Standalone returns
+            const standaloneReturns = Array.isArray(order.returns) ? order.returns : [];
+            standaloneReturns.forEach(ret => {
+                const q = Number(ret.returnQty) || 0;
+                const p = Number(ret.unitPrice || 0);
+                returnsSummary.push({ name: ret.productName, qty: q, price: p, type: 'Standalone Return', reason: ret.reason || '-' });
+            });
+
+            let freeSection = '';
+            if (freeIssuesSummary.length > 0) {
+                let frRows = '';
+                freeIssuesSummary.forEach((f, i) => {
+                    frRows += `
                         <tr>
-                            <td>${idx + 1}</td>
-                            <td>${ret.productName} <small>(${ret.reason || 'No reason'})</small></td>
-                            <td class="num">${ret.returnQty}</td>
+                            <td>${i + 1}</td>
+                            <td>${f.name}</td>
+                            <td class="num">${f.qty}</td>
+                            <td class="num">Rs ${(f.qty * f.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                            <td><small>${f.reason}</small></td>
+                        </tr>
+                    `;
+                });
+                freeSection = `
+                    <div style="margin-top:30px; border: 1px solid #ffedd5; border-radius:12px; padding:12px; background:#fffaf5;">
+                        <h4 style="font-size:12px; text-transform:uppercase; color:#9a3412; margin-bottom:10px; display:flex; align-items:center; gap:8px;">
+                            🎁 Free Issues Summary
+                        </h4>
+                        <table class="invoice-table" style="font-size:12px; margin-bottom:0;">
+                            <thead><tr><th>#</th><th>Product</th><th class="num">Qty</th><th class="num">Value (est)</th><th>Reason</th></tr></thead>
+                            <tbody>${frRows}</tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            let returnsSection = '';
+            if (returnsSummary.length > 0) {
+                let retRows = '';
+                returnsSummary.forEach((r, i) => {
+                    retRows += `
+                        <tr>
+                            <td>${i + 1}</td>
+                            <td>${r.name}</td>
+                            <td class="num">${r.qty}</td>
+                            <td class="num">Rs ${(r.qty * r.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                            <td><span style="font-size:10px; padding:2px 6px; border-radius:4px; background:#f3f4f6;">${r.type}</span></td>
+                            <td><small>${r.reason}</small></td>
                         </tr>
                     `;
                 });
                 returnsSection = `
-                    <div style="margin-top:20px;">
-                        <h4 style="font-size:12px; text-transform:uppercase; color:#6b7280; margin-bottom:8px;">Additional Returns (Standalone)</h4>
-                        <table class="invoice-table" style="font-size:12px;">
-                            <thead><tr><th>#</th><th>Product</th><th class="num">Qty</th></tr></thead>
-                            <tbody>${returnRows}</tbody>
+                    <div style="margin-top:20px; border: 1px solid #fee2e2; border-radius:12px; padding:12px; background:#fffafb;">
+                        <h4 style="font-size:12px; text-transform:uppercase; color:#991b1b; margin-bottom:10px; display:flex; align-items:center; gap:8px;">
+                            ↩️ Returns Summary
+                        </h4>
+                        <table class="invoice-table" style="font-size:12px; margin-bottom:0;">
+                            <thead><tr><th>#</th><th>Product</th><th class="num">Qty</th><th class="num">Value</th><th>Target</th><th>Reason</th></tr></thead>
+                            <tbody>${retRows}</tbody>
                         </table>
                     </div>
                 `;
@@ -2526,6 +2578,7 @@ ${meta}
                         </tbody>
                     </table>
 
+                    ${freeSection}
                     ${returnsSection}
 
                     <div class="invoice-total-section">
@@ -2535,7 +2588,7 @@ ${meta}
                                 <span>Rs ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                             </div>
                             <div class="total-row">
-                                <span style="color:#6b7280;">Free Issues</span>
+                                <span style="color:#6b7280;">Free Issues Total</span>
                                 <span>${freeQtyTotal} Items</span>
                             </div>
                             <div class="total-row grand">
