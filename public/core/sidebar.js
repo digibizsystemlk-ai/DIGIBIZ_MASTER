@@ -23,7 +23,7 @@ const DISTRIBUTOR_MENU_POOL = [
     { id: 'new_sales_order', permissionId: 'canInvoiceCreateEdit', icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
     { id: 'shops', permissionId: 'canCustomerView', icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
     { id: 'orders', permissionId: 'canOrderWorkflowApprove', icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
-    { id: 'order_history', permissionId: 'canSalesView', icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html', mobileOnly: true },
+    { id: 'order_history', permissionId: 'canSalesView', icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
     { id: 'sales', permissionId: 'canSalesView', icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
     { id: 'invoices', permissionId: 'canInvoiceCreateEdit', icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
     { id: 'grn', permissionId: 'canStockEdit', icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
@@ -137,7 +137,6 @@ function ensureSidebarStyles() {
         .logout-sidebar-btn{background:rgba(220,38,38,.8);border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;width:100%;font-size:14px;}
         .logout-sidebar-btn:hover{background:#dc2626;}
         @media (max-width:768px){html.digibiz-mobile-toggle-space body{padding-top:72px;} .digibiz-mobile-menu-toggle{display:flex;} .digibiz-mobile-topbar{display:flex;} .retail-navbar{transform:translateX(-100%);transition:transform .2s ease;} .retail-navbar .sidebar-business-name{display:block !important;visibility:hidden !important;} html.digibiz-sidebar-open .retail-navbar{transform:translateX(0);}}
-        @media (min-width:769px){ .mobile-only { display: none !important; } }
     `;
     document.head.appendChild(style);
 }
@@ -221,7 +220,7 @@ class Sidebar {
         //     this.bootCachedSidebarNow();
         // }
         this.init();
-        
+
         // ULTIMATE CACHE BUSTER: Clear all permission caches on every load/refresh for staff sync
         try {
             const bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
@@ -231,7 +230,7 @@ class Sidebar {
                 sessionStorage.removeItem(`digibiz_sidebar_cache_v2`);
                 localStorage.removeItem(`digibiz_sidebar_cache_${this.currentUserId}`);
             }
-        } catch(e) {}
+        } catch (e) { }
     }
 
     getStoredBusinessType() {
@@ -320,7 +319,7 @@ class Sidebar {
                         sessionStorage.removeItem(`digibiz_perm_v_${bid}`);
                         localStorage.removeItem(`digibiz_sidebar_cache_${user.uid}`);
                     }
-                } catch(e) {}
+                } catch (e) { }
 
                 await this.loadUserData(user.uid);
                 await this.refreshBusinessNameFromProfile();
@@ -387,7 +386,7 @@ class Sidebar {
 
         const roleNorm = String(this.currentRole || '').toUpperCase();
         const isOwner = this.isSuperAdminUser() || roleNorm === 'DISTRIBUTOR_OWNER' || roleNorm === 'BUSINESS_OWNER';
-        
+
         // ONLY show these announcements to Owners/Admins
         if (!isOwner) return;
 
@@ -397,7 +396,7 @@ class Sidebar {
         if (!hasNewFeatures) {
             const isDistributor = this.businessType === 'distributor' || this.isMwTradingContext();
             if (isDistributor) {
-                hasNewFeatures = true; 
+                hasNewFeatures = true;
             }
         }
 
@@ -547,7 +546,7 @@ class Sidebar {
                     const bData = businessDoc.data() || {};
                     this.businessType = this.normalizeBusinessType(bData.businessType || userData.businessType || 'retail');
                     this.sidebarConfig = bData.sidebarConfig || null;
-                    
+
                     // RE-POPULATE SESSION CACHE WITH LATEST RBAC CONFIG FOR AUTH-ROLES
                     console.log('[Sidebar RBAC] Checking for rbacConfig in business doc:', this.businessId);
                     if (bData.rbacConfig) {
@@ -555,7 +554,7 @@ class Sidebar {
                             const configStr = JSON.stringify(bData.rbacConfig);
                             sessionStorage.setItem(`digibiz_perms_v2_${this.businessId}`, configStr);
                             console.log('[Sidebar RBAC] Injected rbacConfig into session storage.');
-                        } catch(e) { console.warn('[Sidebar RBAC] Could not populate rbac session cache', e); }
+                        } catch (e) { console.warn('[Sidebar RBAC] Could not populate rbac session cache', e); }
                     } else {
                         console.warn('[Sidebar RBAC] No rbacConfig found in business document.');
                     }
@@ -809,7 +808,7 @@ class Sidebar {
 
     buildDistributorMenusForCurrentRole() {
         const perms = this.getDistributorPermissionProfile();
-        
+
         // 1. Filter the comprehensive pool based on granular RBAC
         let menus = DISTRIBUTOR_MENU_POOL.filter(item => {
             const pid = item.permissionId;
@@ -1198,22 +1197,22 @@ class Sidebar {
             this.ownerName = String(userData.ownerName || userData.name || this.ownerName || '').trim();
             const resolvedBusinessId = userData.businessId || this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || user.uid;
             let resolvedName = '';
-            
+
             if (resolvedBusinessId) {
                 this.businessId = resolvedBusinessId;
-                
+
                 // Fetch Business Info & Permissions Bridge
                 try {
                     const businessDoc = await window.db.collection('businesses').doc(resolvedBusinessId).get();
                     if (businessDoc.exists) {
                         const bd = businessDoc.data() || {};
                         resolvedName = String(bd.name || bd.businessName || '').trim();
-                        
+
                         // Sync Permissions from Bridge (Staff Path) with Version Tracking
                         if (bd.rbacConfig) {
                             const cachedVersion = sessionStorage.getItem(`digibiz_perm_v_${resolvedBusinessId}`);
                             const remoteVersion = String(bd.permVersion || '0');
-                            
+
                             if (cachedVersion !== remoteVersion) {
                                 console.log('[Sidebar] Permission version changed, refreshing...');
                                 sessionStorage.setItem(`digibiz_perms_v2_${resolvedBusinessId}`, JSON.stringify(bd.rbacConfig));
@@ -1240,15 +1239,15 @@ class Sidebar {
                     }
                 } catch (eBiz) { console.warn('Sidebar biz lookup failed:', eBiz); }
             }
-            
+
             if (!resolvedName) resolvedName = String(this.businessName || 'No Business Connected').trim();
-            
+
             this.businessId = resolvedBusinessId;
             this.businessName = resolvedName;
-            
+
             const ownerEl = document.getElementById('sidebarUserName');
             if (ownerEl) ownerEl.textContent = this.ownerName;
-            
+
             this.renderBusinessName(resolvedName);
             this.renderBusinessLogo();
         } catch (error) {
@@ -1319,7 +1318,7 @@ class Sidebar {
                     </div>
                     <div class="nav-links" id="sidebarNavLinks">
                         ${menuItems.map((item) => `
-                            <a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${item.mobileOnly ? 'mobile-only' : ''} ${this.isMenuActive(item.link, pathname) ? 'active' : ''}">
+                            <a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}">
                                 <span class="menu-icon">${item.icon}</span>
                                 <span>${item.name}</span>
                                 ${item.isNew ? '<span class="menu-badge-new">NEW</span>' : ''}
