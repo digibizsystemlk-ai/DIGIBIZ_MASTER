@@ -23,7 +23,7 @@ const DISTRIBUTOR_MENU_POOL = [
     { id: 'new_sales_order', permissionId: 'canInvoiceCreateEdit', icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
     { id: 'shops', permissionId: 'canCustomerView', icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
     { id: 'orders', permissionId: 'canOrderWorkflowApprove', icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
-    { id: 'order_history', permissionId: 'canSalesView', icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
+    { id: 'order_history', permissionId: 'canSalesView', icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html', mobileOnly: true },
     { id: 'sales', permissionId: 'canSalesView', icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
     { id: 'invoices', permissionId: 'canInvoiceCreateEdit', icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
     { id: 'grn', permissionId: 'canStockEdit', icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
@@ -137,6 +137,7 @@ function ensureSidebarStyles() {
         .logout-sidebar-btn{background:rgba(220,38,38,.8);border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;width:100%;font-size:14px;}
         .logout-sidebar-btn:hover{background:#dc2626;}
         @media (max-width:768px){html.digibiz-mobile-toggle-space body{padding-top:72px;} .digibiz-mobile-menu-toggle{display:flex;} .digibiz-mobile-topbar{display:flex;} .retail-navbar{transform:translateX(-100%);transition:transform .2s ease;} .retail-navbar .sidebar-business-name{display:block !important;visibility:hidden !important;} html.digibiz-sidebar-open .retail-navbar{transform:translateX(0);}}
+        @media (min-width:769px){ .mobile-only { display: none !important; } }
     `;
     document.head.appendChild(style);
 }
@@ -1318,7 +1319,7 @@ class Sidebar {
                     </div>
                     <div class="nav-links" id="sidebarNavLinks">
                         ${menuItems.map((item) => `
-                            <a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}">
+                            <a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${item.mobileOnly ? 'mobile-only' : ''} ${this.isMenuActive(item.link, pathname) ? 'active' : ''}">
                                 <span class="menu-icon">${item.icon}</span>
                                 <span>${item.name}</span>
                                 ${item.isNew ? '<span class="menu-badge-new">NEW</span>' : ''}
