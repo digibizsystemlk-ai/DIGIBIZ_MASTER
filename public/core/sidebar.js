@@ -408,7 +408,7 @@ class Sidebar {
         if (localStorage.getItem(hideKey) === 'true') return;
 
         let count = parseInt(localStorage.getItem(countKey) || '0');
-        if (count >= 10) return;
+        if (count >= 50) return;
 
         if (window.location.pathname.includes('sidebar-config.html') || window.location.pathname.includes('permissions-config.html')) return;
 
@@ -1105,18 +1105,19 @@ class Sidebar {
             tab = '';
         }
         const distributorOrderStatusPath = '/modules/distributor/web/index.html';
-        if (cleanLink.split('?')[0].replace(/\/+/g, '') === distributorOrderStatusPath) {
-            if (cleanPath.endsWith(distributorOrderStatusPath)) return true;
+        const cleanDistPath = distributorOrderStatusPath.replace(/\/+/g, '');
+        if (cleanLink === cleanDistPath) {
+            if (cleanPath.endsWith(cleanDistPath)) return true;
             return false;
         }
-        if (cleanLink.includes('/modules/distributor/web/pending-orders.html')) {
+        if (cleanLink.includes('pending-orders.html')) {
             if (cleanPath.endsWith('pending-orders.html')) return true;
-            if (cleanPath.endsWith(distributorOrderStatusPath) && tab === 'pending') return true;
+            if (cleanPath.endsWith(cleanDistPath) && tab === 'pending') return true;
             return false;
         }
-        if (cleanLink.includes('/modules/distributor/web/orders.html')) {
+        if (cleanLink.includes('orders.html')) {
             if (cleanPath.endsWith('orders.html')) return true;
-            if (cleanPath.endsWith(distributorOrderStatusPath) && ['approved', 'dispatched', 'rejected', 'delivered', 'all'].includes(tab)) {
+            if (cleanPath.endsWith(cleanDistPath) && ['approved', 'dispatched', 'rejected', 'delivered', 'all'].includes(tab)) {
                 return true;
             }
             return false;

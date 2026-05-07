@@ -1123,17 +1123,38 @@
             const enriched = await Promise.all(rows.map(async (order) => {
                 const orderId = String(order.id || '').trim();
                 // Prefer stored order-level values written during save/backfill.
+                const items = Array.isArray(order.items) ? order.items : [];
+                
+                // Calculate from items if stored values are missing or 0
+                const calculatedFree = items.reduce((s, it) => s + (Number(it.freeQty) || 0), 0);
+                const calculatedReturns = items.reduce((s, it) => {
+                    const rr = Number(it.returnResellQty) || 0;
+                    const rc = Number(it.returnCompanyQty) || 0;
+                    const leg = Number(it.returnQty) || 0;
+                    // If detailed return fields exist, use them, otherwise fallback to legacy returnQty
+                    return s + (rr + rc > 0 ? (rr + rc) : leg);
+                }, 0);
+
                 const storedFree = Number(order.mwFreeIssuesQty);
-                if (!Number.isNaN(storedFree)) {
+                if (!Number.isNaN(storedFree) && storedFree > 0) {
                     order.mwFreeIssuesQty = storedFree;
                 } else {
-                    order.mwFreeIssuesQty = 0;
+                    order.mwFreeIssuesQty = calculatedFree;
                 }
+
                 const storedReturns = Number(order.mwReturnsQty);
-                if (!Number.isNaN(storedReturns)) {
+                if (!Number.isNaN(storedReturns) && storedReturns > 0) {
                     order.mwReturnsQty = storedReturns;
                     return order;
                 }
+
+                // If no stored returns, use calculated returns
+                if (calculatedReturns > 0) {
+                    order.mwReturnsQty = calculatedReturns;
+                    return order;
+                }
+                
+                // If still no returns, try fetching from returns collection
                 if (!orderId) {
                     order.mwReturnsQty = 0;
                     return order;

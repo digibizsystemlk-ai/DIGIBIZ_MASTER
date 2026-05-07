@@ -333,8 +333,19 @@
     function saveLineModal() {
         if (!selectedProductForLine) return;
         const line = selectedProductForLine;
-        line.qty = Math.max(0, parseInt(document.getElementById('lineSalesQty').value, 10) || 0);
-        line.freeQty = Math.max(0, parseInt(document.getElementById('lineFreeQty').value, 10) || 0);
+        const p = products.find(x => x.id === line.productId);
+        const avail = getProductAvailableStock(p);
+
+        const newQty = Math.max(0, parseInt(document.getElementById('lineSalesQty').value, 10) || 0);
+        const newFree = Math.max(0, parseInt(document.getElementById('lineFreeQty').value, 10) || 0);
+
+        if ((newQty + newFree) > avail) {
+            alert('Insufficient stock! Available: ' + avail);
+            return;
+        }
+
+        line.qty = newQty;
+        line.freeQty = newFree;
         line.freeReason = document.getElementById('lineFreeReason').value.trim();
         line.returnResellQty = Math.max(0, parseInt(document.getElementById('lineAgentReturnQty').value, 10) || 0);
         line.returnCompanyQty = Math.max(0, parseInt(document.getElementById('lineCompanyReturnQty').value, 10) || 0);
@@ -504,6 +515,11 @@
         });
     }
     
+    function getProductAvailableStock(p) {
+        if (!p) return 0;
+        return window.DigiBizDistributorInventory ? window.DigiBizDistributorInventory.numericStock(p) : (Number(p.stock || p.currentStock) || 0);
+    }
+
     function showProducts() {
         let search = document.getElementById('searchInput').value.toLowerCase();
         let filtered = products.filter(p =>
@@ -521,17 +537,24 @@
             const fifo = fifoBatchInfo(p);
             const batchBadge = fifo ? `<span style="display:inline-block;margin-top:4px;font-size:10px;color:#7c2d12;background:#ffedd5;padding:2px 6px;border-radius:10px;">FIFO ${fifo.identifier}</span>` : '';
             const unitPrice = fifo ? fifo.sellingPrice : (Number(p.unitPrice) || 0);
+            const avail = getProductAvailableStock(p);
+            const totalInCart = inCart ? (Number(inCart.qty) + Number(inCart.freeQty)) : 0;
+            const isOver = totalInCart > avail;
+
             html += `
-                <div class="product-item">
+                <div class="product-item" style="${isOver ? 'border-left:4px solid #ef4444;background:#fff1f2;' : ''}">
                     <div class="product-info">
                         <div class="product-name">${p.name}${brandHtml}</div>
-                        <div class="product-price">Rs ${unitPrice} | Stock: ${window.DigiBizDistributorInventory ? window.DigiBizDistributorInventory.numericStock(p) : (Number(p.stock || p.currentStock) || 0)}</div>
+                        <div class="product-price">
+                            Rs ${unitPrice} | Stock: <strong style="${avail <= 0 ? 'color:#ef4444' : ''}">${avail}</strong>
+                            ${isOver ? '<br><span style="color:#ef4444;font-size:10px;font-weight:bold;">⚠️ Exceeds stock</span>' : ''}
+                        </div>
                         ${batchBadge}
                     </div>
                     <div class="product-actions">
                         <button class="qty-btn" onclick="changeQty('${p.id}', -1)">-</button>
-                        <span style="min-width:30px;text-align:center;">${qty}</span>
-                        <button class="qty-btn" onclick="changeQty('${p.id}', 1)">+</button>
+                        <span style="min-width:30px;text-align:center;font-weight:bold;${isOver ? 'color:#ef4444;' : ''}">${qty}</span>
+                        <button class="qty-btn" onclick="changeQty('${p.id}', 1)" ${avail <= totalInCart ? 'style="opacity:0.5"' : ''}>+</button>
                         <button class="free-btn" onclick="openFreeModal('${p.id}', ${JSON.stringify(p.name)})">🎁 Free</button>
                         <button class="return-btn" onclick="openReturnModal('${p.id}', ${JSON.stringify(p.name)})">↩️ Return</button>
                         ${inCart ? `<button type="button" class="line-edit-btn" onclick="openLineModal('${p.id}')">✏️ Line</button>` : ''}
@@ -550,6 +573,13 @@
         
         let existing = cart.find(c => c.productId === productId);
         let newQty = (existing ? existing.qty : 0) + delta;
+        const freeQty = existing ? (existing.freeQty || 0) : 0;
+        const avail = getProductAvailableStock(product);
+
+        if (delta > 0 && (newQty + freeQty) > avail) {
+            alert('Insufficient stock! Available: ' + avail);
+            return;
+        }
         
         if (newQty <= 0) {
             if (existing && ((existing.freeQty || 0) + (existing.returnResellQty || 0) + (existing.returnCompanyQty || 0) > 0)) {
@@ -605,8 +635,17 @@
         
         if (!qty || qty <= 0) { alert('Enter quantity'); return; }
         if (!reason) { alert('Enter reason'); return; }
-        
+
+        const avail = getProductAvailableStock(selectedProductForFree);
         let existing = cart.find(c => c.productId === selectedProductForFree.id);
+        const currentOrdered = existing ? (existing.qty || 0) : 0;
+        const currentFree = existing ? (existing.freeQty || 0) : 0;
+
+        if ((currentOrdered + currentFree + qty) > avail) {
+            alert('Insufficient stock for free issue! Available: ' + avail);
+            return;
+        }
+        
         if (existing) {
             existing.freeQty = (existing.freeQty || 0) + qty;
             existing.freeReason = reason;
@@ -719,6 +758,20 @@
         document.getElementById('cartCount').innerHTML = itemCount;
         document.getElementById('totalAmount').innerHTML = 'Rs ' + total.toLocaleString();
         
+        // Stock Validation Check
+        let hasStockError = false;
+        cart.forEach(item => {
+            const p = products.find(x => x.id === item.productId);
+            const avail = getProductAvailableStock(p);
+            if ((Number(item.qty) + Number(item.freeQty)) > avail) hasStockError = true;
+        });
+        const subBtn = document.getElementById('submitOrderBtn');
+        if (subBtn) {
+            subBtn.disabled = hasStockError;
+            subBtn.style.opacity = hasStockError ? '0.5' : '1';
+            subBtn.style.background = hasStockError ? '#9ca3af' : '#10b981';
+        }
+
         if (cart.length === 0) {
             document.getElementById('cartList').innerHTML = 'No items added';
             return;
@@ -727,8 +780,12 @@
         let html = '';
         for (let i = 0; i < cart.length; i++) {
             let item = cart[i];
+            const p = products.find(x => x.id === item.productId);
+            const avail = getProductAvailableStock(p);
+            const isOver = (Number(item.qty) + Number(item.freeQty)) > avail;
+
             html += `
-                <div class="cart-item">
+                <div class="cart-item" style="${isOver ? 'border:2px solid #ef4444;background:#fff1f2;' : ''}">
                     <div class="cart-item-header">
                         <span class="cart-item-name">${item.productName}${item.productBrand ? '<span style="color:#64748b;font-weight:normal;"> · ' + item.productBrand + '</span>' : ''}${item.batchIdentifier ? '<span style="color:#7c2d12;font-weight:normal;"> · ' + item.batchIdentifier + '</span>' : ''}</span>
                         <span class="cart-item-price">Rs ${(item.total || 0).toLocaleString()}</span>
@@ -738,6 +795,7 @@
                         Qty: ${item.qty || 0} units
                         ${item.freeQty ? `<span class="free-badge">🎁 Free: ${item.freeQty} (${item.freeReason})</span>` : ''}
                         ${item.returnQty ? `<span class="return-badge">↩️ Return: ${item.returnQty} — agent ${item.returnResellQty || 0}, company ${item.returnCompanyQty || 0}${item.returnReason ? ' (' + item.returnReason + ')' : ''}</span>` : ''}
+                        ${isOver ? `<div style="color:#ef4444;font-weight:bold;margin-top:5px;">🚨 Error: Only ${avail} available in stock!</div>` : ''}
                     </div>
                 </div>
             `;
