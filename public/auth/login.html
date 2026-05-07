@@ -28,6 +28,7 @@
         .register-link{text-align:center;margin-top:20px;}
         .forgot-link{display:block;text-align:right;font-size:12px;color:#0f766e;margin-top:-8px;margin-bottom:12px;cursor:pointer;}
         .reset-box{display:none;background:#f8fafc;border:1px solid #e2e8f0;padding:12px;border-radius:10px;margin-bottom:12px;text-align:left;}
+        .reset-box.visible{display:block;}
         .reset-box p{font-size:12px;color:#475569;margin:0 0 8px;}
         .reset-inline{display:flex;gap:8px;}
         .reset-inline input{margin:0;}
@@ -57,6 +58,7 @@
         <div class="register-link">Don't have an account? <a href="register.html">Sign up</a></div>
     </div>
 
+    <script src="../core/auth-utils.js?v=1"></script>
     <script>
         const loginBtn = document.getElementById('loginBtn');
         const googleBtn = document.getElementById('googleBtn');
@@ -66,38 +68,9 @@
         const sendResetBtn = document.getElementById('sendResetBtn');
         const loginBtnDefaultText = loginBtn.textContent;
 
-        async function routeToUniversalDashboard(user) {
-            try {
-                if (typeof window.ensureMwTradingOwnerBizMembership === 'function' && user) {
-                    await window.ensureMwTradingOwnerBizMembership(user);
-                }
-                const userDoc = await db.collection('users').doc(user.uid).get();
-                const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
-                let businessType = 'retail';
-                const businessDoc = await db.collection('businesses').doc(businessId).get();
-                if (businessDoc.exists) businessType = businessDoc.data().businessType || businessType;
-                localStorage.setItem('currentBusinessId', businessId);
-                sessionStorage.setItem('currentBusinessId', businessId);
-                localStorage.setItem('currentBusinessType', businessType);
-                sessionStorage.setItem('currentBusinessType', businessType);
-                if (window.FinalizationEngine && window.FinalizationEngine.runAutoFinalizationForCurrentUser) {
-                    await window.FinalizationEngine.runAutoFinalizationForCurrentUser();
-                }
-                if (userDoc.exists && userDoc.data().mustChangePassword === true) {
-                    localStorage.setItem('forcePasswordChangeNotice', 'Please change your password before continuing');
-                    sessionStorage.setItem('forcePasswordChangeNotice', 'Please change your password before continuing');
-                    window.location.href = '../modules/core/change-password.html';
-                    return;
-                }
-            } catch (error) {
-                console.warn('Login context resolution failed:', error);
-            }
-            window.location.href = '../modules/core/dashboard.html';
-        }
-
         auth.onAuthStateChanged((user) => {
-            if (user) {
-                routeToUniversalDashboard(user);
+            if (user && window.AuthUI) {
+                window.AuthUI.routeToUniversalDashboard(user);
             }
         });
         
@@ -114,7 +87,9 @@
                 loginBtn.disabled = true;
                 loginBtn.innerHTML = '⏳ Logging in...';
                 await auth.signInWithEmailAndPassword(email, password);
-                await routeToUniversalDashboard(auth.currentUser);
+                if (window.AuthUI) {
+                    await window.AuthUI.routeToUniversalDashboard(auth.currentUser);
+                }
             } catch (error) {
                 if (error.code === 'auth/user-not-found') {
                     errorDiv.textContent = 'No account found. Please register first.';
@@ -142,15 +117,18 @@
                     window.location.href = 'register.html?google=true';
                 } else {
                     // Existing user - redirect to Universal Dashboard
-                    await routeToUniversalDashboard(user);
+                    if (window.AuthUI) {
+                        await window.AuthUI.routeToUniversalDashboard(user);
+                    }
                 }
             } catch (error) {
                 errorDiv.textContent = error.message;
             }
         });
 
-        forgotPasswordLink.addEventListener('click', () => {
-            resetBox.style.display = resetBox.style.display === 'block' ? 'none' : 'block';
+        forgotPasswordLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            resetBox.classList.toggle('visible');
             document.getElementById('resetEmail').value = document.getElementById('email').value || '';
         });
 

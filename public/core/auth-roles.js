@@ -23,35 +23,38 @@ const ROLES = {
 // Based on sidebar items and internal facilities.
 // Defaults: ONLY 'OWNER' has access by default. Others must be granted manually.
 const MASTER_PERMISSIONS = [
-    { id: 'canViewDashboard', label: 'View Dashboard Stats', category: 'General', defaultRoles: ['OWNER'] },
+    { id: 'canViewDashboard', label: 'View Dashboard & Stats', category: 'General', status: 'Enables Dashboard menu and sales overview stats. (Dashboard මෙනුව සහ විකුණුම් සංඛ්‍යාලේඛන පෙන්වයි)', defaultRoles: ['OWNER', 'REP', 'SALES_COORDINATOR', 'AREA_MANAGER'] },
     
-    { id: 'canOrderCreate', label: 'Create New Sales Orders', category: 'Sales', defaultRoles: ['OWNER'] },
-    { id: 'canShopsManage', label: 'Manage Shops/Customers', category: 'Sales', defaultRoles: ['OWNER'] },
-    { id: 'canOrdersView', label: 'View All Orders', category: 'Sales', defaultRoles: ['OWNER'] },
-    { id: 'canSalesView', label: 'View Sales History', category: 'Sales', defaultRoles: ['OWNER'] },
-    { id: 'canInvoiceCreate', label: 'Create/Print Invoices', category: 'Sales', defaultRoles: ['OWNER'] },
-    { id: 'canGrnManage', label: 'Manage GRN (Goods Received)', category: 'Inventory', defaultRoles: ['OWNER'] },
-    { id: 'canProductManage', label: 'Manage Products/Price List', category: 'Inventory', defaultRoles: ['OWNER'] },
-    { id: 'canRepsManage', label: 'Manage Sales Reps', category: 'Staff', defaultRoles: ['OWNER'] },
-    { id: 'canWarehouseManage', label: 'Warehouse & Stock Control', category: 'Inventory', defaultRoles: ['OWNER'] },
-    { id: 'canDeliveriesManage', label: 'Manage Deliveries & Dispatch', category: 'Logistics', defaultRoles: ['OWNER'] },
-    { id: 'canFreeIssuesLog', label: 'View Free Issues Log', category: 'Sales', defaultRoles: ['OWNER'] },
-    { id: 'canReturnsLog', label: 'View Returns Log', category: 'Sales', defaultRoles: ['OWNER'] },
-    { id: 'canChequesManage', label: 'Manage Cheques & Payments', category: 'Finance', defaultRoles: ['OWNER'] },
-    { id: 'canCreditAgingView', label: 'View Credit Aging Reports', category: 'Finance', defaultRoles: ['OWNER'] },
-    { id: 'canCommissionConfig', label: 'Configure Commissions', category: 'Settings', defaultRoles: ['OWNER'] },
-    { id: 'canRepCommissionView', label: 'View Rep Commissions', category: 'Finance', defaultRoles: ['OWNER'] },
-    { id: 'canDistributorReports', label: 'View Distributor Reports', category: 'Reports', defaultRoles: ['OWNER'] },
+    { id: 'canInvoiceCreateEdit', label: 'Create & Edit Invoices/Orders', category: 'Sales', status: 'Enables New Order and Invoices menus. Allows creating/editing sales. (නව ඇණවුම් සහ ඉන්වොයිස් සැකසීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'REP', 'SALES_COORDINATOR'] },
+    { id: 'canSalesView', label: 'View Sales History', category: 'Sales', status: 'Enables Sales menu. Allows viewing historical order lists. (පැරණි විකුණුම් ලේඛන බැලීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'REP', 'SALES_COORDINATOR', 'AREA_MANAGER'] },
+    { id: 'canOrderWorkflowApprove', label: 'Approve & Process Orders', category: 'Sales', status: 'Enables Orders menu. Allows approving pending sales orders. (ඇණවුම් අනුමත කිරීමට සහ ප්‍රොසෙස් කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR', 'AREA_MANAGER'] },
+    { id: 'canOrderReject', label: 'Reject/Cancel Orders', category: 'Sales', status: 'Allows rejecting or cancelling pending orders. (ඇණවුම් ප්‍රතික්ෂේප කිරීමට හෝ අවලංගු කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR'] },
     
-    { id: 'canViewFinance', label: 'View Finance Dashboard', category: 'Finance', defaultRoles: ['OWNER'] },
-    { id: 'canViewAccounting', label: 'View Full Accounting & Ledgers', category: 'Finance', defaultRoles: ['OWNER'] },
+    { id: 'canCustomerView', label: 'View Customer List', category: 'Sales', status: 'Enables Shops/Customers menu. Allows viewing client details. (පාරිභෝගික ලැයිස්තුව බැලීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'REP', 'SALES_COORDINATOR', 'AREA_MANAGER'] },
+    { id: 'canCustomerCreate', label: 'Create New Customers', category: 'Sales', status: 'Allows adding new shops/customers to the system. (නව පාරිභෝගිකයන් පද්ධතියට ඇතුළත් කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'REP', 'SALES_COORDINATOR'] },
+    { id: 'canCustomerEditDelete', label: 'Edit/Delete Customers', category: 'Sales', status: 'Allows modifying or removing customer records. (පාරිභෝගික තොරතුරු වෙනස් කිරීමට හෝ ඉවත් කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR'] },
     
-    { id: 'canStaffManage', label: 'Manage Staff Accounts', category: 'Settings', defaultRoles: ['OWNER'] },
-    { id: 'canPermissionsConfig', label: 'Modify Staff Permissions', category: 'Settings', defaultRoles: ['OWNER'] },
-    { id: 'canSidebarConfig', label: 'Configure Sidebar Menu', category: 'Settings', defaultRoles: ['OWNER'] },
-    { id: 'canSettingsGlobal', label: 'Global Business Settings', category: 'Settings', defaultRoles: ['OWNER'] },
-    { id: 'canSmsConfig', label: 'Manage SMS Settings & Logs', category: 'Settings', defaultRoles: ['OWNER'] },
-    { id: 'canBillingCharges', label: 'View Billing & Charges', category: 'Settings', defaultRoles: ['OWNER'] }
+    { id: 'canProductView', label: 'View Products & Prices', category: 'Inventory', status: 'Enables Products menu. Allows viewing inventory and pricing. (භාණ්ඩ ලැයිස්තුව සහ මිල ගණන් බැලීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'REP', 'SALES_COORDINATOR', 'AREA_MANAGER'] },
+    { id: 'canProductCreate', label: 'Add New Products', category: 'Inventory', status: 'Allows adding new items to the inventory. (නව භාණ්ඩ පද්ධතියට ඇතුළත් කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR'] },
+    { id: 'canProductEditDelete', label: 'Edit/Delete Products', category: 'Inventory', status: 'Allows modifying product details or removing items. (භාණ්ඩ වල තොරතුරු වෙනස් කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER'] },
+    
+    { id: 'canStockView', label: 'View Inventory & Stock', category: 'Inventory', status: 'Enables Warehouse, Free Issues, and Returns logs. (ගබඩාවේ ඇති ප්‍රමාණය සහ තොග විස්තර බැලීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'REP', 'SALES_COORDINATOR', 'AREA_MANAGER'] },
+    { id: 'canStockEdit', label: 'Adjust Stock Levels', category: 'Inventory', status: 'Enables GRN menu. Allows adjusting stock quantities. (තොග ප්‍රමාණයන් වෙනස් කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR'] },
+    
+    { id: 'canViewAccounting', label: 'Access Accounting & Ledgers', category: 'Finance', status: 'Enables Accounting menu. Access to ledgers and journals. (ගිණුම්කරණ ලේඛන සහ ලෙජර බැලීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR'] },
+    { id: 'canViewFinancialsProfit', label: 'View Financial Summaries & Profit', category: 'Finance', status: 'Enables Finance menu. Access to profit/loss summaries. (ලාභාලාභ සහ මූල්‍ය විස්තර බැලීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR'] },
+    { id: 'canChequesManage', label: 'Manage Cheques & Payments', category: 'Finance', status: 'Enables Cheques menu. Access to cheque registries. (චෙක්පත් විස්තර පාලනය කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR'] },
+    { id: 'canCreditAgingView', label: 'View Credit Aging Reports', category: 'Finance', status: 'Enables Credit Aging reports menu. (ණය බරිත වාර්තා බැලීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR', 'AREA_MANAGER'] },
+    { id: 'canRepCommissionView', label: 'View Rep Commissions', category: 'Finance', status: 'Enables Rep Commission reports menu. (සේවක කොමිස් වාර්තා බැලීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR'] },
+    { id: 'canViewReportsFull', label: 'Access All Reports', category: 'Reports', status: 'Enables Distributor Reports and main analytics. (සියලුම වාර්තා ලබා ගැනීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR', 'AREA_MANAGER'] },
+    
+    { id: 'canManageRepsWeb', label: 'Manage Sales Reps', category: 'Staff', status: 'Enables Reps menu. Allows managing sales personnel. (විකුණුම් නියෝජිතයන් කළමනාකරණය කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR', 'AREA_MANAGER'] },
+    { id: 'canDeliveriesManage', label: 'Manage Deliveries & Dispatch', category: 'Logistics', status: 'Enables Deliveries menu. Access to dispatching. (බෙදාහැරීම් සහ ඩිලිවරි පාලනය කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR', 'AREA_MANAGER'] },
+    { id: 'canExpensesCreate', label: 'Create Expenses', category: 'Finance', status: 'Allows recording business expenses. (වියදම් ඇතුළත් කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER', 'SALES_COORDINATOR'] },
+    { id: 'canExpensesEdit', label: 'Edit/Manage Expenses', category: 'Finance', status: 'Allows modifying or deleting expense records. (වියදම් විස්තර වෙනස් කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER'] },
+    { id: 'canStaffMutate', label: 'Manage Staff Accounts', category: 'Settings', status: 'Allows creating and managing system user accounts. (පද්ධතියේ සේවක ගිණුම් කළමනාකරණයට අවසර දෙයි)', defaultRoles: ['OWNER'] },
+    { id: 'canSettingsChange', label: 'Change Business Settings', category: 'Settings', status: 'Enables Commission Config and business rules. (පද්ධතියේ සැකසුම් වෙනස් කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER'] },
+    { id: 'canBusinessInfoEdit', label: 'Edit Business Profile', category: 'Settings', status: 'Allows editing business name, logo, and address. (ව්‍යාපාරයේ මූලික තොරතුරු වෙනස් කිරීමට අවසර දෙයි)', defaultRoles: ['OWNER'] }
 ];
 
 const PERMISSIONS = {
@@ -358,54 +361,78 @@ window.getBusinessStaffRoles = async function(businessId) {
         const isSC = b === 'SALES_COORDINATOR';
         const isAM = b === 'AREA_MANAGER';
         const isRep = b === 'REP';
-        const matrix = isOwner || isSC || isAM || isRep;
+        const matrix = isOwner || isSC || isAM;
 
         // Base defaults
         let perms = {
             roleBand: b,
+            canViewDashboard: matrix,
             canInvoiceCreateEdit: matrix,
             canInvoiceReject: isOwner,
             canInvoiceDelete: isOwner,
             canViewAccounting: isOwner || isSC,
             canViewReportsFull: isOwner || isSC || isAM,
             canViewFinancialsProfit: isOwner || isSC,
+            canSalesView: matrix,
+            canChequesManage: isOwner || isSC,
+            canCreditAgingView: isOwner || isSC || isAM,
+            canRepCommissionView: isOwner || isSC,
             canStockEdit: isOwner,
             canStockView: matrix,
-            canCustomerCreate: matrix || isMwTrading || isSpranza,
+            canCustomerCreate: matrix,
             canCustomerEditDelete: isOwner || isSC,
             canCustomerView: matrix,
             canProductCreate: isOwner || isSC,
             canProductEditDelete: isOwner,
             canProductView: matrix,
             canStaffMutate: isOwner,
-            canExpensesCreate: isOwner || isSC,
-            canExpensesEdit: isOwner,
             canSettingsChange: isOwner,
             canBusinessInfoEdit: isOwner,
             canOrderWorkflowApprove: isOwner || isSC || isAM,
             canOrderReject: isOwner,
-            canManageRepsWeb: isOwner || isSC || isAM
+            canManageRepsWeb: isOwner || isSC || isAM,
+            canDeliveriesManage: isOwner || isSC || isAM,
+            canExpensesCreate: isOwner || isSC,
+            canExpensesEdit: isOwner
         };
 
         // Special legacy overrides
         if (b === 'OTHER') {
-            Object.keys(perms).forEach(k => { if (k !== 'roleBand' && k !== 'canStockView' && k !== 'canCustomerView' && k !== 'canProductView') perms[k] = false; });
-            perms.canCustomerCreate = isMwTrading || isSpranza;
-        } else if (isRep && isMwTrading) {
             Object.keys(perms).forEach(k => { if (k !== 'roleBand' && k !== 'canStockView' && k !== 'canCustomerView' && k !== 'canProductView') perms[k] = false; });
         }
 
         // Apply Dynamic Overrides from Sync Cache (sessionStorage)
         if (bid) {
             try {
-                const cached = sessionStorage.getItem(`digibiz_perms_${bid}`);
-                if (cached) {
+                const cacheKey = `digibiz_perms_v2_${bid}`;
+                const cached = sessionStorage.getItem(cacheKey);
+                
+                if (cached && cached !== 'undefined') {
                     const overrides = JSON.parse(cached);
-                    if (overrides && overrides[b]) {
-                        perms = { ...perms, ...overrides[b] };
+                    if (overrides && typeof overrides === 'object' && overrides[b]) {
+                        let roleOverrides = { ...overrides[b] };
+                        
+                        // BACKWARD COMPATIBILITY MAPPING: Map old IDs to new IDs
+                        const mapping = {
+                            'canOrderCreate': 'canInvoiceCreateEdit',
+                            'canShopsManage': 'canCustomerView',
+                            'canOrdersView': 'canOrderWorkflowApprove',
+                            'canSalesHistoryView': 'canSalesView'
+                        };
+                        
+                        Object.keys(mapping).forEach(oldKey => {
+                            if (roleOverrides.hasOwnProperty(oldKey)) {
+                                roleOverrides[mapping[oldKey]] = roleOverrides[oldKey];
+                            }
+                        });
+
+                        // MERGE: Dynamic overrides take absolute priority over defaults
+                        perms = { ...perms, ...roleOverrides };
                     }
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.warn('[RBAC] Permission sync lookup failed.');
+            }
         }
 
         return perms;

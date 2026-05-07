@@ -1,4 +1,4 @@
-const CACHE_NAME = "digibiz-master-os-v69";
+const CACHE_NAME = "digibiz-master-os-v70";
 const CORE_ASSETS = [
   "/",
   "/index.html",

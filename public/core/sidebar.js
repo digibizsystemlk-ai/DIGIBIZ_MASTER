@@ -19,28 +19,29 @@ const DIGIBIZ_UPDATE_POINTS = [
  * IDs are used for persistence in sidebarConfig.
  */
 const DISTRIBUTOR_MENU_POOL = [
-    { id: 'dashboard', icon: '📊', name: 'Dashboard', link: '/modules/core/dashboard.html' },
-    { id: 'new_sales_order', icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
-    { id: 'shops', icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
-    { id: 'orders', icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
-    { id: 'sales', icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
-    { id: 'invoices', icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
-    { id: 'grn', icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
-    { id: 'products', icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
-    { id: 'reps', icon: '👥', name: 'Reps', link: '/modules/distributor/web/reps.html' },
-    { id: 'warehouse', icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
-    { id: 'deliveries', icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
-    { id: 'free_issues', icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
-    { id: 'returns', icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
-    { id: 'cheques', icon: '🏦', name: 'Cheques', link: '/modules/distributor/web/cheques.html' },
-    { id: 'credit_aging', icon: '📉', name: 'Credit Aging', link: '/modules/distributor/web/credit-aging.html' },
-    { id: 'commission_config', icon: '⚙️', name: 'Commission Config', link: '/modules/distributor/web/commission-config.html' },
-    { id: 'rep_commission', icon: '💸', name: 'Rep Commission', link: '/modules/distributor/web/rep-commission-report.html' },
-    { id: 'distributor_reports', icon: '📊', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' },
-    { id: 'customers', icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
-    { id: 'finance', icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
-    { id: 'accounting', icon: '📁', name: 'Accounting', link: '/modules/accounts/advanced-accounting-dashboard.html' },
-    { id: 'reports', icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
+    { id: 'dashboard', permissionId: 'canViewDashboard', icon: '📊', name: 'Dashboard', link: '/modules/core/dashboard.html' },
+    { id: 'new_sales_order', permissionId: 'canInvoiceCreateEdit', icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
+    { id: 'shops', permissionId: 'canCustomerView', icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
+    { id: 'orders', permissionId: 'canOrderWorkflowApprove', icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
+    { id: 'order_history', permissionId: 'canSalesView', icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
+    { id: 'sales', permissionId: 'canSalesView', icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
+    { id: 'invoices', permissionId: 'canInvoiceCreateEdit', icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
+    { id: 'grn', permissionId: 'canStockEdit', icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
+    { id: 'products', permissionId: 'canProductView', icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
+    { id: 'reps', permissionId: 'canManageRepsWeb', icon: '👥', name: 'Reps', link: '/modules/distributor/web/reps.html' },
+    { id: 'warehouse', permissionId: 'canStockView', icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
+    { id: 'deliveries', permissionId: 'canDeliveriesManage', icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
+    { id: 'free_issues', permissionId: 'canStockView', icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
+    { id: 'returns', permissionId: 'canStockView', icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
+    { id: 'cheques', permissionId: 'canChequesManage', icon: '🏦', name: 'Cheques', link: '/modules/distributor/web/cheques.html' },
+    { id: 'credit_aging', permissionId: 'canCreditAgingView', icon: '📉', name: 'Credit Aging', link: '/modules/distributor/web/credit-aging.html' },
+    { id: 'commission_config', permissionId: 'canSettingsChange', icon: '⚙️', name: 'Commission Config', link: '/modules/distributor/web/commission-config.html' },
+    { id: 'rep_commission', permissionId: 'canRepCommissionView', icon: '💸', name: 'Rep Commission', link: '/modules/distributor/web/rep-commission-report.html' },
+    { id: 'distributor_reports', permissionId: 'canViewReportsFull', icon: '📊', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' },
+    { id: 'customers', permissionId: 'canCustomerView', icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
+    { id: 'finance', permissionId: 'canViewFinancialsProfit', icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+    { id: 'accounting', permissionId: 'canViewAccounting', icon: '📁', name: 'Accounting', link: '/modules/accounts/advanced-accounting-dashboard.html' },
+    { id: 'reports', permissionId: 'canViewReportsFull', icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
 ];
 /** Only the marketing root should skip the app sidebar — not module pages named index.html */
 const SHOULD_RESERVE_SIDEBAR_SPACE = (() => {
@@ -211,11 +212,25 @@ class Sidebar {
         this.superAdmin = false;
         this.businessLogoUrl = '';
         this.sidebarConfig = null; // Stores array of menu IDs and visibility Base
-        if (SHOULD_RESERVE_SIDEBAR_SPACE) {
-            // Paint cached sidebar immediately at bootstrap (no auth/db wait).
-            this.bootCachedSidebarNow();
-        }
+        /* 
+         * Disable instant cached boot for multi-tenant staff to prevent stale ghost menus 
+         * during normal refreshes. Forced to wait for fresh sync.
+         */
+        // if (SHOULD_RESERVE_SIDEBAR_SPACE) {
+        //     this.bootCachedSidebarNow();
+        // }
         this.init();
+        
+        // ULTIMATE CACHE BUSTER: Clear all permission caches on every load/refresh for staff sync
+        try {
+            const bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            if (bid) {
+                sessionStorage.removeItem(`digibiz_perms_v2_${bid}`);
+                sessionStorage.removeItem(`digibiz_perm_v_${bid}`);
+                sessionStorage.removeItem(`digibiz_sidebar_cache_v2`);
+                localStorage.removeItem(`digibiz_sidebar_cache_${this.currentUserId}`);
+            }
+        } catch(e) {}
     }
 
     getStoredBusinessType() {
@@ -290,12 +305,26 @@ class Sidebar {
                 document.querySelectorAll('.retail-navbar').forEach((el) => el.remove());
                 const mountPoint = document.getElementById('sidebar-container');
                 if (mountPoint) mountPoint.innerHTML = '';
-                // First paint using cached context to avoid delayed sidebar on every navigation.
-                this.primeFromCache(user.uid);
-                this.render();
-                this.attachEvents();
+                /* 
+                 * Disable pre-auth cache priming for distributor staff to avoid ghost menus.
+                 * Forced to wait for loadUserData and refreshBusinessNameFromProfile.
+                 */
+                // this.primeFromCache(user.uid);
+                // this.render();
+                // ULTIMATE CACHE BUSTER: Clear all permission caches on every load/refresh for staff sync
+                try {
+                    const bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                    if (bid) {
+                        sessionStorage.removeItem(`digibiz_perms_v2_${bid}`);
+                        sessionStorage.removeItem(`digibiz_perm_v_${bid}`);
+                        localStorage.removeItem(`digibiz_sidebar_cache_${user.uid}`);
+                    }
+                } catch(e) {}
 
                 await this.loadUserData(user.uid);
+                await this.refreshBusinessNameFromProfile();
+                this.render();
+                this.attachEvents();
                 try {
                     const token = await user.getIdTokenResult(true);
                     this.superAdmin = !!(token && token.claims && (token.claims.admin === true || token.claims.superAdmin === true));
@@ -514,8 +543,21 @@ class Sidebar {
             if (this.businessId && String(this.businessId).trim()) {
                 const businessDoc = await db.collection('businesses').doc(String(this.businessId).trim()).get();
                 if (businessDoc.exists) {
-                    this.businessType = this.normalizeBusinessType(businessDoc.data().businessType || userData.businessType || 'retail');
-                    this.sidebarConfig = businessDoc.data().sidebarConfig || null;
+                    const bData = businessDoc.data() || {};
+                    this.businessType = this.normalizeBusinessType(bData.businessType || userData.businessType || 'retail');
+                    this.sidebarConfig = bData.sidebarConfig || null;
+                    
+                    // RE-POPULATE SESSION CACHE WITH LATEST RBAC CONFIG FOR AUTH-ROLES
+                    console.log('[Sidebar RBAC] Checking for rbacConfig in business doc:', this.businessId);
+                    if (bData.rbacConfig) {
+                        try {
+                            const configStr = JSON.stringify(bData.rbacConfig);
+                            sessionStorage.setItem(`digibiz_perms_v2_${this.businessId}`, configStr);
+                            console.log('[Sidebar RBAC] Injected rbacConfig into session storage.');
+                        } catch(e) { console.warn('[Sidebar RBAC] Could not populate rbac session cache', e); }
+                    } else {
+                        console.warn('[Sidebar RBAC] No rbacConfig found in business document.');
+                    }
                 } else {
                     this.businessType = this.normalizeBusinessType(userData.businessType || 'retail');
                     this.sidebarConfig = null;
@@ -537,7 +579,7 @@ class Sidebar {
                     localStorage.setItem('currentBusinessType', this.businessType);
                     sessionStorage.setItem('currentBusinessType', this.businessType);
                 }
-                const isDistributorTenant = this.businessId === this.mwBusinessId || this.businessId === this.spranzaBusinessId;
+                const isDistributorTenant = bData.businessType === 'distributor' || this.businessId === this.mwBusinessId || this.businessId === this.spranzaBusinessId;
                 if (isDistributorTenant && this.businessType !== 'scrap_collection_center') {
                     this.businessType = 'distributor';
                     localStorage.setItem('currentBusinessType', 'distributor');
@@ -677,22 +719,15 @@ class Sidebar {
     }
 
     isStrictMwTradingBusiness() {
-        const bid = String(this.businessId || '').trim().toUpperCase();
-        return bid === String(this.mwBusinessId || '').toUpperCase() || bid === String(this.spranzaBusinessId || '').toUpperCase();
+        return this.businessType === 'distributor';
     }
 
     isPilotTenant(email, businessId) {
-        const em = String(email || '').trim().toLowerCase();
-        // Pilot gate requested by product owner: email-scoped.
-        return em === 'bdkariyapperuma@gmail.com';
+        return false;
     }
 
     isBdkAccountingTenant() {
-        const authEmail = (firebase.auth && firebase.auth.currentUser && firebase.auth.currentUser.email) || '';
-        const fromStorage = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
-        const cached = localStorage.getItem('digibizSidebarUserEmail') || sessionStorage.getItem('digibizSidebarUserEmail') || '';
-        const email = String(authEmail || fromStorage || cached || this.currentUserEmail || '').trim().toLowerCase();
-        return email === 'bdkariyapperuma@gmail.com';
+        return false;
     }
 
     isKdkumbukaTenant() {
@@ -726,14 +761,15 @@ class Sidebar {
         const roleRaw = this.businessNavRole || this.currentRole || '';
         if (!P) {
             return {
-                canViewAccounting: true,
-                canViewReportsFull: true,
-                canViewFinancialsProfit: true,
-                canInvoiceCreateEdit: true,
-                canManageRepsWeb: true
+                canViewDashboard: false,
+                canViewAccounting: false,
+                canViewReportsFull: false,
+                canViewFinancialsProfit: false,
+                canInvoiceCreateEdit: false,
+                canManageRepsWeb: false
             };
         }
-        return P.permissionsForRole(roleRaw);
+        return P.permissionsForRole(roleRaw, this.businessId);
     }
 
     getDistributorWebMenuBase() {
@@ -772,20 +808,22 @@ class Sidebar {
 
     buildDistributorMenusForCurrentRole() {
         const perms = this.getDistributorPermissionProfile();
-        let tail = this.getSharedCrosscutMenus().filter((m) => {
+        
+        // 1. Filter the comprehensive pool based on granular RBAC
+        let menus = DISTRIBUTOR_MENU_POOL.filter(item => {
+            const pid = item.permissionId;
+            if (!pid) return true; // Public menus if any
+            return !!perms[pid];
+        });
+
+        // 2. Filter crosscut menus (Accounting, Reports, etc.)
+        let tail = this.getSharedCrosscutMenus().filter(m => {
             if (m.name === 'Accounting') return !!perms.canViewAccounting;
             if (m.name === 'Reports') return !!perms.canViewReportsFull;
             if (m.name === 'Finance') return !!perms.canViewFinancialsProfit;
             return true;
         });
-        let menus = this.getDistributorWebMenuBase().filter((m) => {
-            if (m.name === 'Finance') return !!perms.canViewFinancialsProfit;
-            // Any distributor staff with stock visibility can open HQ orders; workflow buttons stay RBAC-gated on the page.
-            if (m.name === 'Orders') return !!(perms.canStockView || perms.canInvoiceCreateEdit);
-            if (m.name === 'New sales order') return !!perms.canInvoiceCreateEdit;
-            if (m.name === 'Reps') return !!perms.canManageRepsWeb;
-            return true;
-        });
+
         return this.assembleSidebarMenus(menus, tail);
     }
 
@@ -885,49 +923,22 @@ class Sidebar {
             return this.assembleSidebarMenus(scrapCore);
         }
 
-        if (this.isRepRole()) {
-            const repMenus = [
-                ...this.getDashboardMenu(),
-                { icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
-                { icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
-                { icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
-                { icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
-                { icon: '📑', name: 'HQ orders', link: '/modules/distributor/web/index.html?tab=pending' }
-            ];
-            if (this.isStrictMwTradingBusiness()) {
-                repMenus.push({ icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' });
-            }
-            if (this.isCommissionPilotEnabled()) {
-                repMenus.push(
-                    { icon: '🏦', name: 'Cheques', link: '/modules/distributor/web/cheques.html' },
-                    { icon: '📉', name: 'Credit Aging', link: '/modules/distributor/web/credit-aging.html' },
-                    { icon: '💸', name: 'Rep Commission', link: '/modules/distributor/web/rep-commission-report.html' }
-                );
-            }
-            return repMenus;
-        }
+
 
         if (!onManufacturerModule && (this.isMwTradingContext() || normalizedBusinessType === 'distributor')) {
             // Apply new dynamic pool logic for Distributor
             const pool = DISTRIBUTOR_MENU_POOL;
             const perms = this.getDistributorPermissionProfile();
+            console.log('[Sidebar RBAC] Active Role:', this.currentRole);
+            console.log('[Sidebar RBAC] Permission Profile:', perms);
 
             // Filter pool by hard permissions first (RBAC safety)
-            const availableMenus = pool.map(m => {
-                // Handle dynamic links
-                if (m.id === 'accounting' && this.isBdkAccountingTenant()) {
-                    return { ...m, link: '/modules/distributor/web/accounting.html' };
+            const availableMenus = pool.filter(m => {
+                if (m.permissionId) {
+                    const hasPerm = !!perms[m.permissionId];
+                    console.log(`[Sidebar RBAC] Menu ${m.name} (${m.permissionId}): ${hasPerm ? 'ALLOWED' : 'DENIED'}`);
+                    return hasPerm;
                 }
-                return m;
-            }).filter(m => {
-                if (m.id === 'finance') return !!perms.canViewFinancialsProfit;
-                if (m.id === 'orders') return !!(perms.canStockView || perms.canInvoiceCreateEdit);
-                if (m.id === 'new_sales_order') return !!perms.canInvoiceCreateEdit;
-                if (m.id === 'reps') return !!perms.canManageRepsWeb;
-                if (m.id === 'accounting') return !!perms.canViewAccounting;
-                if (m.id === 'reports') return !!perms.canViewReportsFull;
-                if (m.id === 'warehouse') return !this.isWarehouseDisabledForCurrentTenant();
-                if (m.id === 'cheques' || m.id === 'credit_aging' || m.id === 'rep_commission') return this.isCommissionPilotEnabled();
                 return true;
             });
 
@@ -969,7 +980,7 @@ class Sidebar {
 
         // 1. Try dynamic configuration from BUSINESS_TYPES
         const dynamicConfig = window.BUSINESS_TYPES ? window.BUSINESS_TYPES[menuBusinessType] : null;
-        if (dynamicConfig && dynamicConfig.menus && this.businessId !== this.kduTeaBusinessId) {
+        if (dynamicConfig && dynamicConfig.menus && this.businessId !== this.kduTeaBusinessId && menuBusinessType !== 'distributor') {
             const role = this.currentRole || 'VIEWER';
             let menus = dynamicConfig.menus.filter(m => {
                 if (!m.role) return true;
@@ -1180,43 +1191,66 @@ class Sidebar {
         const user = firebase.auth().currentUser;
         if (!user) return;
         try {
-            const userDoc = await db.collection('users').doc(user.uid).get();
+            const userDoc = await window.db.collection('users').doc(user.uid).get();
             const userData = userDoc.exists ? userDoc.data() : {};
             this.ownerName = String(userData.ownerName || userData.name || this.ownerName || '').trim();
             const resolvedBusinessId = userData.businessId || this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || user.uid;
             let resolvedName = '';
+            
             if (resolvedBusinessId) {
-                const businessDoc = await db.collection('businesses').doc(resolvedBusinessId).get();
-                if (businessDoc.exists) {
-                    const bd = businessDoc.data() || {};
-                    resolvedName = String(bd.name || '').trim();
-                    if (bd.ownerName) this.ownerName = String(bd.ownerName || '').trim();
-                    const logo = String(bd.logoUrl || '').trim();
-                    this.businessLogoUrl = logo;
-                    try {
-                        if (logo) {
-                            localStorage.setItem('digibizBusinessLogoUrl', logo);
-                            sessionStorage.setItem('digibizBusinessLogoUrl', logo);
+                this.businessId = resolvedBusinessId;
+                
+                // Fetch Business Info & Permissions Bridge
+                try {
+                    const businessDoc = await window.db.collection('businesses').doc(resolvedBusinessId).get();
+                    if (businessDoc.exists) {
+                        const bd = businessDoc.data() || {};
+                        resolvedName = String(bd.name || bd.businessName || '').trim();
+                        
+                        // Sync Permissions from Bridge (Staff Path) with Version Tracking
+                        if (bd.rbacConfig) {
+                            const cachedVersion = sessionStorage.getItem(`digibiz_perm_v_${resolvedBusinessId}`);
+                            const remoteVersion = String(bd.permVersion || '0');
+                            
+                            if (cachedVersion !== remoteVersion) {
+                                console.log('[Sidebar] Permission version changed, refreshing...');
+                                sessionStorage.setItem(`digibiz_perms_v2_${resolvedBusinessId}`, JSON.stringify(bd.rbacConfig));
+                                sessionStorage.setItem(`digibiz_perm_v_${resolvedBusinessId}`, remoteVersion);
+                                // Force re-render to reflect new permissions immediately
+                                setTimeout(() => this.render(), 100);
+                            }
                         } else {
-                            localStorage.removeItem('digibizBusinessLogoUrl');
-                            sessionStorage.removeItem('digibizBusinessLogoUrl');
+                            // Try Direct Config if bridge is missing (Owner Path)
+                            try {
+                                const snap = await window.db.collection('businesses').doc(resolvedBusinessId).collection('configs').doc('permissions').get();
+                                if (snap.exists) {
+                                    sessionStorage.setItem(`digibiz_perms_v2_${resolvedBusinessId}`, JSON.stringify(snap.data()));
+                                }
+                            } catch (eDirect) { /* Owner-only path */ }
                         }
-                    } catch (e) { /* ignore */ }
-                }
+
+                        if (bd.ownerName) this.ownerName = String(bd.ownerName || '').trim();
+                        const logo = String(bd.logoUrl || '').trim();
+                        if (logo) {
+                            this.businessLogoUrl = logo;
+                            try { localStorage.setItem('digibizBusinessLogoUrl', logo); } catch (e) { }
+                        }
+                    }
+                } catch (eBiz) { console.warn('Sidebar biz lookup failed:', eBiz); }
             }
-            if (!resolvedName) {
-                resolvedName = String(this.businessName || '').trim();
-            }
+            
+            if (!resolvedName) resolvedName = String(this.businessName || 'No Business Connected').trim();
+            
             this.businessId = resolvedBusinessId;
             this.businessName = resolvedName;
+            
             const ownerEl = document.getElementById('sidebarUserName');
             if (ownerEl) ownerEl.textContent = this.ownerName;
+            
             this.renderBusinessName(resolvedName);
             this.renderBusinessLogo();
         } catch (error) {
-            console.warn('Business name refresh failed:', error?.message || error);
-            this.renderBusinessName(this.businessName || '');
-            this.renderBusinessLogo();
+            console.error('refreshBusinessNameFromProfile failed:', error);
         }
     }
 
@@ -1345,8 +1379,7 @@ class Sidebar {
         const roleEl = document.getElementById('sidebarUserRole');
         if (nameEl) nameEl.textContent = '';
         if (nameEl && this.ownerName) nameEl.textContent = this.ownerName;
-        this.renderBusinessName('');
-        this.refreshBusinessNameFromProfile();
+        this.renderBusinessName(this.businessName || '');
         if (roleEl) {
             const role = String(this.currentRole || 'USER').replace(/_/g, ' ');
             roleEl.textContent = role;

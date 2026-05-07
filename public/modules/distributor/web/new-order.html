@@ -799,11 +799,14 @@
             if (!isNaN(pq)) return Math.max(0, pq);
             return 0;
         }
+
         function refreshCartStockWarnings() {
             var tbody = document.getElementById('linesBody');
+            var submitBtn = document.getElementById('submitBtn');
             if (!tbody) return;
             var warns = tbody.querySelectorAll('.qty-stock-warn');
             var firstTop = '';
+            var hasOverstock = false;
             for (var i = 0; i < cart.length && i < warns.length; i++) {
                 var item = cart[i];
                 var w = warns[i];
@@ -811,16 +814,29 @@
                 var avail = productAvailableStockUnits(pr);
                 var q = Number(item.qty) || 0;
                 if (avail > 0 && q > avail) {
-                    w.textContent = 'Only ' + avail + ' units available in stock!';
+                    w.textContent = '❌ Only ' + avail + ' units available in stock!';
                     w.style.display = 'block';
-                    if (!firstTop) firstTop = 'Warning: Only ' + avail + ' units available in stock!';
+                    hasOverstock = true;
+                    if (!firstTop) firstTop = 'Stock error: Item "' + (item.productName || 'Product') + '" exceeds available stock (' + avail + ').';
                 } else {
                     w.textContent = '';
                     w.style.display = 'none';
                 }
             }
-            showFormMsg(firstTop, firstTop ? 'warn' : '');
+            if (submitBtn) {
+                if (hasOverstock) {
+                    submitBtn.disabled = true;
+                    submitBtn.title = 'Cannot submit: Some items exceed available stock.';
+                    submitBtn.style.opacity = '0.5';
+                } else {
+                    submitBtn.disabled = false;
+                    submitBtn.title = '';
+                    submitBtn.style.opacity = '1';
+                }
+            }
+            showFormMsg(firstTop, firstTop ? 'err' : '');
         }
+
         function productLineBrand(p) {
             return (p && p.brand) ? String(p.brand).trim() : '';
         }
@@ -1048,20 +1064,19 @@
 
         async function loadRepsIntoSelect() {
             var sel = document.getElementById('repSelect');
-            if (!sel) {
-                console.warn('loadRepsIntoSelect: #repSelect missing');
-                return;
-            }
+            if (!sel) return;
             var bid = String(currentBusinessId || '').trim();
             sel.innerHTML = '<option value="">Loading…</option>';
             if (!bid) {
-                console.warn('loadRepsIntoSelect: currentBusinessId is empty when loading reps.');
                 sel.innerHTML = '<option value="">No business context</option>';
-                showFormMsg('Missing business ID — open this page from the dashboard after selecting a business.', 'err');
                 return;
             }
             var rows = [];
-            // Do not use one outer try/catch: a single failing .get() would skip all REP fallbacks and show "Could not load reps".
+            var cu = firebase.auth() && firebase.auth().currentUser;
+            var uid = cu ? String(cu.uid || '').trim() : '';
+            var email = cu && cu.email ? String(cu.email).toLowerCase().trim() : '';
+            var displayName = cu ? (cu.displayName || cu.email || 'Me') : 'Owner';
+
             if (isDistributorRepRole()) {
                 var cuRep = firebase.auth() && firebase.auth().currentUser;
                 var uidRep = cuRep ? String(cuRep.uid || '').trim() : '';
@@ -1088,100 +1103,47 @@
                                 loadedRep = rows.length > 0;
                             }
                         }
-                    } catch (eDoc) {
-                        console.warn('loadRepsIntoSelect: REP doc(' + myRepDocId + ') get failed:', eDoc);
-                    }
+                    } catch (eDoc) { /* ignore */ }
                 }
                 if (!loadedRep) {
-                    rows.length = 0;
-                    // IMPORTANT (Firestore rules): never .where('businessId').get() for REP — that returns
-                    // every rep row; each must pass allow read. Other reps fail unless isRepInBusiness matches.
-                    // Scoped queries only return rows the caller may read (same business + userId/email).
                     if (uidRep) {
                         try {
-                            var rsBU = await db.collection('reps')
-                                .where('businessId', '==', bid)
-                                .where('userId', '==', uidRep)
-                                .limit(10)
-                                .get();
+                            var rsBU = await db.collection('reps').where('businessId', '==', bid).where('userId', '==', uidRep).limit(1).get();
                             rsBU.forEach(pushRepRowFromDoc);
-                        } catch (eUid) {
-                            console.warn('loadRepsIntoSelect: REP businessId+userId query failed:', eUid);
-                        }
-                    }
-                    if (!rows.length && emRep) {
-                        try {
-                            rows.length = 0;
-                            var rsBE = await db.collection('reps')
-                                .where('businessId', '==', bid)
-                                .where('email', '==', emRep)
-                                .limit(10)
-                                .get();
-                            rsBE.forEach(pushRepRowFromDoc);
-                        } catch (eEmLo) {
-                            console.warn('loadRepsIntoSelect: REP businessId+email(lower) query failed:', eEmLo);
-                        }
-                    }
-                    if (!rows.length && cuRep && cuRep.email) {
-                        try {
-                            rows.length = 0;
-                            var rsBE2 = await db.collection('reps')
-                                .where('businessId', '==', bid)
-                                .where('email', '==', cuRep.email)
-                                .limit(10)
-                                .get();
-                            rsBE2.forEach(pushRepRowFromDoc);
-                        } catch (eEmRaw) {
-                            console.warn('loadRepsIntoSelect: REP businessId+email(raw) query failed:', eEmRaw);
-                        }
-                    }
-                    if (rows.length) {
-                        myRepDocId = rows[0].id;
-                    }
-                } else if (rows.length) {
-                    myRepDocId = rows[0].id;
-                }
-                if (!rows.length && isDistributorRepRole()) {
-                    var ensuredRepId = await ensureRepFirestoreRowForRepSession();
-                    if (ensuredRepId) {
-                        try {
-                            var rdFill = await db.collection('reps').doc(ensuredRepId).get();
-                            if (rdFill.exists) {
-                                rows.length = 0;
-                                pushRepRowFromDoc(rdFill);
-                                myRepDocId = ensuredRepId;
-                            }
-                        } catch (eFill) {
-                            console.warn('loadRepsIntoSelect: post-ensure rep load failed:', eFill);
-                        }
+                        } catch (e) { }
                     }
                 }
-                if (rows.length > 1) {
-                    rows.splice(1, rows.length - 1);
-                }
-                if (!rows.length) {
-                    console.warn('loadRepsIntoSelect: REP — no reps/ row for this user in business', bid);
-                }
+                if (rows.length) myRepDocId = rows[0].id;
             } else {
                 try {
                     var repsSnap = await db.collection('reps').where('businessId', '==', bid).get();
                     repsSnap.forEach(function (d) {
                         var x = d.data() || {};
                         if (x.isActive === false) return;
-                        var rid = String(d.id || '').trim();
-                        if (!rid) return;
                         rows.push({
-                            id: rid,
-                            name: String(x.name || x.fullName || x.displayName || x.email || rid).trim() || rid
+                            id: d.id,
+                            name: String(x.name || x.fullName || x.displayName || x.email || d.id).trim() || d.id,
+                            userId: x.userId,
+                            email: String(x.email || '').toLowerCase().trim()
                         });
                     });
+
+                    var isOwnerInList = rows.some(function(r) { 
+                        return (r.userId && r.userId === uid) || (r.email && r.email === email);
+                    });
+
+                    if (!isOwnerInList && uid) {
+                        rows.push({
+                            id: 'OWNER_' + uid,
+                            name: displayName + ' (Owner)',
+                            isOwnerSynthetic: true
+                        });
+                    }
                 } catch (errNon) {
-                    console.warn('loadRepsIntoSelect (reps list failed):', errNon);
-                    sel.innerHTML = '<option value="">Could not load reps</option>';
-                    showFormMsg('Could not load sales reps: ' + (errNon && errNon.code ? errNon.code : (errNon.message || String(errNon))), 'err');
-                    return;
+                    console.warn('loadRepsIntoSelect error:', errNon);
                 }
             }
+
             rows.sort(function (a, b) { return a.name.localeCompare(b.name); });
             sel.innerHTML = '<option value="">Select rep…</option>';
             rows.forEach(function (r) {
@@ -1190,21 +1152,18 @@
                 o.textContent = r.name;
                 sel.appendChild(o);
             });
-            if (!rows.length) {
-                console.info('loadRepsIntoSelect: zero reps for businessId', bid);
-                if (isDistributorRepRole()) {
-                    showFormMsg('Rep profile not found for this business (auto-create failed or was blocked). Check Firestore rules for reps create and that your account has an email.', 'err');
-                } else {
-                    showFormMsg('No sales rep profiles in reps/ for this business. Add reps (distributor menu) first.', 'err');
-                }
+
+            var targetId = '';
+            if (isDistributorRepRole()) {
+                targetId = myRepDocId;
             } else {
-                showFormMsg('', '');
+                var matchingOwner = rows.find(function(r) { 
+                    return r.isOwnerSynthetic || (r.userId === uid) || (r.email === email);
+                });
+                if (matchingOwner) targetId = matchingOwner.id;
             }
-            if (myRepDocId && rows.some(function (r) { return r.id === myRepDocId; })) sel.value = myRepDocId;
-            lastLoadedRepDisplayName = '';
-            if (rows.length === 1) {
-                lastLoadedRepDisplayName = String(rows[0].name || '').trim();
-            }
+
+            if (targetId) sel.value = targetId;
             sel.onchange = function () { loadShopsForSelectedRep(); };
             await loadShopsForSelectedRep();
         }

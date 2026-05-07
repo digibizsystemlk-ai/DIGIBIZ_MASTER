@@ -10,10 +10,10 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/core/firebase-init.js?v=60"></script>
-    <script src="/core/dashboard-core.js?v=60"></script>
-    <script src="/core/auth-roles.js?v=105"></script>
-    <script src="/core/sidebar.js?v=70"></script>
+    <script src="/core/firebase-init.js?v=72"></script>
+    <script src="/core/dashboard-core.js?v=72"></script>
+    <script src="/core/auth-roles.js?v=112"></script>
+    <script src="/core/sidebar.js?v=72"></script>
     <style>
         :root {
             --primary: #10b981;
@@ -273,8 +273,13 @@
                     
                     // Fetch saved overrides
                     console.log('[Debug] Fetching permissions from Firestore...');
-                    const snap = await window.db.collection('businesses').doc(currentBusinessId).collection('configs').doc('permissions').get();
-                    currentPermissions = snap.exists ? snap.data() : {};
+                    const cached = sessionStorage.getItem(`digibiz_perms_v2_${currentBusinessId}`);
+                    currentPermissions = cached ? JSON.parse(cached) : {};
+                    if (!cached) {
+                        const snap = await window.db.collection('businesses').doc(currentBusinessId).collection('configs').doc('permissions').get();
+                        currentPermissions = snap.exists ? snap.data() : {};
+                        sessionStorage.setItem(`digibiz_perms_v2_${currentBusinessId}`, JSON.stringify(currentPermissions));
+                    }
                     console.log('[Debug] Permissions fetched:', currentPermissions);
 
                     document.getElementById('loading').style.display = 'none';
@@ -324,8 +329,11 @@
                 groups[cat].forEach(p => {
                     html += `<tr class="perm-row">
                         <td>
-                            <span class="perm-label">${p.label}</span>
-                            <span class="perm-id">${p.id}</span>
+                            <div class="perm-label">${p.label}</div>
+                            <div class="perm-id">${p.id}</div>
+                            <div class="perm-status" style="font-size:12px; color:var(--primary-dark); margin-top:4px; font-style:italic;">
+                                🛡️ Status: ${p.status || 'No description available.'}
+                            </div>
                         </td>`;
                     
                     activeRoles.forEach(role => {
@@ -375,18 +383,28 @@
             });
 
             try {
-                await window.db.collection('businesses').doc(currentBusinessId)
-                    .collection('configs').doc('permissions')
-                    .set(payload);
+                const businessRef = window.db.collection('businesses').doc(currentBusinessId);
+                const batch = window.db.batch();
                 
-                // Clear cache so changes take effect immediately
-                if (window.DigibizDistributorPermissions && window.DigibizDistributorPermissions.clearPermissionCache) {
-                    window.DigibizDistributorPermissions.clearPermissionCache(currentBusinessId);
-                }
+                // 1. Save to master config (Owner only)
+                batch.set(businessRef.collection('configs').doc('permissions'), payload);
+                
+                // 2. Mirror to Permission Bridge (Staff visible) + Bump Version
+                const bridgePayload = {
+                    rbacConfig: payload,
+                    permVersion: Date.now()
+                };
+                batch.update(businessRef, bridgePayload);
+                
+                await batch.commit();
+
+                // Clear local v2 cache
+                sessionStorage.removeItem(`digibiz_perms_v2_${currentBusinessId}`);
                 
                 showToast();
             } catch (e) {
-                alert('Error: ' + e.message);
+                console.error('Save failed:', e);
+                alert('සුරැකීම අසාර්ථකයි: ' + e.message);
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = originalText;
