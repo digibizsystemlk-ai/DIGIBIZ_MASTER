@@ -268,6 +268,7 @@
         <div class="login-link">Already have an account? <a href="login.html">Login</a></div>
     </div>
 
+    <script src="../core/registration-utils.js?v=1"></script>
     <script>
         const registerBtn = document.getElementById('registerBtn');
         const googleBtn = document.getElementById('googleBtn');
@@ -275,53 +276,12 @@
         const businessTypeSelect = document.getElementById('businessType');
         const functionsSvc = firebase.functions();
 
-        // Function to check if a file exists on the server
-        async function checkFileExists(url) {
-            try {
-                const response = await fetch(url, { method: 'HEAD' });
-                return response.ok;
-            } catch (e) {
-                return false;
+        // Use the modular utility to populate business types
+        window.onload = () => {
+            if (window.RegistrationUI) {
+                window.RegistrationUI.populateBusinessTypes(businessTypeSelect);
             }
-        }
-
-        // Populate Business Types Dropdown with Smart Auto-Detection
-        async function populateBusinessTypes() {
-            if (window.BUSINESS_TYPES) {
-                const types = Object.keys(window.BUSINESS_TYPES);
-
-                for (const key of types) {
-                    const type = window.BUSINESS_TYPES[key];
-                    if (type.hidden === true) continue;
-
-                    try {
-                        // Simplified Logic: Show the business type if at least one 
-                        // business of this type is already registered in the system.
-                        const existCheck = await db.collection('businesses')
-                            .where('businessType', '==', type.id)
-                            .limit(1)
-                            .get();
-
-                        if (!existCheck.empty) {
-                            const option = document.createElement('option');
-                            option.value = type.id;
-                            option.textContent = `${type.icon} ${type.name}`;
-                            businessTypeSelect.appendChild(option);
-                        }
-                    } catch (e) {
-                        console.warn(`Existence check failed for ${type.id}:`, e);
-                    }
-                }
-                // Add "Other" option at the end
-                const otherOption = document.createElement('option');
-                otherOption.value = 'other';
-                otherOption.textContent = '➕ මම සොයන ව්‍යාපාර වර්ගය මෙහි නැත...';
-                businessTypeSelect.appendChild(otherOption);
-            } else {
-                console.error('BUSINESS_TYPES not found in window');
-            }
-        }
-        window.onload = populateBusinessTypes;
+        };
 
         // Toggle other business description box
         businessTypeSelect.onchange = () => {
@@ -356,10 +316,10 @@
 
         async function routeToUniversalDashboard(userId) {
             try {
-                const userDoc = await db.collection('users').doc(userId).get();
+                const userDoc = await window.db.collection('users').doc(userId).get();
                 const businessId = userDoc.exists ? (userDoc.data().businessId || userId) : userId;
                 let businessType = 'retail';
-                const businessDoc = await db.collection('businesses').doc(businessId).get();
+                const businessDoc = await window.db.collection('businesses').doc(businessId).get();
                 if (businessDoc.exists) businessType = businessDoc.data().businessType || businessType;
 
                 localStorage.setItem('currentBusinessId', businessId);
@@ -426,7 +386,7 @@
                 const businessId = userId;
 
                 // 2. Create Business Document
-                await db.collection('businesses').doc(businessId).set({
+                await window.db.collection('businesses').doc(businessId).set({
                     name: businessName,
                     ownerId: userId,
                     ownerName: ownerName,
@@ -441,7 +401,7 @@
                 });
 
                 // 3. Create User Document
-                await db.collection('users').doc(userId).set({
+                await window.db.collection('users').doc(userId).set({
                     name: ownerName,
                     ownerName: ownerName,
                     email: email,
@@ -454,7 +414,7 @@
                 });
 
                 // 4. Add user to business users sub-collection
-                await db.collection('businesses').doc(businessId).collection('users').doc(userId).set({
+                await window.db.collection('businesses').doc(businessId).collection('users').doc(userId).set({
                     email: email,
                     name: ownerName,
                     role: 'BUSINESS_OWNER',
@@ -499,10 +459,10 @@
                 const userId = user.uid;
                 const businessId = userId;
 
-                const userDoc = await db.collection('users').doc(userId).get();
+                const userDoc = await window.db.collection('users').doc(userId).get();
                 if (!userDoc.exists) {
                     // Create Business
-                    await db.collection('businesses').doc(businessId).set({
+                    await window.db.collection('businesses').doc(businessId).set({
                         name: businessName,
                         ownerId: userId,
                         ownerName: user.displayName || user.email,
@@ -513,7 +473,7 @@
                     });
 
                     // Create User
-                    await db.collection('users').doc(userId).set({
+                    await window.db.collection('users').doc(userId).set({
                         name: user.displayName || user.email,
                         ownerName: user.displayName || user.email,
                         email: user.email,
@@ -523,7 +483,7 @@
                         createdAt: new Date()
                     });
 
-                    await db.collection('businesses').doc(businessId).collection('users').doc(userId).set({
+                    await window.db.collection('businesses').doc(businessId).collection('users').doc(userId).set({
                         email: user.email,
                         name: user.displayName || user.email,
                         role: 'BUSINESS_OWNER',

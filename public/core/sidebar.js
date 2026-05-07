@@ -355,16 +355,19 @@ class Sidebar {
     showNewFeatureAnnouncement(user) {
         if (!user) return;
 
+        const roleNorm = String(this.currentRole || '').toUpperCase();
+        const isOwner = this.isSuperAdminUser() || roleNorm === 'DISTRIBUTOR_OWNER' || roleNorm === 'BUSINESS_OWNER';
+        
+        // ONLY show these announcements to Owners/Admins
+        if (!isOwner) return;
+
         const menus = this.getMenus();
         let hasNewFeatures = menus.some(m => m.isNew);
 
         if (!hasNewFeatures) {
-            // Check if Sidebar Config is available and "new" (it is currently hardcoded as new in render)
-            const roleNorm = String(this.currentRole || '').toUpperCase();
             const isDistributor = this.businessType === 'distributor' || this.isMwTradingContext();
-            const isOwner = this.isSuperAdminUser() || roleNorm === 'DISTRIBUTOR_OWNER' || roleNorm === 'BUSINESS_OWNER';
-            if (isDistributor && isOwner && !this.isRepRole()) {
-                hasNewFeatures = true; // Sidebar Config is the new feature we want to announce Base
+            if (isDistributor) {
+                hasNewFeatures = true; 
             }
         }
 
@@ -378,7 +381,7 @@ class Sidebar {
         let count = parseInt(localStorage.getItem(countKey) || '0');
         if (count >= 10) return;
 
-        if (window.location.pathname.includes('sidebar-config.html')) return;
+        if (window.location.pathname.includes('sidebar-config.html') || window.location.pathname.includes('permissions-config.html')) return;
 
         const modalId = 'newFeatureAnnouncementModal';
         if (document.getElementById(modalId)) return;
@@ -402,8 +405,8 @@ class Sidebar {
             <div style="font-size: 50px; margin-bottom: 15px;">🚀</div>
             <h2 style="color: #0f172a; margin-bottom: 15px; font-size: 20px; font-weight: 800;">අලුත් පහසුකම් කිහිපයක් එක් කර ඇත!</h2>
             <p style="color: #475569; font-size: 15px; line-height: 1.6; margin-bottom: 25px;">
-                ඔබගේ ව්‍යාපාරික කටයුතු වඩාත් පහසු කිරීම සඳහා පද්ධතියට නව විශේෂාංග කිහිපයක් එක් කර ඇත. ඒවා සයිඩ්බාර් එකේ <b>"NEW"</b> ලේබලය සමඟ ඔබට දැක ගත හැකියි. <br><br>
-                මෙම මෙනු ඔබට අවශ්‍ය පරිදි සකසා ගැනීමට <b>Settings > Sidebar Config</b> වෙත පිවිසෙන්න.
+                ඔබගේ ව්‍යාපාරික කටයුතු වඩාත් පහසු කිරීම සඳහා <b>Staff Permissions</b> (සේවක අවසරයන්) සහ <b>Sidebar Config</b> (මෙනු සකස් කිරීමේ) පහසුකම් දැන් එක් කර ඇත. <br><br>
+                මේවා සයිඩ්බාර් එකේ <b>"NEW"</b> ලේබලය සමඟ ඔබට දැක ගත හැකියි. සැකසුම් සිදු කිරීමට පද්ධති සැකසුම් (Settings) වෙත පිවිසෙන්න.
             </p>
             <div style="display: flex; flex-direction: column; gap: 10px;">
                 <button id="goConfigBtn" style="background: #2563eb; color: #fff; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer;">සැකසුම් වෙත යන්න →</button>
@@ -1223,6 +1226,7 @@ class Sidebar {
         const settingsItemsBase = [
             { icon: '🏢', name: 'Business Profile', link: '/modules/company/profile.html' },
             { icon: '👥', name: 'Staff', link: '/modules/company/staff.html' },
+            { icon: '🔑', name: 'Staff Permissions', link: '/modules/core/permissions-config.html', isNew: true },
             { icon: '🎨', name: 'Sidebar Config', link: '/modules/core/sidebar-config.html', isNew: true },
             { icon: '🔐', name: 'Change Password', link: '/modules/core/change-password.html' },
             { icon: '⚙️', name: 'Settings', link: '/modules/company/settings.html' },
@@ -1238,6 +1242,7 @@ class Sidebar {
             settingsItems = settingsItems.filter((item) => {
                 if (item.name === 'Business Profile') return !!p.canBusinessInfoEdit;
                 if (item.name === 'Staff') return !!p.canStaffMutate;
+                if (item.name === 'Staff Permissions') return rb === 'OWNER';
                 if (item.name === 'Settings') return !!p.canSettingsChange;
                 if (item.name === 'SMS Settings') return !!p.canSettingsChange;
                 if (item.name === 'SMS Log') return smsLogOk;

@@ -76,11 +76,11 @@
             </div>
         
             <div class="finance-tabs">
-                <button class="tab-btn active" onclick="showTab('journal')">Journal Entries</button>
-                <button class="tab-btn" onclick="showTab('ledger')">Ledger</button>
-                <button class="tab-btn" onclick="showTab('trial')">Trial Balance</button>
-                <button class="tab-btn" onclick="showTab('income')">Income Statement</button>
-                <button class="tab-btn" onclick="showTab('balance')">Balance Sheet</button>
+                <button id="btn-journal" class="tab-btn active" onclick="showTab('journal')">Journal Entries</button>
+                <button id="btn-ledger" class="tab-btn" onclick="showTab('ledger')">Ledger</button>
+                <button id="btn-trial" class="tab-btn" onclick="showTab('trial')">Trial Balance</button>
+                <button id="btn-income" class="tab-btn" onclick="showTab('income')">Income Statement</button>
+                <button id="btn-balance" class="tab-btn" onclick="showTab('balance')">Balance Sheet</button>
             </div>
 
             <div id="tab-journal">
@@ -102,29 +102,36 @@
 
     <script>
         let state = { context: null, role: 'VIEWER', isAdmin: false, journalEntries: [], ledger: {} };
-        const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
-
         const formatLKR = (amount) => `LKR ${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         const showToast = (msg) => { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); };
-        const isKubuka = () => state.context?.businessId === KUBUKA_BID;
+        
+        function hasAccountingAccess() {
+            if (!state.context) return false;
+            const role = state.context.userRole;
+            const band = window.DigibizDistributorPermissions?.roleBand(role);
+            if (band === 'OWNER' || role === 'SUPER_ADMIN') return true;
+            
+            const perms = window.DigibizDistributorPermissions?.permissionsForRole(role);
+            return perms?.acc_advanced_gl === true;
+        }
 
         function showTab(tab) {
             ['journal', 'ledger', 'trial', 'income', 'balance'].forEach(name => {
                 document.getElementById(`tab-${name}`).style.display = (name === tab ? 'block' : 'none');
+                const btn = document.getElementById(`btn-${name}`);
+                if (btn) btn.classList.toggle('active', name === tab);
             });
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.textContent.toLowerCase().includes(tab)));
         }
 
         function normalizeAccountType(accountId) {
-            if (typeof accountId !== 'string' || !accountId) {
-                console.warn('Invalid or missing accountId passed to normalizeAccountType:', accountId);
-                return 'UNKNOWN';
-            }
-            if (accountId.startsWith('AC-1')) return 'ASSET';
-            if (accountId.startsWith('AC-2')) return 'LIABILITY';
-            if (accountId.startsWith('AC-3')) return 'EQUITY';
-            if (accountId.startsWith('AC-4')) return 'INCOME';
-            if (accountId.startsWith('AC-5')) return 'EXPENSE';
+            if (typeof accountId !== 'string' || !accountId) return 'UNKNOWN';
+            const code = accountId.startsWith('AC-') ? accountId.substring(3) : accountId;
+            
+            if (code.startsWith('1')) return 'ASSET';
+            if (code.startsWith('2')) return 'LIABILITY';
+            if (code.startsWith('3')) return 'EQUITY';
+            if (code.startsWith('4')) return 'REVENUE';
+            if (code.startsWith('5')) return 'EXPENSE';
             return 'UNKNOWN';
         }
 
@@ -133,14 +140,22 @@
             entries.forEach(entry => {
                 if (entry.isReversed) return;
                 (entry.entries || []).forEach(line => {
-                    const { accountId, amount, type } = line;
-                    if (!accountId) {
-                        console.warn('Skipping journal line item without accountId:', line, 'in entry:', entry);
+                    const accCode = line.accountCode || line.accountId;
+                    if (!accCode) {
+                        console.warn('Skipping journal line item without accountCode/accountId:', line, 'in entry:', entry);
                         return;
                     }
-                    if (!ledger[accountId]) ledger[accountId] = { debit: 0, credit: 0, balance: 0, type: normalizeAccountType(accountId) };
-                    if (type === 'debit') ledger[accountId].debit += amount;
-                    else ledger[accountId].credit += amount;
+                    if (!ledger[accCode]) ledger[accCode] = { id: accCode, debit: 0, credit: 0, balance: 0, type: normalizeAccountType(accCode) };
+                    
+                    if (line.debit > 0) {
+                        ledger[accCode].debit += line.debit;
+                    } else if (line.credit > 0) {
+                        ledger[accCode].credit += line.credit;
+                    } else if (line.type === 'debit') { // Fallback for old model
+                        ledger[accCode].debit += line.amount;
+                    } else if (line.type === 'credit') {
+                        ledger[accCode].credit += line.amount;
+                    }
                 });
             });
 
@@ -167,8 +182,8 @@
 
         function renderJournal() {
             const body = document.getElementById('entriesBody');
-            if (!isKubuka()) { 
-                body.innerHTML = '<tr><td colspan="6">Accounting is not enabled for this business.</td></tr>'; 
+            if (!hasAccountingAccess()) { 
+                body.innerHTML = '<tr><td colspan="6">Access denied. You do not have permission to view the General Ledger.</td></tr>'; 
                 return; 
             }
 
@@ -192,19 +207,31 @@
 
             let html = '';
             sortedEntries.forEach(entry => {
+                const lines = entry.entries || [];
+                const accountNamesHtml = lines.map(l => {
+                    const code = l.accountCode || l.accountId || 'undefined';
+                    const name = l.accountName ? ` - ${l.accountName}` : '';
+                    return `<span>${code}${name}</span>`;
+                }).join('<br>');
+                
+                const debitHtml = lines.map(l => {
+                    const val = l.debit || (l.type === 'debit' ? l.amount : 0) || 0;
+                    return val > 0 ? formatLKR(val) : '&nbsp;';
+                }).join('<br>');
+
+                const creditHtml = lines.map(l => {
+                    const val = l.credit || (l.type === 'credit' ? l.amount : 0) || 0;
+                    return val > 0 ? formatLKR(val) : '&nbsp;';
+                }).join('<br>');
+
                 html += `<tr>
                     <td>${entry.date.toDate().toLocaleDateString()}</td>
-                    <td>${entry.memo || ''}</td>
-                    <td colspan="3">
-                        ${(entry.entries || []).map(l => {
-                            const account = l.accountId || 'undefined';
-                            const amount = formatLKR(l.amount);
-                            const type = l.type === 'debit' ? 'Dr' : 'Cr';
-                            return `${account}: ${type} ${amount}`;
-                        }).join('<br>')}
-                    </td>
+                    <td>${entry.description || entry.memo || ''}</td>
+                    <td>${accountNamesHtml}</td>
+                    <td class="text-right" style="color: #0f3b2c; font-weight: 500;">${debitHtml}</td>
+                    <td class="text-right" style="color: #64748b;">${creditHtml}</td>
                     <td>
-                        ${isKubuka() && !entry.isReversed && !entry.reversalOf ? `<button onclick="deleteJournalEntry('${entry.id}')">Delete</button>` : ''}
+                        ${hasAccountingAccess() && !entry.isReversed && !entry.reversalOf ? `<button onclick="deleteJournalEntry('${entry.id}')" style="background:#ef444420;color:#ef4444;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;">Delete</button>` : ''}
                     </td>
                 </tr>`;
             });
@@ -212,7 +239,7 @@
         }
 
         async function deleteJournalEntry(entryId) {
-            if (!isKubuka() || !confirm('Are you sure you want to delete this entry? This will create a reversing entry and cannot be undone.')) return;
+            if (!hasAccountingAccess() || !confirm('Are you sure you want to delete this entry? This will create a reversing entry and cannot be undone.')) return;
             
             const entryRef = db.collection('journal').doc(state.context.businessId).collection('entries').doc(entryId);
             const entrySnap = await entryRef.get();
@@ -267,7 +294,7 @@
         }
 
         function renderIncome() {
-            const revenue = Object.values(state.ledger).filter(a => a.type === 'INCOME').reduce((sum, a) => sum + a.balance, 0);
+            const revenue = Object.values(state.ledger).filter(a => a.type === 'REVENUE').reduce((sum, a) => sum + a.balance, 0);
             const expenses = Object.values(state.ledger).filter(a => a.type === 'EXPENSE').reduce((sum, a) => sum + a.balance, 0);
             const netProfit = revenue - expenses;
             document.getElementById('incomeContent').innerHTML = `<div class="statement-row"><span>Total Revenue</span><span>${formatLKR(revenue)}</span></div><div class="statement-row"><span>Total Expenses</span><span>${formatLKR(expenses)}</span></div><div class="statement-total"><span>Net Profit</span><span>${formatLKR(netProfit)}</span></div>`;
@@ -278,7 +305,7 @@
             const assets = Object.values(state.ledger).filter(a => a.type === 'ASSET').reduce((sum, a) => sum + a.balance, 0);
             const liabilities = Object.values(state.ledger).filter(a => a.type === 'LIABILITY').reduce((sum, a) => sum + a.balance, 0);
             const equity = Object.values(state.ledger).filter(a => a.type === 'EQUITY').reduce((sum, a) => sum + a.balance, 0);
-            const revenue = Object.values(state.ledger).filter(a => a.type === 'INCOME').reduce((sum, a) => sum + a.balance, 0);
+            const revenue = Object.values(state.ledger).filter(a => a.type === 'REVENUE').reduce((sum, a) => sum + a.balance, 0);
             const expenses = Object.values(state.ledger).filter(a => a.type === 'EXPENSE').reduce((sum, a) => sum + a.balance, 0);
             const netProfit = revenue - expenses;
             const totalEquity = equity + netProfit;
@@ -287,9 +314,13 @@
         }
 
         function updateStats() {
-            const revenue = Object.values(state.ledger).filter(a => a.type === 'INCOME').reduce((sum, a) => sum + a.balance, 0);
-            const expenses = Object.values(state.ledger).filter(a => a.type === 'EXPENSE').reduce((sum, a) => sum + a.balance, 0);
-            const cash = Object.values(state.ledger).filter(a => a.type === 'ASSET' && a.accountId === 'AC-10100').reduce((sum, a) => sum + a.balance, 0);
+            const ledgerArr = Object.values(state.ledger);
+            const revenue = ledgerArr.filter(a => a.type === 'REVENUE').reduce((sum, a) => sum + a.balance, 0);
+            const expenses = ledgerArr.filter(a => a.type === 'EXPENSE').reduce((sum, a) => sum + a.balance, 0);
+            
+            // Cash account can be 1-1010-01 or AC-10100
+            const cash = ledgerArr.filter(a => a.type === 'ASSET' && (a.id === '1-1010-01' || a.id === 'AC-10100')).reduce((sum, a) => sum + a.balance, 0);
+            
             document.getElementById('totalRevenue').textContent = formatLKR(revenue);
             document.getElementById('totalExpenses').textContent = formatLKR(expenses);
             document.getElementById('cashBalance').textContent = formatLKR(cash);
@@ -300,7 +331,7 @@
             if (!user) { window.location.href = '../../auth/login.html'; return; }
             state.context = await window.dashboardCore.getContext(user);
             
-            if (isKubuka()) {
+            if (hasAccountingAccess() && state.context.businessId) {
                 const journalRef = db.collection('journal').doc(state.context.businessId).collection('entries');
                 journalRef.orderBy('date', 'desc').onSnapshot(snapshot => {
                     state.journalEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));

@@ -186,6 +186,12 @@ class DashboardCore {
         } catch (eBud) { /* ignore */ }
 
         const context = { userId: user.uid, businessId, businessType, businessName, userRole, logoUrl };
+        
+        // Pre-fetch permission overrides if applicable
+        if (businessId && window.DigibizDistributorPermissions && typeof window.DigibizDistributorPermissions.fetchAndCachePermissions === 'function') {
+            await window.DigibizDistributorPermissions.fetchAndCachePermissions(businessId);
+        }
+
         this.persistContext(context);
         return context;
     }

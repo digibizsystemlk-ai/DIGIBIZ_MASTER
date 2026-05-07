@@ -19,8 +19,43 @@ const ROLES = {
     AREA_MANAGER: 'AREA_MANAGER'
 };
 
+// Master Registry of all system features/permissions
+// Based on sidebar items and internal facilities.
+// Defaults: ONLY 'OWNER' has access by default. Others must be granted manually.
+const MASTER_PERMISSIONS = [
+    { id: 'canViewDashboard', label: 'View Dashboard Stats', category: 'General', defaultRoles: ['OWNER'] },
+    
+    { id: 'canOrderCreate', label: 'Create New Sales Orders', category: 'Sales', defaultRoles: ['OWNER'] },
+    { id: 'canShopsManage', label: 'Manage Shops/Customers', category: 'Sales', defaultRoles: ['OWNER'] },
+    { id: 'canOrdersView', label: 'View All Orders', category: 'Sales', defaultRoles: ['OWNER'] },
+    { id: 'canSalesView', label: 'View Sales History', category: 'Sales', defaultRoles: ['OWNER'] },
+    { id: 'canInvoiceCreate', label: 'Create/Print Invoices', category: 'Sales', defaultRoles: ['OWNER'] },
+    { id: 'canGrnManage', label: 'Manage GRN (Goods Received)', category: 'Inventory', defaultRoles: ['OWNER'] },
+    { id: 'canProductManage', label: 'Manage Products/Price List', category: 'Inventory', defaultRoles: ['OWNER'] },
+    { id: 'canRepsManage', label: 'Manage Sales Reps', category: 'Staff', defaultRoles: ['OWNER'] },
+    { id: 'canWarehouseManage', label: 'Warehouse & Stock Control', category: 'Inventory', defaultRoles: ['OWNER'] },
+    { id: 'canDeliveriesManage', label: 'Manage Deliveries & Dispatch', category: 'Logistics', defaultRoles: ['OWNER'] },
+    { id: 'canFreeIssuesLog', label: 'View Free Issues Log', category: 'Sales', defaultRoles: ['OWNER'] },
+    { id: 'canReturnsLog', label: 'View Returns Log', category: 'Sales', defaultRoles: ['OWNER'] },
+    { id: 'canChequesManage', label: 'Manage Cheques & Payments', category: 'Finance', defaultRoles: ['OWNER'] },
+    { id: 'canCreditAgingView', label: 'View Credit Aging Reports', category: 'Finance', defaultRoles: ['OWNER'] },
+    { id: 'canCommissionConfig', label: 'Configure Commissions', category: 'Settings', defaultRoles: ['OWNER'] },
+    { id: 'canRepCommissionView', label: 'View Rep Commissions', category: 'Finance', defaultRoles: ['OWNER'] },
+    { id: 'canDistributorReports', label: 'View Distributor Reports', category: 'Reports', defaultRoles: ['OWNER'] },
+    
+    { id: 'canViewFinance', label: 'View Finance Dashboard', category: 'Finance', defaultRoles: ['OWNER'] },
+    { id: 'canViewAccounting', label: 'View Full Accounting & Ledgers', category: 'Finance', defaultRoles: ['OWNER'] },
+    
+    { id: 'canStaffManage', label: 'Manage Staff Accounts', category: 'Settings', defaultRoles: ['OWNER'] },
+    { id: 'canPermissionsConfig', label: 'Modify Staff Permissions', category: 'Settings', defaultRoles: ['OWNER'] },
+    { id: 'canSidebarConfig', label: 'Configure Sidebar Menu', category: 'Settings', defaultRoles: ['OWNER'] },
+    { id: 'canSettingsGlobal', label: 'Global Business Settings', category: 'Settings', defaultRoles: ['OWNER'] },
+    { id: 'canSmsConfig', label: 'Manage SMS Settings & Logs', category: 'Settings', defaultRoles: ['OWNER'] },
+    { id: 'canBillingCharges', label: 'View Billing & Charges', category: 'Settings', defaultRoles: ['OWNER'] }
+];
+
 const PERMISSIONS = {
-    // Accounting permissions
+    // Legacy support (to be kept for backward compatibility if needed)
     VIEW_ACCOUNTS: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ACCOUNTANT'],
     EDIT_ACCOUNTS: ['SUPER_ADMIN', 'BUSINESS_OWNER', 'ACCOUNTANT'],
     DELETE_ACCOUNTS: ['SUPER_ADMIN', 'BUSINESS_OWNER'],
@@ -168,43 +203,33 @@ async function getUserRole(userId, businessId = null) {
             console.log('[getUserRole] ensureMwTradingOwnerBizMembership invoked for MW owner uid', userId);
         }
 
-        // Check if SUPER_ADMIN first
+        // 1. Check if SUPER_ADMIN
         const userDoc = await db.collection('users').doc(userId).get();
         if (userDoc.exists && userDoc.data().role === 'SUPER_ADMIN') {
             return { role: 'SUPER_ADMIN', businessId: null };
         }
 
         const MW_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        // MW_OWNER_EMAIL already declared above at line 191
+
+        // 2. MW owner bootstrap (Preserved for legacy)
         if (window.auth && window.auth.currentUser && window.auth.currentUser.uid === userId) {
             const em = String(window.auth.currentUser.email || '').trim().toLowerCase();
-            if (em === MW_OWNER_EMAIL) { // This now correctly refers to the single declaration above
-                window.__DIGIBIZ_LOCAL_ROLE__ = 'distributor_owner';
-                window.__DIGIBIZ_MW_PROFILE_SYNC__ = {
-                    role: 'distributor_owner',
-                    businessId: MW_BUSINESS_ID,
-                    email: window.auth.currentUser.email
-                };
-                try {
-                    localStorage.setItem('digibizMwDisplayRole', 'distributor_owner');
-                    localStorage.setItem('digibizMwBusinessId', MW_BUSINESS_ID);
-                    localStorage.setItem('digibizMwSyncEmail', MW_OWNER_EMAIL);
-                    localStorage.setItem('currentBusinessId', MW_BUSINESS_ID);
-                    localStorage.setItem('currentBusinessType', 'distributor');
-                    sessionStorage.setItem('currentBusinessId', MW_BUSINESS_ID);
-                    sessionStorage.setItem('currentBusinessType', 'distributor');
-                } catch (e) { /* ignore */ }
-                console.log('[getUserRole] MW email master: distributor_owner @', MW_BUSINESS_ID);
+            if (em === MW_OWNER_EMAIL) {
                 return { role: 'distributor_owner', businessId: MW_BUSINESS_ID };
             }
         }
         
-        // Check business-specific role
+        // 3. Generic Owner/Staff Identification
         if (resolvedBusinessId) {
             const bizDoc = await db.collection('businesses').doc(resolvedBusinessId).get();
-            const bizData = bizDoc.exists ? bizDoc.data() : {};
-            if (bizData.ownerId === userId) {
-                return { role: 'distributor_owner', businessId: resolvedBusinessId };
+            if (bizDoc.exists) {
+                const bizData = bizDoc.data();
+                if (bizData.ownerId === userId) {
+                    return { role: 'distributor_owner', businessId: resolvedBusinessId };
+                }
             }
+
             const businessUserDoc = await db.collection('businesses').doc(resolvedBusinessId)
                 .collection('users').doc(userId).get();
             if (businessUserDoc.exists) {
@@ -233,6 +258,7 @@ async function shouldForcePasswordChange(userId) {
 }
 
 // Export to window
+window.MASTER_PERMISSIONS = MASTER_PERMISSIONS;
 window.ROLES = ROLES;
 window.PERMISSIONS = PERMISSIONS;
 window.MENU_BY_ROLE = MENU_BY_ROLE;
@@ -240,6 +266,44 @@ window.hasPermission = hasPermission;
 window.getMenuForRole = getMenuForRole;
 window.getUserRole = getUserRole;
 window.shouldForcePasswordChange = shouldForcePasswordChange;
+
+/**
+ * Dynamic Role Discovery Utility
+ * Scans the staff collection of a business to find all unique roles in use.
+ */
+window.getBusinessStaffRoles = async function(businessId) {
+    if (!businessId) return [];
+    try {
+        const roles = new Set(['OWNER']); // Owner is always present
+        
+        // 1. Scan the business's users collection for roles actually in use
+        const snap = await window.db.collection('businesses').doc(businessId).collection('users').get();
+        snap.forEach(doc => {
+            const rawRole = String(doc.data().role || '').trim().toUpperCase();
+            if (rawRole) {
+                const band = window.DigibizDistributorPermissions.roleBand(rawRole);
+                roles.add(band);
+            }
+        });
+
+        // 2. Scan custom roles config (so they appear even if no staff assigned yet)
+        try {
+            const configSnap = await window.db.collection('businesses').doc(businessId).collection('configs').doc('roles').get();
+            if (configSnap.exists) {
+                const customList = configSnap.data().list || [];
+                customList.forEach(r => {
+                    const band = window.DigibizDistributorPermissions.roleBand(r);
+                    roles.add(band);
+                });
+            }
+        } catch (e2) { console.warn('[RBAC] Custom roles config read failed:', e2); }
+
+        return Array.from(roles);
+    } catch (e) {
+        console.warn('[RBAC] Role discovery failed:', e);
+        return ['OWNER', 'SALES_COORDINATOR', 'AREA_MANAGER', 'REP', 'ACCOUNTANT'];
+    }
+};
 
 /**
  * Distributor (MW-style) web RBAC: Owner, Sales Coordinator, Area Manager, Rep.
@@ -263,80 +327,41 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
     function roleBand(roleRaw) {
         const r = normalizeRole(roleRaw);
         if (OWNER_NORMS.has(r)) return 'OWNER';
-        if (r === 'SALES_COORDINATOR') return 'SALES_COORDINATOR';
-        if (r === 'AREA_MANAGER') return 'AREA_MANAGER';
-        if (r === 'REP') return 'REP';
-        return 'OTHER';
+        // Return the role itself for dynamic override mapping
+        return r || 'OTHER';
+    }
+
+    async function fetchAndCachePermissions(businessId) {
+        if (!businessId) return null;
+        const cacheKey = `digibiz_perms_${businessId}`;
+        try {
+            const snap = await db.collection('businesses').doc(businessId).collection('configs').doc('permissions').get();
+            if (snap.exists) {
+                const data = snap.data();
+                sessionStorage.setItem(cacheKey, JSON.stringify(data));
+                return data;
+            } else {
+                sessionStorage.removeItem(cacheKey);
+            }
+        } catch (e) {
+            console.warn('[RBAC] Failed to fetch permissions:', e);
+        }
+        return null;
     }
 
     function permissionsForRole(roleRaw, businessId) {
         const b = roleBand(roleRaw);
-        const bid = String(businessId || '').trim().toUpperCase();
-        const isMwTrading = bid === String(MW_BUSINESS_ID).toUpperCase();
-        const isSpranza = bid === String(SPRANZA_BUSINESS_ID).toUpperCase();
+        const bid = String(businessId || localStorage.getItem('currentBusinessId') || '').trim();
+        const isMwTrading = bid.toUpperCase() === String(MW_BUSINESS_ID).toUpperCase();
+        const isSpranza = bid.toUpperCase() === String(SPRANZA_BUSINESS_ID).toUpperCase();
         const isOwner = b === 'OWNER';
         const isSC = b === 'SALES_COORDINATOR';
         const isAM = b === 'AREA_MANAGER';
         const isRep = b === 'REP';
         const matrix = isOwner || isSC || isAM || isRep;
 
-        if (b === 'OTHER') {
-            return {
-                roleBand: b,
-                canInvoiceCreateEdit: false,
-                canInvoiceReject: false,
-                canInvoiceDelete: false,
-                canViewAccounting: false,
-                canViewReportsFull: false,
-                canViewFinancialsProfit: false,
-                canStockEdit: false,
-                canStockView: true,
-                canCustomerCreate: isMwTrading || isSpranza,
-                canCustomerEditDelete: false,
-                canCustomerView: true,
-                canProductCreate: false,
-                canProductEditDelete: false,
-                canProductView: true,
-                canStaffMutate: false,
-                canExpensesCreate: false,
-                canExpensesEdit: false,
-                canSettingsChange: false,
-                canBusinessInfoEdit: false,
-                canOrderWorkflowApprove: false,
-                canOrderReject: false,
-                canManageRepsWeb: false
-            };
-        }
-        
-        if (isRep && isMwTrading) {
-            return {
-                roleBand: b,
-                canInvoiceCreateEdit: false,
-                canInvoiceReject: false,
-                canInvoiceDelete: false,
-                canViewAccounting: false,
-                canViewReportsFull: false,
-                canViewFinancialsProfit: false,
-                canStockEdit: false,
-                canStockView: true,
-                canCustomerCreate: false,
-                canCustomerEditDelete: false,
-                canCustomerView: true,
-                canProductCreate: false,
-                canProductEditDelete: false,
-                canProductView: true,
-                canStaffMutate: false,
-                canExpensesCreate: false,
-                canExpensesEdit: false,
-                canSettingsChange: false,
-                canBusinessInfoEdit: false,
-                canOrderWorkflowApprove: false,
-                canOrderReject: false,
-                canManageRepsWeb: false
-            };
-        }
-
-        return {
+        // Base defaults
+        let perms = {
             roleBand: b,
             canInvoiceCreateEdit: matrix,
             canInvoiceReject: isOwner,
@@ -361,12 +386,37 @@ window.shouldForcePasswordChange = shouldForcePasswordChange;
             canOrderReject: isOwner,
             canManageRepsWeb: isOwner || isSC || isAM
         };
+
+        // Special legacy overrides
+        if (b === 'OTHER') {
+            Object.keys(perms).forEach(k => { if (k !== 'roleBand' && k !== 'canStockView' && k !== 'canCustomerView' && k !== 'canProductView') perms[k] = false; });
+            perms.canCustomerCreate = isMwTrading || isSpranza;
+        } else if (isRep && isMwTrading) {
+            Object.keys(perms).forEach(k => { if (k !== 'roleBand' && k !== 'canStockView' && k !== 'canCustomerView' && k !== 'canProductView') perms[k] = false; });
+        }
+
+        // Apply Dynamic Overrides from Sync Cache (sessionStorage)
+        if (bid) {
+            try {
+                const cached = sessionStorage.getItem(`digibiz_perms_${bid}`);
+                if (cached) {
+                    const overrides = JSON.parse(cached);
+                    if (overrides && overrides[b]) {
+                        perms = { ...perms, ...overrides[b] };
+                    }
+                }
+            } catch (e) {}
+        }
+
+        return perms;
     }
 
     window.DigibizDistributorPermissions = {
         normalizeRole,
         roleBand,
-        permissionsForRole
+        permissionsForRole,
+        fetchAndCachePermissions,
+        clearPermissionCache: (bid) => sessionStorage.removeItem(`digibiz_perms_${bid}`)
     };
 })();
 

@@ -1,12 +1,12 @@
 const firebaseConfig = {
-  apiKey: "AIzaSyBLFefSjFXp84Hg7nnIfuJ18SFcM92bsno",
-  authDomain: "digibiz-sys.firebaseapp.com",
-  projectId: "digibiz-sys",
-  storageBucket: "digibiz-sys.firebasestorage.app",
-  messagingSenderId: "761278318158",
-  appId: "1:761278318158:web:f4451f5cf5f8762192a51f",
-  /** Realtime Database URL (Console → Realtime Database → copy). Replace region if yours differs. */
-  databaseURL: "https://digibiz-sys-default-rtdb.firebaseio.com"
+    apiKey: "AIzaSyBLFefSjFXp84Hg7nnIfuJ18SFcM92bsno",
+    authDomain: "digibiz-sys.firebaseapp.com",
+    projectId: "digibiz-sys",
+    storageBucket: "digibiz-sys.firebasestorage.app",
+    messagingSenderId: "761278318158",
+    appId: "1:761278318158:web:f4451f5cf5f8762192a51f",
+    /** Realtime Database URL (Console → Realtime Database → copy). Replace region if yours differs. */
+    databaseURL: "https://digibiz-sys-default-rtdb.firebaseio.com"
 };
 
 /** Exposed for secondary Auth app (e.g. admin-led staff creation without signing out the owner). */
