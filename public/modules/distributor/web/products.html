@@ -580,6 +580,22 @@
 
         <div id="alertMessage"></div>
 
+        <div style="margin-bottom:20px; text-align:right;">
+            <button class="btn-outline" id="toggleManagementBtn" style="border-style:dashed; color:#6b7280; border-color:#d1d5db; display: flex; align-items: center; gap: 8px; margin-left: auto;">
+                <span id="managementLockIcon">🔒</span>
+                <span id="managementBtnText">Unlock Management Tools (Add/Import)</span>
+            </button>
+        </div>
+
+        <div id="managementToolsContainer" style="display:none; border: 2px dashed #e5e7eb; padding: 20px; border-radius: 20px; margin-bottom: 24px; background: #f9fafb;">
+            <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <h4 style="margin:0; color:#374151; font-size:14px; text-transform:uppercase; letter-spacing:0.05em;">Management Console (Admin Only)</h4>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-danger-large" id="deleteAllBtn" style="padding: 6px 12px; font-size: 13px;">🗑️ Delete All Products</button>
+                    <button class="btn-outline" id="lockManagementBtn" style="padding: 4px 10px; font-size: 12px; border-color: #9ca3af; color: #4b5563;">Lock Tools</button>
+                </div>
+            </div>
+
         <!-- Add Single Product -->
         <div class="card">
             <div class="card-header">
@@ -680,16 +696,14 @@
                     style="width:100%;margin-top:10px;font-size:11px;display:none;font-family:monospace;"></textarea>
             </div>
         </div>
+        </div> <!-- End managementToolsContainer -->
 
         <!-- Products List -->
         <div class="card">
             <div class="card-header">
                 <div class="flex-between">
                     <h3>📋 Products List</h3>
-                    <div>
-                        <span id="productsCount" style="margin-right:15px;"></span>
-                        <button class="btn-danger-large" id="deleteAllBtn">🗑️ Delete All Products</button>
-                    </div>
+                    <span id="productsCount"></span>
                 </div>
             </div>
             <div class="card-body">
@@ -750,6 +764,22 @@
                 <button class="btn-outline" type="button" id="cancelProductEditBtn">Cancel</button>
                 <button class="btn-primary" type="button" id="saveProductEditBtn">Save</button>
             </div>
+        </div>
+    </div>
+
+    <div class="modal-mask" id="reauthModal">
+        <div class="modal-card" onclick="event.stopPropagation()">
+            <h4>Confirm Identity</h4>
+            <p style="font-size: 13px; color: #4b5563; margin-bottom: 15px;">Please enter your account password to unlock management tools (Add/Import/Bulk Delete).</p>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="reauthPassword" placeholder="Enter password" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px;">
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
+                <button class="btn-outline" type="button" id="cancelReauthBtn">Cancel</button>
+                <button class="btn-primary" type="button" id="confirmReauthBtn">Unlock</button>
+            </div>
+            <p id="reauthError" style="color:#ef4444;font-size:12px;margin-top:12px;display:none;"></p>
         </div>
     </div>
 
@@ -2489,6 +2519,77 @@
         setupBtn('saveProductEditBtn', window.saveProductEdit);
         setupBtn('cancelProductEditBtn', closeEditProductModal);
         setupBtn('productEditModal', closeEditProductModal);
+
+        // Management Tools Toggle & Re-auth
+        var isManagementUnlocked = false;
+        var toggleBtn = document.getElementById('toggleManagementBtn');
+        var lockBtn = document.getElementById('lockManagementBtn');
+        var container = document.getElementById('managementToolsContainer');
+        var reauthModal = document.getElementById('reauthModal');
+        var confirmReauthBtn = document.getElementById('confirmReauthBtn');
+        var cancelReauthBtn = document.getElementById('cancelReauthBtn');
+        var passwordInput = document.getElementById('reauthPassword');
+        var reauthError = document.getElementById('reauthError');
+
+        function showReauth() {
+            reauthModal.style.display = 'flex';
+            passwordInput.value = '';
+            reauthError.style.display = 'none';
+            passwordInput.focus();
+        }
+
+        function hideReauth() {
+            reauthModal.style.display = 'none';
+        }
+
+        async function verifyPassword() {
+            var pwd = passwordInput.value;
+            if (!pwd) return;
+            confirmReauthBtn.disabled = true;
+            confirmReauthBtn.textContent = 'Verifying...';
+            reauthError.style.display = 'none';
+
+            try {
+                var user = firebase.auth().currentUser;
+                if (!user || !user.email) throw new Error('User session not found.');
+                
+                // Verify by re-signing in (cleanest way to check password)
+                await firebase.auth().signInWithEmailAndPassword(user.email, pwd);
+                
+                // Success
+                isManagementUnlocked = true;
+                container.style.display = 'block';
+                toggleBtn.style.display = 'none';
+                hideReauth();
+                showMessage('Management tools unlocked.', 'success');
+                // Scroll to container
+                container.scrollIntoView({ behavior: 'smooth' });
+            } catch (err) {
+                console.error('Re-auth error:', err);
+                reauthError.textContent = 'Incorrect password. Please try again.';
+                reauthError.style.display = 'block';
+            } finally {
+                confirmReauthBtn.disabled = false;
+                confirmReauthBtn.textContent = 'Unlock';
+            }
+        }
+
+        if (toggleBtn) toggleBtn.onclick = showReauth;
+        if (cancelReauthBtn) cancelReauthBtn.onclick = hideReauth;
+        if (confirmReauthBtn) confirmReauthBtn.onclick = verifyPassword;
+        if (passwordInput) {
+            passwordInput.onkeydown = function(e) {
+                if (e.key === 'Enter') verifyPassword();
+            };
+        }
+        if (lockBtn) {
+            lockBtn.onclick = function() {
+                isManagementUnlocked = false;
+                container.style.display = 'none';
+                toggleBtn.style.display = 'flex';
+                showMessage('Management tools locked.', 'success');
+            };
+        }
     </script>
     <script src="/modules/distributor/web/products.js?v=2"></script>
 </body>
