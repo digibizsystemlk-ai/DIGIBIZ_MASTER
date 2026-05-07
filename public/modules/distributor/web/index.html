@@ -278,22 +278,107 @@
             background: white;
             border-radius: 20px;
             padding: 24px;
-            max-width: 500px;
+            max-width: 800px;
             width: 90%;
-            max-height: 80vh;
+            max-height: 90vh;
             overflow-y: auto;
+            position: relative;
         }
-        .modal-content h3 {
-            margin-bottom: 16px;
+        .invoice-box {
+            background: #fff;
+            color: #111827;
+            font-size: 14px;
+            line-height: 1.5;
         }
-        .order-detail-item {
-            padding: 8px 0;
-            border-bottom: 1px solid #e5e7eb;
+        .invoice-header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 2px solid #f3f4f6;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
         }
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #9ca3af;
+        .invoice-title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #10b981;
+            text-transform: uppercase;
+        }
+        .invoice-info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        .info-group h4 {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #6b7280;
+            margin-bottom: 6px;
+            letter-spacing: 0.05em;
+        }
+        .info-group p {
+            margin: 0;
+            font-weight: 600;
+        }
+        .invoice-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 24px;
+        }
+        .invoice-table th {
+            background: #f9fafb;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #6b7280;
+            padding: 10px;
+            border-bottom: 2px solid #f3f4f6;
+        }
+        .invoice-table td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #f3f4f6;
+            vertical-align: top;
+        }
+        .invoice-table .num { text-align: right; }
+        .invoice-table .item-name { font-weight: 600; }
+        .invoice-table .item-meta { font-size: 12px; color: #6b7280; }
+        .invoice-total-section {
+            display: flex;
+            justify-content: flex-end;
+            gap: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #f3f4f6;
+        }
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 4px;
+        }
+        .total-row.grand {
+            font-size: 18px;
+            font-weight: 800;
+            color: #111827;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .badge-free {
+            background: #fff7ed;
+            color: #9a3412;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .badge-return {
+            background: #fef2f2;
+            color: #991b1b;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
         }
         .btn-print {
             background: #0f766e;
@@ -2077,7 +2162,6 @@ ${meta}
                     ${canReject ? `<button class="btn btn-reject" onclick="rejectOrder('${order.id}')">✕ Reject</button>` : ''}
                     <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
                     ${editBtn}
-                    ${thermalPrintBtn(order.id)}
                 `;
             } else if (order.status === 'approved') {
                 const canApprove = canApproveInvoices();
@@ -2085,7 +2169,6 @@ ${meta}
                     ${canApprove ? `<button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}')">🚚 Dispatch</button>` : ''}
                     <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
                     ${editBtn}
-                    ${thermalPrintBtn(order.id)}
                 `;
             } else if (order.status === 'dispatched') {
                 const canApprove = canApproveInvoices();
@@ -2093,13 +2176,11 @@ ${meta}
                     ${canApprove ? `<button class="btn btn-approve" onclick="markDelivered('${order.id}')">📬 Delivered</button>` : ''}
                     <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
                     ${editBtn}
-                    ${thermalPrintBtn(order.id)}
                 `;
             } else {
                 return `
                     <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
                     ${editBtn}
-                    ${thermalPrintBtn(order.id)}
                 `;
             }
         }
@@ -2313,94 +2394,176 @@ ${meta}
         async function viewOrder(orderId) {
             const order = await resolveOrderForDisplay(orderId);
             if (!order) return;
-            
+
+            // Fetch shop details for invoice header
+            let shopData = null;
+            if (order.shopId) {
+                try {
+                    const s = await db.collection('shops').doc(order.shopId).get();
+                    if (s.exists) shopData = s.data();
+                } catch (e) { console.warn('Shop lookup failed', e); }
+            }
+
             const modal = document.getElementById('orderModal');
             const modalBody = document.getElementById('modalBody');
             const modalActions = document.getElementById('modalActions');
-            
-            document.getElementById('modalTitle').innerHTML = `📦 Order ${order.orderNumber || order.id.slice(-8)}`;
-            
-            let itemsHtml = '<div style="margin-bottom: 16px;"><strong>Items:</strong></div>';
-            order.items?.forEach(item => {
+
+            document.getElementById('modalTitle').innerHTML = `Invoice - ${order.orderNumber || order.id.slice(-8)}`;
+
+            let itemsRows = '';
+            let subtotal = 0;
+            let freeQtyTotal = 0;
+
+            const items = Array.isArray(order.items) ? order.items : [];
+            items.forEach((item, idx) => {
+                const qty = Number(item.orderedQty) || 0;
+                const free = Number(item.freeQty) || 0;
+                const price = Number(item.unitPrice) || 0;
+                const total = Number(item.totalPrice) || 0;
+                subtotal += total;
+                freeQtyTotal += free;
+
+                const pb = String(item.productBrand || '').trim();
                 const rc = Number(item.returnCompanyQty) || 0;
                 const rr = Number(item.returnResellQty) || 0;
                 const leg = Number(item.returnQty) || 0;
-                let retLine = '';
-                if (rc || rr) {
-                    if (rc) retLine += `<div style="font-size: 11px; color: #b45309;">↩️ Return to company: ${rc}</div>`;
-                    if (rr) retLine += `<div style="font-size: 11px; color: #047857;">↩️ Return to resell: ${rr}</div>`;
-                } else if (leg) {
-                    retLine += `<div style="font-size: 11px; color: #6b7280;">↩️ Return: ${leg} (${item.returnReason || '—'})</div>`;
-                }
-                const pb = String(item.productBrand || '').trim();
-                itemsHtml += `
-                    <div class="order-detail-item">
-                        ${item.productName}${pb ? `<span style="font-size:12px;color:#64748b;"> · ${pb}</span>` : ''}<br>
-                        <span style="font-size: 12px; color: #6b7280;">
-                            Qty: ${item.orderedQty || 0} units
-                            ${item.freeQty ? `+ ${item.freeQty} FREE` : ''}
-                            @ Rs ${item.unitPrice}
-                        </span>
-                        ${item.freeReason ? `<div style="font-size: 11px; color: #92400e;">🎁 ${item.freeReason}</div>` : ''}
-                        ${retLine}
-                    </div>
+
+                let extra = '';
+                if (free > 0) extra += `<div><span class="badge-free">Free Issue: ${free}</span> ${item.freeReason ? `<small>(${item.freeReason})</small>` : ''}</div>`;
+                if (rc > 0) extra += `<div><span class="badge-return">Return (Company): ${rc}</span></div>`;
+                if (rr > 0) extra += `<div><span class="badge-return">Return (Resell): ${rr}</span></div>`;
+                if (!rc && !rr && leg > 0) extra += `<div><span class="badge-return">Return: ${leg}</span> <small>(${item.returnReason || ''})</small></div>`;
+
+                itemsRows += `
+                    <tr>
+                        <td>${idx + 1}</td>
+                        <td>
+                            <div class="item-name">${item.productName}</div>
+                            ${pb ? `<div class="item-meta">${pb}</div>` : ''}
+                            ${extra}
+                        </td>
+                        <td class="num">${qty}</td>
+                        <td class="num">${price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td class="num">${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    </tr>
                 `;
             });
-            
-            let returnsHtml = '';
-            if (order.returns?.length > 0) {
-                returnsHtml = '<div style="margin-top: 16px;"><strong>Returns:</strong></div>';
-                order.returns.forEach(ret => {
-                    returnsHtml += `
-                        <div class="order-detail-item">
-                            ${ret.productName}<br>
-                            <span style="font-size: 12px; color: #ef4444;">
-                                Qty: ${ret.returnQty} | Reason: ${ret.reason}
-                            </span>
-                        </div>
+
+            const returns = Array.isArray(order.returns) ? order.returns : [];
+            let returnsSection = '';
+            if (returns.length > 0) {
+                let returnRows = '';
+                returns.forEach((ret, idx) => {
+                    returnRows += `
+                        <tr>
+                            <td>${idx + 1}</td>
+                            <td>${ret.productName} <small>(${ret.reason || 'No reason'})</small></td>
+                            <td class="num">${ret.returnQty}</td>
+                        </tr>
                     `;
                 });
+                returnsSection = `
+                    <div style="margin-top:20px;">
+                        <h4 style="font-size:12px; text-transform:uppercase; color:#6b7280; margin-bottom:8px;">Additional Returns (Standalone)</h4>
+                        <table class="invoice-table" style="font-size:12px;">
+                            <thead><tr><th>#</th><th>Product</th><th class="num">Qty</th></tr></thead>
+                            <tbody>${returnRows}</tbody>
+                        </table>
+                    </div>
+                `;
             }
-            
+
+            const bizName = currentBusinessData?.name || 'Distributor';
+            const bizAddress = currentBusinessData?.address || '';
+            const bizPhone = currentBusinessData?.phone || '';
+
             modalBody.innerHTML = `
-                <div><strong>Shop:</strong> ${order.shopName}</div>
-                <div><strong>Branch:</strong> ${order.branchName || '-'}</div>
-                <div><strong>Rep:</strong> ${order.repName}</div>
-                <div><strong>Lorry:</strong> ${getLorryLabel(order)}</div>
-                <div><strong>Date:</strong> ${order.orderDate?.toDate ? new Date(order.orderDate.toDate()).toLocaleString() : '-'}</div>
-                <div style="margin: 12px 0;"><strong>Status:</strong> <span class="status status-${order.status}">${order.status}</span></div>
-                ${itemsHtml}
-                ${returnsHtml}
-                <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
-                    <strong>Total Amount: Rs ${(order.totalAmount || 0).toLocaleString()}</strong>
+                <div class="invoice-box">
+                    <div class="invoice-header">
+                        <div>
+                            <div class="invoice-title">${bizName}</div>
+                            <div style="color:#6b7280; font-size:12px;">${bizAddress}</div>
+                            <div style="color:#6b7280; font-size:12px;">${bizPhone}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-weight:700; font-size:16px;">ORDER #${order.orderNumber || order.id.slice(-8)}</div>
+                            <div style="color:#6b7280; font-size:12px;">Status: <span class="status status-${order.status}">${order.status.toUpperCase()}</span></div>
+                            <div style="color:#6b7280; font-size:12px;">Date: ${order.orderDate?.toDate ? new Date(order.orderDate.toDate()).toLocaleString() : '-'}</div>
+                        </div>
+                    </div>
+
+                    <div class="invoice-info-grid">
+                        <div class="info-group">
+                            <h4>Customer / Shop</h4>
+                            <p>${order.shopName}</p>
+                            ${order.branchName ? `<div style="font-size:12px;color:#4b5563;">Branch: ${order.branchName}</div>` : ''}
+                            ${shopData ? `
+                                <div style="font-size:12px;color:#4b5563;margin-top:4px;">
+                                    ${shopData.address ? `<div>📍 ${shopData.address}</div>` : ''}
+                                    ${(shopData.mobile || shopData.phone) ? `<div>📞 ${shopData.mobile || shopData.phone}</div>` : ''}
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="info-group" style="text-align:right;">
+                            <h4>Sales Representative</h4>
+                            <p>${order.repName}</p>
+                            <div style="font-size:12px;color:#4b5563;margin-top:4px;">Vehicle: ${getLorryLabel(order)}</div>
+                        </div>
+                    </div>
+
+                    <table class="invoice-table">
+                        <thead>
+                            <tr>
+                                <th style="width:30px;">#</th>
+                                <th>Description</th>
+                                <th class="num">Qty</th>
+                                <th class="num">Price</th>
+                                <th class="num">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsRows}
+                        </tbody>
+                    </table>
+
+                    ${returnsSection}
+
+                    <div class="invoice-total-section">
+                        <div style="width:250px;">
+                            <div class="total-row">
+                                <span style="color:#6b7280;">Subtotal</span>
+                                <span>Rs ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            </div>
+                            <div class="total-row">
+                                <span style="color:#6b7280;">Free Issues</span>
+                                <span>${freeQtyTotal} Items</span>
+                            </div>
+                            <div class="total-row grand">
+                                <span>Grand Total</span>
+                                <span>Rs ${(order.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             `;
-            
+
             const print80 = `<button type="button" class="btn btn-print" onclick="printDistributorThermalBill('${order.id}')">🖨 Print 80mm</button>`;
             const adminEd = showOrderEditButton(order)
                 ? `<button type="button" class="btn btn-view" onclick="openAdminOrderEditFromView('${order.id}')">✏️ Edit</button>` : '';
             const canApprove = canApproveInvoices();
             const canReject = canRejectInvoices();
+
+            let actions = `${print80}${adminEd}`;
             if (order.status === 'pending') {
-                modalActions.innerHTML = `${print80}${adminEd}` +
-                    (canApprove || canReject ? [
-                        canApprove ? `<button class="btn btn-approve" onclick="approveOrder('${order.id}'); closeModal();">✓ Approve</button>` : '',
-                        canReject ? `<button class="btn btn-reject" onclick="rejectOrder('${order.id}'); closeModal();">✕ Reject</button>` : ''
-                    ].join('') : '');
-            } else if (order.status === 'approved') {
-                modalActions.innerHTML = `${print80}${adminEd}` +
-                    (canApprove
-                        ? `<button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}'); closeModal();">🚚 Dispatch</button>`
-                        : '');
-            } else if (order.status === 'dispatched') {
-                modalActions.innerHTML = `${print80}${adminEd}` +
-                    (canApprove
-                        ? `<button class="btn btn-approve" onclick="markDelivered('${order.id}'); closeModal();">📬 Delivered</button>`
-                        : '');
-            } else {
-                modalActions.innerHTML = `${print80}${adminEd}`;
+                actions += (canApprove ? `<button class="btn btn-approve" onclick="approveOrder('${order.id}'); closeModal();">✓ Approve</button>` : '') +
+                           (canReject ? `<button class="btn btn-reject" onclick="rejectOrder('${order.id}'); closeModal();">✕ Reject</button>` : '');
+            } else if (order.status === 'approved' && canApprove) {
+                actions += `<button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}'); closeModal();">🚚 Dispatch</button>`;
+            } else if (order.status === 'dispatched' && canApprove) {
+                actions += `<button class="btn btn-approve" onclick="markDelivered('${order.id}'); closeModal();">📬 Delivered</button>`;
             }
-            
+            modalActions.innerHTML = actions;
+
             modal.style.display = 'flex';
         }
 
