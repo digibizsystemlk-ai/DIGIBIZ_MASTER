@@ -47,6 +47,14 @@
         button.btn-danger:hover{filter:brightness(.95)}
         .hero-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px}
         @media (max-width:980px){.form-row{grid-template-columns:1fr}.grid,.kpis{grid-template-columns:1fr}}
+        /* Settlement Modal Styles */
+        .modal-ov{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,.6);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+        .modal-card{background:#fff;padding:22px;border-radius:18px;width:100%;max-width:360px;box-shadow:0 20px 40px rgba(0,0,0,.2)}
+        .modal-card h3{margin:0 0 14px;font-size:18px;color:#0f172a}
+        .modal-body{display:flex;flex-direction:column;gap:12px}
+        .modal-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+        .btn-ghost{background:#f1f5f9;color:#475569;border:none;cursor:pointer;padding:10px 16px;border-radius:10px}
+        .btn-primary{background:#0f766e;color:#fff;border:none;cursor:pointer;padding:10px 16px;border-radius:10px;font-weight:600}
     </style>
 </head>
 <body>
@@ -73,6 +81,10 @@
                 <option value="RECEIVED">Loan Received (My Liability)</option>
             </select>
             <select id="customerId"><option value="">Select customer...</option></select>
+            <select id="payMethod">
+                <option value="CASH">Cash Payment</option>
+                <option value="BANK">Bank Transfer</option>
+            </select>
             <input id="amount" type="number" step="0.01" placeholder="Amount">
             <input id="date" type="date">
             <button id="saveBtn">Save</button>
@@ -81,20 +93,40 @@
     <div class="grid">
         <div class="card">
             <div class="section-title"><h3>Loans Given</h3><span class="pill given">ASSET</span></div>
-            <table><thead><tr><th>Date</th><th>Customer</th><th>Outstanding</th><th>Action</th></tr></thead><tbody id="givenRows"></tbody></table>
+            <table><thead><tr><th>Date</th><th>Customer</th><th>Method</th><th>Outstanding</th><th>Action</th></tr></thead><tbody id="givenRows"></tbody></table>
         </div>
         <div class="card">
             <div class="section-title"><h3>Loans Received</h3><span class="pill recv">LIABILITY</span></div>
-            <table><thead><tr><th>Date</th><th>Customer</th><th>Outstanding</th><th>Action</th></tr></thead><tbody id="recvRows"></tbody></table>
+            <table><thead><tr><th>Date</th><th>Customer</th><th>Method</th><th>Outstanding</th><th>Action</th></tr></thead><tbody id="recvRows"></tbody></table>
         </div>
     </div>
     <div class="card"><div id="smsDebug" class="sms-debug" style="color:#334155;"></div></div>
+</div>
+
+<!-- Settlement Modal -->
+<div id="settleModal" class="modal-ov">
+    <div class="modal-card">
+        <h3>Loan Settlement</h3>
+        <div class="modal-body">
+            <div style="font-size:13px;color:#64748b;margin-bottom:4px;" id="settleCustomerName">Customer</div>
+            <input id="settleAmount" type="number" step="0.01" placeholder="Amount to pay">
+            <select id="settleMethod">
+                <option value="CASH">Cash Payment</option>
+                <option value="BANK">Bank Transfer</option>
+            </select>
+        </div>
+        <div class="modal-foot">
+            <button class="btn-ghost" onclick="closeSettleModal()">Cancel</button>
+            <button class="btn-primary" id="confirmSettleBtn">Confirm Pay</button>
+        </div>
+    </div>
 </div>
 <script>
 let businessId = null; const customerMap = {};
 let handLoanSweepTimer = null;
 /** GL: hand loans use dedicated A/R and A/P codes (not generic 1-1030-01 / 2-2010-01). */
 const GL_CASH = { accountCode:'1-1010-01', accountName:'Cash - Main' };
+const GL_BANK = { accountCode:'1-1020-01', accountName:'Bank - Current Account' };
 const GL_HAND_AR = { accountCode:'1-1030-10', accountName:'A/R — Hand loans (given)' };
 const GL_HAND_AP = { accountCode:'2-2010-10', accountName:'A/P — Hand loans (received)' };
 function m(v){ return `Rs. ${(Number(v)||0).toFixed(2)}`; }
@@ -155,7 +187,12 @@ async function addJournal(desc, entries, refType, loanLink){
   return jref;
 }
 async function saveLoan(){
-  const type = document.getElementById('type').value; const cid = document.getElementById('customerId').value; const amount = Number(document.getElementById('amount').value||0); const date = document.getElementById('date').value;
+  const type = document.getElementById('type').value; 
+  const cid = document.getElementById('customerId').value; 
+  const payMethod = document.getElementById('payMethod').value;
+  const amount = Number(document.getElementById('amount').value||0); 
+  const date = document.getElementById('date').value;
+  const GL_PAY = payMethod === 'BANK' ? GL_BANK : GL_CASH;
   if(!cid || amount<=0) return alert('Customer and amount required.');
   const customerName = customerMap[cid]?.fullName || cid;
   if (!confirm(`Confirm save hand loan?\nType: ${type}\nCustomer: ${customerName}\nAmount: Rs.${amount.toFixed(2)}`)) return;
@@ -177,64 +214,110 @@ async function saveLoan(){
     const prevBal = Number(exDoc.data().balance || 0);
     newTotal = prevBal + amount;
     isTopUp = true;
-    await exDoc.ref.update({ balance: newTotal, updatedAt: new Date() });
+    await exDoc.ref.update({ balance: newTotal, lastMethod: payMethod, updatedAt: new Date() });
     loanId = exDoc.id;
   } else {
-    const loanRef = await db.collection('hand_loans').add({businessId,type,customerId:cid,customerName,customerMobile,balance:amount,date,createdAt:new Date(),active:true});
+    const loanRef = await db.collection('hand_loans').add({businessId,type,customerId:cid,customerName,customerMobile,balance:amount,payMethod,date,createdAt:new Date(),active:true});
     loanId = loanRef.id;
   }
 
   const link = { collection: 'hand_loans', docId: loanId };
   if(type === 'GIVEN'){
-    await addJournal(`${isTopUp ? 'Additional ' : ''}Hand loan given - ${customerName}`,[{...GL_HAND_AR,debit:amount,credit:0},{...GL_CASH,debit:0,credit:amount}],'HAND_LOAN_GIVEN',link);
+    await addJournal(`${isTopUp ? 'Additional ' : ''}Hand loan given - ${customerName} (${payMethod})`,[{...GL_HAND_AR,debit:amount,credit:0},{...GL_PAY,debit:0,credit:amount}],'HAND_LOAN_GIVEN',link);
   } else {
-    await addJournal(`${isTopUp ? 'Additional ' : ''}Hand loan received - ${customerName}`,[{...GL_CASH,debit:amount,credit:0},{...GL_HAND_AP,debit:0,credit:amount}],'HAND_LOAN_RECEIVED',link);
+    await addJournal(`${isTopUp ? 'Additional ' : ''}Hand loan received - ${customerName} (${payMethod})`,[{...GL_PAY,debit:amount,credit:0},{...GL_HAND_AP,debit:0,credit:amount}],'HAND_LOAN_RECEIVED',link);
   }
 
-  let msg = "";
-  if(type === 'GIVEN'){
-    msg = isTopUp 
-      ? `Dear ${customerName}, additional hand loan issued Rs.${amount.toFixed(2)}. Total outstanding Rs.${newTotal.toFixed(2)}.`
-      : `Dear ${customerName}, hand loan issued Rs.${amount.toFixed(2)}. Outstanding Rs.${amount.toFixed(2)}.`;
+  await db.collection('hand_loan_history').add({
+    businessId,
+    loanId,
+    type,
+    customerName,
+    date: new Date().toISOString(),
+    amount: amount,
+    note: `${isTopUp ? 'Additional ' : ''}Hand loan issued - ${payMethod}`,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+
+  const safeName = customerName.trim().replace(/\s+/g, '+');
+  if (type === 'GIVEN') {
+    let msg = `Hand updated. Due: Rs.${newTotal.toFixed(0)}\nLink: https://digibiz-sys.web.app/l/${loanId} `;
+    const smsRes = await enqueueSms(customerMobile, msg);
+    if (smsRes?.ok) showSmsDebug(`SMS queued for ${customerName}.`, true);
+    else showSmsDebug(`SMS skipped for ${customerName}: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
   } else {
-    msg = isTopUp
-      ? `Dear ${customerName}, additional hand loan received from you Rs.${amount.toFixed(2)}. Total payable Rs.${newTotal.toFixed(2)}.`
-      : `Dear ${customerName}, hand loan received from you Rs.${amount.toFixed(2)}. Outstanding payable Rs.${amount.toFixed(2)}.`;
+    let msg = `Hand updated. Payable: Rs.${newTotal.toFixed(0)}`;
+    const smsRes = await enqueueSms(customerMobile, msg);
+    if (smsRes?.ok) showSmsDebug(`SMS queued for ${customerName}.`, true);
+    else showSmsDebug(`SMS skipped for ${customerName}: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
   }
 
-  const smsRes = await enqueueSms(customerMobile, msg);
-  if (smsRes?.ok) showSmsDebug(`SMS queued for ${customerName}.`, true);
-  else showSmsDebug(`SMS skipped for ${customerName}: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
   document.getElementById('amount').value=''; await loadRows();
 }
+let currentSettleId = null;
+function closeSettleModal(){ document.getElementById('settleModal').style.display='none'; }
 async function settle(id){
-  const txt = prompt('Settlement amount'); const pay = Number(txt||0); if(pay<=0) return;
+  currentSettleId = id;
   const ref = db.collection('hand_loans').doc(id); const snap = await ref.get(); if(!snap.exists) return;
   const r = snap.data()||{};
-  if (!confirm(`Confirm settlement?\nCustomer: ${r.customerName || '-'}\nAmount: Rs.${pay.toFixed(2)}`)) return;
-  const cur = Number(r.balance||0);
-  const applied = Math.min(cur, pay);
-  const next = Math.max(0, cur-applied);
-  if (applied <= 0) return;
-  const patch = { balance: next, active: next > 0.0001, updatedAt: new Date() };
-  if (next <= 0.0001 && window.LoanZeroCleanup) patch.pendingRemovalAt = window.LoanZeroCleanup.removalTimestamp();
-  else patch.pendingRemovalAt = firebase.firestore.FieldValue.delete();
-  await ref.set(patch,{merge:true});
-  const link = { collection: 'hand_loans', docId: id };
-  if(r.type === 'GIVEN'){
-    await addJournal(`Hand loan received back - ${r.customerName||'-'}`,[{...GL_CASH,debit:applied,credit:0},{...GL_HAND_AR,debit:0,credit:applied}],'HAND_LOAN_GIVEN_SETTLE',link);
-  } else {
-    await addJournal(`Hand loan paid back - ${r.customerName||'-'}`,[{...GL_HAND_AP,debit:applied,credit:0},{...GL_CASH,debit:0,credit:applied}],'HAND_LOAN_RECEIVED_SETTLE',link);
-  }
-  const mobile = String(r.customerMobile || '').trim() || pickMobile(customerMap[r.customerId]);
-  const name = r.customerName || '-';
-  const msg = r.type === 'GIVEN'
-    ? `Dear ${name}, hand loan payment received Rs.${applied.toFixed(2)}. Remaining Rs.${next.toFixed(2)}.`
-    : `Dear ${name}, hand loan repayment paid Rs.${applied.toFixed(2)}. Remaining payable Rs.${next.toFixed(2)}.`;
-  const smsRes = await enqueueSms(mobile, msg);
-  if (smsRes?.ok) showSmsDebug(`Settlement SMS queued for ${name}.`, true);
-  else showSmsDebug(`Settlement SMS skipped for ${name}: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
-  await loadRows();
+  document.getElementById('settleCustomerName').textContent = `Settling loan for: ${r.customerName || '-'}`;
+  document.getElementById('settleAmount').value = Number(r.balance||0).toFixed(2);
+  document.getElementById('settleModal').style.display = 'flex';
+  document.getElementById('confirmSettleBtn').onclick = async () => {
+    const pay = Number(document.getElementById('settleAmount').value||0); if(pay<=0) return alert('Enter valid amount');
+    const method = document.getElementById('settleMethod').value;
+    const GL_PAY = method === 'BANK' ? GL_BANK : GL_CASH;
+    const btn = document.getElementById('confirmSettleBtn');
+    btn.disabled = true; btn.textContent = 'Processing...';
+    try {
+        const cur = Number(r.balance||0);
+        const applied = Math.min(cur, pay);
+        const next = Math.max(0, cur-applied);
+        if (applied <= 0) throw new Error('Already settled');
+        const patch = { balance: next, active: next > 0.0001, updatedAt: new Date() };
+        if (next <= 0.0001 && window.LoanZeroCleanup) patch.pendingRemovalAt = window.LoanZeroCleanup.removalTimestamp();
+        else patch.pendingRemovalAt = firebase.firestore.FieldValue.delete();
+        await ref.set(patch,{merge:true});
+        const link = { collection: 'hand_loans', docId: id };
+        if(r.type === 'GIVEN'){
+            await addJournal(`Hand loan received back - ${r.customerName||'-'} (${method})`,[{...GL_PAY,debit:applied,credit:0},{...GL_HAND_AR,debit:0,credit:applied}],'HAND_LOAN_GIVEN_SETTLE',link);
+        } else {
+            await addJournal(`Hand loan paid back - ${r.customerName||'-'} (${method})`,[{...GL_HAND_AP,debit:applied,credit:0},{...GL_PAY,debit:0,credit:applied}],'HAND_LOAN_RECEIVED_SETTLE',link);
+        }
+        
+        await db.collection('hand_loan_history').add({
+          businessId,
+          loanId: id,
+          type: r.type,
+          customerName: r.customerName || '-',
+          date: new Date().toISOString(),
+          amount: -applied,
+          note: `Hand loan settled - ${method}`,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        const mobile = String(r.customerMobile || '').trim() || pickMobile(customerMap[r.customerId]);
+        const name = r.customerName || '-';
+        
+        const safeName = name.trim().replace(/\s+/g, '+');
+        let msg = "";
+        if (r.type === 'GIVEN') {
+            if (next > 0.0001) {
+                msg = `Hand updated. Due: Rs.${next.toFixed(0)}\nLink: https://digibiz-sys.web.app/l/${id} `;
+            } else {
+                msg = `Hand updated. Your balance is now zero. Fully settled. `;
+            }
+        } else {
+            msg = `Hand updated. Payable: Rs.${next.toFixed(0)}`;
+        }
+
+        const smsRes = await enqueueSms(mobile, msg);
+        if (smsRes?.ok) showSmsDebug(`Settlement SMS queued for ${name}.`, true);
+        else showSmsDebug(`Settlement SMS skipped for ${name}: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
+        closeSettleModal(); await loadRows();
+    } catch(e) { alert(e.message || 'Error'); }
+    finally { btn.disabled = false; btn.textContent = 'Confirm Pay'; }
+  };
 }
 async function deleteAllHandLoansForBusiness(){
   if (!confirm('Delete ALL hand loan records for this business? This cannot be undone. Existing journal entries are NOT reversed.')) return;
@@ -303,12 +386,12 @@ async function loadRows(){
   document.getElementById('kpiGiven').textContent = m(givenOut);
   document.getElementById('kpiRecv').textContent = m(recvOut);
   document.getElementById('kpiNet').textContent = m(givenOut - recvOut);
-  document.getElementById('givenRows').innerHTML = given.map((r)=>`<tr><td>${r.date||'-'}</td><td>${r.customerName||'-'}</td><td>${m(r.balance)}</td><td><button data-id="${r.id}" ${Number(r.balance||0)<=0?'disabled':''}>Settle</button></td></tr>`).join('') || '<tr><td colspan="4">No records</td></tr>';
-  document.getElementById('recvRows').innerHTML = recv.map((r)=>`<tr><td>${r.date||'-'}</td><td>${r.customerName||'-'}</td><td>${m(r.balance)}</td><td><button data-id="${r.id}" ${Number(r.balance||0)<=0?'disabled':''}>Settle</button></td></tr>`).join('') || '<tr><td colspan="4">No records</td></tr>';
+  document.getElementById('givenRows').innerHTML = given.map((r)=>`<tr><td>${r.date||'-'}</td><td>${r.customerName||'-'}</td><td><span class="pill ${String(r.payMethod||r.lastMethod||'').toLowerCase()==='bank'?'given':'recv'}" style="background:#f1f5f9;color:#475569;">${r.payMethod||r.lastMethod||'CASH'}</span></td><td><b onclick="openHandHistory('${r.id}', '${(r.customerName||'').replace(/'/g, "\\'")}', '${r.type}', ${r.balance})" style="color:#2563eb;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">${m(r.balance).replace('Rs. ','')}</b></td><td><button data-id="${r.id}" ${Number(r.balance||0)<=0?'disabled':''}>Settle</button></td></tr>`).join('') || '<tr><td colspan="5">No records</td></tr>';
+  document.getElementById('recvRows').innerHTML = recv.map((r)=>`<tr><td>${r.date||'-'}</td><td>${r.customerName||'-'}</td><td><span class="pill ${String(r.payMethod||r.lastMethod||'').toLowerCase()==='bank'?'given':'recv'}" style="background:#f1f5f9;color:#475569;">${r.payMethod||r.lastMethod||'CASH'}</span></td><td><b onclick="openHandHistory('${r.id}', '${(r.customerName||'').replace(/'/g, "\\'")}', '${r.type}', ${r.balance})" style="color:#2563eb;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">${m(r.balance).replace('Rs. ','')}</b></td><td><button data-id="${r.id}" ${Number(r.balance||0)<=0?'disabled':''}>Settle</button></td></tr>`).join('') || '<tr><td colspan="5">No records</td></tr>';
   document.querySelectorAll('button[data-id]').forEach((b)=>b.onclick=()=>settle(b.dataset.id));
 }
 firebase.auth().onAuthStateChanged(async (u)=>{
-  if(!u){location.href='/auth/login.html';return;}
+  if(!u){location.href='/';return;}
   if (handLoanSweepTimer) { clearInterval(handLoanSweepTimer); handLoanSweepTimer = null; }
   const ctx = await window.dashboardCore.getContext(u);
   businessId = String((ctx&&ctx.businessId)||u.uid);
@@ -328,3 +411,100 @@ document.getElementById('clearAllBtn').onclick = deleteAllHandLoansForBusiness;
 </script>
 </body>
 </html>
+
+<!-- Hand History Modal -->
+<div id="handHistoryModal" class="modal-ov">
+    <div class="modal-card" style="max-width:500px; padding:0; overflow:hidden;">
+        <div style="padding:20px 25px; border-bottom:1px solid #eef2f7; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <div style="font-size:18px; font-weight:800; color:#0f172a;" id="hhTitle">Hand Loan History</div>
+                <div style="font-size:12px; font-weight:600; color:#64748b; margin-top:2px;" id="hhSubtitle">Loading...</div>
+            </div>
+            <button onclick="document.getElementById('handHistoryModal').style.display='none'" style="background:#f1f5f9; border:none; padding:8px 15px; border-radius:12px; font-size:12px; font-weight:700; color:#64748b; cursor:pointer;">Close</button>
+        </div>
+        <div style="overflow-y:auto; padding:0; flex:1; max-height: 60vh;">
+            <table style="width:100%; border-collapse:collapse; font-size:13px; margin:0;">
+                <thead style="position:sticky; top:0; background:#f8fafc; z-index:2;">
+                    <tr>
+                        <th style="padding:12px 15px; text-align:left; font-size:11px; font-weight:700; color:#94a3b8; border-bottom:1px solid #eef2f7;">DATE</th>
+                        <th style="padding:12px 15px; text-align:right; font-size:11px; font-weight:700; color:#94a3b8; border-bottom:1px solid #eef2f7;">CHANGE</th>
+                        <th style="padding:12px 15px; text-align:right; font-size:11px; font-weight:700; color:#94a3b8; border-bottom:1px solid #eef2f7;">BALANCE</th>
+                    </tr>
+                </thead>
+                <tbody id="hhBody">
+                    <tr><td colspan="3" style="text-align:center; padding:30px; color:#94a3b8;">Loading data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+async function openHandHistory(loanId, customerName, type, currentBal) {
+    const m = document.getElementById('handHistoryModal');
+    if(!m) return;
+    m.style.display = 'flex';
+    document.getElementById('hhTitle').textContent = `History: ${customerName}`;
+    document.getElementById('hhSubtitle').textContent = "Fetching records...";
+    document.getElementById('hhBody').innerHTML = '<tr><td colspan="3" style="text-align:center; padding:30px; color:#94a3b8;">Please wait...</td></tr>';
+
+    try {
+        const snap = await db.collection('hand_loan_history')
+            .where('businessId', '==', businessId)
+            .where('loanId', '==', loanId)
+            .limit(500)
+            .get();
+        
+        let allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        allDocs.sort((a,b)=>String(a.date || '').localeCompare(String(b.date || '')));
+        
+        let running = 0;
+        let lastZeroIdx = -1;
+        const withTotals = allDocs.map((x, idx)=>{
+            const amt = Number(x.amount || 0);
+            running += amt;
+            if (Math.abs(running) < 0.01) lastZeroIdx = idx;
+            return { ...x, runningAfter: running };
+        });
+
+        const cycleRows = withTotals.slice(lastZeroIdx + 1);
+        let rows = cycleRows.slice().sort((a,b)=>String(b.date || '').localeCompare(String(a.date || '')));
+
+        if (rows.length === 0 && currentBal > 0) {
+            rows = [{
+                date: new Date().toISOString(),
+                amount: currentBal,
+                runningAfter: currentBal,
+                note: 'START / Previous Balance'
+            }];
+        }
+
+        document.getElementById('hhSubtitle').textContent = `Found ${rows.length} records`;
+
+        document.getElementById('hhBody').innerHTML = rows.map((x)=>{
+            const dt = x.date ? new Date(x.date).toLocaleDateString() : '-';
+            const amt = Number(x.amount || 0);
+            const sign = amt >= 0 ? '+' : '';
+            const tone = amt >= 0 ? '#166534' : '#b91c1c';
+            
+            return `<tr>
+                <td style="padding:12px 15px; border-bottom:1px solid #eef2f7;">
+                    <div style="font-weight:600; color:#0f172a;">${dt}</div>
+                    <div style="font-size:10px; color:#64748b; margin-top:2px;">${x.note || '-'}</div>
+                </td>
+                <td style="padding:12px 15px; text-align:right; font-weight:800; color:${tone}; border-bottom:1px solid #eef2f7;">
+                    ${sign}${Math.abs(amt).toLocaleString()}
+                </td>
+                <td style="padding:12px 15px; text-align:right; font-weight:700; color:#0f172a; border-bottom:1px solid #eef2f7;">
+                    ${x.runningAfter.toLocaleString()}
+                </td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="3" style="text-align:center; padding:30px; color:#94a3b8;">No records found.</td></tr>';
+
+    } catch (err) {
+        console.error("History Error:", err);
+        document.getElementById('hhSubtitle').textContent = "Error.";
+        document.getElementById('hhBody').innerHTML = `<tr><td colspan="3" style="text-align:center; padding:30px; color:#ef4444;">Failed to fetch data.</td></tr>`;
+    }
+}
+</script>

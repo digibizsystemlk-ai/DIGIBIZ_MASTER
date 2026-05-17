@@ -213,10 +213,21 @@ document.getElementById('financeCustomerId').onchange = async function(){
     banner.textContent = c.mobile ? `SMS will go to ${c.mobile}` : 'No mobile number saved.';
     banner.className = 'mfg-customer-banner show ' + (c.mobile ? 'ok' : 'warn');
 
+    const isScrap = ManufacturerModule.context && ManufacturerModule.context.businessType === 'scrap_collection_center';
+    const inboundColl = isScrap ? 'buying_history' : 'manufacturer_raw_material_history';
+    const outboundColl = isScrap ? 'selling_history' : 'manufacturer_sales';
+
+    const cData = financeCustomerById[cid] || {};
     const [snapshot, inbound, outbound] = await Promise.all([
-        ManufacturerModule.getCustomerFinanceSnapshot(bid, cid),
-        db.collection('manufacturer_raw_material_history').where('businessId','==',bid).where('customerId','==',cid).where('paymentStatus','in',['PENDING','PENDING_CLEARANCE']).limit(25).get().catch(()=>({docs:[]})),
-        db.collection('manufacturer_sales').where('businessId','==',bid).where('customerId','==',cid).where('paymentStatus','in',['PENDING','PENDING_CLEARANCE']).limit(25).get().catch(()=>({docs:[]}))
+        ManufacturerModule.getCustomerFinanceSnapshot(bid, cid, cData.fullName),
+        db.collection(inboundColl)
+            .where('businessId','==',bid)
+            .where(isScrap ? 'supplierName' : 'customerId','==',isScrap ? (financeCustomerById[cid] ? financeCustomerById[cid].fullName : cid) : cid)
+            .limit(25).get().catch(()=>({docs:[]})),
+        db.collection(outboundColl)
+            .where('businessId','==',bid)
+            .where(isScrap ? 'customerName' : 'customerId','==',isScrap ? (financeCustomerById[cid] ? financeCustomerById[cid].fullName : cid) : cid)
+            .limit(25).get().catch(()=>({docs:[]}))
     ]);
     selectedSnapshot = snapshot;
     selectedOutstanding = Number(snapshot.netBalance || 0);
@@ -228,10 +239,16 @@ document.getElementById('financeCustomerId').onchange = async function(){
 
     const inboundRows = inbound.docs.map((d)=>{
         const x=d.data()||{};
+        if (isScrap) {
+            return `<tr><td>Scrap Purchase</td><td>${x.purchaseId || d.id}</td><td>${(x.items || []).map(i => i.itemName).join(', ') || '-'}</td><td>Rs ${ManufacturerModule.money(x.totalAmount)}</td><td>${x.date ? x.date.slice(0,10) : '-'}</td></tr>`;
+        }
         return `<tr><td>Inbound Purchase</td><td>${x.purchaseId || d.id}</td><td>${x.materialName || '-'}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td>${x.dueDate || x.chequeClearanceDate || '-'}</td></tr>`;
     });
     const outboundRows = outbound.docs.map((d)=>{
         const x=d.data()||{};
+        if (isScrap) {
+            return `<tr><td>Scrap Sale</td><td>${x.billNo || d.id}</td><td>${(x.items || []).map(i => i.itemName).join(', ') || '-'}</td><td>Rs ${ManufacturerModule.money(x.totalAmount)}</td><td>${x.date ? x.date.slice(0,10) : '-'}</td></tr>`;
+        }
         return `<tr><td>Outbound Sale</td><td>${x.saleId || d.id}</td><td>${x.productName || '-'}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td>${x.dueDate || x.chequeClearanceDate || '-'}</td></tr>`;
     });
     linkedRows.innerHTML = [...inboundRows, ...outboundRows].join('') || '<tr><td colspan="5">No pending linked transactions.</td></tr>';
@@ -363,19 +380,32 @@ async function maybeRunAutoDebtReminders(overdue){
 }
 async function refresh(){
     const bid = ManufacturerModule.businessId;
+    const isScrap = ManufacturerModule.context && ManufacturerModule.context.businessType === 'scrap_collection_center';
+    
+    const inboundColl = isScrap ? 'buying_history' : 'manufacturer_raw_material_history';
+    const outboundColl = isScrap ? 'selling_history' : 'manufacturer_sales';
+
     const [inb, out] = await Promise.all([
-        db.collection('manufacturer_raw_material_history').where('businessId','==',bid).where('paymentStatus','in',['PENDING','PENDING_CLEARANCE']).get().catch(()=>({docs:[]})),
-        db.collection('manufacturer_sales').where('businessId','==',bid).where('paymentStatus','in',['PENDING','PENDING_CLEARANCE']).get().catch(()=>({docs:[]}))
+        db.collection(inboundColl).where('businessId','==',bid).limit(100).get().catch(()=>({docs:[]})),
+        db.collection(outboundColl).where('businessId','==',bid).limit(100).get().catch(()=>({docs:[]}))
     ]);
     const overdue = [];
     document.getElementById('payableRows').innerHTML = inb.docs.map((d)=>{
-        const x=d.data()||{}; const due=x.dueDate || x.chequeClearanceDate;
+        const x=d.data()||{};
+        if (isScrap) {
+            return `<tr><td>${x.supplierName||'-'}</td><td class="wrap-name">${(x.items || []).map(i => i.itemName).join(', ')}</td><td>Rs ${ManufacturerModule.money(x.totalAmount)}</td><td>${x.date ? x.date.slice(0,10) : '-'}</td><td>PAID</td></tr>`;
+        }
+        const due=x.dueDate || x.chequeClearanceDate;
         const cls = ageClass(due);
         if (cls === 'aging-overdue') overdue.push({ name: x.supplierName || 'Customer', amount: Number(x.amount || 0) });
         return `<tr class="${cls}"><td>${x.supplierName||'-'}</td><td class="wrap-name">${x.materialName||'-'}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td>${due||'-'}</td><td>${x.paymentStatus||'-'}</td></tr>`;
     }).join('');
     document.getElementById('receivableRows').innerHTML = out.docs.map((d)=>{
-        const x=d.data()||{}; const due=x.dueDate || x.chequeClearanceDate;
+        const x=d.data()||{};
+        if (isScrap) {
+            return `<tr><td>${x.customerName||'-'}</td><td class="wrap-name">${(x.items || []).map(i => i.itemName).join(', ')}</td><td>Rs ${ManufacturerModule.money(x.totalAmount)}</td><td>${x.date ? x.date.slice(0,10) : '-'}</td><td>PAID</td></tr>`;
+        }
+        const due=x.dueDate || x.chequeClearanceDate;
         const cls = ageClass(due);
         if (cls === 'aging-overdue') overdue.push({ name: x.companyName || 'Customer', amount: Number(x.amount || 0) });
         return `<tr class="${cls}"><td>${x.companyName||'-'}</td><td class="wrap-name">${x.productName||'-'}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td>${due||'-'}</td><td>${x.paymentStatus||'-'}</td></tr>`;
@@ -431,7 +461,11 @@ function renderHistoryRows(){
                 <td>Rs ${ManufacturerModule.money(x.balanceBefore)}</td>
                 <td>Rs ${ManufacturerModule.money(x.balanceAfter)}</td>
                 <td class="wrap-name">${safeCell(x.note || '-')}</td>
-                <td><button type="button" onclick="openEditFinanceTx('${x.id}')">✏️</button> <button type="button" onclick="deleteFinanceTx('${x.id}')">🗑️</button></td>
+                <td>
+                    <button type="button" onclick="openEditFinanceTx('${x.id}')">✏️</button>
+                    <button type="button" onclick="deleteFinanceTx('${x.id}')">🗑️</button>
+                    <button type="button" onclick="printFinanceReceipt('${x.id}')">🖨️</button>
+                </td>
             </tr>`;
         }).join('');
     }
@@ -440,6 +474,106 @@ function renderHistoryRows(){
     const given = rows.reduce((sum, x)=>x.type === 'PAYMENT_GIVEN' ? sum + (Number(x.amount) || 0) : sum, 0);
     const received = rows.reduce((sum, x)=>x.type === 'PAYMENT_RECEIVED' ? sum + (Number(x.amount) || 0) : sum, 0);
     document.getElementById('historySummary').textContent = `Records: ${rows.length} | Total: Rs ${ManufacturerModule.money(totalAmount)} | Given: Rs ${ManufacturerModule.money(given)} | Received: Rs ${ManufacturerModule.money(received)}`;
+}
+
+async function printFinanceReceipt(id) {
+    const tx = allFinanceTransactions.find((r) => r.id === id);
+    if (!tx) return;
+
+    try {
+        const bid = ManufacturerModule.businessId;
+        const bizSnap = await db.collection('businesses').doc(bid).get();
+        const bizData = bizSnap.exists ? bizSnap.data() : {};
+        const docSettings = bizData.documentSettings || {};
+        const s = docSettings.collection_receipt || {};
+
+        const header = s.header || bizData.name || 'Collection Receipt';
+        const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+        const footer = s.footer || 'Thank you for your business!';
+        const agentNote = s.showAgentDetails && bizData.agentName ? `Agent: ${bizData.agentName}` : '';
+
+        const netBalance = Number(tx.balanceAfter || 0);
+        const balanceDisp = Math.abs(netBalance).toLocaleString(undefined, { minimumFractionDigits: 2 });
+        const balanceSign = netBalance > 0 ? ' (Receivable)' : (netBalance < 0 ? ' (Payable)' : ' (Settled)');
+
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Receipt ${id}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 5mm; }
+            body { width: 70mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; line-height: 1.4; color: #000; padding: 10px; width: 70mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 10px; margin: 4px 0 0; }
+        .receipt-title { font-size: 13px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; text-decoration: underline; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .meta-label { font-weight: 600; }
+        .amount-box { border: 2px solid #000; padding: 8px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: 800; }
+        .balance-box { background: #f0f0f0; padding: 6px; text-align: center; font-size: 11px; margin-top: 10px; border-radius: 4px; }
+        .footer { text-align: center; font-size: 10px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; }
+        .sig-space { margin-top: 40px; display: flex; justify-content: space-between; font-size: 10px; }
+        .sig-line { border-top: 1px solid #000; width: 45%; text-align: center; padding-top: 2px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Collection Receipt</div>
+    
+    <div class="meta-row"><span class="meta-label">Receipt No:</span><span>${id.slice(-8).toUpperCase()}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${tx.date || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Customer:</span><span>${tx.customerName || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Pay Mode:</span><span>${tx.method || 'CASH'}</span></div>
+    ${tx.chequeNo ? `<div class="meta-row"><span class="meta-label">Cheque No:</span><span>${tx.chequeNo}</span></div>` : ''}
+    
+    <div class="amount-box">Rs. ${Number(tx.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+    
+    ${tx.note ? `<div style="margin-bottom: 10px;"><span class="meta-label">Note:</span> <span style="font-style: italic;">${tx.note}</span></div>` : ''}
+    
+    <div class="balance-box">
+        Outstanding Balance: <strong>Rs. ${balanceDisp}</strong>${balanceSign}
+    </div>
+    
+    <div class="sig-space">
+        <div class="sig-line">Customer</div>
+        <div class="sig-line">Authorized</div>
+    </div>
+    
+    <div class="footer">
+        <div>${footer}</div>
+        ${agentNote ? `<div style="margin-top:4px;">${agentNote}</div>` : ''}
+        <div style="font-size: 8px; color: #666; margin-top: 8px;">Software Solution by DIGIBIZ - 0713446500</div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    <\/script>
+</body>
+</html>`;
+
+        const win = window.open('', '_blank', 'width=400,height=600');
+        if (!win) {
+            alert('Popup blocked. Please allow popups to print the receipt.');
+            return;
+        }
+        win.document.write(html);
+        win.document.close();
+
+    } catch (e) {
+        console.error(e);
+        alert('Failed to generate receipt: ' + e.message);
+    }
 }
 
 function openEditFinanceTx(id){

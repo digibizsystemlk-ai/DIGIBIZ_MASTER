@@ -232,12 +232,22 @@
             const role = document.getElementById('staffRole').value;
             if (!name || !email) return alert('Name and email required');
             const bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : context.businessId;
-            await window.db.collection('businesses').doc(bid).collection('users').doc(email).set({ name, email, role, linkedAt: new Date() }, { merge: true });
+            const batch = window.db.batch();
+            
+            // 1. Link in business sub-collection
+            const bizUserRef = window.db.collection('businesses').doc(bid).collection('users').doc(email);
+            batch.set(bizUserRef, { name, email, role, linkedAt: new Date() }, { merge: true });
+            
+            // 2. Register in global staff registry for auto-discovery
+            const globalRegistryRef = window.db.collection('staff_registry').doc(email);
+            batch.set(globalRegistryRef, { businessId: bid, role, email, addedAt: new Date() }, { merge: true });
+            
+            await batch.commit();
             await loadStaff();
         };
 
         window.auth.onAuthStateChanged(async user => {
-            if (!user) { window.location.href = '../../auth/login.html'; return; }
+            if (!user) { window.location.href = '/'; return; }
             currentUser = user;
             try {
                 const fetched = await window.dashboardCore.getContext(user);

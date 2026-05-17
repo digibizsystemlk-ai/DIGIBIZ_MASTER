@@ -1,5 +1,5 @@
 (function (global) {
-    const TARGET_OWNER_EMAIL = 'bdkariyapperuma@gmail.com';
+    const TARGET_OWNER_EMAIL = 'biz.sirimal@gmail.com';
     const FEATURE_LOCK_KEY = 'digibizDistributionPilotBusinessId';
     const COLLECTIONS = {
         LORRIES: 'lorries',

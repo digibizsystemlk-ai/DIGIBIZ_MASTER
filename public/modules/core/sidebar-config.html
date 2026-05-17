@@ -280,7 +280,7 @@
         firebase.auth().onAuthStateChanged(async (user) => {
             console.log('Sidebar Config: Auth state changed, user:', user ? user.uid : 'null');
             if (!user) {
-                window.location.href = '/auth/login.html';
+                window.location.href = '/';
                 return;
             }
 
@@ -297,7 +297,7 @@
                 const MW_BID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
                 const SPRANZA_BID = 'SPRANZA_PVT_LTD';
                 const bizType = String(bizData.businessType || userData.businessType || '').toLowerCase();
-                const isDistributor = bizType === 'distributor' || businessId === MW_BID || businessId === SPRANZA_BID;
+                const isDistributor = bizType === 'distributor' || bizType === 'scrap_collection_center' || businessId === MW_BID || businessId === SPRANZA_BID;
 
                 if (!isDistributor) {
                     const listEl = document.getElementById('menuList');
@@ -313,13 +313,43 @@
                 }
 
                 const savedConfig = bizData.sidebarConfig || [];
+                
+                // Define Scrap Menu Pool (Including Shared Menus)
+                const SCRAP_MENU_POOL = [
+                    { id: 'scrap_bill', icon: '🧾', name: 'BILL', link: '/modules/admin/scrap-buying.html' },
+                    { id: 'scrap_revenue', icon: '📈', name: 'REVENUE', link: '/modules/admin/scrap-revenue.html' },
+                    { id: 'scrap_expenses', icon: '📉', name: 'EXPENSES', link: '/modules/admin/scrap-expenses.html' },
+                    { id: 'scrap_sell', icon: '💸', name: 'SELL', link: '/modules/admin/scrap-sell.html' },
+                    { id: 'scrap_sms', icon: '📲', name: 'Scrap SMS', link: '/modules/admin/scrap-sms-settings.html' },
+                    { id: 'scrap_stock', icon: '📦', name: 'STOCK', link: '/modules/admin/scrap-workbench.html?view=STOCK' },
+                    { id: 'scrap_buy', icon: '📚', name: 'Buying History', link: '/modules/admin/scrap-workbench.html?view=BUY' },
+                    { id: 'scrap_history', icon: '📜', name: 'Selling History', link: '/modules/admin/scrap-selling-history.html' },
+                    { id: 'scrap_advance', icon: '🏦', name: 'ADVANCE', link: '/modules/admin/scrap-advance.html' },
+                    { id: 'scrap_dailytr', icon: '📘', name: 'DAILYTR', link: '/modules/admin/scrap-workbench.html?view=DAILYTR' },
+                    // Shared Crosscut Menus
+                    { id: 'shared_customers', icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
+                    { id: 'shared_finance', icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+                    { id: 'shared_accounting', icon: '📁', name: 'Accounting', link: '/modules/accounts/advanced-accounting-dashboard.html' },
+                    { id: 'shared_reports', icon: '📈', name: 'Reports', link: '/modules/reports/index.html' },
+                    { id: 'shared_loans', icon: '💸', name: 'Loans', link: '/modules/core/loans.html' }
+                ];
 
-                console.log('Sidebar Config: DISTRIBUTOR_MENU_POOL available?', typeof DISTRIBUTOR_MENU_POOL !== 'undefined');
-                if (typeof DISTRIBUTOR_MENU_POOL !== 'undefined') {
-                    renderMenuList(savedConfig);
+                // Select the correct pool
+                let activePool = [];
+                if (bizType === 'scrap_collection_center') {
+                    activePool = SCRAP_MENU_POOL;
+                } else if (typeof DISTRIBUTOR_MENU_POOL !== 'undefined') {
+                    activePool = DISTRIBUTOR_MENU_POOL;
+                }
+
+                if (activePool.length > 0) {
+                    renderMenuList(activePool, savedConfig);
                 } else {
                     console.log('Sidebar Config: Retrying pool load in 500ms...');
-                    setTimeout(() => renderMenuList(savedConfig), 500);
+                    setTimeout(() => {
+                        let retryPool = (bizType === 'scrap_collection_center') ? SCRAP_MENU_POOL : (typeof DISTRIBUTOR_MENU_POOL !== 'undefined' ? DISTRIBUTOR_MENU_POOL : []);
+                        renderMenuList(retryPool, savedConfig);
+                    }, 500);
                 }
             } catch (err) {
                 console.error('Load error:', err);
@@ -327,11 +357,9 @@
             }
         });
 
-        function renderMenuList(savedConfig) {
+        function renderMenuList(pool, savedConfig) {
             const listEl = document.getElementById('menuList');
-            const pool = typeof DISTRIBUTOR_MENU_POOL !== 'undefined' ? DISTRIBUTOR_MENU_POOL : [];
-
-            if (!pool.length) {
+            if (!pool || !pool.length) {
                 listEl.innerHTML = '<li style="padding:20px; color:red;">Error: Menu pool not loaded.</li>';
                 return;
             }

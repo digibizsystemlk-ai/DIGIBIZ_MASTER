@@ -43,6 +43,14 @@
         .owe-investor-banner .amt{font-size:28px;font-weight:900;color:#b91c1c;letter-spacing:-0.02em}
         .owe-investor-banner .sub{font-size:12px;color:#9f1239;margin-top:6px}
         @media (max-width:980px){.row{grid-template-columns:1fr}}
+        /* Settlement Modal Styles */
+        .modal-ov{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,.6);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+        .modal-card{background:#fff;padding:22px;border-radius:18px;width:100%;max-width:360px;box-shadow:0 20px 40px rgba(0,0,0,.2)}
+        .modal-card h3{margin:0 0 14px;font-size:18px;color:#0f172a}
+        .modal-body{display:flex;flex-direction:column;gap:12px}
+        .modal-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+        .btn-ghost{background:#f1f5f9;color:#475569;border:none;cursor:pointer;padding:10px 16px;border-radius:10px}
+        .btn-primary{background:#0f766e;color:#fff;border:none;cursor:pointer;padding:10px 16px;border-radius:10px;font-weight:600}
     </style>
 </head>
 <body>
@@ -120,6 +128,25 @@
         <div id="smsDebug" class="sms-debug" style="color:#334155;"></div>
     </div>
 </div>
+
+<!-- Settlement Modal -->
+<div id="settleModal" class="modal-ov">
+    <div class="modal-card">
+        <h3 id="settleTitle">Loan Settlement</h3>
+        <div class="modal-body">
+            <div style="font-size:13px;color:#64748b;margin-bottom:4px;" id="settleCustomerName">Customer</div>
+            <input id="settleAmount" type="number" step="0.01" placeholder="Amount to pay">
+            <select id="settleMethod">
+                <option value="CASH">Cash Payment</option>
+                <option value="BANK">Bank Transfer</option>
+            </select>
+        </div>
+        <div class="modal-foot">
+            <button class="btn-ghost" onclick="closeSettleModal()">Cancel</button>
+            <button class="btn-primary" id="confirmSettleBtn">Confirm Pay</button>
+        </div>
+    </div>
+</div>
 <script>
 let businessId = null;
 /** When false: never queue SMS to investor (Firestore phone ignored). Set true to re-enable after deploy. */
@@ -130,6 +157,7 @@ const customerMap = {};
 let advLoanSweepTimer = null;
 
 const GL_CASH = { accountCode:'1-1010-01', accountName:'Cash - Main' };
+const GL_BANK = { accountCode:'1-1020-01', accountName:'Bank - Current Account' };
 const GL_ADV_AR = { accountCode:'1-1030-13', accountName:'A/R — Advanced (investor) loans' };
 const GL_ADV_INV_AP = { accountCode:'2-2060-10', accountName:'Investor funds payable — Advanced loans' };
 
@@ -323,7 +351,8 @@ async function recalcAndSendInvestorSms(){
         },{merge:true});
         const memMob = pickMobile(row) || String(row.customerMobile||'').trim();
         if (add > 0 && memMob) {
-          const smsRes = await enqueueSms(memMob, `Dear ${row.customerName || 'member'}, advanced loan interest accrued Rs.${add.toFixed(2)}. Total interest Rs.${i.toFixed(2)}, balance Rs.${p.toFixed(2)}, total due Rs.${(p+i).toFixed(2)}.`);
+          const safeName = String(row.customerName || '').trim().replace(/\s+/g, '+');
+          const smsRes = await enqueueSms(memMob, `Inv. Loan Int: +Rs.${add.toFixed(0)}. Total due: Rs.${(p+i).toFixed(0)}\nLink: https://digibiz-sys.web.app/a/${safeName}/${businessId} `);
           if (!smsRes?.ok) showSmsDebug(`Member SMS skipped (${row.customerName}): ${smsRes?.skipped||'failed'}`, false);
         }
       }
@@ -468,7 +497,8 @@ async function issueLoan(){
   });
   await addJournal(`Advanced member loan issue - ${c.fullName||cid}`,[{...GL_ADV_AR,debit:amount,credit:0},{...GL_ADV_INV_AP,debit:0,credit:amount}],'ADV_LOAN_ISSUE',{ collection: 'loan_advanced_entries', docId: loanRef.id });
   const nm = c.fullName || cid;
-  const memSms = await enqueueSms(mob, `Dear ${nm}, advanced (investor) loan issued Rs.${amount.toFixed(2)}. Balance Rs.${amount.toFixed(2)}.`);
+  const safeName = nm.trim().replace(/\s+/g, '+');
+  const memSms = await enqueueSms(mob, `Inv. Loan issued: Rs.${amount.toFixed(0)}. Due: Rs.${amount.toFixed(0)}\nLink: https://digibiz-sys.web.app/a/${safeName}/${businessId} `);
   if (!memSms?.ok) showSmsDebug(`Member issue SMS: ${memSms?.skipped||'skipped'}`, false);
   await db.collection('investor_ledger').add({
     businessId,type:'INVESTOR_FUNDED_ISSUE',customerName:nm,principal:amount,interest:0,amount,
@@ -521,7 +551,8 @@ async function applyReceivePay(id, pay){
   ], 'ADV_LOAN_REPAY', { collection: 'loan_advanced_entries', docId: id });
   const mob = pickMobile(r) || String(r.customerMobile || '').trim();
   const totalDue = comp.intAfter + comp.pAfter;
-  const colSms = await enqueueSms(mob, `Dear ${r.customerName || 'member'}, collection Rs.${comp.pay.toFixed(2)}. Balance Rs.${comp.pAfter.toFixed(2)}, interest Rs.${comp.intAfter.toFixed(2)}, total due Rs.${totalDue.toFixed(2)}.`);
+  const safeName = String(r.customerName || '').trim().replace(/\s+/g, '+');
+  const colSms = await enqueueSms(mob, `Inv. Loan pay: Rs.${comp.pay.toFixed(0)}. Remaining: Rs.${totalDue.toFixed(0)}\nLink: https://digibiz-sys.web.app/a/${safeName}/${businessId} `);
   if (!colSms?.ok) showSmsDebug(`Member collection SMS: ${colSms?.skipped || 'skipped'}`, false);
   await db.collection('investor_ledger').add({
     businessId,
@@ -535,10 +566,49 @@ async function applyReceivePay(id, pay){
   });
   return true;
 }
+function closeSettleModal(){ document.getElementById('settleModal').style.display='none'; }
 async function receivePay(id){
-  const txt = prompt('Received amount'); const pay = n(txt); if (pay <= 0) return;
-  const ok = await applyReceivePay(id, pay);
-  if (ok){ await recalcAndSendInvestorSms(); await loadRows(); }
+  const ref = db.collection('loan_advanced_entries').doc(id);
+  const snap = await ref.get(); if (!snap.exists) return;
+  const r = snap.data() || {};
+  document.getElementById('settleTitle').textContent = 'Member Collection';
+  document.getElementById('settleCustomerName').textContent = `Member: ${r.customerName || '-'}`;
+  const totalDueMember = n(r.balance) + n(r.interestOutstanding);
+  document.getElementById('settleAmount').value = totalDueMember.toFixed(2);
+  document.getElementById('settleModal').style.display = 'flex';
+  document.getElementById('confirmSettleBtn').onclick = async () => {
+    const pay = n(document.getElementById('settleAmount').value||0); if(pay<=0) return alert('Enter valid amount');
+    const method = document.getElementById('settleMethod').value;
+    const GL_PAY = method === 'BANK' ? GL_BANK : GL_CASH;
+    const btn = document.getElementById('confirmSettleBtn');
+    btn.disabled = true; btn.textContent = 'Processing...';
+    try {
+        const comp = computeReceivePatch(r, pay);
+        await ref.set(comp.patch, { merge: true });
+        await addJournal(`Advanced member repayment - ${r.customerName || '-'} (${method})`, [
+            { ...GL_PAY, debit: comp.pay, credit: 0 },
+            { ...GL_ADV_AR, debit: 0, credit: comp.principalPaid },
+            { ...GL_ADV_INV_AP, debit: 0, credit: comp.intPaid }
+        ], 'ADV_LOAN_REPAY', { collection: 'loan_advanced_entries', docId: id });
+        const mob = pickMobile(r) || String(r.customerMobile || '').trim();
+        const totalDueAfter = comp.intAfter + comp.pAfter;
+        const safeName = String(r.customerName || '').trim().replace(/\s+/g, '+');
+        const colSms = await enqueueSms(mob, `Inv. Loan pay: Rs.${comp.pay.toFixed(0)}. Remaining: Rs.${totalDueAfter.toFixed(0)}\nLink: https://digibiz-sys.web.app/a/${safeName}/${businessId} `);
+        if (!colSms?.ok) showSmsDebug(`Member collection SMS: ${colSms?.skipped || 'skipped'}`, false);
+        await db.collection('investor_ledger').add({
+            businessId,
+            type: 'MEMBER_COLLECTION',
+            customerName: r.customerName || '',
+            principal: comp.principalPaid,
+            interest: comp.intPaid,
+            amount: comp.pay,
+            note: `Collected from member (${method})`,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await recalcAndSendInvestorSms(); closeSettleModal(); await loadRows();
+    } catch(e) { alert(e.message || 'Error'); }
+    finally { btn.disabled = false; btn.textContent = 'Confirm Pay'; }
+  };
 }
 /** Cash paid out to investor: reduce Due, increase Paid (interest due first, then principal due). */
 async function applyRemitInvestorPay(id, pay, opts){
@@ -603,14 +673,60 @@ async function applyRemitInvestorPay(id, pay, opts){
   return { ok: true, intPortion, prPortion, totRemit };
 }
 async function remitInvestorPay(id){
-  const txt = prompt('Amount remitted to investor (cash paid out)'); const pay = n(txt); if (pay <= 0) return;
-  const snap = await db.collection('loan_advanced_entries').doc(id).get();
-  if (!snap.exists) return;
+  const ref = db.collection('loan_advanced_entries').doc(id);
+  const snap = await ref.get(); if (!snap.exists) return;
   const r = snap.data() || {};
   const maxDue = n(r.interestDueToInvestor) + n(r.principalDueToInvestor);
   if (maxDue <= 0.0001) { alert('No amount due to investor on this row.'); return; }
-  const res = await applyRemitInvestorPay(id, pay, {});
-  if (res && res.ok){ await recalcAndSendInvestorSms(); await loadRows(); }
+
+  document.getElementById('settleTitle').textContent = 'Investor Remittance';
+  document.getElementById('settleCustomerName').textContent = `Member: ${r.customerName || '-'}`;
+  document.getElementById('settleAmount').value = maxDue.toFixed(2);
+  document.getElementById('settleModal').style.display = 'flex';
+  document.getElementById('confirmSettleBtn').onclick = async () => {
+    const payRaw = n(document.getElementById('settleAmount').value||0); if(payRaw<=0) return alert('Enter valid amount');
+    const method = document.getElementById('settleMethod').value;
+    const GL_PAY = method === 'BANK' ? GL_BANK : GL_CASH;
+    const btn = document.getElementById('confirmSettleBtn');
+    btn.disabled = true; btn.textContent = 'Processing...';
+    try {
+        const dueIn0 = n(r.interestDueToInvestor);
+        const duePr0 = n(r.principalDueToInvestor);
+        let remain = Math.min(payRaw, maxDue);
+        const intPortion = Math.min(dueIn0, remain); remain -= intPortion;
+        const prPortion = Math.min(duePr0, remain);
+        const totRemit = intPortion + prPortion;
+        if (totRemit <= 0.0001) throw new Error('Nothing to remit');
+
+        await ref.set({
+            interestDueToInvestor: dueIn0 - intPortion,
+            principalDueToInvestor: duePr0 - prPortion,
+            interestPaidToInvestor: n(r.interestPaidToInvestor) + intPortion,
+            principalPaidToInvestor: n(r.principalPaidToInvestor) + prPortion,
+            updatedAt: new Date()
+        }, { merge: true });
+        await addJournal(`Advanced investor remittance - ${r.customerName || '-'} (${method})`, [
+            { ...GL_ADV_INV_AP, debit: totRemit, credit: 0 },
+            { ...GL_PAY, debit: 0, credit: totRemit }
+        ], 'ADV_INVESTOR_REMIT', { collection: 'loan_advanced_entries', docId: id });
+        await db.collection('investor_ledger').add({
+            businessId, type: 'INVESTOR_REMIT', customerName: r.customerName || '',
+            principal: prPortion, interest: intPortion, amount: totRemit,
+            note: `Remittance to investor (${method})`,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await appendInvestorCapitalLedgerRemit(intPortion, prPortion, r.customerName || '');
+        if (INVESTOR_OUTBOUND_SMS_ENABLED) {
+            const invPhone = await getInvestorSmsPhone();
+            if (invPhone) {
+                const smsText = `DIGIBIZ — Investor: Advanced loan ගෙවීම Rs.${totRemit.toFixed(2)} (${r.customerName || 'member'}). (${method})`;
+                await enqueueSms(invPhone, smsText);
+            }
+        }
+        await recalcAndSendInvestorSms(); closeSettleModal(); await loadRows();
+    } catch(e) { alert(e.message || 'Error'); }
+    finally { btn.disabled = false; btn.textContent = 'Confirm Pay'; }
+  };
 }
 async function remitAllInvestorPay(){
   const snap = await db.collection('loan_advanced_entries').where('businessId', '==', businessId).limit(500).get().catch(()=>({ docs: [] }));
@@ -797,7 +913,7 @@ async function loadRows(){
   document.querySelectorAll('#rows button.btn-del-adv').forEach((b)=>{ b.onclick = ()=>deleteAdvancedLoanRow(b.dataset.id); });
 }
 firebase.auth().onAuthStateChanged(async (u)=>{
-  if(!u){location.href='/auth/login.html';return;}
+  if(!u){location.href='/';return;}
   if (advLoanSweepTimer){ clearInterval(advLoanSweepTimer); advLoanSweepTimer=null; }
   const ctx = await window.dashboardCore.getContext(u);
   businessId = String((ctx&&ctx.businessId)||u.uid);

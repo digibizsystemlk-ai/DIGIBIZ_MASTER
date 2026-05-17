@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Bill - DIGIBIZ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/core/firebase-init.js"></script>
+    <script src="/core/scrap-vba-core.js?v=75"></script>
+    <style>
+        :root {
+            --primary: #0f172a;
+            --accent: #0ea5e9;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 10px;
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg);
+            color: var(--primary);
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .bill-container {
+            background: var(--card);
+            width: 100%;
+            max-width: 550px;
+            padding: 25px;
+            border-radius: 28px;
+            box-shadow: 0 20px 50px -12px rgba(0,0,0,0.08);
+            border: 1px solid #e2e8f0;
+            margin-bottom: 40px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .brand {
+            font-weight: 800;
+            font-size: 28px;
+            letter-spacing: -1px;
+            color: var(--primary);
+            margin-bottom: 2px;
+        }
+        .tagline {
+            font-size: 13px;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .status-badge {
+            background: #dcfce7;
+            color: #15803d;
+            padding: 8px 20px;
+            border-radius: 100px;
+            font-size: 12px;
+            font-weight: 800;
+            display: inline-block;
+            margin-top: 15px;
+            text-transform: uppercase;
+        }
+        
+        .section-title {
+            font-size: 14px;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: #94a3b8;
+            margin: 25px 0 15px;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .section-title::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: #e2e8f0;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 25px;
+        }
+        .info-card {
+            padding: 15px;
+            background: #f1f5f9;
+            border-radius: 16px;
+        }
+        .info-label { color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
+        .info-value { font-weight: 700; font-size: 15px; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+        th {
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #94a3b8;
+            padding: 10px 0;
+            border-bottom: 2px solid #f1f5f9;
+        }
+        td {
+            padding: 12px 0;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 14px;
+        }
+        .text-right { text-align: right; }
+
+        .totals {
+            margin-top: 10px;
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 20px;
+            border: 1px solid #e2e8f0;
+        }
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #64748b;
+        }
+        .total-row.highlight { color: var(--primary); font-weight: 600; }
+        .grand-total {
+            font-size: 22px;
+            font-weight: 800;
+            margin-top: 15px;
+            padding: 18px;
+            background: var(--primary);
+            color: white;
+            border-radius: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .cash-paid-box {
+            margin-top: 15px;
+            padding: 18px;
+            background: #dcfce7;
+            border: 2px solid #86efac;
+            border-radius: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 900;
+            font-size: 20px;
+            color: #166534;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+        }
+        .summary-card {
+            padding: 15px;
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+            text-align: center;
+        }
+        .summary-card .label { font-size: 10px; font-weight: 800; text-transform: uppercase; color: #94a3b8; margin-bottom: 4px; }
+        .summary-card .value { font-size: 16px; font-weight: 800; }
+        .summary-card.active { border-color: var(--accent); background: #f0f9ff; }
+        .summary-card.debt { border-color: #fca5a5; background: #fef2f2; }
+        .summary-card.debt .value { color: #b91c1c; }
+
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px;
+            border-radius: 12px;
+            background: #fff;
+            border: 1px solid #f1f5f9;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        .history-item:hover { border-color: var(--accent); }
+
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 11px;
+            color: #94a3b8;
+            line-height: 1.6;
+        }
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 300px;
+            gap: 15px;
+        }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 4px solid #f1f5f9;
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media print {
+            body { padding: 0; background: white; }
+            .bill-container { box-shadow: none; border: none; max-width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bill-container" id="billContent">
+        <div class="loading">
+            <div class="spinner"></div>
+            <div style="font-weight:600; color:#64748b;">Generating Digital Receipt...</div>
+        </div>
+    </div>
+
+    <script>
+        function normalizePersonKey(s) {
+            return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        }
+
+        // --- Loan Balances Logic ---
+        let bals = { adv: 0, hand: 0, noInt: 0, std: 0, inv: 0, weekly: 0 };
+        let history = [];
+
+        async function loadBill() {
+            const params = new URLSearchParams(window.location.search);
+            const id = params.get('id') || window.location.pathname.split('/').pop();
+
+            if (!id || id === 'v' || id === 'view-bill.html') {
+                document.getElementById('billContent').innerHTML = '<div style="text-align:center; padding:40px;">Invalid Link</div>';
+                return;
+            }
+
+            try {
+                let db = window.db;
+                if (!db) {
+                    for (let i = 0; i < 20; i++) {
+                        await new Promise(r => setTimeout(r, 200));
+                        if (window.db) { db = window.db; break; }
+                    }
+                }
+                if (!db) throw new Error("Database not ready.");
+
+                const doc = await db.collection('buying_history').doc(id).get();
+                if (!doc.exists) {
+                    document.getElementById('billContent').innerHTML = '<div style="text-align:center; padding:40px;">Bill Not Found</div>';
+                    return;
+                }
+                
+                const r = doc.data();
+                const bid = r.businessId;
+                const supName = r.supplierName;
+                const dt = r.billDateTime ? new Date(r.billDateTime).toLocaleString() : (r.date ? new Date(r.date).toLocaleString() : '-');
+                
+                history = r.accountSnapshot?.recentActivity || [];
+
+                // Exact dashboard normalization matching helpers
+                function normalizePersonKey(s) {
+                    return String(s || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+                }
+                function stripNameNoise(s) {
+                    return String(s || '').trim().replace(/\s+/g, ' ').replace(/(MR\.|MRS\.|MS\.|DR\.)\s+/gi, '');
+                }
+                function stripLoanCategoryNoise(s) {
+                    return String(s || '').trim().replace(/\s+(LOAN|DEBT|ADVANCE|HAND|INTEREST|NO-INTEREST|CREDIT|BAL|BALANCE)\s*$/gi, '');
+                }
+                function supplierNameAliases(rawInput) {
+                    const clean = String(rawInput || '').trim();
+                    if (!clean) return [];
+                    const core = stripLoanCategoryNoise(stripNameNoise(clean));
+                    const out = new Set();
+                    out.add(clean);
+                    if (core && core !== clean) out.add(core);
+                    return Array.from(out);
+                }
+
+                let historyQuerySnap = null;
+                if (bid && supName) {
+                    const aliases = supplierNameAliases(supName);
+                    const targets = new Set(aliases.map(normalizePersonKey).filter(Boolean));
+                    const matchesName = (name) => {
+                        if (!name) return false;
+                        const key = normalizePersonKey(name);
+                        return targets.has(key);
+                    };
+
+                    // Try fetching from public latest bill snapshot as a fallback / primary source first to handle security rules cleanly
+                    let snapBals = null;
+                    try {
+                        historyQuerySnap = await db.collection('buying_history')
+                            .where('businessId', '==', bid)
+                            .where('supplierName', '==', supName)
+                            .get();
+                        if (!historyQuerySnap.empty) {
+                            const latestDoc = historyQuerySnap.docs
+                                .map(d => d.data())
+                                .sort((a, b) => String(b.billDateTime || '').localeCompare(String(a.billDateTime || '')))[0];
+                            if (latestDoc && latestDoc.accountSnapshot && latestDoc.accountSnapshot.balances) {
+                                snapBals = latestDoc.accountSnapshot.balances;
+                                console.log("Loaded balances from latest snapshot:", snapBals);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Failed to fetch latest snapshot from buying_history:", e);
+                    }
+
+                    // Perform live database queries with individual try-catch blocks
+                    console.log("Fetching live balances with robust fallback...");
+                    
+                    // 1. Supplier Advance
+                    try {
+                        const docId = `ADV_${bid}_${supName.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
+                        const advSnap = await db.collection('scrap_advances').doc(docId).get();
+                        if (advSnap.exists) {
+                            bals.adv = Number(advSnap.data().balance) || 0;
+                        }
+                    } catch (e) { console.warn("Live adv query failed:", e); }
+
+                    // 2. Hand Loan
+                    try {
+                        const handSnap = await db.collection('hand_loans').where('businessId', '==', bid).where('active', '==', true).get();
+                        handSnap.docs.forEach(d => {
+                            const row = d.data();
+                            if (matchesName(row.customerName)) bals.hand += Number(row.balance || 0);
+                        });
+                    } catch (e) { console.warn("Live hand query failed:", e); }
+
+                    // 3. No Interest Loan
+                    try {
+                        const noIntSnap = await db.collection('loan_no_interest').where('businessId', '==', bid).where('active', '==', true).get();
+                        noIntSnap.docs.forEach(d => {
+                            const row = d.data();
+                            if (matchesName(row.customerName)) {
+                                bals.noInt += Number(row.balance != null ? row.balance : row.principalOutstanding || 0);
+                            }
+                        });
+                    } catch (e) { console.warn("Live noInt query failed:", e); }
+
+                    // 4. Standard Interest Loan
+                    try {
+                        const stdSnap = await db.collection('loan_interest_entries').where('businessId', '==', bid).where('active', '==', true).get();
+                        stdSnap.docs.forEach(d => {
+                            const row = d.data();
+                            if (matchesName(row.customerName)) {
+                                bals.std += Number(row.principalOutstanding || 0) + Number(row.interestOutstanding || 0);
+                            }
+                        });
+                    } catch (e) { console.warn("Live std query failed:", e); }
+
+                    // 5. Investor Loan
+                    try {
+                        const invSnap = await db.collection('loan_advanced_entries').where('businessId', '==', bid).where('active', '==', true).get();
+                        invSnap.docs.forEach(d => {
+                            const row = d.data();
+                            if (matchesName(row.customerName || row.memberName)) {
+                                bals.inv += Number(row.principalOutstanding != null ? row.principalOutstanding : row.balance || 0) + Number(row.interestOutstanding || 0);
+                            }
+                        });
+                    } catch (e) { console.warn("Live inv query failed:", e); }
+
+                    // 6. Weekly Loan
+                    try {
+                        const weeklySnap = await db.collection('weekly_loans').where('businessId', '==', bid).where('active', '==', true).get();
+                        weeklySnap.docs.forEach(d => {
+                            const row = d.data();
+                            if (matchesName(row.customerName)) {
+                                const totalPaid = (row.schedule || []).reduce((s, i) => s + (Number(i.paidAmount) || 0), 0);
+                                bals.weekly += Math.max(0, (Number(row.totalPayable) || 0) - totalPaid) + (Number(row.totalOverdueInterest) || 0);
+                            }
+                        });
+                    } catch (e) { console.warn("Live weekly query failed:", e); }
+
+                    // Prefer the snapshotted balances captured at the time of the bill, adjusting for deductions to show exact post-bill state!
+                    if (snapBals) {
+                        console.log("Using snapshotted balances, calculating post-bill balances:", snapBals);
+                        const applies = r.loanApplyBreakdown || {};
+                        bals = {
+                            adv: Math.max(0, Number(snapBals.adv || 0) - (Number(r.advanceApplied) || 0)),
+                            hand: Math.max(0, Number(snapBals.hand || 0) - (Number(applies.HAND) || 0)),
+                            noInt: Math.max(0, Number(snapBals.noInt || 0) - (Number(applies.ADV_LN || r.advanceLoanDeduction) || 0)),
+                            std: Math.max(0, Number(snapBals.std || 0) - (Number(applies.STANDARD) || 0)),
+                            inv: Math.max(0, Number(snapBals.inv || 0) - (Number(applies.INVESTOR_8) || 0)),
+                            weekly: Math.max(0, Number(snapBals.weekly || 0) - (Number(applies.WEEKLY || r.weeklyLoanDeduction) || 0))
+                        };
+                    }
+                }
+
+                // --- Chart Data Query: Historical Debt Trend Reconstruction ---
+                let chartPoints = [];
+                const totalDebt = bals.adv + bals.hand + bals.std + bals.inv + bals.noInt + bals.weekly;
+
+                if (totalDebt > 0.01) {
+                    let supplierBills = [];
+                    if (historyQuerySnap && !historyQuerySnap.empty) {
+                        supplierBills = historyQuerySnap.docs
+                            .map(d => {
+                                const data = d.data();
+                                return {
+                                    id: d.id,
+                                    billNo: data.billNo || d.id.slice(-6).toUpperCase(),
+                                    billDateTime: data.billDateTime || '',
+                                    balances: data.accountSnapshot?.balances || null,
+                                    deductions: (Number(data.loanDeduction) || 0) + 
+                                                (Number(data.advanceApplied) || 0) + 
+                                                (Number(data.weeklyLoanDeduction) || 0) +
+                                                (Number(data.advanceLoanDeduction) || 0)
+                                };
+                            })
+                            .filter(b => b.billDateTime)
+                            .sort((a, b) => String(a.billDateTime).localeCompare(String(b.billDateTime)));
+                    }
+
+                    // Process backwards from latest bill
+                    const currentBillIndex = supplierBills.findIndex(b => b.id === id);
+                    const billsToProcess = currentBillIndex !== -1 ? supplierBills.slice(0, currentBillIndex + 1) : supplierBills;
+
+                    const resolvedBills = billsToProcess.map(bill => {
+                        let preDebt = null;
+                        if (bill.balances) {
+                            const b = bill.balances;
+                            preDebt = (b.adv || 0) + (b.hand || 0) + (b.std || 0) + (b.inv || 0) + (b.noInt || 0) + (b.weekly || 0);
+                        }
+                        return {
+                            ...bill,
+                            preDebt,
+                            postDebt: null
+                        };
+                    });
+
+                    if (resolvedBills.length > 0) {
+                        resolvedBills[resolvedBills.length - 1].postDebt = totalDebt;
+                    }
+
+                    for (let i = resolvedBills.length - 1; i >= 0; i--) {
+                        const cur = resolvedBills[i];
+                        if (cur.postDebt === null) {
+                            if (i < resolvedBills.length - 1) {
+                                cur.postDebt = resolvedBills[i + 1].preDebt !== null ? resolvedBills[i + 1].preDebt : (resolvedBills[i + 1].postDebt + resolvedBills[i + 1].deductions);
+                            } else {
+                                cur.postDebt = totalDebt;
+                            }
+                        }
+                        if (cur.preDebt === null) {
+                            cur.preDebt = cur.postDebt + cur.deductions;
+                        }
+                    }
+
+                    const debtHistory = resolvedBills.map(b => ({
+                        x: `#${b.billNo}`,
+                        y: Math.max(0, Math.round(b.postDebt))
+                    }));
+
+                    if (resolvedBills.length > 0) {
+                        const firstBill = resolvedBills[0];
+                        debtHistory.unshift({
+                            x: 'ආරම්භය',
+                            y: Math.max(0, Math.round(firstBill.preDebt))
+                        });
+                    }
+
+                    if (debtHistory.length > 10) {
+                        debtHistory = debtHistory.slice(-10);
+                    }
+                    chartPoints = debtHistory;
+                }
+
+                let itemsHtml = (r.items || []).map(l => `
+                    <tr>
+                        <td>${l.itemName || '-'}</td>
+                        <td class="text-right">${window.scrapVbaCore && window.scrapVbaCore.formatWeight ? window.scrapVbaCore.formatWeight(l.weight) : (Number(l.weight) || 0).toFixed(2)}</td>
+                        <td class="text-right">${(Number(l.price || l.buyingPrice) || 0).toLocaleString()}</td>
+                        <td class="text-right"><b>${(Number(l.subtotal || (l.weight * (l.price || l.buyingPrice))) || 0).toLocaleString()}</b></td>
+                    </tr>
+                `).join('');
+
+                                const sub = Number(r.totalAmount) || 0;
+                const misc = Number(r.miscCharges) || 0;
+                const adv = Number(r.advanceApplied) || 0;
+                const loans = (Number(r.loanDeduction) || 0) + (Number(r.advanceLoanDeduction) || 0) + (Number(r.weeklyLoanDeduction) || 0);
+                const hire = Number(r.vehicleHireApplied) || 0;
+                const grand = Number(r.billGrandTotal) || (sub + misc);
+                const cash = Number(r.cashPaid) || (grand - adv - loans - hire);
+
+                let loanRowsHtml = '';
+                let activeCount = 0;
+                
+                if (bals.adv > 0.01) {
+                    activeCount++;
+                    loanRowsHtml += `
+                        <div style="display:flex; justify-content:space-between; padding:15px 20px; border-bottom:1px solid #f1f5f9; align-items:center;">
+                            <div>
+                                <div style="font-weight:700; color:#334155; font-size:14px;">සැපයුම්කරුගේ අත්තිකාරම් (Supplier Advance)</div>
+                                <div style="font-size:11px; color:#64748b; margin-top:2px;">අත්තිකාරම් ශේෂය</div>
+                            </div>
+                            <div style="font-weight:800; color:#2563eb; font-size:16px; cursor:pointer;" onclick="openCustomerHistory('${supName.replace(/'/g, "\\'")}', '${bid}', 'ADVANCE', ${bals.adv})">
+                                රු. ${bals.adv.toLocaleString()}
+                            </div>
+                        </div>`;
+                }
+                if (bals.noInt > 0.01) {
+                    activeCount++;
+                    loanRowsHtml += `
+                        <div style="display:flex; justify-content:space-between; padding:15px 20px; border-bottom:1px solid #f1f5f9; align-items:center;">
+                            <div>
+                                <div style="font-weight:700; color:#334155; font-size:14px;">පොලී රහිත ණය (No-Interest Loan)</div>
+                                <div style="font-size:11px; color:#64748b; margin-top:2px;">ඉතිරි ණය මුදල</div>
+                            </div>
+                            <div style="font-weight:800; color:#ef4444; font-size:16px; cursor:pointer;" onclick="openCustomerHistory('${supName.replace(/'/g, "\\'")}', '${bid}', 'NOINT', ${bals.noInt})">
+                                රු. ${bals.noInt.toLocaleString()}
+                            </div>
+                        </div>`;
+                }
+                if (bals.hand > 0.01) {
+                    activeCount++;
+                    loanRowsHtml += `
+                        <div style="display:flex; justify-content:space-between; padding:15px 20px; border-bottom:1px solid #f1f5f9; align-items:center;">
+                            <div>
+                                <div style="font-weight:700; color:#334155; font-size:14px;">අත් ණය (Hand Loan)</div>
+                                <div style="font-size:11px; color:#64748b; margin-top:2px;">ඉතිරි ණය මුදල</div>
+                            </div>
+                            <div style="font-weight:800; color:#ef4444; font-size:16px; cursor:pointer;" onclick="openCustomerHistory('${supName.replace(/'/g, "\\'")}', '${bid}', 'HAND', ${bals.hand})">
+                                රු. ${bals.hand.toLocaleString()}
+                            </div>
+                        </div>`;
+                }
+                if (bals.std > 0.01) {
+                    activeCount++;
+                    loanRowsHtml += `
+                        <div style="display:flex; justify-content:space-between; padding:15px 20px; border-bottom:1px solid #f1f5f9; align-items:center;">
+                            <div>
+                                <div style="font-weight:700; color:#334155; font-size:14px;">පොලී සහිත ණය (Standard Interest Loan)</div>
+                                <div style="font-size:11px; color:#64748b; margin-top:2px;">පොලී + ණය මුළු එකතුව</div>
+                            </div>
+                            <div style="font-weight:800; color:#ef4444; font-size:16px; cursor:pointer;" onclick="openCustomerHistory('${supName.replace(/'/g, "\\'")}', '${bid}', 'STD', ${bals.std})">
+                                රු. ${bals.std.toLocaleString()}
+                            </div>
+                        </div>`;
+                }
+                if (bals.weekly > 0.01) {
+                    activeCount++;
+                    loanRowsHtml += `
+                        <div style="display:flex; justify-content:space-between; padding:15px 20px; border-bottom:1px solid #f1f5f9; align-items:center;">
+                            <div>
+                                <div style="font-weight:700; color:#334155; font-size:14px;">සතිපතා වාරික ණය (Weekly Installment Loan)</div>
+                                <div style="font-size:11px; color:#64748b; margin-top:2px;">ඉතිරි වාරික එකතුව</div>
+                            </div>
+                            <div style="font-weight:800; color:#ef4444; font-size:16px; cursor:pointer;" onclick="openCustomerHistory('${supName.replace(/'/g, "\\'")}', '${bid}', 'WEEKLY', ${bals.weekly})">
+                                රු. ${bals.weekly.toLocaleString()}
+                            </div>
+                        </div>`;
+                }
+                if (bals.inv > 0.01) {
+                    activeCount++;
+                    loanRowsHtml += `
+                        <div style="display:flex; justify-content:space-between; padding:15px 20px; border-bottom:1px solid #f1f5f9; align-items:center;">
+                            <div>
+                                <div style="font-weight:700; color:#334155; font-size:14px;">ආයෝජන ණය (Investor Loan)</div>
+                                <div style="font-size:11px; color:#64748b; margin-top:2px;">ඉතිරි ණය මුදල</div>
+                            </div>
+                            <div style="font-weight:800; color:#ef4444; font-size:16px; cursor:pointer;" onclick="openCustomerHistory('${supName.replace(/'/g, "\\'")}', '${bid}', 'INV', ${bals.inv})">
+                                රු. ${bals.inv.toLocaleString()}
+                            </div>
+                        </div>`;
+                }
+
+                let loanSectionHtml = '';
+                if (activeCount > 0) {
+                    loanSectionHtml = `
+                        <!-- ඔබගේ ණය විස්තරය (Customer Loan Details) -->
+                        <div class="section-title" style="color:var(--primary); font-size:16px; margin-top: 30px;">ණය සහ අත්තිකාරම් විස්තරය (Your Loan & Advance Details)</div>
+                        <div style="background:#fff; border:1px solid #e2e8f0; border-radius:20px; overflow:hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.03); margin-bottom: 25px;">
+                            ${loanRowsHtml}
+                            
+                            <!-- Grand Total Debt -->
+                            <div style="display:flex; justify-content:space-between; padding:18px 20px; background:#f8fafc; align-items:center;">
+                                <div>
+                                    <div style="font-weight:800; color:#0f172a; font-size:15px; text-transform:uppercase; letter-spacing:0.5px;">සමස්ත ණය එකතුව (Total Outstanding)</div>
+                                    <div style="font-size:11px; color:#64748b; margin-top:2px; font-weight:600;">සියලුම ණය කාණ්ඩවල එකතුව</div>
+                                </div>
+                                <div style="font-weight:900; color:#0f172a; font-size:19px;">
+                                    රු. ${totalDebt.toLocaleString()}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Area Chart (Debt Trend) -->
+                        <div class="section-title" style="color:var(--primary); font-size:16px; margin-top: 30px;">සමස්ත ණය වෙනස්වීම් ඉතිහාසය (Debt Balance History)</div>
+                        <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:24px; padding:20px; box-shadow: 0 10px 30px rgba(0,0,0,0.03); margin-bottom: 25px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; top:12px; right:16px; display:flex; gap:12px; font-size:11px; font-weight:700;">
+                                <span style="display:flex; align-items:center; gap:4px; color:#3b82f6;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#3b82f6;"></span>ණය මට්ටම</span>
+                            </div>
+                            <div style="height: 180px; width: 100%; margin-top: 15px;">
+                                <canvas id="debtTrendChart"></canvas>
+                            </div>
+                            <div style="font-size: 11px; color: #64748b; font-weight: 600; text-align: center; margin-top: 15px; line-height: 1.5; padding: 0 10px;">
+                                පසුගිය බිල්පත් හරහා ඔබේ සමස්ත ණය ප්‍රමාණය වෙනස් වූ ආකාරය ඉහත ප්‍රස්ථාරයෙන් දැක්වේ.
+                            </div>
+                        </div>`;
+                }
+
+                document.getElementById('billContent').innerHTML = `
+                        <div class="header">
+                            <div class="brand">අපේ කඩේ</div>
+                            <div class="tagline">Scrap Collection Center</div>
+                            <div class="status-badge">INVOICE</div>
+                        </div>
+
+                        <div class="info-grid">
+                            <div class="info-card">
+                                <div class="info-label">Customer</div>
+                                <div class="info-value">${supName || '-'}</div>
+                            </div>
+                            <div class="info-card">
+                                <div class="info-label">Date</div>
+                                <div class="info-value">${dt.split(',')[0]}</div>
+                            </div>
+                        </div>
+
+                        <div class="section-title">Bill Items</div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th class="text-right">Weight</th>
+                                    <th class="text-right">Rate</th>
+                                    <th class="text-right">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>${itemsHtml}</tbody>
+                        </table>
+
+                        <div class="totals" style="margin-bottom: 30px;">
+                            <div class="total-row"><span>Items Total</span><span>Rs. ${sub.toLocaleString()}</span></div>
+                            ${misc > 0 ? `<div class="total-row"><span>Misc Charges</span><span>Rs. ${misc.toLocaleString()}</span></div>` : ''}
+                            <div class="grand-total"><span>Grand Total</span><span>Rs. ${grand.toLocaleString()}</span></div>
+                            <div style="margin-top:12px;">
+                                ${adv > 0 ? `<div class="total-row highlight"><span>Advance Applied</span><span>- Rs. ${adv.toLocaleString()}</span></div>` : ''}
+                                ${loans > 0 ? `<div class="total-row highlight"><span>Loan Repayment</span><span>- Rs. ${loans.toLocaleString()}</span></div>` : ''}
+                                ${hire > 0 ? `<div class="total-row highlight"><span>Vehicle Hire</span><span>- Rs. ${hire.toLocaleString()}</span></div>` : ''}
+                            </div>
+                            <div class="cash-paid-box"><span>CASH PAID</span><span>Rs. ${cash.toLocaleString()}</span></div>
+                        </div>
+
+                        ${loanSectionHtml}
+
+                        ${history.length ? `
+                        <div class="section-title">Recent Activity</div>
+                        ${history.map(h => `
+                            <a href="/v/${h.id}" style="text-decoration:none; color:inherit;">
+                                <div class="history-item">
+                                    <div>
+                                        <div style="font-weight:700;">#${h.billNo || h.id.slice(-6).toUpperCase()}</div>
+                                        <div style="font-size:11px; color:#94a3b8;">${new Date(h.billDateTime).toLocaleDateString()}</div>
+                                    </div>
+                                    <div style="text-align:right;">
+                                        <div style="font-weight:700; color:#15803d;">Rs. ${(h.cashPaid || 0).toLocaleString()}</div>
+                                        <div style="font-size:11px; color:#94a3b8;">Cash Paid</div>
+                                    </div>
+                                </div>
+                            </a>
+                        `).join('')}
+                        ` : ''}
+
+                        <div class="footer">
+                            Digital Bill Generated for <b>${supName}</b><br>
+                            Powered by <b>DIGIBIZ - 0713446500</b>
+                        </div>
+                    `;
+
+                    // Render the Chart
+                    if (activeCount > 0) {
+                        initDebtChart(chartPoints);
+                    }
+
+                } catch (e) {
+                    console.error("loadBill Error:", e);
+                    document.getElementById('billContent').innerHTML = '<div style="text-align:center; padding:40px;">Error: ' + e.message + '</div>';
+                }
+            }
+
+            function initDebtChart(points) {
+                const ctx = document.getElementById('debtTrendChart')?.getContext('2d');
+                if (!ctx) return;
+
+                const labels = points.map(p => p.x);
+                const dataY = points.map(p => p.y);
+
+                // Create beautiful blue gradient
+                const gradient = ctx.createLinearGradient(0, 0, 0, 180);
+                gradient.addColorStop(0, 'rgba(59, 130, 246, 0.4)');
+                gradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Debt Level',
+                                data: dataY,
+                                fill: true,
+                                backgroundColor: gradient,
+                                borderColor: '#3b82f6',
+                                borderWidth: 3.5,
+                                pointRadius: 3,
+                                pointBackgroundColor: '#3b82f6',
+                                pointHitRadius: 10,
+                                tension: 0.2,
+                                borderCapStyle: 'round'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { enabled: true }
+                        },
+                        scales: {
+                            x: {
+                                display: true,
+                                grid: { display: false },
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: { family: 'Outfit', size: 10, weight: 600 }
+                                }
+                            },
+                            y: {
+                                display: true,
+                                grid: { color: '#f1f5f9' },
+                                border: { dash: [5, 5] },
+                                ticks: {
+                                    color: '#94a3b8',
+                                    font: { family: 'Outfit', size: 10, weight: 600 },
+                                    callback: function(value) {
+                                        return 'රු. ' + value.toLocaleString();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+        function getTrendLineData(points) {
+            const n = points.length;
+            if (n < 2) return points.map(p => p.y);
+            let sumX = 0;
+            let sumY = 0;
+            let sumXY = 0;
+            let sumXX = 0;
+            for (let i = 0; i < n; i++) {
+                sumX += i;
+                sumY += points[i].y;
+                sumXY += i * points[i].y;
+                sumXX += i * i;
+            }
+            const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+            const intercept = (sumY - slope * sumX) / n;
+            return points.map((_, i) => slope * i + intercept);
+        }
+        function closeCustomerHistory() {
+            const m = document.getElementById('customerHistoryModal');
+            const b = document.getElementById('customerHistoryBox');
+            if(m && b){
+                m.style.opacity = '0';
+                b.style.transform = 'scale(0.95)';
+                setTimeout(() => m.style.display = 'none', 200);
+            }
+        }
+
+        async function openCustomerHistory(supName, bid, typeCode, currentBal) {
+            const m = document.getElementById('customerHistoryModal');
+            const b = document.getElementById('customerHistoryBox');
+            if(!m || !b) return;
+
+            m.style.display = 'flex';
+            void m.offsetWidth;
+            m.style.opacity = '1';
+            b.style.transform = 'scale(1)';
+
+            document.getElementById('chTitle').textContent = typeCode + " - ගනුදෙනු ඉතිහාසය";
+            document.getElementById('chSubtitle').textContent = "දත්ත ලබාගනිමින් පවතී...";
+            document.getElementById('chBody').innerHTML = '<tr><td colspan="3" style="text-align:center; padding:30px; color:#94a3b8;">කරුණාකර රැඳී සිටින්න...</td></tr>';
+
+            try {
+                let db = window.db;
+                let rowsRaw = [];
+
+                if (typeCode === 'ADVANCE') {
+                    const snap = await db.collection('scrap_advance_history').where('businessId', '==', bid).get();
+                    const allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    rowsRaw = allDocs.filter(d => String(d.supplierName || '').trim().toLowerCase() === String(supName).trim().toLowerCase());
+                } else if (typeCode === 'HAND') {
+                    const snap = await db.collection('hand_loan_history').where('businessId', '==', bid).get();
+                    const allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    rowsRaw = allDocs.filter(d => String(d.customerName || '').trim().toLowerCase() === String(supName).trim().toLowerCase());
+                } else {
+                    // STD, INV, etc. -> Use Journal
+                    const snap = await db.collection('journal').doc(bid).collection('entries')
+                        .where('reference', '==', supName)
+                        .get();
+                    
+                    rowsRaw = snap.docs.map(d => {
+                        const data = d.data();
+                        let amt = 0;
+                        const codes = typeCode === 'INV' ? ['1-1030-13'] : ['1-1050-01', '1-1030-10'];
+                        (data.entries || []).forEach(e => {
+                            if (codes.includes(e.accountCode)) {
+                                amt += (Number(e.debit) || 0) - (Number(e.credit) || 0);
+                            }
+                        });
+                        return {
+                            date: data.date?.toDate ? data.date.toDate().toISOString() : (data.date || data.createdAt?.toDate?.()?.toISOString()),
+                            amount: amt,
+                            note: data.description
+                        };
+                    }).filter(x => Math.abs(x.amount) > 0.01);
+                }
+                
+                const rowsAsc = rowsRaw.map(r => ({
+                    ...r,
+                    date: r.date || r.createdAt?.toDate?.()?.toISOString() || new Date().toISOString()
+                })).sort((a,b)=>String(a.date || '').localeCompare(String(b.date || '')));
+                
+                let running = 0;
+                let lastZeroIdx = -1;
+                const withTotals = rowsAsc.map((x, idx)=>{
+                    const amt = Number(x.amount || 0);
+                    running += amt;
+                    if (Math.abs(running) < 0.01) lastZeroIdx = idx;
+                    return { ...x, runningAfter: running };
+                });
+
+                const cycleRows = withTotals.slice(lastZeroIdx + 1);
+                let rows = cycleRows.slice().sort((a,b)=>String(b.date || '').localeCompare(String(a.date || '')));
+
+                if (rows.length === 0 && currentBal > 0) {
+                    rows = [{
+                        date: new Date().toISOString(),
+                        type: 'START',
+                        amount: currentBal,
+                        runningAfter: currentBal,
+                        note: 'ආරම්භක ශේෂය / පෙර ඉතිරිය'
+                    }];
+                }
+
+                document.getElementById('chSubtitle').textContent = `වාර්තා ${rows.length} ක් සොයාගන්නා ලදී`;
+
+                document.getElementById('chBody').innerHTML = rows.map((x)=>{
+                    const dt = x.date ? new Date(x.date).toLocaleDateString() : '-';
+                    const amt = Number(x.amount || 0);
+                    const sign = amt > 0 ? '+' : (amt < 0 ? '-' : '');
+                    const tone = amt >= 0 ? '#166534' : '#b91c1c';
+                    
+                    return `<tr>
+                        <td style="padding:12px 15px; border-bottom:1px solid #eef2f7;">
+                            <div style="font-weight:600; color:#0f172a;">${dt}</div>
+                            <div style="font-size:10px; color:#64748b; margin-top:2px;">${x.note || '-'}</div>
+                        </td>
+                        <td style="padding:12px 15px; text-align:right; font-weight:800; color:${tone}; border-bottom:1px solid #eef2f7;">
+                            ${sign}${Math.abs(amt).toLocaleString()}
+                        </td>
+                        <td style="padding:12px 15px; text-align:right; font-weight:700; color:#0f172a; border-bottom:1px solid #eef2f7;">
+                            ${x.runningAfter.toLocaleString()}
+                        </td>
+                    </tr>`;
+                }).join('') || '<tr><td colspan="3" style="text-align:center; padding:30px; color:#94a3b8;">මෙම කාලය සඳහා ගනුදෙනු නොමැත.</td></tr>';
+
+            } catch (err) {
+                console.error("History Error:", err);
+                document.getElementById('chSubtitle').textContent = "දෝෂයකි.";
+                document.getElementById('chBody').innerHTML = '<tr><td colspan="3" style="text-align:center; padding:30px; color:#94a3b8;">දත්ත ලබාගැනීමේදී දෝෂයක් සිදු විය.</td></tr>';
+            }
+        }
+        window.onload = loadBill;
+    </script>
+
+    <!-- Customer History Modal -->
+    <div id="customerHistoryModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.8); z-index:9999; justify-content:center; align-items:center; padding:15px; opacity:0; transition:opacity 0.2s; box-sizing:border-box;">
+        <div style="background:#fff; width:100%; max-width:500px; border-radius:24px; display:flex; flex-direction:column; max-height:85vh; transform:scale(0.95); transition:transform 0.2s;" id="customerHistoryBox">
+            
+            <div style="padding:20px 25px; border-bottom:1px solid #eef2f7; display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <div style="font-size:18px; font-weight:800; color:#0f172a;" id="chTitle">ගනුදෙනු ඉතිහාසය</div>
+                    <div style="font-size:12px; font-weight:600; color:#64748b; margin-top:2px;" id="chSubtitle">Loading...</div>
+                </div>
+                <button onclick="closeCustomerHistory()" style="background:#f1f5f9; border:none; padding:8px 15px; border-radius:12px; font-size:12px; font-weight:700; color:#64748b; cursor:pointer;">වසන්න</button>
+            </div>
+
+            <div style="overflow-y:auto; padding:0; flex:1;" id="chScrollArea">
+                <table style="width:100%; border-collapse:collapse; font-size:13px; margin:0;">
+                    <thead style="position:sticky; top:0; background:#f8fafc; z-index:2;">
+                        <tr>
+                            <th style="padding:12px 15px; text-align:left; font-size:11px; font-weight:700; color:#94a3b8; border-bottom:1px solid #eef2f7;">දිනය (DATE)</th>
+                            <th style="padding:12px 15px; text-align:right; font-size:11px; font-weight:700; color:#94a3b8; border-bottom:1px solid #eef2f7;">වෙනස (CHANGE)</th>
+                            <th style="padding:12px 15px; text-align:right; font-size:11px; font-weight:700; color:#94a3b8; border-bottom:1px solid #eef2f7;">ඉතිරිය (BAL)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="chBody">
+                        <tr><td colspan="3" style="text-align:center; padding:30px; color:#94a3b8;">කරුණාකර රැඳී සිටින්න...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

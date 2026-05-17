@@ -33,7 +33,11 @@
             });
         /** Legacy rows often omit `active`; Firestore `active == true` excluded them so ADV/Std vanished from Bill. */
         const rows = snap.docs
-            .map((d) => ({ id: d.id, ...d.data() }))
+            .map((d) => ({ 
+                id: d.id, 
+                ...d.data(),
+                _loanSource: 'scrap_loans' // Explicitly set source
+            }))
             .filter((r) => {
                 if (r.active === false) return false;
                 const b = Number(r.balance);

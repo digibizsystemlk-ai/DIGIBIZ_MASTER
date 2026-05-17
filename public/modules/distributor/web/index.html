@@ -200,6 +200,45 @@
             border-collapse: collapse;
             min-width: 800px;
         }
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 8px;
+            }
+            .stat-card {
+                padding: 10px;
+                border-radius: 12px;
+            }
+            .stat-title {
+                font-size: 11px;
+            }
+            .stat-value {
+                font-size: 20px;
+            }
+            .main-content {
+                padding: 12px;
+            }
+            /* Table simplification for mobile */
+            table {
+                min-width: 100%;
+            }
+            /* Hide Date, Branch, Lorry, Brands, Items columns on mobile */
+            th:nth-child(2), td:nth-child(2),
+            th:nth-child(5), td:nth-child(5),
+            th:nth-child(6), td:nth-child(6),
+            th:nth-child(7), td:nth-child(7),
+            th:nth-child(8), td:nth-child(8) {
+                display: none;
+            }
+            th, td {
+                padding: 8px 4px;
+                font-size: 12px;
+            }
+            .btn {
+                padding: 4px 8px;
+                font-size: 11px;
+            }
+        }
         th, td {
             padding: 12px 16px;
             text-align: left;
@@ -732,7 +771,7 @@
                 const rc = Number(it.returnCompanyQty) || 0;
                 it.returnQty = rr + rc;
                 const rate = Number(it.unitPrice) || 0;
-                it.totalPrice = (oq + fq - rr - rc) * rate;
+                it.totalPrice = Math.max(0, oq - rr - rc) * rate;
                 subtotal += it.totalPrice;
             });
             return { items: arr, subtotal, totalAmount: subtotal };
@@ -1116,8 +1155,6 @@
         let repSummaryRows = [];
         let currentBusinessName = '';
         let currentBusinessData = null;
-        const MW_TRADING_OWNER_EMAIL = 'mwtradingsolutions@gmail.com';
-        const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
         const BDK_ACCOUNTING_BUSINESS_ID = '3slrMTT9dVNlIETKbozzIsVZjjQ2';
         let ordersUnsub = null;
         let pendingOrdersUnsub = null;
@@ -1152,24 +1189,11 @@
         }
 
         function isMwTradingBusiness() {
-            if (String(currentBusinessId || '') === MW_TRADING_BUSINESS_ID) return true;
-            try {
-                if (window.DigibizMwDslConfig && typeof window.DigibizMwDslConfig.isMwTradingTenantActive === 'function') {
-                    return !!window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData);
-                }
-            } catch (eMw) { /* ignore */ }
+            if (currentBusinessData && currentBusinessData.mwTradingSolutionsTenant === true) return true;
+            if (window.DigibizMwDslConfig && typeof window.DigibizMwDslConfig.isMwTradingTenantActive === 'function') {
+                return !!window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData);
+            }
             return false;
-        }
-
-        function isMwPrintDebugEnabled() {
-            if (!isMwTradingBusiness()) return false;
-            try {
-                if (new URLSearchParams(window.location.search).get('debugPrint') === '1') {
-                    sessionStorage.setItem('DIGIBIZ_DEBUG_PRINT', '1');
-                    return true;
-                }
-            } catch (eU) { /* ignore */ }
-            return sessionStorage.getItem('DIGIBIZ_DEBUG_PRINT') === '1';
         }
 
         /** Android/iOS system PDF often rasterizes after the print dialog; closing the popup too soon can destroy the document and show "problem printing the page". */
@@ -1183,24 +1207,7 @@
         }
 
         function pushPrintDebugLine(line) {
-            if (!isMwPrintDebugEnabled()) return;
-            window.__DIGIBIZ_PRINT_DEBUG_LINES__ = window.__DIGIBIZ_PRINT_DEBUG_LINES__ || [];
-            window.__DIGIBIZ_PRINT_DEBUG_LINES__.push(new Date().toISOString() + ' | ' + String(line));
-        }
-
-        function showDigibizPrintDebugModal(title) {
-            if (!isMwPrintDebugEnabled()) return;
-            const box = document.getElementById('digibizPrintDebugModal');
-            const pre = document.getElementById('digibizPrintDebugBody');
-            if (!box || !pre) return;
-            const lines = window.__DIGIBIZ_PRINT_DEBUG_LINES__ || [];
-            pre.textContent = (title ? title + '\n\n' : '') + lines.join('\n');
-            box.style.display = 'flex';
-        }
-
-        function closeDigibizPrintDebugModal() {
-            const box = document.getElementById('digibizPrintDebugModal');
-            if (box) box.style.display = 'none';
+            // Deprecated
         }
 
         async function attachMwFreeIssuesAndReturns(rows) {
@@ -1270,44 +1277,76 @@
         }
 
         function thermalBillSharedCss() {
-            return `@media print {
-/* Android "Save as PDF" / system print often fails on non-standard @page sizes (e.g. 80mm). */
-@page { size: auto; margin: 8mm; }
-html,body{width:100% !important;max-width:100% !important;margin:0 !important;padding:0 !important;
--webkit-print-color-adjust:exact;print-color-adjust:exact;}
-.bill{width:100% !important;max-width:100% !important;margin:0 !important;min-height:auto !important;}
-.meta-row,.summary-row{display:table !important;width:100% !important;table-layout:fixed !important;border-bottom:1px dotted #ccc;padding:2px 0;}
-.summary-row{border-bottom-color:#999 !important;}
-.meta-row>span,.summary-row>span{display:table-cell !important;width:50%;vertical-align:top;}
-.meta-row>span:last-child,.summary-row>span:last-child{text-align:right;}
-}
-html,body{margin:0;padding:0;background:#fff;color:#000;font-family:system-ui,-apple-system,'Segoe UI',Arial,sans-serif;font-size:11px;min-height:100vh;}
-.bill{width:72mm;max-width:72mm;margin:0 auto;min-height:120px;}
-.dsl-title{font-family:system-ui,-apple-system,Arial,sans-serif;font-size:15px;font-weight:800;letter-spacing:0.04em;text-align:center;line-height:1.15;text-transform:uppercase;}
-.biz-title{font-family:system-ui,-apple-system,Arial,sans-serif;font-size:14px;font-weight:800;text-align:center;line-height:1.2;text-transform:uppercase;}
-.dsl-sub,.biz-sub{font-size:10px;text-align:center;margin-top:4px;line-height:1.35;}
-.meta{margin-top:8px;font-size:10px;line-height:1.45;}
-.meta-row{display:flex;justify-content:space-between;gap:4px;border-bottom:1px dotted #ccc;padding:2px 0;}
-.bill-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:9px;}
-.bill-table th,.bill-table td{border:1px solid #000;padding:3px 4px;vertical-align:top;}
-.bill-table th{font-size:7.5px;text-align:center;background:#f0f0f0;line-height:1.2;}
-.bill-item-name{white-space:normal;word-break:break-word;}
-.bill-qtyrate{font-size:8px;margin-top:2px;color:#222;}
-.bill-num{text-align:right;white-space:nowrap;}
-.summary{margin-top:10px;font-size:10px;line-height:1.5;}
-.summary-row{display:flex;justify-content:space-between;border-bottom:1px dotted #999;padding:2px 0;}
-.footer{margin-top:12px;text-align:center;font-size:10px;font-weight:600;}
-.agent-note{margin-top:8px;text-align:center;font-size:9px;font-weight:600;}
-.softby{margin-top:8px;text-align:center;font-size:7px;color:#333;line-height:1.35;}`;
+            return `
+@media print { @page { margin: 0; } body { margin: 0; } }
+html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Roboto',Arial,sans-serif;font-size:12px;line-height:1.2;}
+.bill{width:72mm;max-width:72mm;margin:0 auto;padding:5mm 2mm;box-sizing:border-box;}
+.receipt-header{text-align:center;margin-bottom:15px;}
+.biz-name{font-size:22px;font-weight:900;text-transform:uppercase;margin-bottom:5px;letter-spacing:1px;line-height:1;}
+.biz-info{font-size:10px;font-weight:600;margin-bottom:2px;color:#333;}
+.separator{border-top:1.5px solid #000;margin:8px 0;}
+.double-separator{border-top:3px double #000;margin:8px 0;}
+.dashed-separator{border-top:1px dashed #666;margin:8px 0;}
+.meta-grid{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin-bottom:10px;font-size:10.5px;}
+.meta-label{font-weight:800;text-transform:uppercase;color:#444;}
+.meta-value{font-weight:900;text-align:right;}
+.item-row{margin-bottom:8px;}
+.item-header{display:flex;justify-content:space-between;font-weight:900;font-size:13px;text-transform:uppercase;}
+.item-sub{display:flex;justify-content:space-between;font-size:10px;font-weight:600;color:#444;margin-top:2px;font-style:italic;}
+.summary-box{margin-top:10px;}
+.summary-line{display:flex;justify-content:space-between;padding:3px 0;font-weight:700;font-size:12px;}
+.grand-total{font-size:18px;font-weight:900;padding:8px 0;border-top:2px solid #000;border-bottom:2px solid #000;margin:8px 0;}
+.badge{background:#000;color:#fff;padding:1px 4px;font-size:9px;font-weight:900;margin-left:5px;border-radius:2px;}
+.footer-section{text-align:center;margin-top:20px;padding-top:15px;border-top:1px solid #000;}
+.thank-you-note{font-size:13px;font-weight:900;text-transform:uppercase;margin-bottom:10px;}
+.digibiz-footer{margin-top:12px;font-weight:900;}
+.digibiz-text{font-size:11px;text-transform:uppercase;letter-spacing:1px;display:block;}
+.digibiz-hotline{font-size:13px;display:block;margin-top:4px;letter-spacing:0.5px;}
+.table-head{display:flex;justify-content:space-between;font-weight:900;font-size:11px;border-bottom:1.5px solid #000;padding-bottom:5px;margin-bottom:8px;text-transform:uppercase;}`;
+        }
+
+        async function tryMwBluetoothPrintSync(htmlContent, isDebug) {
+            if (!isDigibizMobilePrintClient()) return false;
+            
+            try {
+                pushPrintDebugLine('tryMwBluetoothPrintSync: using system print (iframe method)');
+                
+                // Create a hidden iframe
+                let iframe = document.getElementById('digibizPrintIframe');
+                if (iframe) iframe.remove();
+                
+                iframe = document.createElement('iframe');
+                iframe.id = 'digibizPrintIframe';
+                iframe.style.position = 'fixed';
+                iframe.style.right = '0';
+                iframe.style.bottom = '0';
+                iframe.style.width = '0';
+                iframe.style.height = '0';
+                iframe.style.border = '0';
+                document.body.appendChild(iframe);
+                
+                const doc = iframe.contentWindow.document;
+                doc.open();
+                doc.write(htmlContent);
+                doc.close();
+                
+                // Wait for content to load and then print
+                setTimeout(() => {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                    pushPrintDebugLine('System print dialog triggered');
+                }, 500);
+                
+                return true;
+            } catch (e) {
+                pushPrintDebugLine('System print failed: ' + (e && e.message));
+                console.error('Print failed', e);
+            }
+            return false;
         }
 
         async function tryMwBluetoothPrint(htmlContent) {
-            void htmlContent;
-            // MW Trading only: never use Web Bluetooth / share shortcut here — always use
-            // openAndPrintInvoice → window.print() so Android shows the normal system print dialog.
-            if (isMwTradingBusiness()) return false;
-            // Non-MW: unchanged historical behaviour (this path was never entered for non-MW before).
-            return false;
+            return tryMwBluetoothPrintSync(htmlContent, false);
         }
 
         async function openAndPrintInvoice(htmlContent) {
@@ -1408,25 +1447,31 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:system-ui,-a
             let subTotal = 0;
             const items = Array.isArray(order.items) ? order.items : [];
             const rows = items.map((item) => {
-                const name = item.productName || 'Item';
-                const brand = String(item.productBrand || '').trim();
-                const rate = Number(item.unitPrice) || 0;
-                const oq = Number(item.orderedQty) || 0;
-                const fq = Number(item.freeQty) || 0;
-                const rq = Number(item.returnQty) || 0;
-                const lineTotal = Number(item.totalPrice) != null && !Number.isNaN(Number(item.totalPrice))
-                    ? Number(item.totalPrice)
-                    : (oq * rate + fq * rate - rq * rate);
+                const name = item.productName || item.name || 'Unknown Item';
+                const brand = String(item.productBrand || item.brand || '').trim();
+                const rate = Number(item.unitPrice || item.price || item.sellingPrice) || 0;
+                const oq = Number(item.orderedQty || item.orderQty || item.quantity) || 0;
+                const fq = Number(item.freeQty || item.freeQuantity) || 0;
+                const rq = Number(item.returnQty || item.returnQuantity) || 0;
+                const lineTotal = Number(item.totalPrice || item.totalAmount) != null && !Number.isNaN(Number(item.totalPrice || item.totalAmount))
+                    ? Number(item.totalPrice || item.totalAmount)
+                    : (oq * rate);
                 subTotal += lineTotal;
-                const qtyRateLine = `${oq} × ${formatBillMoney(rate)}`;
-                const brandLine = brand ? `<div class="bill-qtyrate" style="font-style:italic;">Brand: ${escapeBillHtml(brand)}</div>` : '';
+                
+                let qtyDisplay = oq;
+                if (fq > 0) qtyDisplay += `<span class="badge">F:${fq}</span>`;
+                if (rq > 0) qtyDisplay += `<span class="badge" style="background:#444">R:${rq}</span>`;
+
                 return `
-                    <tr>
-                        <td class="bill-item-name">${escapeBillHtml(name).replace(/\n/g, '<br>')}${brandLine}<div class="bill-qtyrate">${escapeBillHtml(qtyRateLine)}</div></td>
-                        <td class="bill-num">${fq}</td>
-                        <td class="bill-num">${rq}</td>
-                        <td class="bill-num">${lineTotal.toFixed(2)}</td>
-                    </tr>`;
+                <div class="item-row">
+                    <div class="item-header">
+                        <span>${escapeBillHtml(name)}</span>
+                        <span>${lineTotal.toFixed(2)}</span>
+                    </div>
+                    <div class="item-sub">
+                        <span>${escapeBillHtml(brand)} | ${qtyDisplay} @ ${rate.toFixed(2)}</span>
+                    </div>
+                </div>`;
             }).join('');
             const total = Number(order.totalAmount) != null ? Number(order.totalAmount) : subTotal;
             const paid = Number(order.collectionAmount) || Number(order.collectedAmount) || 0;
@@ -1443,16 +1488,23 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:system-ui,-a
             const cashier = order.repName || order.repId || '—';
             const dt = order.orderDate?.toDate ? order.orderDate.toDate() : (order.orderDate ? new Date(order.orderDate) : new Date());
             const dtStr = dt.toLocaleString('en-LK', { hour12: true });
-            return `
-<div class="meta">
-<div class="meta-row"><span>Customer</span><span style="text-align:right;max-width:55%">${escapeBillHtml(customer)}</span></div>
-<div class="meta-row"><span>Branch</span><span style="text-align:right;max-width:55%">${escapeBillHtml(order.branchName || '-')}</span></div>
-<div class="meta-row"><span>Branch Location</span><span style="text-align:right;max-width:55%">${escapeBillHtml(order.branchLocation || '-')}</span></div>
-<div class="meta-row"><span>Address</span><span style="text-align:right;max-width:55%">${escapeBillHtml(custAddr) || '—'}</span></div>
-<div class="meta-row"><span>Bill No</span><span>${escapeBillHtml(String(billNo))}</span></div>
-<div class="meta-row"><span>Cashier (Rep)</span><span>${escapeBillHtml(String(cashier))}</span></div>
-<div class="meta-row"><span>Date &amp; Time</span><span>${escapeBillHtml(dtStr)}</span></div>
-</div>`;
+            
+            const rows = [
+                { l: 'BILL NO', v: billNo },
+                { l: 'DATE/TIME', v: dtStr },
+                { l: 'CUSTOMER', v: customer },
+                { l: 'BRANCH', v: order.branchName },
+                { l: 'LOCATION', v: order.branchLocation },
+                { l: 'ADDRESS', v: custAddr },
+                { l: 'SALES REP', v: cashier }
+            ];
+
+            const html = rows.map(r => {
+                if (!r.v || r.v === '-' || r.v === '—') return '';
+                return `<div class="meta-row"><span class="meta-label">${r.l}:</span><span class="meta-value">${escapeBillHtml(String(r.v))}</span></div>`;
+            }).join('');
+
+            return `<div class="meta-grid">${html}</div>`;
         }
 
         function buildMwDslThermalBillHtml(order, shopData) {
@@ -1460,25 +1512,41 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:system-ui,-a
             const billNo = order.orderNumber || order.id;
             const { rows, subTotal, total, paidCash, balance } = computeBillLines(order);
             const meta = buildMetaBlockHtml(order, shopData);
-            const tableBody = rows || '<tr><td colspan="4" style="text-align:center">No items</td></tr>';
+            
+            const title = currentBusinessData?.name || cfg.DSL_HEADER || 'DSL ENTERPRISES';
+            const address = currentBusinessData?.address || cfg.DSL_SUBHEADER || '';
+            const phone = currentBusinessData?.phone || '';
+
             return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bill ${escapeBillHtml(billNo)}</title>
 <style>${thermalBillSharedCss()}</style></head><body><div class="bill">
-<div class="dsl-title">${escapeBillHtml(cfg.DSL_HEADER || 'DSL ENTERPRISES')}</div>
-<div class="dsl-sub">${escapeBillHtml(cfg.DSL_SUBHEADER || '')}</div>
-${meta}
-<table class="bill-table">
-<thead><tr>
-<th>Item / brand (Qty × Rate)</th><th>Free Qty</th><th>Return Qty</th><th>Amount</th>
-</tr></thead><tbody>${tableBody}</tbody></table>
-<div class="summary">
-<div class="summary-row"><span>Sub Total</span><span>${subTotal.toFixed(2)}</span></div>
-<div class="summary-row"><span>Total</span><span>${total.toFixed(2)}</span></div>
-<div class="summary-row"><span>Paid (Cash)</span><span>${paidCash.toFixed(2)}</span></div>
-<div class="summary-row"><span>Balance</span><span>${balance.toFixed(2)}</span></div>
-</div>
-<div class="footer">Thank You! Come Again......</div>
-<div class="agent-note">Agent: ${escapeBillHtml(currentBusinessData && currentBusinessData.name ? currentBusinessData.name : (cfg.AGENT_FOOTER_NOTE || 'MW Trading Solutions'))}</div>
-<div class="softby">${escapeBillHtml(cfg.FOOTER_DIGIBIZ || 'Software Solution by DIGIBIZ - 0713446500')}</div>
+    <div class="receipt-header">
+        <div class="biz-name">${escapeBillHtml(title)}</div>
+        ${address ? `<div class="biz-info">${escapeBillHtml(address)}</div>` : ''}
+        ${phone ? `<div class="biz-info">TEL: ${escapeBillHtml(phone)}</div>` : ''}
+    </div>
+    <div class="separator"></div>
+    ${meta}
+    <div class="double-separator"></div>
+    <div class="table-head">
+        <span>ITEM / DESCRIPTION</span>
+        <span>AMOUNT</span>
+    </div>
+    <div class="item-list">${rows || '<div style="text-align:center">No items</div>'}</div>
+    <div class="double-separator"></div>
+    <div class="summary-box">
+        <div class="summary-line"><span>SUB TOTAL</span><span>${subTotal.toFixed(2)}</span></div>
+        <div class="grand-total summary-line"><span>GRAND TOTAL</span><span>Rs. ${total.toFixed(2)}</span></div>
+        <div class="summary-line" style="margin-top:5px;"><span>PAID (CASH)</span><span>${paidCash.toFixed(2)}</span></div>
+        <div class="summary-line"><span>BALANCE DUE</span><span>${balance.toFixed(2)}</span></div>
+    </div>
+    <div class="dashed-separator"></div>
+    <div class="footer-section">
+        <div class="thank-you-note">Thank You! Come Again</div>
+        <div class="digibiz-footer">
+            <span class="digibiz-text">Software Solution by DIGIBIZ</span>
+            <span class="digibiz-hotline">Hotline: 0713446500</span>
+        </div>
+    </div>
 </div></body></html>`;
         }
 
@@ -1486,71 +1554,117 @@ ${meta}
             const cfg = window.DigibizMwDslConfig || {};
             const billNo = order.orderNumber || order.id;
             const biz = bizData || {};
-            const title = String(biz.name || 'Invoice').trim() || 'Invoice';
-            const subLine = [biz.address, biz.city, biz.phone || biz.telephone || biz.mobile].filter(Boolean).join(' | ') || ' ';
             const { rows, subTotal, total, paidCash, balance } = computeBillLines(order);
             const meta = buildMetaBlockHtml(order, shopData);
-            const tableBody = rows || '<tr><td colspan="4" style="text-align:center">No items</td></tr>';
+            const tableBody = rows || '<tr><td colspan="3" style="text-align:center">No items</td></tr>';
+
+            // Document Settings
+            const allS = biz.documentSettings || {};
+            const ds = allS['invoice'] || allS['distributor_invoice'] || {};
+            const title = ds.header || biz.name || 'INVOICE';
+            const address = ds.subHeader || [biz.address, biz.city, biz.phone].filter(Boolean).join(' | ') || '';
+            const footerNote = ds.footer || 'Thank You! Come Again';
+
             return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bill ${escapeBillHtml(billNo)}</title>
 <style>${thermalBillSharedCss()}</style></head><body><div class="bill">
-<div class="biz-title">${escapeBillHtml(title)}</div>
-<div class="biz-sub">${escapeBillHtml(subLine)}</div>
-${meta}
-<table class="bill-table">
-<thead><tr>
-<th>Item / brand (Qty × Rate)</th><th>Free Qty</th><th>Return Qty</th><th>Amount</th>
-</tr></thead><tbody>${tableBody}</tbody></table>
-<div class="summary">
-<div class="summary-row"><span>Sub Total</span><span>${subTotal.toFixed(2)}</span></div>
-<div class="summary-row"><span>Total</span><span>${total.toFixed(2)}</span></div>
-<div class="summary-row"><span>Paid (Cash)</span><span>${paidCash.toFixed(2)}</span></div>
-<div class="summary-row"><span>Balance</span><span>${balance.toFixed(2)}</span></div>
-</div>
-<div class="footer">Thank You! Come Again......</div>
-<div class="softby">${escapeBillHtml(cfg.FOOTER_DIGIBIZ || 'Software Solution by DIGIBIZ - 0713446500')}</div>
+    <div class="header">
+        <div class="biz-title">${escapeBillHtml(title)}</div>
+        ${address ? `<div class="biz-sub">${escapeBillHtml(address)}</div>` : ''}
+    </div>
+    ${meta}
+    <table class="bill-table">
+        <thead><tr><th>ITEM / DETAILS</th><th style="text-align:center">QTY</th><th style="text-align:right">AMOUNT</th></tr></thead>
+        <tbody>${tableBody}</tbody>
+    </table>
+    <div class="summary-box">
+        <div class="summary-row"><span>SUB TOTAL</span><span>${subTotal.toFixed(2)}</span></div>
+        <div class="summary-row grand"><span>GRAND TOTAL</span><span>Rs. ${total.toFixed(2)}</span></div>
+        <div class="summary-row" style="margin-top:10px;"><span>PAID (CASH)</span><span>${paidCash.toFixed(2)}</span></div>
+        <div class="summary-row"><span>BALANCE DUE</span><span style="font-weight:900">Rs. ${balance.toFixed(2)}</span></div>
+    </div>
+    <div class="footer">
+        <div class="thank-you">${escapeBillHtml(footerNote)}</div>
+        <div class="digibiz-footer">
+            <span class="digibiz-text">Software Solution by DIGIBIZ</span>
+            <span class="digibiz-hotline">Hotline: 0713446500</span>
+        </div>
+    </div>
 </div></body></html>`;
         }
 
-        async function printDistributorThermalBill(orderId) {
+        async function printDistributorThermalBill(orderId, btnEl, forceDebug) {
+            if (btnEl) {
+                btnEl.disabled = true;
+                btnEl.dataset.origHtml = btnEl.innerHTML;
+                btnEl.innerHTML = '⌛ Loading...';
+            }
+            if (forceDebug) sessionStorage.setItem('DIGIBIZ_DEBUG_PRINT_ACTIVE', '1');
             window.__DIGIBIZ_PRINT_DEBUG_LINES__ = [];
             pushPrintDebugLine('UA: ' + String(navigator.userAgent || '').slice(0, 120));
             pushPrintDebugLine('printDistributorThermalBill orderId=' + orderId);
             try {
-                const cached = allOrders.find((o) => o.id === orderId);
-                pushPrintDebugLine('order in cache: ' + !!cached + ' status=' + (cached && cached.status) + ' items=' + (cached && Array.isArray(cached.items) ? cached.items.length : 'n/a') + ' totalAmount=' + (cached && cached.totalAmount));
-                const order = await resolveOrderForDisplay(orderId);
-                pushPrintDebugLine('after Firestore merge: items=' + (order && Array.isArray(order.items) ? order.items.length : 'n/a') + ' totalAmount=' + (order && order.totalAmount));
+                // Try to use cached data immediately to preserve user interaction context for mobile
+                let order = allOrders.find((o) => o.id === orderId);
+                const hasFullData = order && Array.isArray(order.items) && order.items.length > 0;
+                
+                pushPrintDebugLine('order in cache: ' + !!order + ' hasItems=' + hasFullData);
+
+                if (!hasFullData) {
+                    pushPrintDebugLine('fetching from Firestore (this may block popups/intents on some mobile browsers)');
+                    order = await resolveOrderForDisplay(orderId);
+                }
+
                 if (!order) {
-                    pushPrintDebugLine('abort: no order in cache or Firestore');
-                    if (isMwPrintDebugEnabled()) showDigibizPrintDebugModal('Print stopped');
+                    pushPrintDebugLine('abort: no order data found');
+                    if (isMwPrintDebugEnabled()) showDigibizPrintDebugModal('Print stopped: No data');
                     return;
                 }
+
                 let shopData = null;
-                try {
-                    if (order.shopId) {
+                if (order.shopId) {
+                    try {
                         const s = await db.collection('shops').doc(order.shopId).get();
                         if (s.exists) shopData = s.data();
-                        pushPrintDebugLine('shop doc: ' + (s.exists ? 'ok' : 'missing'));
-                    } else {
-                        pushPrintDebugLine('shopId empty');
+                    } catch (e) {
+                        pushPrintDebugLine('shop lookup error: ' + e.message);
                     }
-                } catch (e) {
-                    pushPrintDebugLine('shop lookup: ' + (e && e.message));
-                    console.warn('Shop lookup failed', e);
                 }
-                const isMw = !!(window.DigibizMwDslConfig && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
-                pushPrintDebugLine('isMw bill template: ' + isMw);
-                const html = isMw
+
+                const isMw = isMwTradingBusiness();
+                // If user has custom document settings for invoice header, prioritize generic template for branding
+                const ds = (currentBusinessData && currentBusinessData.documentSettings) || {};
+                const invSettings = ds['invoice'] || ds['distributor_invoice'] || {};
+                const hasCustomBranding = !!(invSettings.header || ds.invoiceHeaderOverride);
+
+                pushPrintDebugLine('template logic: isMw=' + isMw + ' hasCustomBranding=' + hasCustomBranding);
+                
+                const html = (isMw && !hasCustomBranding)
                     ? buildMwDslThermalBillHtml(order, shopData)
                     : buildGenericThermalBillHtml(order, shopData, currentBusinessData);
-                await openAndPrintInvoice(html);
-                pushPrintDebugLine('openAndPrintInvoice finished (timers may still run)');
-                if (isMwPrintDebugEnabled()) showDigibizPrintDebugModal('80mm print trace — read top to bottom');
+
+                // SYNC-like CALL for mobile intent preservation
+                const handled = await tryMwBluetoothPrintSync(html);
+                if (handled) {
+                    pushPrintDebugLine('Intent handled synchronously');
+                } else {
+                    await openAndPrintInvoice(html);
+                }
+                pushPrintDebugLine('openAndPrintInvoice finished');
+                
+                if (isMwPrintDebugEnabled() && sessionStorage.getItem('DIGIBIZ_DEBUG_PRINT_ACTIVE') === '1') {
+                    showDigibizPrintDebugModal('Print Trace');
+                    sessionStorage.removeItem('DIGIBIZ_DEBUG_PRINT_ACTIVE');
+                }
             } catch (err) {
-                pushPrintDebugLine('FATAL: ' + (err && err.message) + '\n' + (err && err.stack));
+                pushPrintDebugLine('FATAL: ' + (err && err.message));
                 console.error(err);
-                if (isMwPrintDebugEnabled()) showDigibizPrintDebugModal('Print error');
+                if (isMwPrintDebugEnabled()) showDigibizPrintDebugModal('Print Error');
                 else alert('Print error: ' + (err && err.message ? err.message : String(err)));
+            } finally {
+                if (btnEl) {
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = btnEl.dataset.origHtml || '🖨 Print 80mm';
+                }
             }
         }
 
@@ -2031,6 +2145,7 @@ ${meta}
             const wrap = document.getElementById('lorryFilterWrap');
             const enabled = !!(window.DigiBizDistributorLorryStock
                 && currentUser
+                && currentUser.email
                 && window.DigiBizDistributorLorryStock.activeForSession(currentUser.email, currentBusinessId));
             if (!sel || !wrap || !enabled) {
                 if (wrap) wrap.style.display = 'none';
@@ -2601,13 +2716,18 @@ ${meta}
                 </div>
             `;
 
-            const print80 = `<button type="button" class="btn btn-print" onclick="printDistributorThermalBill('${order.id}')">🖨 Print 80mm</button>`;
+            const print80 = `<button type="button" class="btn btn-print" onclick="printDistributorThermalBill('${order.id}', this)">🖨 Print 80mm</button>`;
             const adminEd = showOrderEditButton(order)
                 ? `<button type="button" class="btn btn-view" onclick="openAdminOrderEditFromView('${order.id}')">✏️ Edit</button>` : '';
             const canApprove = canApproveInvoices();
             const canReject = canRejectInvoices();
 
             let actions = `${print80}${adminEd}`;
+            const collected = Number(order.collectionAmount != null ? order.collectionAmount : order.collectedAmount) || 0;
+            if (collected > 0) {
+                actions += `<button type="button" class="btn btn-print" style="background:#0891b2;" onclick="printOrderCollectionReceipt('${order.id}')">🖨 Collection Receipt</button>`;
+            }
+
             if (order.status === 'pending') {
                 actions += (canApprove ? `<button class="btn btn-approve" onclick="approveOrder('${order.id}'); closeModal();">✓ Approve</button>` : '') +
                            (canReject ? `<button class="btn btn-reject" onclick="rejectOrder('${order.id}'); closeModal();">✕ Reject</button>` : '');
@@ -2619,6 +2739,112 @@ ${meta}
             modalActions.innerHTML = actions;
 
             modal.style.display = 'flex';
+        }
+
+        async function printOrderCollectionReceipt(orderId) {
+            const order = await resolveOrderForDisplay(orderId);
+            if (!order) return;
+            const amt = Number(order.collectionAmount != null ? order.collectionAmount : order.collectedAmount) || 0;
+            if (amt <= 0) {
+                alert('No collection amount recorded for this order.');
+                return;
+            }
+
+            try {
+                const bid = currentBusinessId;
+                const bizData = currentBusinessData || {};
+                const docSettings = bizData.documentSettings || {};
+                const s = docSettings.collection_receipt || {};
+
+                const header = s.header || bizData.name || 'Collection Receipt';
+                const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+                const footer = s.footer || 'Thank you for your business!';
+                const agentNote = s.showAgentDetails ? `Rep: ${order.repName || order.repId}` : '';
+
+                // Calculate balance if possible
+                const total = Number(order.totalAmount || 0);
+                const bal = Math.max(0, total - amt);
+
+                const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Collection Receipt - ${order.orderNumber || order.id.slice(-8)}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 5mm; }
+            body { width: 70mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; line-height: 1.4; color: #000; padding: 10px; width: 70mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 10px; margin: 4px 0 0; }
+        .receipt-title { font-size: 13px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; text-decoration: underline; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .meta-label { font-weight: 600; }
+        .amount-box { border: 2px solid #000; padding: 8px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: 800; }
+        .balance-box { background: #f0f0f0; padding: 6px; text-align: center; font-size: 11px; margin-top: 10px; border-radius: 4px; }
+        .footer { text-align: center; font-size: 10px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; }
+        .sig-space { margin-top: 40px; display: flex; justify-content: space-between; font-size: 10px; }
+        .sig-line { border-top: 1px solid #000; width: 45%; text-align: center; padding-top: 2px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Collection Receipt</div>
+    
+    <div class="meta-row"><span class="meta-label">Invoice No:</span><span>${order.orderNumber || order.id.slice(-8).toUpperCase()}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${new Date().toLocaleDateString()}</span></div>
+    <div class="meta-row"><span class="meta-label">Customer:</span><span>${order.shopName || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Pay Mode:</span><span>CASH/CHEQUE</span></div>
+    
+    <div class="amount-box">Rs. ${amt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+    
+    <div style="font-size:11px; margin-bottom:10px;">
+        Received against Invoice <strong>#${order.orderNumber || order.id.slice(-8)}</strong> 
+        of Rs. ${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}.
+    </div>
+
+    <div class="balance-box">
+        Outstanding for this Invoice: <strong>Rs. ${bal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+    </div>
+    
+    <div class="sig-space">
+        <div class="sig-line">Customer</div>
+        <div class="sig-line">Authorized</div>
+    </div>
+    
+    <div class="footer">
+        <div>${footer}</div>
+        ${agentNote ? `<div style="margin-top:4px;">${agentNote}</div>` : ''}
+        <div style="font-size: 8px; color: #666; margin-top: 8px;">Software Solution by DIGIBIZ - 0713446500</div>
+    </div>
+
+    <sc' + 'ript>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    </sc' + 'ript>
+</body>
+</html>`;
+
+                const win = window.open('', '_blank', 'width=400,height=600');
+                if (!win) {
+                    alert('Popup blocked. Please allow popups to print the receipt.');
+                    return;
+                }
+                win.document.write(html);
+                win.document.close();
+
+            } catch (e) {
+                console.error(e);
+                alert('Failed to generate receipt: ' + e.message);
+            }
         }
 
         function closeModal() {
@@ -2833,132 +3059,132 @@ ${meta}
         });
 
         firebase.auth().onAuthStateChanged(async (user) => {
-            if (user) {
-                currentUser = user;
-                currentBusinessId = getBusinessIdFromStorage();
-                if (!currentBusinessId && String(user.email || '').trim().toLowerCase() === MW_TRADING_OWNER_EMAIL) {
-                    // Keep MW owner pinned to canonical MW business so dashboard listeners always target correct tenant.
-                    currentBusinessId = MW_TRADING_BUSINESS_ID;
-                }
-                if (!currentBusinessId) {
-                    const context = window.dashboardCore ? await window.dashboardCore.getContext(user) : null;
-                    currentBusinessId = context ? context.businessId : null;
-                }
-                if (!currentBusinessId) {
-                    alert('Please select a business first');
-                    window.location.href = '/modules/core/dashboard.html';
-                    return;
-                }
-                localStorage.setItem('currentBusinessId', currentBusinessId);
-                sessionStorage.setItem('currentBusinessId', currentBusinessId);
-                localStorage.setItem('selectedBusinessId', currentBusinessId);
-                sessionStorage.setItem('selectedBusinessId', currentBusinessId);
-                localStorage.setItem('currentBusinessType', 'distributor');
-                sessionStorage.setItem('currentBusinessType', 'distributor');
-                lastSeenBusinessId = currentBusinessId;
-                const roleInfo = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
-                let userRole = String(roleInfo?.role || '').toUpperCase();
-                try {
-                    const bu = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(user.uid).get();
-                    if (bu.exists && bu.data().role) userRole = String(bu.data().role).toUpperCase();
-                } catch (e) { /* ignore */ }
-                __ORDER_STATUS_ROLE__ = userRole;
-                __REP_DOC_ID__ = null;
-                if (userRole === 'REP') {
-                    try {
-                        let rs = await db.collection('reps').where('userId', '==', user.uid).where('businessId', '==', currentBusinessId).limit(1).get();
-                        if (rs.empty) rs = await db.collection('reps').where('userId', '==', user.uid).limit(1).get();
-                        if (rs.empty && user.email) {
-                            rs = await db.collection('reps').where('email', '==', user.email).where('businessId', '==', currentBusinessId).limit(1).get();
-                        }
-                        if (!rs.empty) __REP_DOC_ID__ = rs.docs[0].id;
-                    } catch (e) { console.warn('Rep profile lookup failed', e); }
-                    const hint = document.getElementById('repOrderMobileHint');
-                    if (hint) hint.style.display = 'block';
-                    const sub = document.getElementById('orderStatusPageSubtitle');
-                    if (sub) sub.textContent = __REP_DOC_ID__
-                        ? 'Showing your orders only. Managers approve or dispatch from the same queue.'
-                        : 'Rep profile not linked — contact the owner. You can still open the mobile order app.';
-                    const rsSec = document.getElementById('repSummarySection');
-                    if (rsSec) rsSec.style.display = 'none';
-                } else {
-                    const hintOff = document.getElementById('repOrderMobileHint');
-                    if (hintOff) hintOff.style.display = 'none';
-                    const rsSec = document.getElementById('repSummarySection');
-                    if (rsSec) rsSec.style.display = '';
-                }
-                updateHqNewOrderBar();
-                try {
+            try {
+                if (user) {
+                    currentUser = user;
+                    currentBusinessId = getBusinessIdFromStorage();
+                    
+                    if (!currentBusinessId) {
+                        const context = window.dashboardCore ? await window.dashboardCore.getContext(user) : null;
+                        currentBusinessId = context ? context.businessId : null;
+                    }
+                    
+                    if (!currentBusinessId) {
+                        alert('Please select a business first');
+                        window.location.href = '/modules/core/dashboard.html';
+                        return;
+                    }
+
+                    console.log('[DEBUG] Dashboard Context Resolve:', { bid: currentBusinessId });
+
+                    localStorage.setItem('currentBusinessId', currentBusinessId);
+                    sessionStorage.setItem('currentBusinessId', currentBusinessId);
+                    localStorage.setItem('selectedBusinessId', currentBusinessId);
+                    sessionStorage.setItem('selectedBusinessId', currentBusinessId);
+                    localStorage.setItem('currentBusinessType', 'distributor');
+                    sessionStorage.setItem('currentBusinessType', 'distributor');
+                    lastSeenBusinessId = currentBusinessId;
+
+                    // Fetch Business Data FIRST to enable feature flags
                     const bdSnap = await db.collection('businesses').doc(currentBusinessId).get();
                     currentBusinessData = bdSnap.exists ? bdSnap.data() : null;
                     currentBusinessName = currentBusinessData ? String(currentBusinessData.name || '') : '';
-                    if (window.DigibizMwDslConfig) {
-                        await window.DigibizMwDslConfig.ensureMwTradingTenantProvisioned(db, currentBusinessId);
-                        const bdAfter = await db.collection('businesses').doc(currentBusinessId).get();
-                        if (bdAfter.exists) {
-                            currentBusinessData = bdAfter.data();
-                            currentBusinessName = currentBusinessData ? String(currentBusinessData.name || '') : '';
-                        }
-                        await window.DigibizMwDslConfig.resolveMwTradingBusinessId(db);
+
+                    const roleInfo = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
+                    let userRole = String(roleInfo?.role || '').toUpperCase();
+                    
+                    const isResolvedOwner = userRole === 'DISTRIBUTOR_OWNER' || userRole === 'BUSINESS_OWNER' || userRole === 'OWNER';
+                    
+                    if (!isResolvedOwner) {
+                        try {
+                            const bu = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(user.uid).get();
+                            if (bu.exists && bu.data().role) userRole = String(bu.data().role).toUpperCase();
+                        } catch (e) { /* ignore */ }
                     }
-                    window.__DIGIBIZ_IS_MW_TRADING__ = !!(window.DigibizMwDslConfig
-                        && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
+
+                    console.log('[DEBUG] User Role Resolved:', userRole);
+                    __ORDER_STATUS_ROLE__ = userRole;
+                    __REP_DOC_ID__ = null;
+                    
+                    if (userRole === 'REP') {
+                        try {
+                            let rs = await db.collection('reps').where('userId', '==', user.uid).where('businessId', '==', currentBusinessId).limit(1).get();
+                            if (rs.empty) rs = await db.collection('reps').where('userId', '==', user.uid).limit(1).get();
+                            if (rs.empty && user.email) {
+                                rs = await db.collection('reps').where('email', '==', user.email).where('businessId', '==', currentBusinessId).limit(1).get();
+                            }
+                            if (!rs.empty) __REP_DOC_ID__ = rs.docs[0].id;
+                        } catch (e) { console.warn('Rep profile lookup failed', e); }
+                        const hint = document.getElementById('repOrderMobileHint');
+                        if (hint) hint.style.display = 'block';
+                        const sub = document.getElementById('orderStatusPageSubtitle');
+                        if (sub) sub.textContent = __REP_DOC_ID__
+                            ? 'Showing your orders only.'
+                            : 'Rep profile not linked — contact the owner.';
+                        const rsSec = document.getElementById('repSummarySection');
+                        if (rsSec) rsSec.style.display = 'none';
+                    } else {
+                        const hintOff = document.getElementById('repOrderMobileHint');
+                        if (hintOff) hintOff.style.display = 'none';
+                        const rsSec = document.getElementById('repSummarySection');
+                        if (rsSec) rsSec.style.display = '';
+                    }
+
+                    updateHqNewOrderBar();
+                    
+                    if (window.DigibizMwDslConfig) {
+                        try {
+                            await window.DigibizMwDslConfig.ensureMwTradingTenantProvisioned(db, currentBusinessId);
+                            await window.DigibizMwDslConfig.resolveMwTradingBusinessId(db);
+                        } catch (e) { console.warn('DSL provision error', e); }
+                    }
+                    
+                    window.__DIGIBIZ_IS_MW_TRADING__ = isMwTradingBusiness();
                     __CHEQUE_PILOT_ENABLED__ = !!(window.DigiBizDistributorLorryStock
                         && window.DigiBizDistributorLorryStock.activeForSession(user.email, currentBusinessId));
-                } catch (e) {
-                    currentBusinessData = null;
-                    currentBusinessName = '';
-                    window.__DIGIBIZ_IS_MW_TRADING__ = false;
-                    __CHEQUE_PILOT_ENABLED__ = false;
-                }
-                document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
-                const activeTabEl = document.querySelector(`.tab[data-status="${currentStatus}"]`);
-                if (activeTabEl) activeTabEl.classList.add('active');
-                await loadStats();
-                await loadOrders();
-                await loadRepSummary();
-                await loadUpcomingChequesWidget();
-                await loadCommissionWidget();
-                await loadAccountingSummaryWidget();
-                document.getElementById('repFilter').addEventListener('change', renderRepSummaryTable);
-                const hs = document.getElementById('chequeHorizonSelect');
-                if (hs) hs.addEventListener('change', renderChequeWidget);
-                const lf = document.getElementById('lorryFilterSelect');
-                if (lf) {
-                    lf.addEventListener('change', function () {
-                        currentLorryFilter = String(lf.value || 'ALL');
-                        try {
-                            const u = new URL(window.location.href);
-                            if (currentLorryFilter === 'ALL') u.searchParams.delete('lorry');
-                            else u.searchParams.set('lorry', currentLorryFilter);
-                            history.replaceState(null, '', u.pathname + '?' + u.searchParams.toString());
-                        } catch (e) { /* ignore */ }
-                        displayOrders();
-                    });
-                }
-                attachDashboardRealtimeListeners();
-                const userEmail = user?.email?.toLowerCase();
-                if (userEmail === 'mwtradingsolutions@gmail.com') {
-                    if (typeof window.loadFreeItemsWidget === 'function') {
-                        await window.loadFreeItemsWidget();
-                    } else {
-                        console.warn('loadFreeItemsWidget not ready, retrying...');
-                        setTimeout(() => {
-                            if (typeof window.loadFreeItemsWidget === 'function') {
-                                window.loadFreeItemsWidget();
-                            }
-                        }, 500);
+
+                    document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
+                    const activeTabEl = document.querySelector(`.tab[data-status="${currentStatus}"]`);
+                    if (activeTabEl) activeTabEl.classList.add('active');
+
+                    await loadStats();
+                    await loadOrders();
+                    await loadRepSummary();
+                    await loadUpcomingChequesWidget();
+                    await loadCommissionWidget();
+                    await loadAccountingSummaryWidget();
+
+                    document.getElementById('repFilter').addEventListener('change', renderRepSummaryTable);
+                    const hs = document.getElementById('chequeHorizonSelect');
+                    if (hs) hs.addEventListener('change', renderChequeWidget);
+                    const lf = document.getElementById('lorryFilterSelect');
+                    if (lf) {
+                        lf.addEventListener('change', function () {
+                            currentLorryFilter = String(lf.value || 'ALL');
+                            displayOrders();
+                        });
                     }
+                    attachDashboardRealtimeListeners();
+
+                    // MW-specific widgets check via feature flag
+                    if (window.__DIGIBIZ_IS_MW_TRADING__) {
+                        if (typeof window.loadFreeItemsWidget === 'function') {
+                            await window.loadFreeItemsWidget();
+                        }
+                    }
+                    bindBusinessSwitchWatchers();
+                } else {
+                    clearDashboardRealtimeListeners();
+                    if (businessWatchdogTimer) {
+                        clearInterval(businessWatchdogTimer);
+                        businessWatchdogTimer = null;
+                    }
+                    window.__DIGIBIZ_DASHBOARD_BID_WATCHER_BOUND__ = false;
+                    window.location.href = '/';
                 }
-                bindBusinessSwitchWatchers();
-            } else {
-                clearDashboardRealtimeListeners();
-                if (businessWatchdogTimer) {
-                    clearInterval(businessWatchdogTimer);
-                    businessWatchdogTimer = null;
-                }
-                window.__DIGIBIZ_DASHBOARD_BID_WATCHER_BOUND__ = false;
-                window.location.href = '/auth/login.html';
+            } catch (initErr) {
+                console.error('[FATAL] Dashboard initialization failed:', initErr);
+                alert('System error during initialization. Please refresh the page.');
             }
         });
     </script>

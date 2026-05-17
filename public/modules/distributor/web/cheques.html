@@ -230,9 +230,99 @@
                     <button class="btn" onclick="window.__chequeSetStatus('${r.id}','cleared')">Cleared</button>
                     <button class="btn bad" onclick="window.__chequeSetStatus('${r.id}','bounced')">Bounced</button>
                     <button class="btn alt" onclick="window.__chequeDelete('${r.id}')">Delete</button>
+                    <button class="btn" onclick="window.__chequePrintReceipt('${r.id}')">🖨️ Receipt</button>
                 </td>
-            </tr>`).join('') : '<tr><td colspan="9" class="muted">No cheques found</td></tr>';
+            </tr>`).join('') : '<tr><td colspan="10" class="muted">No cheques found</td></tr>';
     }
+
+    window.__chequePrintReceipt = async (id) => {
+        const r = state.rows.find((x)=>x.id===id); if(!r) return;
+        try {
+            const bid = state.businessId;
+            const bizSnap = await db.collection('businesses').doc(bid).get();
+            const bizData = bizSnap.exists ? bizSnap.data() : {};
+            const docSettings = bizData.documentSettings || {};
+            const s = docSettings.collection_receipt || {};
+
+            const header = s.header || bizData.name || 'Collection Receipt';
+            const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+            const footer = s.footer || 'Thank you for your business!';
+            const agentNote = s.showAgentDetails && bizData.agentName ? `Agent: ${bizData.agentName}` : '';
+
+            const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Cheque Receipt ${r.chequeNumber}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 5mm; }
+            body { width: 70mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; line-height: 1.4; color: #000; padding: 10px; width: 70mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 10px; margin: 4px 0 0; }
+        .receipt-title { font-size: 13px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; text-decoration: underline; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .meta-label { font-weight: 600; }
+        .amount-box { border: 2px solid #000; padding: 8px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: 800; }
+        .footer { text-align: center; font-size: 10px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; }
+        .sig-space { margin-top: 40px; display: flex; justify-content: space-between; font-size: 10px; }
+        .sig-line { border-top: 1px solid #000; width: 45%; text-align: center; padding-top: 2px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Cheque Collection Receipt</div>
+    
+    <div class="meta-row"><span class="meta-label">Receipt No:</span><span>${id.slice(-8).toUpperCase()}</span></div>
+    <div class="meta-row"><span class="meta-label">Customer:</span><span>${r.customerName || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Bank:</span><span>${r.bankName || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Cheque No:</span><span>${r.chequeNumber || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Issue Date:</span><span>${fmtDate(r.issueDate)}</span></div>
+    <div class="meta-row"><span class="meta-label">Due Date:</span><span>${fmtDate(r.depositDueDate)}</span></div>
+    
+    <div class="amount-box">Rs. ${(Number(r.amount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+    
+    ${r.invoiceNumber ? `<div class="meta-row"><span class="meta-label">Invoice:</span><span>${r.invoiceNumber}</span></div>` : ''}
+    
+    <div class="sig-space">
+        <div class="sig-line">Customer</div>
+        <div class="sig-line">Authorized</div>
+    </div>
+    
+    <div class="footer">
+        <div>${footer}</div>
+        ${agentNote ? `<div style="margin-top:4px;">${agentNote}</div>` : ''}
+        <div style="font-size: 8px; color: #666; margin-top: 8px;">Software Solution by DIGIBIZ - 0713446500</div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    </script>
+</body>
+</html>`;
+
+            const win = window.open('', '_blank', 'width=400,height=600');
+            if (!win) {
+                alert('Popup blocked. Please allow popups to print the receipt.');
+                return;
+            }
+            win.document.write(html);
+            win.document.close();
+        } catch (e) {
+            console.error(e);
+            alert('Failed to generate receipt: ' + e.message);
+        }
+    };
     async function postChequeAccountingOnTransition(prevStatus, nextStatus, chequeId, chequeRow){
         if (!isMwBusiness()) return;
         const row = chequeRow || {};
@@ -420,7 +510,7 @@
         ['fltStatus','fltFrom','fltTo','fltHorizon'].forEach((id)=>$(id).addEventListener('change', renderRows));
     }
     firebase.auth().onAuthStateChanged(async (user) => {
-        if (!user) return void (window.location.href = '/auth/login.html');
+        if (!user) return void (window.location.href = '/');
         state.user = user;
         state.businessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '';
         if (!state.businessId && window.dashboardCore) {

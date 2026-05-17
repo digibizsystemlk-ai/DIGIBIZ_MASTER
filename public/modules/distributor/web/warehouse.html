@@ -235,6 +235,7 @@
             <div id="pickingItems"></div>
             <div style="margin-top: 20px; display: flex; gap: 8px;">
                 <button class="btn btn-primary" onclick="completePicking()">✅ Complete Picking</button>
+                <button class="btn" style="background:#0891b2; color:white;" onclick="printPickingList()">🖨 Print List</button>
                 <button onclick="closePickingModal()" style="padding: 6px 12px;">Close</button>
             </div>
         </div>
@@ -254,11 +255,106 @@
 
     <script>
         let currentBusinessId = null;
+        let currentBusinessData = null;
         let currentTab = 'ready';
         let currentPickingOrder = null;
         let pickedItems = [];
         let __WAREHOUSE_MW_ROLE__=''; // SALES_COORDINATOR / AREA_MANAGER / etc.
         let __LORRY_PILOT_ENABLED__ = false;
+
+        async function printPickingList() {
+            if (!currentPickingOrder) return;
+            try {
+                const bid = currentBusinessId;
+                const bizSnap = await db.collection('businesses').doc(bid).get();
+                const bizData = bizSnap.exists ? bizSnap.data() : {};
+                
+                const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Picking List - ${currentPickingOrder.orderNumber || currentPickingOrder.id.slice(-8)}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 5mm; }
+            body { width: 70mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; line-height: 1.4; color: #000; padding: 10px; width: 70mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .title { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px; }
+        .meta-label { font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #000; padding: 6px; text-align: left; font-size: 11px; }
+        th { background: #f0f0f0; }
+        .qty-col { text-align: center; font-weight: bold; width: 40px; }
+        .footer { text-align: center; font-size: 9px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="title">PICKING LIST</h1>
+        <div style="font-size:10px;">${bizData.name || 'Warehouse'}</div>
+    </div>
+    
+    <div class="meta-row"><span class="meta-label">Order #:</span><span>${currentPickingOrder.orderNumber || currentPickingOrder.id.slice(-8).toUpperCase()}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${new Date().toLocaleDateString()}</span></div>
+    <div class="meta-row"><span class="meta-label">Shop:</span><span>${currentPickingOrder.shopName || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Rep:</span><span>${currentPickingOrder.repName || '-'}</span></div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th class="qty-col">Qty</th>
+                <th>Chk</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${(currentPickingOrder.items || []).map(item => `
+                <tr>
+                    <td>
+                        ${item.productName}
+                        ${item.freeQty ? `<br><small>Free: ${item.freeQty}</small>` : ''}
+                    </td>
+                    <td class="qty-col">${(Number(item.orderedQty) || 0) + (Number(item.freeQty) || 0)}</td>
+                    <td style="width:20px;">[ ]</td>
+                </tr>
+            `).join('')}
+        </tbody>
+    </table>
+    
+    <div style="margin-top:20px; font-size:10px;">
+        Picked By: ____________________<br>
+        Checked By: ___________________
+    </div>
+
+    <div class="footer">
+        DIGIBIZ WAREHOUSE SYSTEM
+    </div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    </script>
+</body>
+</html>`;
+
+                const win = window.open('', '_blank', 'width=400,height=600');
+                if (!win) {
+                    alert('Popup blocked. Please allow popups to print the picking list.');
+                    return;
+                }
+                win.document.write(html);
+                win.document.close();
+
+            } catch (e) {
+                console.error(e);
+                alert('Failed to generate picking list: ' + e.message);
+            }
+        }
 
         function normalizeRole(r){
             return String(r || '')
@@ -881,7 +977,7 @@
                 await loadStats();
                 await loadOrders();
             } else {
-                window.location.href = '/auth/login.html';
+                window.location.href = '/';
             }
         });
     </script>

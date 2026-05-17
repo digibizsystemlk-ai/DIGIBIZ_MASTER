@@ -294,7 +294,7 @@ window.ManufacturerModule = (function () {
         }
     };
 
-    API.getCustomerFinanceSnapshot = async function (bid, cid) {
+    API.getCustomerFinanceSnapshot = async function (bid, cid, optFullName) {
         const empty = {
             payableTotal: 0,
             receivableTotal: 0,
@@ -305,17 +305,32 @@ window.ManufacturerModule = (function () {
         if (!bid || !cid) return empty;
 
         try {
+            const isScrap = API.context && API.context.businessType === 'scrap_collection_center';
+            
+            const inboundColl = isScrap ? 'buying_history' : 'manufacturer_raw_material_history';
+            const outboundColl = isScrap ? 'selling_history' : 'manufacturer_sales';
+
+            // In scrap mode, we often need the full name to query history collections
+            let resolvedName = optFullName || cid;
+            if (isScrap && !optFullName) {
+                // Fallback: try to get name from customers collection if cid looks like a doc ID
+                try {
+                    const cSnap = await db.collection('customers').doc(cid).get();
+                    if (cSnap.exists) resolvedName = cSnap.data().fullName || cid;
+                } catch (e) {
+                    console.warn('[MFG] Could not resolve customer name for snapshot:', e);
+                }
+            }
+
             const [inboundSnap, outboundSnap, financeSnap] = await Promise.all([
-                db.collection('manufacturer_raw_material_history')
+                db.collection(inboundColl)
                     .where('businessId', '==', bid)
-                    .where('customerId', '==', cid)
-                    .where('paymentStatus', 'in', ['PENDING', 'PENDING_CLEARANCE'])
+                    .where(isScrap ? 'supplierName' : 'customerId', '==', resolvedName)
                     .get()
                     .catch(() => ({ docs: [] })),
-                db.collection('manufacturer_sales')
+                db.collection(outboundColl)
                     .where('businessId', '==', bid)
-                    .where('customerId', '==', cid)
-                    .where('paymentStatus', 'in', ['PENDING', 'PENDING_CLEARANCE'])
+                    .where(isScrap ? 'customerName' : 'customerId', '==', resolvedName)
                     .get()
                     .catch(() => ({ docs: [] })),
                 db.collection('finance_transactions')
@@ -325,14 +340,26 @@ window.ManufacturerModule = (function () {
                     .catch(() => ({ docs: [] }))
             ]);
 
-            const payableTotal = inboundSnap.docs.reduce((sum, d) => sum + (Number((d.data() || {}).amount) || 0), 0);
-            const receivableTotal = outboundSnap.docs.reduce((sum, d) => sum + (Number((d.data() || {}).amount) || 0), 0);
+            const payableTotal = inboundSnap.docs.reduce((sum, d) => {
+                const x = d.data() || {};
+                if (!isScrap && !['PENDING', 'PENDING_CLEARANCE'].includes(x.paymentStatus)) return sum;
+                return sum + (Number(x.totalAmount || x.amount) || 0);
+            }, 0);
+            
+            const receivableTotal = outboundSnap.docs.reduce((sum, d) => {
+                const x = d.data() || {};
+                if (!isScrap && !['PENDING', 'PENDING_CLEARANCE'].includes(x.paymentStatus)) return sum;
+                return sum + (Number(x.totalAmount || x.amount) || 0);
+            }, 0);
+
             const paymentGivenTotal = financeSnap.docs.reduce((sum, d) => {
                 const x = d.data() || {};
+                if (x.isActive === false) return sum;
                 return x.type === 'PAYMENT_GIVEN' ? sum + (Number(x.amount) || 0) : sum;
             }, 0);
             const paymentReceivedTotal = financeSnap.docs.reduce((sum, d) => {
                 const x = d.data() || {};
+                if (x.isActive === false) return sum;
                 return x.type === 'PAYMENT_RECEIVED' ? sum + (Number(x.amount) || 0) : sum;
             }, 0);
 

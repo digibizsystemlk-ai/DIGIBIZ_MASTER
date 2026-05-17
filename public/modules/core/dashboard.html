@@ -10,6 +10,7 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="../../core/firebase-init.js?v=58"></script>
     <script src="../../core/event-validation.js?v=58"></script>
@@ -17,10 +18,10 @@
     <script src="../../core/accounts-core.js?v=58"></script>
     <script src="../../core/auth-roles.js?v=111"></script>
     <script src="../../core/business-types.js?v=58"></script>
-    <script src="../../core/dashboard-core.js?v=74"></script>
-    <script src="../../core/finalization-engine.js?v=2"></script>
-    <script src="../../core/subscription-manager.js?v=60"></script>
-    <script src="/core/sidebar.js?v=74"></script>
+    <script src="../../core/dashboard-core.js?v=1001"></script>
+    <script src="../../core/finalization-engine.js?v=3"></script>
+    <script src="../../core/subscription-manager.js?v=61"></script>
+    <script src="/core/sidebar.js?v=1001"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css?v=55">
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
@@ -83,6 +84,12 @@
         .install-actions{display:flex;gap:8px;}
         .install-btn{background:#0f3b2c;color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;}
         .close-btn{background:#f1f5f9;color:#475569;border:none;padding:8px 10px;border-radius:8px;cursor:pointer;}
+        .hero-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:15px;margin-bottom:15px;}
+        .hero-kpi-card{background:#fff;border-radius:20px;padding:30px 20px;text-align:center;box-shadow:0 10px 25px -5px rgba(0,0,0,0.1);border:1px solid #e2e8f0;transition:transform 0.2s;}
+        .hero-kpi-card:hover{transform:translateY(-5px);}
+        .hero-kpi-card h4{font-size:13px;color:#64748b;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;font-weight:800;}
+        .hero-kpi-card .value{font-size:36px;font-weight:900;color:#0f3b2c;}
+
         @media (max-width:1200px){.chart-row{grid-template-columns:repeat(2,1fr);}}
         @media (max-width:768px){.chart-row,.dynamic-widgets{grid-template-columns:1fr;}}
     </style>
@@ -107,6 +114,8 @@
                 <button class="apply-btn" id="refreshDashboardBtn">REFRESH</button>
             </div>
             <div class="kpi-grid" id="kpiGrid"></div>
+            <div class="hero-kpi-grid" id="heroKpiGrid"></div>
+
             <div class="dynamic-widgets" id="dynamicWidgets"></div>
             <div class="accounting-widget" id="coreAccountingSummaryWidget">
                 <div class="rep-summary-head">
@@ -267,7 +276,10 @@
             ,monthStockOut: { label: 'MTD Stock OUT (kg)' }
             ,externalSettlementNet: { label: 'External Settlement Net', currency: true }
             ,advanceOutstanding: { label: 'Advance Outstanding', currency: true }
+            ,cashBalance: { label: 'Cash Balance', currency: true }
+            ,bankBalance: { label: 'Bank Balance', currency: true }
         };
+
         let dashboardContext = null;
         let charts = {};
         let deferredInstallPrompt = null;
@@ -318,10 +330,11 @@
             if (!Array.isArray(ids)) return;
             const txt = currency ? formatLKR(value) : `${value || 0}${suffix}`;
             ids.forEach((id) => {
-                const el = document.getElementById(id);
+                const el = document.getElementById(id) || document.getElementById(`kpi-${id}`);
                 if (el) el.textContent = txt;
             });
         }
+
 
         function renderCharts(metrics) {
             const type = dashboardContext.businessType;
@@ -341,9 +354,9 @@
                 scrap_collection_center: ['Today sales', 'Month sales']
             };
 
-            document.getElementById('revenueChartTitle').textContent = type === 'scrap_collection_center' ? 'Scrap: today vs month sales (Rs)' : (type === 'service' ? 'Service Revenue' : (type === 'hardware' ? 'Sales vs Quotations' : (type === 'manufacturer' ? 'Manufacturing Revenue & Profit' : 'Revenue Comparison')));
-            document.getElementById('ordersChartTitle').textContent = type === 'scrap_collection_center' ? 'Today: buying vs sales (Rs)' : (type === 'service' ? 'Appointments Overview' : (type === 'pharmacy' ? 'Prescription Queue' : 'Orders vs Pending'));
-            document.getElementById('cashFlowChartTitle').textContent = type === 'scrap_collection_center' ? 'Scrap: sales vs buying (7 days, Rs)' : (type === 'service' ? 'Service Cash Flow' : 'Cash Flow');
+            document.getElementById('revenueChartTitle').textContent = type === 'scrap_collection_center' ? 'Scrap: Daily Profit Variation (Last 365 Days)' : (type === 'service' ? 'Service Revenue' : (type === 'hardware' ? 'Sales vs Quotations' : (type === 'manufacturer' ? 'Manufacturing Revenue & Profit' : 'Revenue Comparison')));
+            document.getElementById('ordersChartTitle').textContent = type === 'scrap_collection_center' ? 'Scrap: Daily Total Buying (Last 365 Days)' : (type === 'service' ? 'Appointments Overview' : (type === 'pharmacy' ? 'Prescription Queue' : 'Orders vs Pending'));
+            document.getElementById('cashFlowChartTitle').textContent = type === 'scrap_collection_center' ? 'Scrap: Daily Total Sales (Last 365 Days)' : (type === 'service' ? 'Service Cash Flow' : 'Cash Flow');
 
             const chartDefs = [
                 { key: 'revenueChart', type: 'bar', labels: chartLabels[type] || ['Today', 'Month'], data: type === 'hardware' ? [salesDocCount, quoteCount] : (type === 'scrap_collection_center' ? [Number(metrics.todaySales) || 0, Number(metrics.monthSales) || 0] : [today, month]), colors: ['#0f3b2c', '#10b981'] },
@@ -351,37 +364,66 @@
                 { key: 'cashFlowChart', type: 'line', labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'], data: [cashFlow * 0.2, cashFlow * 0.25, cashFlow * 0.27, cashFlow * 0.28], colors: ['#00d2ff'] }
             ];
 
-            chartDefs.forEach((def) => {
-                const ctx = document.getElementById(def.key);
-                if (!ctx) return;
-                if (charts[def.key]) charts[def.key].destroy();
-                charts[def.key] = new Chart(ctx, {
-                    type: def.type,
-                    data: {
-                        labels: def.labels,
-                        datasets: [{ data: def.data, backgroundColor: def.colors, borderColor: def.colors[0], borderWidth: 2, fill: false }]
-                    },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: def.type !== 'line' } } }
-                });
-            });
-
-            if (type === 'scrap_collection_center' && metrics) {
-                const labels = metrics.scrapTrendLabels || [];
-                const cf = document.getElementById('cashFlowChart');
-                if (cf && labels.length) {
-                    if (charts.cashFlowChart) charts.cashFlowChart.destroy();
-                    charts.cashFlowChart = new Chart(cf, {
+            // SCRAP MODULE OVERRIDES (365 Days)
+            if (type === 'scrap_collection_center' && metrics.dateLabels365) {
+                const labels = metrics.dateLabels365;
+                
+                // 1. Profit Area Chart
+                const ctxP = document.getElementById('revenueChart');
+                if (ctxP) {
+                    if (charts.revenueChart) charts.revenueChart.destroy();
+                    charts.revenueChart = new Chart(ctxP, {
                         type: 'line',
                         data: {
                             labels,
-                            datasets: [
-                                { label: 'Sales (Rs)', data: metrics.scrapTrendSales || [], borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,.12)', fill: true, tension: 0.25, borderWidth: 2 },
-                                { label: 'Buying (Rs)', data: metrics.scrapTrendBuying || [], borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,.1)', fill: true, tension: 0.25, borderWidth: 2 }
-                            ]
+                            datasets: [{ label: 'Daily Profit (Rs)', data: metrics.profit365Data || [], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', fill: true, tension: 0.3, borderWidth: 2, pointRadius: 0 }]
                         },
-                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } } }
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } }, scales: { x: { display: false } } }
                     });
                 }
+
+                // 2. Buying Area Chart
+                const ctxB = document.getElementById('ordersChart');
+                if (ctxB) {
+                    if (charts.ordersChart) charts.ordersChart.destroy();
+                    charts.ordersChart = new Chart(ctxB, {
+                        type: 'line',
+                        data: {
+                            labels,
+                            datasets: [{ label: 'Daily Buying (Rs)', data: metrics.buy365Data || [], borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.15)', fill: true, tension: 0.3, borderWidth: 2, pointRadius: 0 }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } }, scales: { x: { display: false } } }
+                    });
+                }
+
+                // 3. Sales Area Chart
+                const ctxS = document.getElementById('cashFlowChart');
+                if (ctxS) {
+                    if (charts.cashFlowChart) charts.cashFlowChart.destroy();
+                    charts.cashFlowChart = new Chart(ctxS, {
+                        type: 'line',
+                        data: {
+                            labels,
+                            datasets: [{ label: 'Daily Sales (Rs)', data: metrics.sell365Data || [], borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)', fill: true, tension: 0.3, borderWidth: 2, pointRadius: 0 }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } }, scales: { x: { display: false } } }
+                    });
+                }
+            } else {
+                // Default Rendering logic for other business types
+                chartDefs.forEach((def) => {
+                    const ctx = document.getElementById(def.key);
+                    if (!ctx) return;
+                    if (charts[def.key]) charts[def.key].destroy();
+                    charts[def.key] = new Chart(ctx, {
+                        type: def.type,
+                        data: {
+                            labels: def.labels,
+                            datasets: [{ data: def.data, backgroundColor: def.colors, borderColor: def.colors[0], borderWidth: 2, fill: false }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: def.type !== 'line' } } }
+                    });
+                });
             }
 
             if (type === 'distributor' && metrics) {
@@ -661,8 +703,8 @@
             const card = document.getElementById('coreAccountingSummaryWidget');
             if (!card) return;
             const email = String((auth && auth.currentUser && auth.currentUser.email) || '').trim().toLowerCase();
-            const BDK_EMAIL = 'bdkariyapperuma@gmail.com';
-            const BDK_BID = '3slrMTT9dVNlIETKbozzIsVZjjQ2';
+            const BDK_EMAIL = 'biz.sirimal@gmail.com';
+            const BDK_BID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
             if (email !== BDK_EMAIL) {
                 card.style.display = 'none';
                 return;
@@ -725,6 +767,10 @@
         }
 
         async function renderDashboard() {
+            if (!dashboardContext || !dashboardContext.businessId) {
+                console.log('[Dashboard] Waiting for context...');
+                return;
+            }
             if (!finalizationChecked && window.FinalizationEngine && window.FinalizationEngine.runAutoFinalizationForCurrentUser) {
                 finalizationChecked = true;
                 try { await window.FinalizationEngine.runAutoFinalizationForCurrentUser(); } catch (_) {}
@@ -748,6 +794,28 @@
                 const rawValue = metrics[kpi.id] ?? 0;
                 setKpiValue(kpi.id, rawValue, Boolean(kpi.currency), kpi.suffix || '');
             });
+
+            // Special Hero KPI Handling for Scrap
+            const heroGrid = document.getElementById('heroKpiGrid');
+            if (dashboardContext.businessType === 'scrap_collection_center' && heroGrid) {
+                const heroIds = ['cashBalance', 'bankBalance'];
+                heroGrid.innerHTML = heroIds.map(id => {
+                    const kpi = metricMeta[id];
+                    return `<div class="hero-kpi-card"><h4>${kpi.label}</h4><div class="value" id="kpi-${id}">${formatLKR(metrics[id] || 0)}</div></div>`;
+                }).join('');
+                heroGrid.style.display = 'grid';
+                heroGrid.style.gridTemplateColumns = '';
+                heroGrid.style.gap = '';
+                heroGrid.style.marginBottom = '';
+                // Remove from regular grid to avoid double display
+                heroIds.forEach(id => {
+                    const el = document.getElementById(`kpi-${id}`);
+                    if (el && el.closest('.kpi-card')) el.closest('.kpi-card').remove();
+                });
+            } else {
+                if (heroGrid) heroGrid.style.display = 'none';
+            }
+
 
             document.getElementById('pendingOrdersCount').textContent = metrics.pendingOrders || 0;
             document.getElementById('cashFlowCount').textContent = formatLKR(metrics.cashFlow || 0);
@@ -905,7 +973,23 @@
             sessionStorage.setItem('selectedBusinessId', dashboardContext.businessId);
             localStorage.setItem('currentBusinessId', dashboardContext.businessId);
             sessionStorage.setItem('currentBusinessId', dashboardContext.businessId);
+
+            // Redirect Scrap users to Bill page as their primary landing page (Owner)
+            // Redirect Rasika to Expenses directly
+            const isStaging = window.location.hostname.includes('digibiz-test');
+            if (dashboardContext.businessType === 'scrap_collection_center' && !window.location.search.includes('no-redirect') && !isStaging) {
+                const user = firebase.auth().currentUser;
+                const email = String(user && user.email || '').trim().toLowerCase();
+                if (email === 'biz.himeshi@gmail.com') {
+                    window.location.href = '/modules/admin/scrap-expenses.html';
+                } else {
+                    window.location.href = '/modules/admin/scrap-buying.html';
+                }
+                return;
+            }
+
             await renderDashboard();
+
             tearDownManufacturerDashboardRealtime();
             bindManufacturerDashboardRealtime();
             bindDashboardPollInterval();
@@ -947,7 +1031,7 @@
                     await startDashboardForUser(restored);
                     return;
                 }
-                window.location.href = '../../auth/login.html';
+                window.location.href = '/';
             }, 1500);
         });
     </script>

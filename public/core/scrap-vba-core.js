@@ -1,9 +1,19 @@
 // Scrap VBA core translation helpers (phase 1).
+try {
+    console.log("ðŸš€ Scrap VBA Core Starting v71...");
 (function () {
     const DAY_MS = 24 * 60 * 60 * 1000;
     const INVESTOR_MONTHLY_RATE = 8;
     function num(v) {
         return Number(v) || 0;
+    }
+
+    function formatWeight(v) {
+        const n = num(v);
+        if (n === 0) return '0';
+        if (Number.isInteger(n)) return n.toString();
+        // Show 3 decimal places for fractions to clearly represent grams (e.g., 1.250, 0.200)
+        return n.toFixed(3);
     }
 
     function ensureSmsDebugEl() {
@@ -135,17 +145,15 @@
         } catch (e) {
             const m = e && (e.message || String(e));
             console.warn("mirrorPendingSmsToRtdb:", m);
-            smsDebug("RTDB mirror failed (Android queue): " + m, false);
+            smsDebug("RTDB mirror failed (Android gateway): " + m, false);
             if (strict) throw e;
             return false;
         }
     }
 
-    const SCRAP_FIRESTORE_TENANT_ID = "oDhSDYHQ2dV1DP33koysmZAqaY13";
-
     /**
      * Prefer users/{uid}.businessId first so pending_sms.businessId passes isBusinessMember(bid) in Firestore rules.
-     * Then localStorage business, then legacy scrap owner doc id. First settings/{id} with smsBalance >= 1 wins.
+     * Then localStorage business, then current user UID as fallback.
      */
     async function getEffectiveSmsWalletBusinessId() {
         await ensureSmsWalletCoreLoaded();
@@ -156,13 +164,14 @@
                 const us = await window.db.collection("users").doc(u.uid).get().catch(() => null);
                 const bid = us && us.exists ? String((us.data() || {}).businessId || "").trim() : "";
                 if (bid) candidates.push(bid);
+                candidates.push(u.uid); // User UID is often the business owner ID
             }
         } catch (e2) { /* ignore */ }
         try {
             const ls = localStorage.getItem("currentBusinessId") || sessionStorage.getItem("currentBusinessId");
             if (ls) candidates.push(String(ls).trim());
         } catch (e) { /* ignore */ }
-        candidates.push(SCRAP_FIRESTORE_TENANT_ID);
+        
         const uniq = [...new Set(candidates.filter(Boolean))];
 
         async function walletTotalFor(bid) {
@@ -181,7 +190,7 @@
             const t = await walletTotalFor(uniq[i]);
             if (t >= 1) return uniq[i];
         }
-        return uniq[0] || SCRAP_FIRESTORE_TENANT_ID;
+        return uniq[0] || (firebase.auth && firebase.auth().currentUser ? firebase.auth().currentUser.uid : "");
     }
 
     async function enqueuePendingSmsForScrap(phone, message) {
@@ -220,7 +229,7 @@
     /**
      * Queues SMS: primary path Firestore transaction (pending_sms + wallet) then RTDB mirror.
      * If Firestore hits write quota (resource-exhausted) but RTDB works, falls back to RTDB-only
-     * (DigiBiz Flutter gateway). Wallet is not debited in that fallback — reconcile when Firestore recovers.
+     * (DigiBiz Flutter gateway). Wallet is not debited in that fallback â€” reconcile when Firestore recovers.
      * @param {string} businessId settings + pending_sms tenant id
      */
     async function enqueuePendingSms(businessId, phone, message) {
@@ -298,8 +307,6 @@
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
                 tx.set(pendingRef, payload);
-                // Intentionally omit initial sms_logs write here: saves 1 Firestore write per SMS (quota).
-                // Gateway / sms-node merge into sms_logs when processing. SMS Log page merges pending_sms + sms_logs.
                 tx.set(settingsRef, {
                     smsWallet: {
                         ...liveWallet,
@@ -316,26 +323,26 @@
             if (postBalance < lowThreshold && window.eventBus && typeof window.eventBus.publish === "function") {
                 window.eventBus.publish("SMS_LOW_BALANCE", { businessId: bizIdStr, smsBalance: postBalance });
             }
-            smsDebug(`SMS queued → ${mobile} (bal ${postBalance})`, true);
+            smsDebug(`SMS queued â†’ ${mobile} (bal ${postBalance})`, true);
             return { ok: true, via: "firestore", id: pendingRef.id, postBalance };
         } catch (error) {
             const code = error && error.code ? String(error.code) : "";
             const detail = [code, error && error.message ? String(error.message) : String(error || "")]
                 .filter(Boolean)
-                .join(" · ");
+                .join(" Â· ");
             const msg = String(error?.message || error || "").toLowerCase();
             const isQuota = isFirestoreQuotaError(code, msg);
             const quotaHint = isQuota
-                ? "\n→ Firestore quota: check Console → Usage / Billing (Blaze) or wait for daily reset."
+                ? "\nâ†’ Firestore quota: check Console â†’ Usage / Billing (Blaze) or wait for daily reset."
                 : "";
             console.warn("enqueuePendingSms failed:", detail, error);
 
             if (msg.includes("wallet exhausted") || msg.includes("no sms credits") || msg.includes("balance 0")) {
-                smsDebug(`SMS queue failed → ${mobile}\n${detail}`, false);
+                smsDebug(`SMS queue failed â†’ ${mobile}\n${detail}`, false);
                 return { ok: false, skipped: "wallet_exhausted", error: detail };
             }
             if (msg.includes("permission") || code === "permission-denied") {
-                smsDebug(`SMS queue failed → ${mobile}\n${detail}`, false);
+                smsDebug(`SMS queue failed â†’ ${mobile}\n${detail}`, false);
                 return { ok: false, skipped: "permission", error: detail };
             }
 
@@ -351,8 +358,8 @@
                         { rethrow: true }
                     );
                     smsDebug(
-                        `SMS queued (Realtime DB) → ${mobile}\n` +
-                            "Firestore write quota exceeded — Flutter gateway reads this queue. " +
+                        `SMS queued (Realtime DB) â†’ ${mobile}\n` +
+                            "Firestore write quota exceeded â€” Flutter gateway reads this queue. " +
                             "Cloud wallet was NOT debited in this path; reconcile credits when Firestore works again.",
                         true
                     );
@@ -365,32 +372,33 @@
                     };
                 } catch (rtdbErr) {
                     const rdet = rtdbErr && (rtdbErr.message || String(rtdbErr));
-                    smsDebug(`SMS queue failed → ${mobile}\n${detail}${quotaHint}\nRTDB fallback failed: ${rdet}`, false);
+                    smsDebug(`SMS queue failed â†’ ${mobile}\n${detail}${quotaHint}\nRTDB fallback failed: ${rdet}`, false);
                     return {
                         ok: false,
                         skipped: "quota_exhausted",
-                        error: `${detail} — RTDB fallback failed: ${rdet}`
+                        error: `${detail} â€” RTDB fallback failed: ${rdet}`
                     };
                 }
             }
 
             if (isQuota && preReadBalance < creditPer) {
-                smsDebug(`SMS queue failed → ${mobile}\n${detail}${quotaHint}`, false);
+                smsDebug(`SMS queue failed â†’ ${mobile}\n${detail}${quotaHint}`, false);
                 return { ok: false, skipped: "wallet_exhausted", error: detail };
             }
 
-            smsDebug(`SMS queue failed → ${mobile}\n${detail}`, false);
+            smsDebug(`SMS queue failed â†’ ${mobile}\n${detail}`, false);
             return { ok: false, skipped: "firestore_error", error: detail };
         }
     }
 
-    async function logEvent(businessId, action, detail, personName) {
+    async function logEvent(businessId, action, detail, personName, amount = 0) {
         if (!window.db || !businessId) return;
         await window.db.collection("scrap_event_log").add({
             businessId,
             action: String(action || ""),
             detail: String(detail || ""),
             personName: String(personName || "System"),
+            amount: Number(amount) || 0,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
     }
@@ -490,10 +498,24 @@
 
     /**
      * One running row per GL account: updates journal/{bid}/account_ledger/{code} (increment).
-     * Legacy journal/{bid}/entries is no longer appended for scrap flows — avoids endless rows.
+     * Legacy journal/{bid}/entries is no longer appended for scrap flows â€” avoids endless rows.
      */
     async function postJournalEntry(businessId, payload) {
-        if (!window.db || !businessId || !payload || !Array.isArray(payload.entries)) return;
+        console.log("[postJournalEntry] Triggered for BID:", businessId, "Payload:", payload);
+        const _db = window.db || (typeof db !== 'undefined' ? db : null);
+        if (!_db) {
+            console.error("[postJournalEntry] FAILED: Firestore instance (db) not found.");
+            return;
+        }
+        if (!businessId) {
+            console.error("[postJournalEntry] FAILED: businessId is missing.");
+            return;
+        }
+        if (!payload || !Array.isArray(payload.entries)) {
+            console.error("[postJournalEntry] FAILED: Invalid payload or missing entries.");
+            return;
+        }
+
         const lines = payload.entries.map((line) => ({
             accountCode: String(line.accountCode || ""),
             accountName: String(line.accountName || ""),
@@ -503,36 +525,64 @@
         const totalDebit = lines.reduce((s, r) => s + num(r.debit), 0);
         const totalCredit = lines.reduce((s, r) => s + num(r.credit), 0);
         if (Math.abs(totalDebit - totalCredit) > 0.01) {
-            console.warn("postJournalEntry skipped: unbalanced lines", payload);
+            console.warn("[postJournalEntry] SKIPPED: unbalanced lines", payload, "Debit:", totalDebit, "Credit:", totalCredit);
             return;
         }
-        const base = window.db.collection("journal").doc(businessId).collection("account_ledger");
-        const batch = window.db.batch();
-        const desc = String(payload.description || "Scrap entry").slice(0, 240);
-        const refType = String(payload.referenceType || "SCRAP_TXN");
-        lines.forEach((line) => {
-            const code = String(line.accountCode || "").trim() || "UNKNOWN";
-            const docId = code.replace(/\//g, "_");
-            const ref = base.doc(docId);
-            batch.set(
-                ref,
-                {
-                    businessId,
-                    accountCode: code,
-                    accountName: String(line.accountName || code),
-                    totalDebit: firebase.firestore.FieldValue.increment(num(line.debit)),
-                    totalCredit: firebase.firestore.FieldValue.increment(num(line.credit)),
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    lastDescription: desc,
-                    lastReferenceType: refType
-                },
-                { merge: true }
-            );
-        });
-        await batch.commit();
+        
+        try {
+            const ledgerBase = _db.collection("journal").doc(businessId).collection("account_ledger");
+            const entryRef = _db.collection("journal").doc(businessId).collection("entries").doc();
+            const batch = _db.batch();
+            const desc = String(payload.description || "Scrap entry").slice(0, 240);
+            const refType = String(payload.referenceType || "SCRAP_TXN");
+            
+            // 1. Log the full journal entry for history/dashboard visibility
+            batch.set(entryRef, {
+                businessId,
+                date: (function() {
+                    const d = payload.date;
+                    if (!d) return firebase.firestore.Timestamp.now();
+                    if (d instanceof firebase.firestore.Timestamp) return d;
+                    if (d.toDate && typeof d.toDate === 'function') return d; // also a timestamp-like
+                    const parsed = new Date(d);
+                    return isNaN(parsed.getTime()) ? firebase.firestore.Timestamp.now() : firebase.firestore.Timestamp.fromDate(parsed);
+                })(),
+                description: desc,
+                reference: String(payload.reference || ""),
+                referenceType: refType,
+                entries: lines,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            // 2. Increment the account-level ledger for optimized reporting
+            lines.forEach((line) => {
+                const code = String(line.accountCode || "").trim() || "UNKNOWN";
+                const docId = code.replace(/\//g, "_");
+                const ref = ledgerBase.doc(docId);
+                batch.set(
+                    ref,
+                    {
+                        businessId,
+                        accountCode: code,
+                        accountName: String(line.accountName || code),
+                        totalDebit: firebase.firestore.FieldValue.increment(num(line.debit)),
+                        totalCredit: firebase.firestore.FieldValue.increment(num(line.credit)),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        lastDescription: desc,
+                        lastReferenceType: refType
+                    },
+                    { merge: true }
+                );
+            });
+            await batch.commit();
+            console.log("[postJournalEntry] SUCCESS: Batch committed for entry:", entryRef.id);
+        } catch (err) {
+            console.error("[postJournalEntry] CRITICAL ERROR during batch commit:", err);
+            throw err;
+        }
     }
 
-    /** Scrap GL: opening baseline + account_ledger (no legacy entries — avoids double-counting stock). */
+    /** Scrap GL: opening baseline + account_ledger (no legacy entries â€” avoids double-counting stock). */
     async function getFlattenedJournalLines(businessId) {
         if (!window.db || !businessId) return [];
         const j = window.db.collection("journal").doc(businessId);
@@ -616,11 +666,11 @@
             const prev = num(row.balance);
             let balance = prev;
             for (let i = 0; i < days; i++) balance += balance * dailyRate;
-            await doc.ref.update({
+            await doc.ref.set({
                 balance,
                 lastInterestAppliedAt: new Date(now).toISOString(),
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
+            }, { merge: true });
             interestAccrued += Math.max(0, balance - prev);
             updated += 1;
         }
@@ -681,18 +731,14 @@
     }
 
     function buildAdvanceBalanceMessage(customerName, balanceValue, whenIso) {
-        return `Hi ${customerName},\nYour Advance Balance Updated.\nAdv due : ${formatLkr(balanceValue)}\nDate: ${new Date(whenIso || Date.now()).toLocaleString()}`;
+        return `Adv update: Rs.${Math.round(num(balanceValue)).toLocaleString()} due. `;
     }
 
     function buildSettlementMessage(customerName, amount) {
         const amt = num(amount);
-        if (amt > 0) {
-            return `Dear ${customerName},\nAs of now, you have to pay us ${formatLkr(amt)}.\nThank you.`;
-        }
-        if (amt < 0) {
-            return `Dear ${customerName},\nAs of now, we have to pay you ${formatLkr(Math.abs(amt))}.\nThank you.`;
-        }
-        return `Dear ${customerName},\nYour balance is now zero and fully settled.\nThank you.`;
+        if (amt > 0) return `Settlement: You have to pay us Rs.${Math.round(amt).toLocaleString()}. `;
+        if (amt < 0) return `Settlement: We have to pay you Rs.${Math.round(Math.abs(amt)).toLocaleString()}. `;
+        return `Settlement: Your balance is now fully settled. `;
     }
 
     function renderTemplate(templateText, vars) {
@@ -720,10 +766,39 @@
     }
 
     async function isScrapSmsEventEnabled(businessId, eventKey) {
+        console.log("[SMS-Debug-v74] STARTING CHECK for:", eventKey);
+        if (!businessId) return false;
         const s = await getScrapSmsSettings(businessId);
-        const ev = s && typeof s.events === 'object' ? s.events : {};
-        return ev && ev[String(eventKey || '').trim()] === true;
+        console.log("[SMS-Debug-v74] Full Settings Object from DB:", s);
+        if (!s) { console.log("[SMS-Debug-v74] NO SETTINGS FOUND in DB"); return false; }
+        
+        const key = String(eventKey || '').trim().toLowerCase();
+        const ev = typeof s.events === 'object' ? s.events : {};
+        console.log("[SMS-Debug-v74] Target Key:", key, "Events Map:", ev);
+        
+        // Check nested events object (preferred)
+        if (ev[key] === true || ev[key] === 'true' || ev[key] === 1) {
+            console.log("[SMS-Debug-v74] MATCH FOUND in nested events object!");
+            return true;
+        }
+
+        // Backward compatibility for root-level flags (e.g., enableBuying, enableBill)
+        const legacyKey = 'enable' + key.charAt(0).toUpperCase() + key.slice(1);
+        if (s[legacyKey] === true || s[legacyKey] === 'true' || s[legacyKey] === 1) {
+            console.log("[SMS-Debug-v74] MATCH FOUND in legacy root-level key:", legacyKey);
+            return true;
+        }
+        
+        // Direct root-level check (just in case)
+        if (s[key] === true || s[key] === 'true' || s[key] === 1) {
+            console.log("[SMS-Debug-v74] MATCH FOUND in direct root key:", key);
+            return true;
+        }
+
+        console.log("[SMS-Debug-v74] RESULT: Event is DISABLED");
+        return false;
     }
+
 
     async function upsertCustomerLedger(businessId, customerName) {
         if (!window.db || !businessId || !customerName) return null;
@@ -751,11 +826,11 @@
         for (const doc of snap.docs) {
             const row = doc.data();
             if (num(row.balance) <= 0) {
-                await doc.ref.update({
+                await doc.ref.set({
                     active: false,
                     closedAt: new Date().toISOString(),
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                }, { merge: true });
                 closed += 1;
             }
         }
@@ -765,94 +840,42 @@
         return { closed };
     }
 
-    function riskStatusByDays(daysSinceSupply) {
-        const d = num(daysSinceSupply);
-        if (d > 10) return { status: "CRITICAL", risk: "EXTREME", color: "#111827" };
-        if (d > 3) return { status: "BLOCKED", risk: "HIGH", color: "#dc2626" };
-        if (d === 3) return { status: "WARNING", risk: "MED", color: "#f59e0b" };
-        return { status: "ACTIVE", risk: "LOW", color: "#16a34a" };
+    function riskStatusByDays(days) {
+        if (days >= 60) return "HIGH RISK (No activity 60+ days)";
+        if (days >= 30) return "MEDIUM RISK (No activity 30+ days)";
+        return "LOW RISK (Active)";
     }
-
-    function riskPriority(status) {
-        const s = String(status || "").toUpperCase();
-        if (s === "CRITICAL") return 4;
-        if (s === "BLOCKED") return 3;
-        if (s === "WARNING") return 2;
+    function riskPriority(days) {
+        if (days >= 60) return 3;
+        if (days >= 30) return 2;
         return 1;
     }
 
     async function runDailyRecovery(businessId) {
-        if (!window.db || !businessId) return { queued: 0 };
-        const snap = await window.db.collection("scrap_loans")
-            .where("businessId", "==", businessId)
-            .where("active", "==", true)
-            .get();
-        let queued = 0;
+        if (!window.db || !businessId) return { processed: 0 };
+        const snap = await window.db.collection("scrap_advances").where("businessId", "==", businessId).get();
+        let processed = 0;
         for (const doc of snap.docs) {
             const row = doc.data();
             const bal = num(row.balance);
             if (bal <= 0) continue;
-            const lastSupplyAt = row.lastSupplyAt ? new Date(row.lastSupplyAt).getTime() : 0;
-            const days = lastSupplyAt ? Math.floor((Date.now() - lastSupplyAt) / DAY_MS) : 999;
-            const riskMeta = riskStatusByDays(days);
-            if (riskMeta.status === "ACTIVE") continue;
-            await window.db.collection("scrap_recovery_queue").add({
-                businessId,
-                loanId: doc.id,
-                customerName: row.customerName || "",
-                balance: bal,
-                daysSinceSupply: days,
-                status: riskMeta.status,
-                risk: riskMeta.risk,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            queued += 1;
+            const last = row.updatedAt ? row.updatedAt.toDate() : new Date();
+            const days = Math.floor((Date.now() - last.getTime()) / DAY_MS);
+            if (days >= 30) {
+                // Future: Enqueue automated reminders
+            }
+            processed++;
         }
-        await logEvent(businessId, "DAILY_RECOVERY", `Queued recoveries: ${queued}`, "System");
-        return { queued };
+        return { processed };
     }
 
     async function sendPromiseReminders(businessId) {
-        if (!window.db || !businessId) return { sent: 0 };
-        if (!(await isScrapSmsEventEnabled(businessId, 'interest'))) return { sent: 0, disabled: true };
-        const [loanSnap, settingsSnap] = await Promise.all([
-            window.db.collection("scrap_loans").where("businessId", "==", businessId).where("active", "==", true).get(),
-            window.db.collection("scrap_sms_settings").doc(businessId).get()
-        ]);
-        const settings = settingsSnap.exists ? settingsSnap.data() : {};
-        const template = String(settings.tplLoan || "Hi {{name}},\nYour loan balance is {{balance}}.\nDate: {{date}}\nThank you.");
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        let sent = 0;
-
-        for (const loanDoc of loanSnap.docs) {
-            const row = loanDoc.data();
-            if (!row.promiseDate) continue;
-            const pDate = new Date(row.promiseDate);
-            pDate.setHours(0, 0, 0, 0);
-            if (pDate.getTime() !== today.getTime()) continue;
-            const cName = String(row.customerName || "").trim();
-            if (!cName) continue;
-            const customerSnap = await window.db.collection("scrap_customers")
-                .where("businessId", "==", businessId)
-                .where("name", "==", cName)
-                .limit(1)
-                .get();
-            const customer = customerSnap.empty ? null : customerSnap.docs[0].data();
-            const phone = customer?.phone || "";
-            if (!phone) continue;
-            const msg = template
-                .replace(/\{\{name\}\}/g, cName)
-                .replace(/\{\{balance\}\}/g, formatLkr(row.balance))
-                .replace(/\{\{date\}\}/g, new Date().toLocaleDateString());
-            await enqueuePendingSms(businessId, phone, msg);
-            sent += 1;
-        }
-        await logEvent(businessId, "PROMISE_REMINDERS", `Reminders queued: ${sent}`, "System");
-        return { sent };
+        // Placeholder for future reminder logic
+        return { sent: 0 };
     }
 
     window.scrapVbaCore = {
+        formatWeight,
         enqueuePendingSms,
         enqueuePendingSmsForScrap,
         getEffectiveSmsWalletBusinessId,
@@ -867,12 +890,115 @@
         renderTemplate,
         isScrapSmsEventEnabled,
         upsertCustomerLedger,
+        getProfitPool: async function(businessId) {
+            if (!window.db || !businessId) return 0;
+            const doc = await window.db.collection("scrap_profit_pool").doc(businessId).get();
+            return Number((doc.data() || {}).balance || 0);
+        },
+        updateProfitPool: async function(businessId, delta, type, note) {
+            if (!window.db || !businessId) return;
+            const d = Number(delta || 0);
+            if (Math.abs(d) < 0.001) return;
+
+            const ref = window.db.collection("scrap_profit_pool").doc(businessId);
+            try {
+                await window.db.runTransaction(async (tx) => {
+                    const snap = await tx.get(ref);
+                    const current = Number((snap.data() || {}).balance || 0);
+                    const next = current + d;
+                    tx.set(ref, {
+                        businessId,
+                        balance: next,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+
+                    // Log the movement
+                    const logRef = window.db.collection("scrap_profit_pool_logs").doc();
+                    tx.set(logRef, {
+                        businessId,
+                        delta: d,
+                        type,
+                        note: String(note || ""),
+                        balanceAfter: next,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                });
+                console.log(`✅ [ProfitPool] Updated: ${type} | Delta: ${d}`);
+            } catch (err) {
+                console.error("❌ [ProfitPool] Transaction FAILED:", err);
+            }
+        },
         checkClosedLoans,
         runDailyRecovery,
         riskStatusByDays,
         riskPriority,
         sendPromiseReminders,
         getInventoryAssetBalance,
-        syncInventoryAssetWithStock
+        syncInventoryAssetWithStock,
+        recalculateProfitPoolFromHistory: async function(businessId) {
+            if (!window.db || !businessId) return { error: "Missing DB or BID" };
+            console.log(`ðŸ”„ [ProfitPool] Recalculating for BID: ${businessId}`);
+            
+            const [itemsSnap, buySnap, revSnap, expSnap] = await Promise.all([
+                window.db.collection('scrap_items').get().catch(() => ({ docs: [] })),
+                window.db.collection('buying_history').where('businessId', '==', businessId).get().catch(() => ({ docs: [] })),
+                window.db.collection('scrap_revenue_history').where('businessId', '==', businessId).get().catch(() => ({ docs: [] })),
+                window.db.collection('scrap_expenses').where('businessId', '==', businessId).get().catch(() => ({ docs: [] }))
+            ]);
+
+            const sellById = {};
+            itemsSnap.docs.forEach(d => {
+                const r = d.data();
+                if (r.businessId === businessId) sellById[d.id] = Number(r.sellingPrice) || 0;
+            });
+
+            // 1. Calculate from Buying History (Margins + Deductions)
+            let totalMargin = 0;
+            let totalDeductions = 0;
+            buySnap.docs.forEach(d => {
+                const b = d.data();
+                const items = Array.isArray(b.items) ? b.items : [];
+                items.forEach(line => {
+                    const w = Number(line.weight) || 0;
+                    const bp = Number(line.buyingPrice) || 0;
+                    const sp = sellById[line.itemId] || 0;
+                    if (sp > 0) totalMargin += w * (sp - bp);
+                });
+                totalDeductions += Number(b.vehicleHireApplied || 0);
+            });
+
+            // 2. Calculate from Revenue History (Misc Income only, avoid double counting purchase-related types)
+            let totalMiscIncome = 0;
+            revSnap.docs.forEach(d => {
+                const r = d.data();
+                const type = String(r.type || '').toUpperCase();
+                // We already counted POTENTIAL_PROFIT (margin) and VEHICLE_HIRE from buying_history
+                if (type !== 'POTENTIAL_PROFIT' && type !== 'VEHICLE_HIRE') {
+                    totalMiscIncome += (Number(r.amount) || 0);
+                }
+            });
+
+            // 3. Subtract Expenses
+            let totalExp = 0;
+            expSnap.docs.forEach(d => totalExp += (Number(d.data().amount) || 0));
+
+            const finalPool = totalMargin + totalDeductions + totalMiscIncome - totalExp;
+
+            const ref = window.db.collection("scrap_profit_pool").doc(businessId);
+            await ref.set({
+                businessId,
+                balance: finalPool,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                recalculatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                source: 'HISTORY_RECALC'
+            }, { merge: true });
+
+            console.log(`✅ [ProfitPool] Recalced: Margin=${totalMargin}, Ded=${totalDeductions}, Misc=${totalMiscIncome}, Exp=${totalExp}, Final=${finalPool}`);
+            return { totalMargin, totalDeductions, totalMiscIncome, totalExp, finalPool };
+        }
     };
+    console.log("✅ Scrap VBA Core Initialized v74");
 })();
+} catch(globalErr) {
+    console.error("âŒ CRITICAL: scrap-vba-core.js failed to load!", globalErr);
+}

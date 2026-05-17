@@ -7,7 +7,6 @@ let retailStaffRole = '';
 /** Resolved from dashboardCore.getContext().userRole (fallback: getUserRole / business staff doc). */
 let dashboardUserRole = '';
 let editingCustomerId = '';
-const SCRAP_OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
 let pendingEditMobile = '';
 let pendingEditName = '';
 let mwTradingActive = false;
@@ -141,6 +140,13 @@ function render() {
         <tr data-id="${x.id || ''}" style="cursor:pointer;${editingCustomerId && x.id === editingCustomerId ? 'background:#eff6ff;' : ''}">
             <td>${x.fullName || '-'}</td>
             <td>${x.mobile || '-'}</td>
+            <td>
+                ${x.whatsapp ? `
+                    <a href="https://wa.me/${normalizeMobile(x.whatsapp)}" target="_blank" style="text-decoration:none; color:#16a34a; font-weight:700;">
+                        📱 ${x.whatsapp}
+                    </a>
+                ` : '-'}
+            </td>
             <td>${customerTypeBadge(x.type || x.context || 'customer')}</td>
             <td>${x.address || '-'}</td>
             <td>${formatTotalPurchases(x)}</td>
@@ -163,6 +169,7 @@ function render() {
             editingCustomerId = String(row.id || '');
             document.getElementById('fullName').value = row.fullName || '';
             document.getElementById('mobile').value = row.mobile || '';
+            document.getElementById('whatsapp').value = row.whatsapp || '';
             document.getElementById('address').value = row.address || '';
             const ctx = String(row.type || row.context || 'Customer');
             const sel = document.getElementById('context');
@@ -227,6 +234,7 @@ function tryAutoEditFromUrl() {
     editingCustomerId = String(row.id || '');
     document.getElementById('fullName').value = row.fullName || '';
     document.getElementById('mobile').value = row.mobile || '';
+    document.getElementById('whatsapp').value = row.whatsapp || '';
     document.getElementById('address').value = row.address || '';
     const ctx = String(row.type || row.context || 'Customer');
     const sel = document.getElementById('context');
@@ -262,6 +270,7 @@ function computeCustomerDocId(fullName, mobile) {
 async function saveCustomer() {
     const fullName = String(document.getElementById('fullName').value || '').trim();
     const mobile = String(document.getElementById('mobile').value || '').trim();
+    const whatsapp = String(document.getElementById('whatsapp').value || '').trim();
     const address = String(document.getElementById('address').value || '').trim();
     const context = String(document.getElementById('context').value || 'Customer').trim();
     const type = normalizeCustomerType(context);
@@ -294,6 +303,7 @@ async function saveCustomer() {
         fullName,
         firstName: firstName(fullName),
         mobile,
+        whatsapp,
         address,
         type: type,
         context,
@@ -391,6 +401,7 @@ function showEditModal(row) {
     document.getElementById('editCustomerId').value = String(row.id || '');
     document.getElementById('editCustomerName').value = row.fullName || row.name || '';
     document.getElementById('editCustomerPhone').value = row.mobile || row.phone || '';
+    document.getElementById('editCustomerWhatsapp').value = row.whatsapp || '';
     document.getElementById('editCustomerAddress').value = row.address || '';
     document.getElementById('editCustomerEmail').value = row.email || '';
     document.getElementById('editCustomerCreditLimit').value = formatCreditLimit(row);
@@ -416,6 +427,7 @@ async function saveCustomerEdit() {
     const existingId = String(document.getElementById('editCustomerId').value || '').trim();
     const fullName = String(document.getElementById('editCustomerName').value || '').trim();
     const mobile = String(document.getElementById('editCustomerPhone').value || '').trim();
+    const whatsapp = String(document.getElementById('editCustomerWhatsapp').value || '').trim();
     const address = String(document.getElementById('editCustomerAddress').value || '').trim();
     const email = String(document.getElementById('editCustomerEmail').value || '').trim();
     const creditLimitRaw = String(document.getElementById('editCustomerCreditLimit').value || '').trim();
@@ -448,6 +460,7 @@ async function saveCustomerEdit() {
         fullName,
         firstName: firstName(fullName),
         mobile,
+        whatsapp,
         address,
         type: type,
         context,
@@ -593,9 +606,6 @@ firebase.auth().onAuthStateChanged(async (u) => {
     businessId = (ctx && ctx.businessId) || u.uid;
     businessType = (ctx && ctx.businessType) || 'retail';
     dashboardUserRole = String((ctx && ctx.userRole) || '').trim();
-    if (String(businessType || '').toLowerCase() === 'scrap_collection_center' && String(u.uid) === SCRAP_OWNER_UID) {
-        businessId = SCRAP_OWNER_UID;
-    }
     try {
         const p = new URLSearchParams(window.location.search || '');
         pendingEditMobile = String(p.get('mobile') || '').trim();

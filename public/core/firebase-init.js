@@ -1,21 +1,29 @@
-const firebaseConfig = {
+const liveConfig = {
     apiKey: "AIzaSyBLFefSjFXp84Hg7nnIfuJ18SFcM92bsno",
     authDomain: "digibiz-sys.firebaseapp.com",
     projectId: "digibiz-sys",
     storageBucket: "digibiz-sys.firebasestorage.app",
     messagingSenderId: "761278318158",
     appId: "1:761278318158:web:f4451f5cf5f8762192a51f",
-    /** Realtime Database URL (Console → Realtime Database → copy). Replace region if yours differs. */
     databaseURL: "https://digibiz-sys-default-rtdb.firebaseio.com"
 };
+window.DIGIBIZ_LIVE_CONFIG = liveConfig;
+
+const stagingConfig = {
+    apiKey: "AIzaSyCN5zyp5Hx8bQSIjipCoKLsHW523X0BwUY",
+    authDomain: "digibiz-testing.firebaseapp.com",
+    projectId: "digibiz-testing",
+    storageBucket: "digibiz-testing.firebasestorage.app",
+    messagingSenderId: "723153186300",
+    appId: "1:723153186300:web:b821783c691bb57f3ed679",
+    databaseURL: "https://digibiz-testing-default-rtdb.firebaseio.com"
+};
+
+const firebaseConfig = (window.location.hostname.includes('digibiz-test') || window.location.hostname.includes('digibiz-testing')) ? stagingConfig : liveConfig;
 
 /** Exposed for secondary Auth app (e.g. admin-led staff creation without signing out the owner). */
 window.__DIGIBIZ_FIREBASE_CONFIG__ = firebaseConfig;
 
-/**
- * Secondary Firebase Auth instance: creating a user here does not change the default app's session.
- * @returns {firebase.auth.Auth}
- */
 window.getDigiBizSecondaryAuth = function () {
     var NAME = 'DigiBizStaffSecondary';
     var app;
@@ -34,13 +42,39 @@ if (!firebase.apps.length) {
 window.db = firebase.firestore();
 window.auth = firebase.auth();
 try {
-    window.storage = firebase.storage();
+    if (typeof firebase.storage === 'function') {
+        window.storage = firebase.storage();
+    } else {
+        console.warn('[DigiBiz] Firebase Storage SDK not loaded. Storage features disabled.');
+    }
 } catch (e) {
-    console.warn('[DigiBiz] Firebase Storage init failed (add firebase-storage script on pages that upload files):', e && (e.message || e));
+    console.warn('[DigiBiz] Firebase Storage init failed:', e);
 }
 
 const db = window.db;
 const auth = window.auth;
+
+// Conditional Offline Persistence for Scrap Module
+(function() {
+    const isScrapContext = window.location.pathname.includes('/scrap-') || 
+                          localStorage.getItem('currentBusinessType') === 'scrap_collection_center' ||
+                          sessionStorage.getItem('currentBusinessType') === 'scrap_collection_center';
+    
+    const isStaging = window.location.hostname.includes('digibiz-test');
+    if (isScrapContext && !isStaging) {
+        firebase.firestore().enablePersistence({ synchronizeTabs: true })
+            .then(() => console.info('[DigiBiz] Scrap module offline persistence enabled.'))
+            .catch((err) => {
+                if (err.code === 'failed-precondition') {
+                    console.warn('[DigiBiz] Persistence failed: Multiple tabs open.');
+                } else if (err.code === 'unimplemented') {
+                    console.warn('[DigiBiz] Persistence not supported by this browser.');
+                }
+            });
+    } else if (isStaging) {
+        console.info('[DigiBiz] ✅ Optimized for staging environment.');
+    }
+})();
 
 (function () {
     const MW_TRADING_OWNER_EMAIL = 'mwtradingsolutions@gmail.com';
@@ -225,6 +259,10 @@ const auth = window.auth;
                 localStorage.setItem('selectedBusinessId', KUBUKA_BUSINESS_ID);
                 sessionStorage.setItem('selectedBusinessId', KUBUKA_BUSINESS_ID);
             } catch (e) { /* ignore */ }
+        } else if (email === 'biz.sirimal@gmail.com') {
+            // No longer forcing a test business ID. 
+            // The user is now linked to their real mirrored business in the Testing project.
+            console.info('[DigiBiz] Sirimal email identified. Using Firestore linked business.');
         } else {
             window.__DIGIBIZ_MW_PROFILE_SYNC__ = null;
             try {

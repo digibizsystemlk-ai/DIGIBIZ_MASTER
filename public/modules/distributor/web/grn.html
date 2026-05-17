@@ -180,6 +180,7 @@
         <div class="modal-top">
             <h3 id="grnDetailTitle" class="modal-title">GRN Details</h3>
             <button id="closeGrnModalBtn" class="btn btn-ghost" type="button">Close</button>
+            <button id="printGrnBtn" class="btn btn-lite" type="button" style="background:#0f3b2c; color:white;">🖨️ Print</button>
         </div>
         <div id="grnDetailBody" class="kv"></div>
     </div>
@@ -559,6 +560,91 @@
     function closeGrnDetailsModal() {
         var modal = document.getElementById('grnDetailModal');
         if (modal) modal.classList.remove('open');
+    }
+
+    async function printGrn(row) {
+        if (!row) return;
+        var bid = currentBusinessId;
+        var bizDoc = await db.collection('businesses').doc(bid).get();
+        var bizData = bizDoc.exists ? bizDoc.data() : {};
+        var allS = bizData.documentSettings || {};
+        var ds = allS['grn'] || {};
+        
+        var header = ds.header || bizData.name || 'BUSINESS NAME';
+        var agent = ds.agent || '';
+        var footer = ds.footer || '';
+        var title = ds.title || 'GOODS RECEIVED NOTE (GRN)';
+        var showLogo = ds.showLogo !== undefined ? ds.showLogo : (allS.showLogo !== false);
+        
+        var w = window.open('', '_blank');
+        if (!w) return alert('Please allow popups.');
+
+        var itemsHtml = '';
+        if (Array.isArray(row.items) && row.items.length) {
+            itemsHtml = row.items.map(function(it) {
+                return `<tr>
+                    <td>${esc(it.productName)}</td>
+                    <td style="text-align:right;">${toNum(it.quantity)}</td>
+                    <td style="text-align:right;">${fmtMoney(it.unitPrice || it.buyingPrice)}</td>
+                    <td style="text-align:right;">${fmtMoney(it.lineTotal)}</td>
+                </tr>`;
+            }).join('');
+        } else {
+            itemsHtml = `<tr>
+                <td>${esc(row.productName)}</td>
+                <td style="text-align:right;">${toNum(row.quantity)}</td>
+                <td style="text-align:right;">${fmtMoney(row.buyingPrice)}</td>
+                <td style="text-align:right;">${fmtMoney(row.totalAmount || row.lineTotal)}</td>
+            </tr>`;
+        }
+
+        var html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>GRN ${row.id}</title>
+                <style>
+                    body { font-family: sans-serif; padding: 20px; color: #333; }
+                    .header { text-align: center; margin-bottom: 20px; }
+                    .company { font-size: 20px; font-weight: bold; text-transform: uppercase; }
+                    .title { font-size: 16px; margin-top: 10px; border-bottom: 2px solid #000; padding-bottom: 5px; }
+                    .meta { width: 100%; margin: 20px 0; font-size: 13px; }
+                    .table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                    .table th, .table td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 13px; }
+                    .table th { background: #f2f2f2; }
+                    .footer { margin-top: 40px; text-align: center; font-size: 11px; border-top: 1px solid #ddd; padding-top: 10px; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:60px; margin-bottom:10px;"><br>` : ''}
+                    <div class="company">${esc(header)}</div>
+                    ${agent ? `<div style="font-size:13px; margin-top:5px;">${esc(agent)}</div>` : ''}
+                    <div class="title">${esc(title)}</div>
+                </div>
+                <table class="meta">
+                    <tr><td><strong>GRN ID:</strong> ${esc(row.id)}</td><td style="text-align:right;"><strong>Date:</strong> ${fmtDate(row.date || row.createdAt)}</td></tr>
+                    <tr><td><strong>Supplier:</strong> ${esc(row.supplier || row.supplierName)}</td><td></td></tr>
+                </table>
+                <table class="table">
+                    <thead><tr><th>Product</th><th style="text-align:right;">Qty</th><th style="text-align:right;">Price</th><th style="text-align:right;">Total</th></tr></thead>
+                    <tbody>${itemsHtml}</tbody>
+                </table>
+                <div style="margin-top:20px; text-align:right; font-weight:bold;">
+                    Total Amount: ${fmtMoney(row.totalAmount || row.total || row.lineTotal)}
+                </div>
+                <div class="footer">
+                    ${footer ? `<div style="margin-bottom:10px;">${esc(footer).replace(/\n/g, '<br>')}</div>` : ''}
+                    <div>Software by DIGIBIZ</div>
+                </div>
+                <script>window.print();<\/script>
+            </body>
+            </html>
+        `;
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
     }
     async function loadGrnList() {
         if (!isMwTradingTenant()) return;
@@ -983,7 +1069,7 @@
 
     firebase.auth().onAuthStateChanged(async function (user) {
         if (!user) {
-            window.location.href = '/auth/login.html';
+            window.location.href = '/';
             return;
         }
         currentUser = user;
@@ -1037,13 +1123,24 @@
             if (act === 'edit') { startEditGrn(id); return; }
             if (act === 'delete') { softDeleteGrn(id); return; }
         }
-        var tr = ev.target && ev.target.closest ? ev.target.closest('tr[data-row]') : null;
-        if (!tr) return;
-        var idx = parseInt(tr.getAttribute('data-row'), 10);
-        if (isNaN(idx) || !visibleRows[idx]) return;
-        openGrnDetailsModal(visibleRows[idx]);
+        var rowEl = ev.target.closest('.row-click');
+        if (rowEl && !ev.target.closest('button')) {
+            var idx = parseInt(rowEl.getAttribute('data-row'), 10);
+            var row = visibleRows[idx];
+            if (row) {
+                document.getElementById('grnDetailTitle').dataset.id = row.id;
+                openGrnDetailsModal(row);
+            }
+        }
     });
-    document.getElementById('closeGrnModalBtn').addEventListener('click', closeGrnDetailsModal);
+
+    document.getElementById('closeGrnModalBtn').onclick = closeGrnDetailsModal;
+    document.getElementById('printGrnBtn').onclick = function() {
+        var id = document.getElementById('grnDetailTitle').dataset.id;
+        var row = visibleRows.find(function(x) { return x.id === id; }) || historyRows.find(function(x) { return x.id === id; });
+        if (row) printGrn(row);
+    };
+
     document.getElementById('grnDetailModal').addEventListener('click', function (ev) {
         if (ev.target && ev.target.id === 'grnDetailModal') closeGrnDetailsModal();
     });

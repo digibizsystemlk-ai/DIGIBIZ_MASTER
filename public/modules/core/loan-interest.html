@@ -36,6 +36,14 @@
         th{font-size:12px;text-transform:uppercase;letter-spacing:.3px;color:#166534}
         .sms-debug{font-size:12px;min-height:1.2em;margin-top:12px}
         @media (max-width:980px){.row{grid-template-columns:1fr}}
+        /* Settlement Modal Styles */
+        .modal-ov{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,.6);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+        .modal-card{background:#fff;padding:22px;border-radius:18px;width:100%;max-width:360px;box-shadow:0 20px 40px rgba(0,0,0,.2)}
+        .modal-card h3{margin:0 0 14px;font-size:18px;color:#0f172a}
+        .modal-body{display:flex;flex-direction:column;gap:12px}
+        .modal-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+        .btn-ghost{background:#f1f5f9;color:#475569;border:none;cursor:pointer;padding:10px 16px;border-radius:10px}
+        .btn-primary{background:#15803d;color:#fff;border:none;cursor:pointer;padding:10px 16px;border-radius:10px;font-weight:600}
     </style>
 </head>
 <body>
@@ -62,10 +70,30 @@
         <div id="smsDebug" class="sms-debug" style="color:#334155;"></div>
     </div>
 </div>
+
+<!-- Settlement Modal -->
+<div id="settleModal" class="modal-ov">
+    <div class="modal-card">
+        <h3>Loan Settlement</h3>
+        <div class="modal-body">
+            <div style="font-size:13px;color:#64748b;margin-bottom:4px;" id="settleCustomerName">Customer</div>
+            <input id="settleAmount" type="number" step="0.01" placeholder="Amount to pay">
+            <select id="settleMethod">
+                <option value="CASH">Cash Payment</option>
+                <option value="BANK">Bank Transfer</option>
+            </select>
+        </div>
+        <div class="modal-foot">
+            <button class="btn-ghost" onclick="closeSettleModal()">Cancel</button>
+            <button class="btn-primary" id="confirmSettleBtn">Confirm Pay</button>
+        </div>
+    </div>
+</div>
 <script>
 let businessId = null; const RATE = 10; const customerMap = {};
 let intLoanSweepTimer = null;
 const GL_CASH = { accountCode:'1-1010-01', accountName:'Cash - Main' };
+const GL_BANK = { accountCode:'1-1020-01', accountName:'Bank - Current Account' };
 const GL_INT_AR = { accountCode:'1-1030-12', accountName:'A/R — Interest loans (10%)' };
 const GL_INT_INC = { accountCode:'4-4020-12', accountName:'Service income — Interest loans' };
 function intLoanFullyZero(r){
@@ -220,26 +248,40 @@ async function saveLoan(){
   else showSmsDebug(`Issue SMS skipped for ${nm}: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
   document.getElementById('amount').value=''; await loadRows();
 }
+function closeSettleModal(){ document.getElementById('settleModal').style.display='none'; }
 async function repay(id){
-  const txt = prompt('Repayment amount'); const pay = Number(txt||0); if(pay<=0) return;
   const ref = db.collection('loan_interest_entries').doc(id); const snap = await ref.get(); if(!snap.exists) return;
-  const r = snap.data()||{}; let remain = pay;
-  if (!confirm(`Confirm repayment?\nCustomer: ${r.customerName || '-'}\nAmount: Rs.${pay.toFixed(2)}`)) return;
-  let intOut = Number(r.interestOutstanding||0); let principal = Number(r.principalOutstanding||0);
-  const intPaid = Math.min(intOut, remain); intOut -= intPaid; remain -= intPaid;
-  const principalPaid = Math.min(principal, remain); principal -= principalPaid; remain -= principalPaid;
-  const tot = (Number(principal)||0)+(Number(intOut)||0);
-  const patch = { interestOutstanding:intOut, principalOutstanding:principal, active: tot > 0.0001, updatedAt:new Date() };
-  if (tot <= 0.0001 && window.LoanZeroCleanup) patch.pendingRemovalAt = window.LoanZeroCleanup.removalTimestamp();
-  else patch.pendingRemovalAt = firebase.firestore.FieldValue.delete();
-  await ref.set(patch,{merge:true});
-  await addJournal(`Interest loan repayment - ${r.customerName||'-'}`,[{...GL_CASH,debit:pay,credit:0},{...GL_INT_AR,debit:0,credit:principalPaid},{...GL_INT_INC,debit:0,credit:intPaid}],'LOAN_INTEREST_REPAY',{ collection: 'loan_interest_entries', docId: id });
-  const totalDue = (Number(principal)||0) + (Number(intOut)||0);
-  const mob = pickMobile(r) || (r.customerId ? pickMobile(customerMap[r.customerId]) : '');
-  const smsRes = await enqueueSms(mob, `Dear ${r.customerName || 'customer'}, repayment recorded Rs.${pay.toFixed(2)}. Principal Rs.${principal.toFixed(2)}, interest due Rs.${intOut.toFixed(2)}, total due Rs.${totalDue.toFixed(2)}.`);
-  if (smsRes?.ok) showSmsDebug(`Repayment SMS queued for ${r.customerName || 'customer'}.`, true);
-  else showSmsDebug(`Repayment SMS skipped: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
-  await loadRows();
+  const r = snap.data()||{};
+  document.getElementById('settleCustomerName').textContent = `Settling loan for: ${r.customerName || '-'}`;
+  const totalDueNow = (Number(r.principalOutstanding||0) + Number(r.interestOutstanding||0));
+  document.getElementById('settleAmount').value = totalDueNow.toFixed(2);
+  document.getElementById('settleModal').style.display = 'flex';
+  document.getElementById('confirmSettleBtn').onclick = async () => {
+    const pay = Number(document.getElementById('settleAmount').value||0); if(pay<=0) return alert('Enter valid amount');
+    const method = document.getElementById('settleMethod').value;
+    const GL_PAY = method === 'BANK' ? GL_BANK : GL_CASH;
+    const btn = document.getElementById('confirmSettleBtn');
+    btn.disabled = true; btn.textContent = 'Processing...';
+    try {
+        let remain = pay;
+        let intOut = Number(r.interestOutstanding||0); let principal = Number(r.principalOutstanding||0);
+        const intPaid = Math.min(intOut, remain); intOut -= intPaid; remain -= intPaid;
+        const principalPaid = Math.min(principal, remain); principal -= principalPaid; remain -= principalPaid;
+        const tot = (Number(principal)||0)+(Number(intOut)||0);
+        const patch = { interestOutstanding:intOut, principalOutstanding:principal, active: tot > 0.0001, updatedAt:new Date() };
+        if (tot <= 0.0001 && window.LoanZeroCleanup) patch.pendingRemovalAt = window.LoanZeroCleanup.removalTimestamp();
+        else patch.pendingRemovalAt = firebase.firestore.FieldValue.delete();
+        await ref.set(patch,{merge:true});
+        await addJournal(`Interest loan repayment - ${r.customerName||'-'} (${method})`,[{...GL_PAY,debit:pay,credit:0},{...GL_INT_AR,debit:0,credit:principalPaid},{...GL_INT_INC,debit:0,credit:intPaid}],'LOAN_INTEREST_REPAY',{ collection: 'loan_interest_entries', docId: id });
+        const totalDueAfter = (Number(principal)||0) + (Number(intOut)||0);
+        const mob = pickMobile(r) || (r.customerId ? pickMobile(customerMap[r.customerId]) : '');
+        const smsRes = await enqueueSms(mob, `Dear ${r.customerName || 'customer'}, repayment recorded Rs.${pay.toFixed(2)}. Principal Rs.${principal.toFixed(2)}, interest due Rs.${intOut.toFixed(2)}, total due Rs.${totalDueAfter.toFixed(2)}.`);
+        if (smsRes?.ok) showSmsDebug(`Repayment SMS queued for ${r.customerName || 'customer'}.`, true);
+        else showSmsDebug(`Repayment SMS skipped: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
+        closeSettleModal(); await loadRows();
+    } catch(e) { alert(e.message || 'Error'); }
+    finally { btn.disabled = false; btn.textContent = 'Confirm Pay'; }
+  };
 }
 async function deleteAllInterestLoansForBusiness(){
   if (!confirm('Delete ALL interest loan records for this business? This cannot be undone. Existing journal entries are NOT reversed.')) return;
@@ -271,7 +313,7 @@ async function loadRows(){
   document.querySelectorAll('#rows button[data-id]').forEach((b)=>b.onclick=()=>repay(b.dataset.id));
 }
 firebase.auth().onAuthStateChanged(async (u)=>{
-  if(!u){location.href='/auth/login.html';return;}
+  if(!u){location.href='/';return;}
   if (intLoanSweepTimer) { clearInterval(intLoanSweepTimer); intLoanSweepTimer = null; }
   const ctx = await window.dashboardCore.getContext(u);
   businessId = String((ctx&&ctx.businessId)||u.uid);

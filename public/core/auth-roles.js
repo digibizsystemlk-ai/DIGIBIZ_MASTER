@@ -54,7 +54,19 @@ const MASTER_PERMISSIONS = [
     { id: 'canExpensesEdit', label: 'Edit/Manage Expenses', category: 'Finance', status: 'Can: Edit or delete expenses. (වියදම් විස්තර වෙනස් කිරීමට හෝ ඉවත් කිරීමට හැකිය.)', defaultRoles: ['OWNER'] },
     { id: 'canStaffMutate', label: 'Manage Staff Accounts', category: 'Settings', status: 'Can: Manage employee system accounts and roles. (සේවක ගිණුම් සහ අවසරයන් කළමනාකරණයට හැකිය.)', defaultRoles: ['OWNER'] },
     { id: 'canSettingsChange', label: 'Change Business Settings', category: 'Settings', status: 'Menus: Commission Config. Can: Manage commissions & rules. (Settings මෙනුව විවෘත වේ. සැකසුම් සහ කොමිස් ක්‍රම වෙනස් කිරීමට හැකිය.)', defaultRoles: ['OWNER'] },
-    { id: 'canBusinessInfoEdit', label: 'Edit Business Profile', category: 'Settings', status: 'Can: Update business logo & profile details. (ව්‍යාපාරයේ මූලික තොරතුරු වෙනස් කිරීමට හැකිය.)', defaultRoles: ['OWNER'] }
+    { id: 'canBusinessInfoEdit', label: 'Edit Business Profile', category: 'Settings', status: 'Can: Update business logo & profile details. (ව්‍යාපාරයේ මූලික තොරතුරු වෙනස් කිරීමට හැකිය.)', defaultRoles: ['OWNER'] },
+    
+    // Scrap Collection Center Permissions
+    { id: 'canScrapDashboardView', label: 'View Scrap Dashboard', category: 'Scrap', status: 'Menus: Dashboard. Can: View scrap business metrics and pool balance. (Scrap Dashboard එක සහ ලාභ තටාකය බැලීමට හැකිය.)', defaultRoles: ['OWNER'] },
+    { id: 'canScrapBillCreate', label: 'Create Scrap Bills', category: 'Scrap', status: 'Menus: BILL. Can: Record scrap buying from suppliers. (භාණ්ඩ මිලදී ගැනීමේ බිල්පත් සැකසීමට හැකිය.)', defaultRoles: ['OWNER'] },
+    { id: 'canScrapRevenueView', label: 'View Scrap Revenue', category: 'Scrap', status: 'Menus: REVENUE. Can: View profit margins and detailed buying log. (ලාභාංශ සහ මිලදී ගැනීමේ වාර්තා බැලීමට හැකිය.)', defaultRoles: ['OWNER'] },
+    { id: 'canScrapExpensesManage', label: 'Manage Scrap Expenses', category: 'Scrap', status: 'Menus: EXPENSES. Can: Add or edit business expenses. (වියදම් ඇතුළත් කිරීමට සහ කළමනාකරණයට හැකිය.)', defaultRoles: ['OWNER'] },
+    { id: 'canScrapStockView', label: 'View Scrap Stock', category: 'Scrap', status: 'Menus: STOCK. Can: Monitor current inventory levels. (තොග වාර්තා බැලීමට හැකිය.)', defaultRoles: ['OWNER'] },
+    { id: 'canScrapSellCreate', label: 'Create Scrap Sales', category: 'Scrap', status: 'Menus: SELL. Can: Record selling of scrap materials to factories. (විකුණුම් බිල්පත් සැකසීමට හැකිය.)', defaultRoles: ['OWNER'] },
+    { id: 'canScrapBuyingHistoryView', label: 'View Scrap Buying History', category: 'Scrap', status: 'Menus: Buying History. Can: View historical purchase records. (මිලදී ගැනීමේ ඉතිහාසය බැලීමට හැකිය.)', defaultRoles: ['OWNER'] },
+    { id: 'canScrapSellingHistoryView', label: 'View Scrap Selling History', category: 'Scrap', status: 'Menus: Selling History. Can: View historical sales records. (විකුණුම් ඉතිහාසය බැලීමට හැකිය.)', defaultRoles: ['OWNER'] },
+    { id: 'canScrapLoansManage', label: 'Manage Scrap Loans', category: 'Scrap', status: 'Menus: Loans. Can: Issue and manage interest/no-interest loans. (ණය ලබා දීම් සහ කළමනාකරණයට හැකිය.)', defaultRoles: ['OWNER'] },
+    { id: 'canScrapAdvanceManage', label: 'Manage Supplier Advances', category: 'Scrap', status: 'Menus: ADVANCE. Can: Issue advances to suppliers. (සැපයුම්කරුවන්ගේ අත්තිකාරම් මුදල් කළමනාකරණයට හැකිය.)', defaultRoles: ['OWNER'] }
 ];
 
 const PERMISSIONS = {
@@ -158,11 +170,11 @@ const MENU_BY_ROLE = {
         { icon: "📋", name: "Reports", link: "/modules/reports/index.html" },
         { icon: "📈", name: "Sales View", link: "/modules/reports/sales-view.html" }
     ],
-
+    
     REP: [
         { icon: "📝", name: "Rep Order Form", link: "/modules/distributor/mobile/order.html" }
     ],
-
+    
     DISTRIBUTOR_OWNER: [
         { icon: "📊", name: "Distributor Dashboard", link: "/modules/distributor/web/index.html" },
         { icon: "👥", name: "Staff", link: "/modules/company/staff.html" },
@@ -206,38 +218,46 @@ async function getUserRole(userId, businessId = null) {
             console.log('[getUserRole] ensureMwTradingOwnerBizMembership invoked for MW owner uid', userId);
         }
 
-        // 1. Check if SUPER_ADMIN
-        const userDoc = await db.collection('users').doc(userId).get();
-        if (userDoc.exists && userDoc.data().role === 'SUPER_ADMIN') {
-            return { role: 'SUPER_ADMIN', businessId: null };
-        }
-
-        const MW_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
-        // MW_OWNER_EMAIL already declared above at line 191
-
-        // 2. MW owner bootstrap (Preserved for legacy)
-        if (window.auth && window.auth.currentUser && window.auth.currentUser.uid === userId) {
-            const em = String(window.auth.currentUser.email || '').trim().toLowerCase();
-            if (em === MW_OWNER_EMAIL) {
-                return { role: 'distributor_owner', businessId: MW_BUSINESS_ID };
-            }
-        }
-        
-        // 3. Generic Owner/Staff Identification
+        // 1. BUSINESS CONTEXT PRIORITY (Security first)
         if (resolvedBusinessId) {
-            const bizDoc = await db.collection('businesses').doc(resolvedBusinessId).get();
-            if (bizDoc.exists) {
-                const bizData = bizDoc.data();
-                if (bizData.ownerId === userId) {
-                    return { role: 'distributor_owner', businessId: resolvedBusinessId };
+            // Check by UID in business sub-collection
+            const bizUserDoc = await db.collection('businesses').doc(resolvedBusinessId)
+                .collection('users').doc(userId).get();
+            if (bizUserDoc.exists && bizUserDoc.data().role) {
+                return { role: String(bizUserDoc.data().role).toUpperCase(), businessId: resolvedBusinessId };
+            }
+
+            // Check by Email in business sub-collection (for new staff)
+            const em = String((window.auth && window.auth.currentUser && window.auth.currentUser.email) || '').trim().toLowerCase();
+            if (em) {
+                const bizUserEmailDoc = await db.collection('businesses').doc(resolvedBusinessId)
+                    .collection('users').doc(em).get();
+                if (bizUserEmailDoc.exists && bizUserEmailDoc.data().role) {
+                    const data = bizUserEmailDoc.data();
+                    // AUTO-SYNC: Save UID doc for future performance
+                    await db.collection('businesses').doc(resolvedBusinessId).collection('users').doc(userId).set({
+                        ...data,
+                        uid: userId,
+                        linkedAt: new Date()
+                    }, { merge: true });
+                    return { role: String(data.role).toUpperCase(), businessId: resolvedBusinessId };
                 }
             }
 
-            const businessUserDoc = await db.collection('businesses').doc(resolvedBusinessId)
-                .collection('users').doc(userId).get();
-            if (businessUserDoc.exists) {
-                return { role: businessUserDoc.data().role, businessId: resolvedBusinessId };
+            // Check if Owner of this specific business
+            const bizDoc = await db.collection('businesses').doc(resolvedBusinessId).get();
+            if (bizDoc.exists && bizDoc.data().ownerId === userId) {
+                return { role: 'BUSINESS_OWNER', businessId: resolvedBusinessId };
             }
+        }
+
+        // 2. GLOBAL ROLE FALLBACK
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userData = userDoc.exists ? userDoc.data() : {};
+        const globalRole = String(userData.role || '').toUpperCase();
+        
+        if (globalRole === 'SUPER_ADMIN' || globalRole === 'ADMIN') {
+            return { role: 'SUPER_ADMIN', businessId: resolvedBusinessId || null };
         }
         
         return { role: 'VIEWER', businessId: resolvedBusinessId || null };
@@ -393,7 +413,19 @@ window.getBusinessStaffRoles = async function(businessId) {
             canManageRepsWeb: isOwner || isSC || isAM,
             canDeliveriesManage: isOwner || isSC || isAM,
             canExpensesCreate: isOwner || isSC,
-            canExpensesEdit: isOwner
+            canExpensesEdit: isOwner,
+            
+            // Scrap Defaults (Owner has all by default)
+            canScrapDashboardView: isOwner,
+            canScrapBillCreate: isOwner,
+            canScrapRevenueView: isOwner,
+            canScrapExpensesManage: isOwner,
+            canScrapStockView: isOwner,
+            canScrapSellCreate: isOwner,
+            canScrapBuyingHistoryView: isOwner,
+            canScrapSellingHistoryView: isOwner,
+            canScrapLoansManage: isOwner,
+            canScrapAdvanceManage: isOwner
         };
 
         // Special legacy overrides
@@ -428,10 +460,11 @@ window.getBusinessStaffRoles = async function(businessId) {
 
                         // MERGE: Dynamic overrides take absolute priority over defaults
                         perms = { ...perms, ...roleOverrides };
+                        console.log(`[RBAC] Applied dynamic overrides for business ${bid}, roleBand ${b}`);
                     }
                 }
             } catch (e) {
-                console.warn('[RBAC] Permission sync lookup failed.');
+                console.warn('[RBAC] Failed to apply dynamic overrides:', e);
             }
         }
 
@@ -439,12 +472,9 @@ window.getBusinessStaffRoles = async function(businessId) {
     }
 
     window.DigibizDistributorPermissions = {
-        normalizeRole,
         roleBand,
         permissionsForRole,
         fetchAndCachePermissions,
-        clearPermissionCache: (bid) => sessionStorage.removeItem(`digibiz_perms_${bid}`)
+        normalizeRole
     };
 })();
-
-console.log('✅ Auth Roles Core Initialized');

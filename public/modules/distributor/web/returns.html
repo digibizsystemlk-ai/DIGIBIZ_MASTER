@@ -179,7 +179,7 @@
             rows.sort((a, b) => String(b.when).localeCompare(String(a.when)));
             document.getElementById('out').innerHTML = `
                 <table>
-                    <thead><tr><th>Date / time</th><th>Item</th><th>Brand</th><th class="num cat1">Cat 1</th><th class="num cat2">Cat 2</th><th class="num">Value (est.)</th><th>Rep</th><th>Customer</th><th>Note</th></tr></thead>
+                    <thead><tr><th>Date / time</th><th>Item</th><th>Brand</th><th class="num cat1">Cat 1</th><th class="num cat2">Cat 2</th><th class="num">Value (est.)</th><th>Rep</th><th>Customer</th><th>Note</th><th>Actions</th></tr></thead>
                     <tbody>
                         ${rows.length ? rows.map((r) => `<tr>
                             <td>${esc(r.when)}</td>
@@ -191,13 +191,80 @@
                             <td>${esc(r.rep)}</td>
                             <td>${esc(r.customer)}</td>
                             <td>${esc(r.note)}</td>
-                        </tr>`).join('') : '<tr><td colspan="9">No return lines in this range.</td></tr>'}
+                            <td><button class="btn" style="padding:4px 8px; font-size:11px;" onclick="printReturnReceipt(${JSON.stringify(r).replace(/"/g, '&quot;')})">🖨️ Print</button></td>
+                        </tr>`).join('') : '<tr><td colspan="10">No return lines in this range.</td></tr>'}
                     </tbody>
                 </table>`;
         }
+
+        async function printReturnReceipt(row) {
+            const bid = currentBusinessId;
+            const bizDoc = await db.collection('businesses').doc(bid).get();
+            const bizData = bizDoc.exists ? bizDoc.data() : {};
+            const allS = bizData.documentSettings || {};
+            const ds = allS['return_receipt'] || {};
+
+            const header = ds.header || bizData.name || 'BUSINESS NAME';
+            const agent = ds.agent || '';
+            const footer = ds.footer || '';
+            const title = ds.title || 'SALES RETURN RECEIPT';
+            const showLogo = ds.showLogo !== undefined ? ds.showLogo : (allS.showLogo !== false);
+
+            const w = window.open('', '_blank');
+            if (!w) return alert('Please allow popups.');
+
+            const html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>Return Receipt</title>
+                    <style>
+                        body { font-family: sans-serif; padding: 20px; color: #333; width: 80mm; margin: 0 auto; }
+                        .header { text-align: center; margin-bottom: 15px; }
+                        .company { font-size: 16px; font-weight: bold; text-transform: uppercase; }
+                        .title { font-size: 14px; margin-top: 5px; border-bottom: 1px dashed #000; padding-bottom: 5px; }
+                        .meta { width: 100%; margin: 15px 0; font-size: 12px; line-height: 1.6; }
+                        .table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        .table th, .table td { border-bottom: 1px dashed #eee; padding: 5px 0; text-align: left; font-size: 12px; }
+                        .footer { margin-top: 20px; text-align: center; font-size: 10px; color: #666; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:40px; margin-bottom:5px;"><br>` : ''}
+                        <div class="company">${header}</div>
+                        ${agent ? `<div style="font-size:11px;">${agent}</div>` : ''}
+                        <div class="title">${title}</div>
+                    </div>
+                    <div class="meta">
+                        Date: ${row.when}<br>
+                        Customer: ${row.customer}<br>
+                        Rep: ${row.rep}<br>
+                    </div>
+                    <table class="table">
+                        <tr><td><strong>Item:</strong></td><td>${row.item}</td></tr>
+                        <tr><td><strong>Brand:</strong></td><td>${row.brand}</td></tr>
+                        <tr><td><strong>Return Qty (C1):</strong></td><td>${row.cat1}</td></tr>
+                        <tr><td><strong>Return Qty (C2):</strong></td><td>${row.cat2}</td></tr>
+                        <tr><td><strong>Value (Est):</strong></td><td>${money(row.val)}</td></tr>
+                        <tr><td><strong>Reason:</strong></td><td>${row.note}</td></tr>
+                    </table>
+                    <div class="footer">
+                        ${footer ? `<div>${footer}</div>` : ''}
+                        <div>Software by DIGIBIZ - 0713446500</div>
+                    </div>
+                    <script>window.print();<\/script>
+                </body>
+                </html>
+            `;
+            w.document.open();
+            w.document.write(html);
+            w.document.close();
+        }
         document.getElementById('goBtn').addEventListener('click', () => load());
         firebase.auth().onAuthStateChanged(async (user) => {
-            if (!user) { window.location.href = '/auth/login.html'; return; }
+            if (!user) { window.location.href = '/'; return; }
             const ri = await window.getUserRole(user.uid);
             if (String(ri && ri.role || '').toUpperCase() === 'REP') {
                 window.location.href = '/modules/distributor/mobile/order.html';

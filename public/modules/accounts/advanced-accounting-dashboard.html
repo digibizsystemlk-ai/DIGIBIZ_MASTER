@@ -105,6 +105,12 @@
         const formatLKR = (amount) => `LKR ${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         const showToast = (msg) => { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); };
         
+        function toJSDate(d) {
+            if (!d) return new Date();
+            if (typeof d.toDate === 'function') return d.toDate();
+            return new Date(d);
+        }
+        
         function hasAccountingAccess() {
             if (!state.context) return false;
             const role = state.context.userRole;
@@ -138,7 +144,7 @@
         function buildLedger(entries) {
             const ledger = {};
             entries.forEach(entry => {
-                if (entry.isReversed) return;
+                if (entry.isReversed || entry.reversalOf) return;
                 (entry.entries || []).forEach(line => {
                     const accCode = line.accountCode || line.accountId;
                     if (!accCode) {
@@ -203,7 +209,7 @@
                 return;
             }
             
-            const sortedEntries = entriesToDisplay.sort((a, b) => b.date.toDate() - a.date.toDate());
+            const sortedEntries = entriesToDisplay.sort((a, b) => toJSDate(b.date) - toJSDate(a.date));
 
             let html = '';
             sortedEntries.forEach(entry => {
@@ -225,7 +231,7 @@
                 }).join('<br>');
 
                 html += `<tr>
-                    <td>${entry.date.toDate().toLocaleDateString()}</td>
+                    <td>${toJSDate(entry.date).toLocaleDateString()}</td>
                     <td>${entry.description || entry.memo || ''}</td>
                     <td>${accountNamesHtml}</td>
                     <td class="text-right" style="color: #0f3b2c; font-weight: 500;">${debitHtml}</td>
@@ -328,19 +334,24 @@
         }
 
         auth.onAuthStateChanged(async (user) => {
-            if (!user) { window.location.href = '../../auth/login.html'; return; }
+            if (!user) { window.location.href = '/'; return; }
             state.context = await window.dashboardCore.getContext(user);
+            console.log("[Accounting Dashboard] Context Resolved:", state.context);
             
             if (hasAccountingAccess() && state.context.businessId) {
                 const journalRef = db.collection('journal').doc(state.context.businessId).collection('entries');
+                console.log("[Accounting Dashboard] Querying path:", `journal/${state.context.businessId}/entries`);
+                
                 journalRef.orderBy('date', 'desc').onSnapshot(snapshot => {
                     state.journalEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    console.log("[Accounting Dashboard] Entries Fetched:", state.journalEntries.length);
                     updateUI();
                 }, error => {
-                    console.error("Error fetching journal entries: ", error);
+                    console.error("[Accounting Dashboard] Error fetching journal entries: ", error);
                     showToast("Could not load accounting data.", true);
                 });
             } else {
+                console.warn("[Accounting Dashboard] Access denied or businessId missing. BID:", state.context?.businessId);
                 updateUI(); // This will show the "Not enabled" message
             }
         });

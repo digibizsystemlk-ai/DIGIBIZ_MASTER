@@ -46,25 +46,29 @@
                     let fixed = 0;
                     for (const row of docs) {
                         const items = Array.isArray(row.data.items) ? row.data.items : [];
-                        const corrected = items.reduce((sum, item) => {
-                            const orderedQty = Number(item.orderedQty != null ? item.orderedQty : item.qty) || 0;
-                            const unitPrice = Number(item.unitPrice) || 0;
-                            return sum + (orderedQty * unitPrice);
-                        }, 0);
-                        const freeQty = items.reduce((sum, item) => {
-                            return sum + (Number(item.freeQty) || 0);
-                        }, 0);
+                        const recalcedItems = items.map(it => {
+                            const oq = Number(it.orderedQty != null ? it.orderedQty : it.qty) || 0;
+                            const fq = Number(it.freeQty) || 0;
+                            const rq = (Number(it.returnResellQty) || 0) + (Number(it.returnCompanyQty) || 0);
+                            const rate = Number(it.unitPrice) || 0;
+                            return { ...it, totalPrice: Math.max(0, oq - rq) * rate };
+                        });
+                        const corrected = recalcedItems.reduce((sum, it) => sum + (Number(it.totalPrice) || 0), 0);
+                        const freeQty = recalcedItems.reduce((sum, it) => sum + (Number(it.freeQty) || 0), 0);
+                        
                         const current = Number(row.data.totalAmount) || 0;
                         const currentFree = Number(row.data.mwFreeIssuesQty);
                         const freeChanged = Number.isNaN(currentFree) || Math.abs(currentFree - freeQty) > 0.0001;
                         if (Math.abs(corrected - current) < 0.0001 && !freeChanged) continue;
+
                         await row.ref.set({
+                            items: recalcedItems,
                             totalAmount: corrected,
                             subtotal: corrected,
                             mwFreeIssuesQty: freeQty,
-                            billingRule: 'mw_free_qty_excluded',
+                            billingRule: 'mw_free_qty_excluded_v2',
                             correctedAt: new Date(),
-                            correctedBy: 'orders.html.backfill'
+                            correctedBy: 'orders.html.backfill.v2'
                         }, { merge: true });
                         fixed += 1;
                         log('Fixed ' + row.source + '/' + row.id + ' -> total ' + corrected.toFixed(2) + ', free ' + freeQty);

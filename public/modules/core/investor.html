@@ -42,6 +42,10 @@
 </head>
 <body>
 <div class="wrap">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;background:linear-gradient(135deg,#14532d,#0f172a);color:#fff;padding:16px 20px;border-radius:14px;">
+        <h2 style="margin:0;">Investor Ledger</h2>
+        <button type="button" id="clearAllBtn" class="btn-danger" style="padding:10px 16px;border-radius:10px;border:none;cursor:pointer;font-size:13px;font-weight:700;">Clear all investor data</button>
+    </div>
     <div class="sum-panel" id="sumPanel">
         <div class="block">
             <div class="lbl">Advanced loan — investor ට ගෙවිය යුතු (Principal Due + Interest Due)</div>
@@ -302,10 +306,33 @@ async function refresh(){
     <td>${escapeHtml(r.notes||'')}</td>
   </tr>`).join('') || '<tr><td colspan="7" style="padding:14px;">Ledger හිස් — පහළින් ආරම්භක ගණන් සුරකින්න (සුරකළ පසු මෙම වගුවේ ඉහළින් පේළිය පෙනෙයි).</td></tr>';
 }
+async function deleteAllInvestorData(){
+  if (!confirm('මෙම ව්‍යාපාරයට අදාළ සියලුම Investor Ledger දත්ත මකා දැමීමට අවශ්‍යද? මෙය නැවත ලබා ගත නොහැක. ජර්නල් සටහන් (Journal entries) මින් වෙනස් නොවේ.')) return;
+  if (String(prompt('තහවුරු කිරීමට DELETE ලෙස ටයිප් කරන්න')||'') !== 'DELETE') { alert('අවලංගු කරන ලදී.'); return; }
+  try {
+    let n = 0;
+    while (true) {
+      const snap = await db.collection('investor_capital_ledger').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
+      if (!snap.docs.length) break;
+      const batch = db.batch();
+      snap.docs.forEach((d)=>batch.delete(d.ref));
+      await batch.commit();
+      n += snap.docs.length;
+      if (snap.docs.length < 500) break;
+    }
+    // Also clear portfolio config reset flag to allow new opening
+    await db.collection('investor_portfolio_config').doc(businessId).set({ openingAllowOneRevision: true }, { merge: true });
+    alert(n ? `සාර්ථකව දත්ත පේළි ${n} ක් ඉවත් කරන ලදී.` : 'මකා දැමීමට දත්ත කිසිවක් හමු නොවීය.');
+    await refresh();
+  } catch (e) {
+    alert('මකා දැමීම අසාර්ථකයි: ' + (e?.message || e));
+  }
+}
 firebase.auth().onAuthStateChanged(async (u)=>{
-  if(!u){location.href='/auth/login.html';return;}
+  if(!u){location.href='/';return;}
   const ctx = await window.dashboardCore.getContext(u);
   businessId = String((ctx&&ctx.businessId)||u.uid);
+  document.getElementById('clearAllBtn').onclick = deleteAllInvestorData;
   await refresh();
 });
 </script>

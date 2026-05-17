@@ -292,31 +292,111 @@ const KUBUKA_NAME = 'KUBUKA TEA FACTORY';
         }, { merge: true });
     }
 
-    function printDoc(title, payload, lines) {
-        const w = window.open('', '_blank', 'width=420,height=720');
-        if (!w) return;
-        const bodyRows = lines.map((l) => `<tr><td>${l.name}</td><td style="text-align:right">${l.qty}</td><td style="text-align:right">${money(l.unitPrice)}</td><td style="text-align:right">${money(l.qty * l.unitPrice)}</td></tr>`).join('');
-        w.document.write(`
-            <html><head><title>${title}</title><style>
-            @page{size:80mm auto;margin:2mm;}
-            body{font-family:Arial,sans-serif;width:76mm;margin:0 auto;padding:2mm;color:#111;}
-            h2{font-size:14px;margin:0 0 4px;text-align:center;}
-            p{font-size:11px;line-height:1.4;margin:0 0 6px;}
-            table{width:100%;border-collapse:collapse;margin-top:6px;font-size:11px;}
-            th,td{border:1px solid #ddd;padding:4px;}
-            .tr{text-align:right;}
-            h3{font-size:13px;text-align:right;margin:8px 0 0;}
-            </style></head>
-            <body>
-                <h2>${KUBUKA_NAME} - ${title}</h2>
-                <p>No: ${payload.saleId}<br>Date: ${new Date().toLocaleString()}<br>Customer: ${payload.companyName || 'Walk-in Customer'}</p>
-                <table><thead><tr><th>Item</th><th class="tr">Qty</th><th class="tr">Unit Price</th><th class="tr">Amount</th></tr></thead><tbody>${bodyRows}</tbody></table>
-                <h3 style="text-align:right">Total ${money(payload.amount)}</h3>
-            </body></html>
-        `);
-        w.document.close();
-        w.focus();
-        w.print();
+    async function printDoc(title, payload, lines) {
+        try {
+            const bizSnap = await db.collection('businesses').doc(bid).get();
+            const bizData = bizSnap.exists ? bizSnap.data() : {};
+            const docSettings = bizData.documentSettings || {};
+            const s = docSettings.invoice || docSettings.dispatch_note || {};
+
+            const header = s.header || bizData.name || KUBUKA_NAME;
+            const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+            const footer = s.footer || 'Thank you for your business!';
+            const showLogo = s.showLogo !== false;
+
+            const w = window.open('', '_blank', 'width=420,height=720');
+            if (!w) return;
+
+            const bodyRows = lines.map((l) => `
+                <tr>
+                    <td>${l.name}</td>
+                    <td style="text-align:right">${l.qty}</td>
+                    <td style="text-align:right">${(l.unitPrice).toFixed(2)}</td>
+                    <td style="text-align:right">${(l.qty * l.unitPrice).toFixed(2)}</td>
+                </tr>
+            `).join('');
+
+            const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>${title} - ${payload.saleId}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 4mm; }
+            body { width: 72mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; line-height: 1.4; color: #000; padding: 10px; width: 72mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 15px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 9px; margin: 4px 0 0; }
+        .receipt-title { font-size: 12px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; border-bottom: 1px dashed #000; padding-bottom: 4px; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 10px; }
+        .meta-label { font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
+        th, td { border: 1px solid #000; padding: 4px; text-align: left; }
+        th { background: #f0f0f0; font-size: 9px; }
+        .tr { text-align: right; }
+        .total-section { margin-top: 10px; border-top: 2px solid #000; padding-top: 6px; }
+        .total-row { display: flex; justify-content: space-between; font-weight: 800; font-size: 13px; }
+        .footer { text-align: center; font-size: 9px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; font-weight: 600; }
+        .softby { text-align: center; font-size: 8px; color: #666; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:40px; margin-bottom:5px;"><br>` : ''}
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">${title}</div>
+    
+    <div class="meta-row"><span class="meta-label">ID:</span><span>${payload.saleId}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${new Date().toLocaleString()}</span></div>
+    <div class="meta-row"><span class="meta-label">Customer:</span><span>${payload.companyName || 'Walk-in Customer'}</span></div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th class="tr">Qty</th>
+                <th class="tr">Price</th>
+                <th class="tr">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${bodyRows}
+        </tbody>
+    </table>
+    
+    <div class="total-section">
+        <div class="total-row">
+            <span>TOTAL AMOUNT</span>
+            <span>Rs. ${(payload.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        </div>
+    </div>
+    
+    <div class="footer">
+        ${footer}
+    </div>
+    <div class="softby">Software by DIGIBIZ - 0713446500</div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    </script>
+</body>
+</html>`;
+
+            w.document.write(html);
+            w.document.close();
+        } catch (e) {
+            console.error(e);
+            alert('Printing failed: ' + e.message);
+        }
     }
     async function saveInvoiceDoc(invoice){
         const id = invoice.invoiceNo || (`INV-${Date.now()}`);

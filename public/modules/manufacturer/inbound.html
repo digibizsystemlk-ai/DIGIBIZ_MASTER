@@ -228,77 +228,116 @@ async function saveInvoiceDoc(invoice){
     }, { merge: true });
     return id;
 }
-function printThermalPurchaseInvoice(invoice){
-    if (!isKubuka()) return;
-    const w = window.open('', '_blank', 'width=900,height=700');
-    if (!w) return;
-    const totalAmount = Number(invoice.totalAmount || 0);
-    const paidAmount = Number(invoice.paidAmount || 0);
-    const balanceDue = Number(invoice.balanceDue || Math.max(0, totalAmount - paidAmount));
-    const previousBalance = Number(invoice.previousBalance || 0);
-    const totalDue = Number(invoice.totalDue || (balanceDue + previousBalance));
-    w.document.write(`
-        <html><head><title>${invoice.invoiceNo}</title><style>
-            @media print {
-                @page { size: A5; margin: 8mm; }
-                body { width: 132mm; margin: 0 auto; font-family: monospace; font-size: 11px; }
-            }
-            body{width:132mm;margin:0 auto;color:#111;font-family:monospace;font-size:11px;line-height:1.35}
-            .box{border:1px solid #111;padding:6px 8px;margin-top:6px}
-            .center{text-align:center}
-            .title{font-size:18px;font-weight:700;letter-spacing:.4px}
-            .subtitle{font-size:11px}
-            table{width:100%;border-collapse:collapse;font-size:11px}
-            th,td{border:1px solid #111;padding:5px}
-            .tr{text-align:right}
-            .label-row{display:flex;justify-content:space-between;gap:10px;margin:2px 0}
-            .line{border-top:1px solid #111;margin:6px 0}
-        </style></head><body>
-            <div class="box center">
-                <div class="title">KUBUKA TEA FACTORY</div>
-                <div class="subtitle">Company details contact, email</div>
-            </div>
-            <div class="box center"><b>INVOICE</b></div>
-            <div class="box">
-                <div class="label-row"><span>Customer Name:</span><span>${escPrint(invoice.supplierName || '-')}</span></div>
-                <div class="label-row"><span>Invoice Number:</span><span>${escPrint(invoice.invoiceNo || '-')}</span></div>
-                <div class="label-row"><span>Invoice Date:</span><span>${escPrint(invoice.date || '-')}</span></div>
-                <div class="label-row"><span>Due Date:</span><span>${escPrint(invoice.dueDate || '-')}</span></div>
-                <div class="label-row"><span>Sale Person:</span><span>${escPrint(invoice.salePerson || '-')}</span></div>
-            </div>
-            <div class="box">
-                <table>
-                    <thead>
-                        <tr><th>Name</th><th class="tr">Qty</th><th class="tr">Unit Price</th><th class="tr">Total</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>${escPrint(invoice.materialName || '-')}</td>
-                            <td class="tr">${Number(invoice.qty || 0)}</td>
-                            <td class="tr">${ManufacturerModule.money(invoice.unitPrice || 0)}</td>
-                            <td class="tr">${ManufacturerModule.money(totalAmount)}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            <div class="box">
-                <div class="label-row"><span>Total:</span><span>${ManufacturerModule.money(totalAmount)}</span></div>
-                <div class="label-row"><span>Paid:</span><span>${ManufacturerModule.money(paidAmount)}</span></div>
-                <div class="label-row"><span>Balance Due:</span><span>${ManufacturerModule.money(balanceDue)}</span></div>
-                <div class="label-row"><span>Previous Balance:</span><span>${ManufacturerModule.money(previousBalance)}</span></div>
-            </div>
-            <div class="box">
-                <div class="label-row"><b>Total Due:</b><b>${ManufacturerModule.money(totalDue)}</b></div>
-            </div>
-            <div class="box">
-                <div>Thanking you</div>
-                <div>Remarks: ${escPrint(invoice.remarks || '-')}</div>
-            </div>
-            <div class="box center">Software Solution by DIGIBIZ - 0713446500</div>
-        </body></html>
-    `);
-    w.document.close();
-    setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 200);
+async function printThermalPurchaseInvoice(invoice) {
+    try {
+        const bid = ManufacturerModule.businessId;
+        const bizSnap = await db.collection('businesses').doc(bid).get();
+        const bizData = bizSnap.exists ? bizSnap.data() : {};
+        const docSettings = bizData.documentSettings || {};
+        const s = docSettings.grn || docSettings.invoice || {};
+
+        const header = s.header || bizData.name || 'GOODS RECEIVED NOTE';
+        const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+        const footer = s.footer || 'Thank you for your supply!';
+        const showLogo = s.showLogo !== false;
+
+        const w = window.open('', '_blank', 'width=420,height=600');
+        if (!w) return alert('Popup blocked. Please allow popups.');
+
+        const totalAmount = Number(invoice.totalAmount || 0);
+        const paidAmount = Number(invoice.paidAmount || 0);
+        const balanceDue = Number(invoice.balanceDue || Math.max(0, totalAmount - paidAmount));
+        const previousBalance = Number(invoice.previousBalance || 0);
+        const totalDue = Number(invoice.totalDue || (balanceDue + previousBalance));
+
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>GRN ${invoice.invoiceNo}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 4mm; }
+            body { width: 72mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; line-height: 1.4; color: #000; padding: 10px; width: 72mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 15px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 9px; margin: 4px 0 0; }
+        .receipt-title { font-size: 12px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; border-bottom: 1px dashed #000; padding-bottom: 4px; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 10px; }
+        .meta-label { font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
+        th, td { border: 1px solid #000; padding: 4px; text-align: left; }
+        th { background: #f0f0f0; font-size: 9px; }
+        .tr { text-align: right; }
+        .total-section { margin-top: 10px; border-top: 2px solid #000; padding-top: 6px; }
+        .total-row { display: flex; justify-content: space-between; font-weight: 800; font-size: 13px; }
+        .footer { text-align: center; font-size: 9px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; font-weight: 600; }
+        .softby { text-align: center; font-size: 8px; color: #666; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:40px; margin-bottom:5px;"><br>` : ''}
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Goods Received Note (GRN)</div>
+    
+    <div class="meta-row"><span class="meta-label">GRN No:</span><span>${invoice.invoiceNo}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${invoice.date}</span></div>
+    <div class="meta-row"><span class="meta-label">Supplier:</span><span>${escPrint(invoice.supplierName || '-')}</span></div>
+    <div class="meta-row"><span class="meta-label">Created By:</span><span>${escPrint(invoice.salePerson || '-')}</span></div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th class="tr">Qty</th>
+                <th class="tr">Price</th>
+                <th class="tr">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>${escPrint(invoice.materialName || '-')}</td>
+                <td class="tr">${Number(invoice.qty || 0)}</td>
+                <td class="tr">${(invoice.unitPrice || 0).toFixed(2)}</td>
+                <td class="tr">${(totalAmount).toFixed(2)}</td>
+            </tr>
+        </tbody>
+    </table>
+    
+    <div class="total-section">
+        <div class="total-row"><span>Total:</span><span>Rs. ${totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+        <div class="total-row"><span>Paid:</span><span>Rs. ${paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+        <div class="total-row"><span>Balance Due:</span><span>Rs. ${balanceDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+        ${previousBalance > 0 ? `<div class="total-row"><span>Prev. Balance:</span><span>Rs. ${previousBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>` : ''}
+        <div class="total-row" style="border-top:1px solid #000;margin-top:2px;"><span>TOTAL DUE:</span><span>Rs. ${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+    </div>
+    
+    <div class="footer">
+        ${footer}
+    </div>
+    <div class="softby">Software by DIGIBIZ - 0713446500</div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    </script>
+</body>
+</html>`;
+
+        w.document.write(html);
+        w.document.close();
+    } catch (e) {
+        console.error(e);
+        alert('Printing failed: ' + e.message);
+    }
 }
 function recalcAmount(){
     const qty = Number(document.getElementById('qty').value || 0);

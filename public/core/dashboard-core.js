@@ -69,6 +69,13 @@ class DashboardCore {
         try {
             const bizUserDoc = await window.db.collection('businesses').doc(bid).collection('users').doc(user.uid).get();
             if (bizUserDoc.exists) return true;
+            
+            // 2. Fallback: Check by Email (for new staff)
+            const email = String(user.email || '').trim().toLowerCase();
+            if (email) {
+                const bizUserEmailDoc = await window.db.collection('businesses').doc(bid).collection('users').doc(email).get();
+                if (bizUserEmailDoc.exists) return true;
+            }
         } catch (e2) { /* ignore */ }
         return false;
     }
@@ -86,10 +93,53 @@ class DashboardCore {
         // Membership-based fallback: businesses/{bid}/users/{uid}
         try {
             if (window.db && window.db.collectionGroup && typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldPath) {
-                const memberSnap = await window.db.collectionGroup('users')
+                // 1. Try UID-based lookup
+                let memberSnap = await window.db.collectionGroup('users')
                     .where(firebase.firestore.FieldPath.documentId(), '==', user.uid)
                     .limit(1)
                     .get();
+
+                // 2. Fallback: Try Global Staff Registry (High reliability for new staff)
+                if (memberSnap.empty && user.email) {
+                    const emailNorm = String(user.email).trim().toLowerCase();
+                    const registryDoc = await window.db.collection('staff_registry').doc(emailNorm).get();
+                    if (registryDoc.exists) {
+                        const regData = registryDoc.data();
+                        const memberBusinessId = String(regData.businessId || '').trim();
+                        if (memberBusinessId && await this.canAccessBusiness(user, memberBusinessId, userDocData)) {
+                            try {
+                                // AUTO-LINK: Update global user profile and sync to business sub-collection
+                                const updateBatch = window.db.batch();
+                                updateBatch.set(window.db.collection('users').doc(user.uid), { businessId: memberBusinessId }, { merge: true });
+                                updateBatch.set(window.db.collection('businesses').doc(memberBusinessId).collection('users').doc(user.uid), {
+                                    email: emailNorm,
+                                    role: regData.role || 'VIEWER',
+                                    uid: user.uid,
+                                    linkedAt: new Date()
+                                }, { merge: true });
+                                await updateBatch.commit();
+                            } catch (ePersist) { /* ignore */ }
+                            return memberBusinessId;
+                        }
+                    }
+                }
+
+                // 3. Last Resort: Collection Group Lookup
+                if (memberSnap.empty && user.email) {
+                    const emailNorm = String(user.email).trim().toLowerCase();
+                    memberSnap = await window.db.collectionGroup('users')
+                        .where('email', '==', emailNorm)
+                        .limit(1)
+                        .get();
+                    
+                    if (memberSnap.empty) {
+                        memberSnap = await window.db.collectionGroup('users')
+                            .where(firebase.firestore.FieldPath.documentId(), '==', emailNorm)
+                            .limit(1)
+                            .get();
+                    }
+                }
+
                 if (!memberSnap.empty) {
                     const doc = memberSnap.docs[0];
                     const parentBusinessRef = doc.ref && doc.ref.parent && doc.ref.parent.parent;
@@ -118,11 +168,16 @@ class DashboardCore {
         const storedBusinessId = this.getStoredBusinessId();
         
         let businessId = '';
-        if (storedBusinessId && await this.canAccessBusiness(user, storedBusinessId, userDocData)) {
+        
+        // 1. ALWAYS try to resolve staff/fallback membership first (Priority over self-owned new biz)
+        const fallbackBusinessId = await this.resolveFallbackBusinessId(user, userDocData);
+        
+        if (fallbackBusinessId) {
+            businessId = fallbackBusinessId;
+        } else if (storedBusinessId && await this.canAccessBusiness(user, storedBusinessId, userDocData)) {
             businessId = storedBusinessId;
         } else {
-            const fallbackBusinessId = await this.resolveFallbackBusinessId(user, userDocData);
-            businessId = fallbackBusinessId || user.uid;
+            businessId = user.uid;
         }
 
         await this.ensureMwTradingOwnerBizMembership(user);
@@ -133,13 +188,19 @@ class DashboardCore {
             await window.ensureSpranzaBusinessProfile();
         }
 
-        if (this.isMwTradingOwner(user)) {
-            businessId = this.getMwTradingCanonicalBusinessId();
-        }
-
         const storedBusinessType = this.normalizeBusinessType(this.getStoredBusinessType());
         const shouldPreferManufacturer = storedBusinessType === 'manufacturer' || String(window.location.pathname || '').toLowerCase().includes('/modules/manufacturer/');
         let businessType = shouldPreferManufacturer ? 'manufacturer' : 'retail';
+
+        const userEmail = String(user.email || '').trim().toLowerCase();
+        
+        // FORCE SCRAP CONTEXT FOR HIMESHI/SIRIMAL (ONLY ON LIVE)
+        const isStaging = window.location.hostname.includes('digibiz-test');
+        if ((userEmail === 'biz.himeshi@gmail.com' || userEmail === 'biz.sirimal@gmail.com' || userEmail === 'scrap@chinthaka.com')) {
+            businessId = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+            businessType = 'scrap_collection_center';
+        }
+        console.log('[Dashboard Context] Resolved BID:', businessId, 'Type:', businessType);
         let businessName = 'Business';
         let logoUrl = '';
         const businessDoc = await window.db.collection('businesses').doc(businessId).get();
@@ -165,6 +226,14 @@ class DashboardCore {
         }
         if (shouldPreferManufacturer && businessType !== 'distributor' && businessType !== 'scrap_collection_center') {
             businessType = 'manufacturer';
+        }
+
+        // Final safety check for Sirimal
+        const email = String(user.email || '').toLowerCase();
+        const isAdminEmail = (email === 'biz.sirimal@gmail.com' || email === 'scrap@chinthaka.com');
+        
+        if (isAdminEmail && (businessId === 'oDhSDYHQ2dV1DP33koysmZAqaY13' || businessId === 'STAGING_TEST_SCRAP_BIZ' || businessId === '8KlnS39HmqYwtcNzM0NZMkq6om63')) {
+            businessType = 'scrap_collection_center';
         }
 
         businessType = this.normalizeBusinessType(businessType);
@@ -837,9 +906,14 @@ class DashboardCore {
         const startTodayMs = startToday.getTime();
         const startMonthMs = startMonth.getTime();
 
+        const yearAgo = new Date();
+        yearAgo.setDate(yearAgo.getDate() - 364);
+        yearAgo.setHours(0, 0, 0, 0);
+        const yearAgoMs = yearAgo.getTime();
+
         const isScrap = String(context.businessType || '').toLowerCase() === 'scrap_collection_center';
         const emptySnap = () => ({ docs: [] });
-        const [itemsSnap, buySnap, sellSnap, loanSnap, allJournalSnap, journalLedgerSnap, openingSnap, extSnap, advSnap] = await Promise.all([
+        const [itemsSnap, buySnap, sellSnap, loanSnap, allJournalSnap, journalLedgerSnap, openingSnap, extSnap, advSnap, incomeSnap] = await Promise.all([
             window.db.collection('scrap_items').where('businessId', '==', bid).get().catch(() => emptySnap()),
             window.db.collection('buying_history').where('businessId', '==', bid).get().catch(() => emptySnap()),
             window.db.collection('selling_history').where('businessId', '==', bid).get().catch(() => emptySnap()),
@@ -848,7 +922,8 @@ class DashboardCore {
             window.db.collection('journal').doc(bid).collection('account_ledger').get().catch(() => emptySnap()),
             window.db.collection('journal').doc(bid).collection('ledger_opening').doc('current').get().catch(() => ({ exists: false, data: () => ({}) })),
             window.db.collection('scrap_external_settlements').where('businessId', '==', bid).get().catch(() => emptySnap()),
-            window.db.collection('scrap_advances').where('businessId', '==', bid).get().catch(() => emptySnap())
+            window.db.collection('scrap_advances').where('businessId', '==', bid).get().catch(() => emptySnap()),
+            window.db.collection('scrap_income').where('businessId', '==', bid).get().catch(() => emptySnap())
         ]);
         const legacyEntries = this.querySnapDocs(allJournalSnap).map((doc) => doc.data());
         const todayEntries = legacyEntries.filter((entry) => {
@@ -877,16 +952,72 @@ class DashboardCore {
             if (stock > 0 && stock <= 10) lowStock += 1;
         });
 
+        // Map of selling prices for margin calculation
+        const sellPriceMap = {};
+        this.querySnapDocs(itemsSnap).forEach(doc => {
+            const r = doc.data();
+            sellPriceMap[doc.id] = Number(r.sellingPrice) || 0;
+        });
+
+        // Dynamic Range Calculation
+        const allSnaps = [buySnap, sellSnap, incomeSnap];
+        let minTms = startTodayMs;
+        const getUniversalDate = (row) => this.scrapOperationalDateMs(row) || (row.incomeDate ? new Date(row.incomeDate).getTime() : null);
+
+        allSnaps.forEach(snap => {
+            this.querySnapDocs(snap).forEach(doc => {
+                const t = getUniversalDate(doc.data());
+                if (t && t < minTms && t >= yearAgoMs) minTms = t;
+            });
+        });
+
+        const diffMs = startTodayMs - minTms;
+        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+        // End at Yesterday, Start at Earliest
+        // If diffDays is 2 (May 11, 12), displayDays should be 2.
+        const displayDays = Math.max(1, Math.min(365, diffDays));
+
+        // Dynamic Aggregation Maps
+        const buy365Map = {};
+        const sell365Map = {};
+        const profit365Map = {};
+        const dateLabels365 = [];
+        const dateKeys365 = [];
+
+        // Helper for zero-padding: 5 -> "05"
+        const pad = (n) => String(n).padStart(2, '0');
+
+        for (let i = displayDays; i >= 1; i--) {
+            const d = new Date(startToday);
+            d.setDate(d.getDate() - i);
+            const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+            dateKeys365.push(key);
+            buy365Map[key] = 0;
+            sell365Map[key] = 0;
+            profit365Map[key] = 0;
+            dateLabels365.push(d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
+        }
+
+        const getDayKey = (row) => {
+            const tms = getUniversalDate(row);
+            if (tms == null) return null;
+            const d = new Date(tms);
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        };
+
         let todayBuying = 0;
         let monthBuying = 0;
         let todayStockIn = 0;
         let monthStockIn = 0;
+        let buyMatchedCount = 0;
+
         this.querySnapDocs(buySnap).forEach((doc) => {
             const r = doc.data();
             const amount = Number(r.totalAmount) || 0;
             const weight = Number(r.totalWeight) || 0;
             const tms = this.scrapOperationalDateMs(r);
             if (tms == null) return;
+
             if (tms >= startMonthMs) {
                 monthBuying += amount;
                 monthStockIn += weight;
@@ -895,17 +1026,51 @@ class DashboardCore {
                 todayBuying += amount;
                 todayStockIn += weight;
             }
+            
+            // Aggregation for 365 Days Charts
+            const k = getDayKey(r);
+            if (dateKeys365.includes(k)) {
+                if (buy365Map[k] !== undefined) {
+                    buy365Map[k] += amount;
+                    buyMatchedCount++;
+                }
+
+                // Profit components: Buying Margin + Vehicle Hire
+                let m = 0;
+                const items = Array.isArray(r.items) ? r.items : [];
+                items.forEach((line) => {
+                    const w = Number(line.weight) || 0;
+                    const bp = Number(line.buyingPrice) || 0;
+                    const sp = sellPriceMap[line.itemId] || 0;
+                    m += w * Math.max(0, sp - bp);
+                });
+                const vh = Number(r.vehicleHireApplied || 0);
+                profit365Map[k] += (m + vh);
+            }
         });
+
+        // Add Additional Income from scrap_income
+        this.querySnapDocs(incomeSnap).forEach((doc) => {
+            const r = doc.data();
+            const k = getDayKey(r);
+            if (k && profit365Map[k] !== undefined) {
+                profit365Map[k] += (Number(r.amount) || 0);
+            }
+        });
+
         let todaySales = 0;
         let monthSales = 0;
         let todayStockOut = 0;
         let monthStockOut = 0;
+        let sellMatchedCount = 0;
+
         this.querySnapDocs(sellSnap).forEach((doc) => {
             const r = doc.data();
             const amount = Number(r.totalAmount) || 0;
             const qty = Number(r.qty) || 0;
             const tms = this.scrapOperationalDateMs(r);
             if (tms == null) return;
+
             if (tms >= startMonthMs) {
                 monthSales += amount;
                 monthStockOut += qty;
@@ -914,7 +1079,18 @@ class DashboardCore {
                 todaySales += amount;
                 todayStockOut += qty;
             }
+            
+            const k = getDayKey(r);
+            if (dateKeys365.includes(k)) {
+                if (sell365Map[k] !== undefined) {
+                    sell365Map[k] += amount;
+                    sellMatchedCount++;
+                }
+            }
         });
+
+        console.log(`[Scrap-Sync] Days:${displayDays}, Matched Buy:${buyMatchedCount}, Sell:${sellMatchedCount}`);
+
         let outstandingLoans = 0;
         this.querySnapDocs(loanSnap).forEach((doc) => {
             const row = doc.data() || {};
@@ -935,8 +1111,8 @@ class DashboardCore {
         });
         /* Cash + bank: merged GL when available; else legacy journal lines (calculateCashFlow only looked at 1-1010-01). */
         const cashFlow = mergedSynthetic.length
-            ? this.accountBalance(allEntries, (code) => String(code || '').startsWith('1-1010') || String(code || '').startsWith('1-1020'))
-            : this.accountBalance(legacyEntries, (code) => String(code || '').startsWith('1-1010') || String(code || '').startsWith('1-1020'));
+            ? this.accountBalance(allEntries, (code) => String(code || '').startsWith('1-1010'))
+            : this.accountBalance(legacyEntries, (code) => String(code || '').startsWith('1-1010'));
         const accountingTodaySales = todayEntries.reduce((sum, entry) => {
             const ref = String(entry.referenceType || '').toUpperCase();
             if (!['SCRAP_BILL', 'SCRAP_SELL'].includes(ref)) return sum;
@@ -984,37 +1160,13 @@ class DashboardCore {
         const scrapGlInterestIncome = mergedSynthetic.length
             ? -this.accountBalance(allEntries, (code) => String(code || '').startsWith('4-4020'))
             : 0;
-        const trendDayKeyToIndex = {};
-        const scrapTrendLabels = [];
-        for (let i = 6; i >= 0; i--) {
-            const ds = new Date(startToday);
-            ds.setDate(ds.getDate() - i);
-            const dk = `${ds.getFullYear()}-${ds.getMonth()}-${ds.getDate()}`;
-            trendDayKeyToIndex[dk] = scrapTrendLabels.length;
-            scrapTrendLabels.push(ds.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
-        }
-        const scrapTrendBuying = new Array(7).fill(0);
-        const scrapTrendSales = new Array(7).fill(0);
-        this.querySnapDocs(buySnap).forEach((doc) => {
-            const r = doc.data();
-            const tms = this.scrapOperationalDateMs(r);
-            if (tms == null) return;
-            const dt = new Date(tms);
-            const dk = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
-            const idx = trendDayKeyToIndex[dk];
-            if (idx == null) return;
-            scrapTrendBuying[idx] += Number(r.totalAmount) || 0;
-        });
-        this.querySnapDocs(sellSnap).forEach((doc) => {
-            const r = doc.data();
-            const tms = this.scrapOperationalDateMs(r);
-            if (tms == null) return;
-            const dt = new Date(tms);
-            const dk = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
-            const idx = trendDayKeyToIndex[dk];
-            if (idx == null) return;
-            scrapTrendSales[idx] += Number(r.totalAmount) || 0;
-        });
+
+        const cashBalance = mergedSynthetic.length
+            ? this.accountBalance(allEntries, (code) => String(code || '').startsWith('1-1010'))
+            : this.accountBalance(legacyEntries, (code) => String(code || '').startsWith('1-1010'));
+        const bankBalance = mergedSynthetic.length
+            ? this.accountBalance(allEntries, (code) => String(code || '').startsWith('1-1020'))
+            : this.accountBalance(legacyEntries, (code) => String(code || '').startsWith('1-1020'));
 
         return {
             todaySales: accountingTodaySales || todaySales,
@@ -1022,7 +1174,10 @@ class DashboardCore {
             todayBuying: accountingTodayBuying || todayBuying,
             monthBuying: accountingMonthBuying || monthBuying,
             cashFlow,
+            cashBalance,
+            bankBalance,
             stockValue: stockValueReported,
+
             lowStock,
             outstandingLoans,
             monthProfit,
@@ -1038,9 +1193,12 @@ class DashboardCore {
             scrapGlInterestIncome,
             scrapGlNet1030,
             scrapGlNet1060,
-            scrapTrendLabels,
-            scrapTrendBuying,
-            scrapTrendSales
+            
+            // 365 Days Historical Data
+            dateLabels365,
+            buy365Data: dateKeys365.map(k => buy365Map[k]),
+            sell365Data: dateKeys365.map(k => sell365Map[k]),
+            profit365Data: dateKeys365.map(k => profit365Map[k])
         };
     }
 
@@ -1246,7 +1404,8 @@ class DashboardCore {
             hardware: ['todaySales', 'monthSales', 'unitConvertibleItems', 'bulkWeightPricedItems', 'bulkItems', 'quotationCount', 'quoteConversionRate', 'cashFlow'],
             service: ['todayAppointments', 'upcomingAppointments', 'todaySales', 'serviceBills', 'utilization', 'clients', 'cashFlow'],
             manufacturer: ['rmStockValue', 'fgStockValue', 'productionRuns', 'productionStatus', 'materialEfficiencyYield', 'pendingSettlements', 'rmPurchaseMonth', 'productionCostMonth', 'operationalCostMonth', 'sideIncomeMonth', 'monthSales', 'monthProfit', 'cashFlow'],
-            scrap_collection_center: ['todaySales', 'todayBuying', 'todayStockIn', 'todayStockOut', 'monthSales', 'monthBuying', 'monthStockIn', 'monthStockOut', 'monthProfit', 'stockValue', 'cashFlow', 'scrapGlRevenue', 'scrapGlCogs', 'scrapGlLoansGiven', 'scrapGlInterestIncome', 'scrapGlNet1030', 'scrapGlNet1060', 'outstandingLoans', 'advanceOutstanding', 'externalSettlementNet', 'lowStock']
+            scrap_collection_center: ['cashBalance', 'bankBalance', 'todaySales', 'todayBuying', 'todayStockIn', 'todayStockOut', 'monthSales', 'monthBuying', 'monthStockIn', 'monthStockOut', 'monthProfit', 'stockValue', 'cashFlow', 'scrapGlRevenue', 'scrapGlCogs', 'scrapGlLoansGiven', 'scrapGlInterestIncome', 'scrapGlNet1030', 'scrapGlNet1060', 'outstandingLoans', 'advanceOutstanding', 'externalSettlementNet', 'lowStock']
+
         };
         return structures[businessType] || structures.retail;
     }

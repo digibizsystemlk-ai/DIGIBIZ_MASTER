@@ -304,7 +304,10 @@
                     ` : ''}
                     
                     ${activeDeliveries.length > 0 ? `
-                        <h3 style="margin: 24px 0 16px;">🚚 Active Deliveries (${activeDeliveries.length})</h3>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin: 24px 0 16px;">
+                            <h3 style="margin:0;">🚚 Active Deliveries (${activeDeliveries.length})</h3>
+                            <button class="btn btn-lite" onclick="printAllLoadSheets()">🖨️ Print Load Sheets</button>
+                        </div>
                         ${activeDeliveries.map(delivery => `
                             <div class="delivery-card">
                                 <div class="delivery-header">
@@ -317,7 +320,8 @@
                                 <div>📅 Dispatched: ${delivery.dispatchedTime?.toDate ? new Date(delivery.dispatchedTime.toDate()).toLocaleString() : '-'}</div>
                                 <div style="margin-top: 12px;">
                                     ${delivery.status === 'dispatched' ? 
-                                        `<button class="btn btn-primary" onclick="openConfirmModal('${delivery.id}')">✅ Confirm Delivery</button>` : ''}
+                                        `<button class="btn btn-primary" onclick="openConfirmModal('${delivery.id}')">✅ Confirm Delivery</button>
+                                         <button class="btn btn-lite" onclick="printDeliveryNote('${delivery.id}')">🖨️ Delivery Note</button>` : ''}
                                 </div>
                             </div>
                         `).join('')}
@@ -419,12 +423,198 @@
             document.getElementById('deliveryNotes').value = '';
         }
 
-        function closeConfirmModal() {
-            document.getElementById('confirmModal').style.display = 'none';
-            document.getElementById('deliveryProof').value = '';
+        async function printDeliveryNote(deliveryId) {
+            const deliveryDoc = await db.collection('deliveries').doc(deliveryId).get();
+            if (!deliveryDoc.exists) return;
+            const delivery = deliveryDoc.data();
+            const orderDoc = await db.collection('orders').doc(delivery.orderId).get();
+            const order = orderDoc.data();
+            const shopDoc = await db.collection('shops').doc(order.shopId).get();
+            const shop = shopDoc.data();
+
+            const bizDoc = await db.collection('businesses').doc(currentBusinessId).get();
+            const bizData = bizDoc.exists ? bizDoc.data() : {};
+            const allS = bizData.documentSettings || {};
+            const ds = allS['delivery_note'] || {};
+
+            const header = ds.header || bizData.name || 'BUSINESS NAME';
+            const agent = ds.agent || '';
+            const footer = ds.footer || '';
+            const title = ds.title || 'DELIVERY NOTE';
+            const showLogo = ds.showLogo !== undefined ? ds.showLogo : (allS.showLogo !== false);
+
+            const w = window.open('', '_blank');
+            if (!w) return alert('Please allow popups.');
+
+            let itemsHtml = (order.items || []).map(it => `
+                <tr>
+                    <td>${it.productName || '—'}</td>
+                    <td style="text-align:right;">${it.quantity || 0}</td>
+                </tr>
+            `).join('');
+
+            const html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>Delivery Note ${order.orderNumber || delivery.id}</title>
+                    <style>
+                        body { font-family: sans-serif; padding: 20px; color: #333; }
+                        .header { text-align: center; margin-bottom: 20px; }
+                        .company { font-size: 20px; font-weight: bold; text-transform: uppercase; }
+                        .title { font-size: 16px; margin-top: 10px; border-bottom: 2px solid #000; padding-bottom: 5px; }
+                        .meta { width: 100%; margin: 20px 0; font-size: 13px; }
+                        .table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        .table th, .table td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 13px; }
+                        .table th { background: #f2f2f2; }
+                        .footer { margin-top: 40px; text-align: center; font-size: 11px; border-top: 1px solid #ddd; padding-top: 10px; }
+                        .sig { display: flex; justify-content: space-between; margin-top: 60px; font-size: 12px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:60px; margin-bottom:10px;"><br>` : ''}
+                        <div class="company">${header}</div>
+                        ${agent ? `<div style="font-size:13px; margin-top:5px;">${agent}</div>` : ''}
+                        <div class="title">${title}</div>
+                    </div>
+                    <table class="meta">
+                        <tr><td><strong>Order No:</strong> ${order.orderNumber || '—'}</td><td style="text-align:right;"><strong>Date:</strong> ${new Date().toLocaleDateString()}</td></tr>
+                        <tr><td><strong>Customer:</strong> ${shop.name}</td><td style="text-align:right;"><strong>Vehicle:</strong> ${delivery.vehicleNo}</td></tr>
+                        <tr><td><strong>Address:</strong> ${shop.address || '—'}</td><td style="text-align:right;"><strong>Driver:</strong> ${delivery.driverName}</td></tr>
+                    </table>
+                    <table class="table">
+                        <thead><tr><th>Product Description</th><th style="text-align:right;">Qty</th></tr></thead>
+                        <tbody>${itemsHtml}</tbody>
+                    </table>
+                    <div class="sig">
+                        <div>________________________<br>Dispatcher Signature</div>
+                        <div>________________________<br>Customer Acknowledgment</div>
+                    </div>
+                    <div class="footer">
+                        ${footer ? `<div style="margin-bottom:10px;">${footer.replace(/\n/g, '<br>')}</div>` : ''}
+                        <div>Software by DIGIBIZ</div>
+                    </div>
+                    <script>window.print();<\/script>
+                </body>
+                </html>
+            `;
+            w.document.open();
+            w.document.write(html);
+            w.document.close();
         }
 
-        firebase.auth().onAuthStateChanged(async (user) => {
+        async function printAllLoadSheets() {
+            const deliveriesSnap = await db.collection('deliveries')
+                .where('businessId', '==', currentBusinessId)
+                .where('status', '==', 'dispatched')
+                .get();
+            
+            const byVehicle = {};
+            for (const doc of deliveriesSnap.docs) {
+                const d = doc.data();
+                if (!byVehicle[d.vehicleNo]) byVehicle[d.vehicleNo] = [];
+                const orderDoc = await db.collection('orders').doc(d.orderId).get();
+                if (orderDoc.exists) {
+                    const order = orderDoc.data();
+                    const shopDoc = await db.collection('shops').doc(order.shopId).get();
+                    byVehicle[d.vehicleNo].push({
+                        orderNo: order.orderNumber || doc.id,
+                        shopName: shopDoc.exists ? shopDoc.data().name : 'Unknown',
+                        items: order.items || [],
+                        driver: d.driverName
+                    });
+                }
+            }
+
+            const bizDoc = await db.collection('businesses').doc(currentBusinessId).get();
+            const bizData = bizDoc.exists ? bizDoc.data() : {};
+            const allS = bizData.documentSettings || {};
+            const ds = allS['load_sheet'] || {};
+
+            const header = ds.header || bizData.name || 'BUSINESS NAME';
+            const agent = ds.agent || '';
+            const footer = ds.footer || '';
+            const title = ds.title || 'LOAD SHEET / TRIP SHEET';
+            const showLogo = ds.showLogo !== undefined ? ds.showLogo : (allS.showLogo !== false);
+
+            const w = window.open('', '_blank');
+            if (!w) return alert('Please allow popups.');
+
+            let pagesHtml = Object.keys(byVehicle).map(vNo => {
+                const trips = byVehicle[vNo];
+                const driver = trips[0].driver;
+                
+                // Aggregate items for the whole vehicle
+                const totalItems = {};
+                trips.forEach(t => {
+                    t.items.forEach(it => {
+                        const k = it.productName || 'Unknown';
+                        totalItems[k] = (totalItems[k] || 0) + (Number(it.quantity) || 0);
+                    });
+                });
+
+                let itemsRows = Object.keys(totalItems).map(name => `
+                    <tr><td>${name}</td><td style="text-align:right;">${totalItems[name]}</td></tr>
+                `).join('');
+
+                let orderSummary = trips.map(t => `<li>${t.orderNo} - ${t.shopName}</li>`).join('');
+
+                return `
+                    <div class="page" style="page-break-after: always;">
+                        <div class="header">
+                            ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:50px;"><br>` : ''}
+                            <div class="company">${header}</div>
+                            <div class="title">${title}</div>
+                        </div>
+                        <div class="meta" style="display:flex; justify-content:space-between; margin-bottom:20px; font-size:14px;">
+                            <div><strong>Vehicle:</strong> ${vNo}</div>
+                            <div><strong>Driver:</strong> ${driver}</div>
+                            <div><strong>Date:</strong> ${new Date().toLocaleDateString()}</div>
+                        </div>
+                        <h4 style="margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:5px;">Consolidated Load Summary</h4>
+                        <table class="table">
+                            <thead><tr><th>Item Name</th><th style="text-align:right;">Total Qty</th></tr></thead>
+                            <tbody>${itemsRows}</tbody>
+                        </table>
+                        <h4 style="margin: 20px 0 10px; border-bottom:1px solid #eee; padding-bottom:5px;">Orders Included</h4>
+                        <ul style="font-size:13px; column-count:2;">${orderSummary}</ul>
+                        <div class="footer" style="margin-top:auto; padding-top:20px; text-align:center; font-size:11px; border-top:1px solid #eee;">
+                            ${footer ? `<div>${footer}</div>` : ''}
+                            <div>Software by DIGIBIZ</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>Load Sheets</title>
+                    <style>
+                        body { font-family: sans-serif; padding: 0; margin: 0; color: #333; }
+                        .page { padding: 40px; min-height: 100vh; display: flex; flex-direction: column; }
+                        .header { text-align: center; margin-bottom: 20px; }
+                        .company { font-size: 18px; font-weight: bold; text-transform: uppercase; }
+                        .title { font-size: 14px; margin-top: 5px; color: #666; }
+                        .table { width: 100%; border-collapse: collapse; }
+                        .table th, .table td { border: 1px solid #eee; padding: 8px; text-align: left; font-size: 13px; }
+                        .table th { background: #f9fafb; }
+                    </style>
+                </head>
+                <body>
+                    ${pagesHtml}
+                    <script>window.print();<\/script>
+                </body>
+                </html>
+            `;
+            w.document.open();
+            w.document.write(html);
+            w.document.close();
+        }
             if (user) {
                 currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
                 if (!currentBusinessId) {
@@ -441,7 +631,7 @@
                 await loadStats();
                 await loadDeliveries();
             } else {
-                window.location.href = '/auth/login.html';
+                window.location.href = '/';
             }
         });
     </script>

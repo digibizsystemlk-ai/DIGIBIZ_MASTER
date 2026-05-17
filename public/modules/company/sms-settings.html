@@ -182,7 +182,6 @@ function toMs(v){
     if (!v) return 0;
     if (typeof v.toDate === 'function') {
         const d = v.toDate();
-
         return d && !Number.isNaN(d.getTime()) ? d.getTime() : 0;
     }
     if (typeof v === 'number' && Number.isFinite(v)) return v < 1e12 ? Math.round(v * 1000) : Math.round(v);
@@ -251,11 +250,9 @@ async function loadSettings(){
     } else if (ls && ls.sm && lsMs > smMs) {
         sm = { ...sm, ...ls.sm, events: { ...(sm.events || {}), ...((ls.sm || {}).events || {}) } };
     }
-
     const smsHeader = normHeader(data.smsHeader || '');
     document.getElementById('brandBanner').textContent = `Active SMS Header: [${smsHeader}]`;
     document.getElementById('smsHeaderInput').value = smsHeader;
-    // Support migration from old 'sales' event
     if (sm.events && sm.events.sales !== undefined && sm.events.outbound === undefined) {
         sm.events.outbound = sm.events.sales;
         sm.events.inbound = sm.events.sales;
@@ -295,30 +292,16 @@ async function adminTopup(){
         const wallet = data.smsWallet || {};
         let nextWallet;
         if (window.SmsWalletCore) {
-            const base = window.SmsWalletCore.withExpiredTrialZeroed(
-                window.SmsWalletCore.normalizeWallet(wallet, data.smsBalance)
-            );
+            const base = window.SmsWalletCore.withExpiredTrialZeroed(window.SmsWalletCore.normalizeWallet(wallet, data.smsBalance));
             const newPaid = Number(base.paidSmsBalance || 0) + credits;
             const trialEff = window.SmsWalletCore.effectiveTrialBalance(base);
-            nextWallet = {
-                ...base,
-                paidSmsBalance: newPaid,
-                smsBalance: trialEff + newPaid,
-                updatedAt: new Date().toISOString()
-            };
+            nextWallet = { ...base, paidSmsBalance: newPaid, smsBalance: trialEff + newPaid, updatedAt: new Date().toISOString() };
         } else {
             const prev = Number(wallet.smsBalance || data.smsBalance || 0);
             nextWallet = { ...wallet, smsBalance: prev + credits, updatedAt: new Date().toISOString() };
         }
         tx.set(settingsRef, {
-            smsWallet: {
-                ...wallet,
-                ...nextWallet,
-                lowBalanceThreshold: Number(nextWallet.lowBalanceThreshold || wallet.lowBalanceThreshold || 50),
-                unitPrice: Number(nextWallet.unitPrice || wallet.unitPrice || 1),
-                monthlyFee: Number(nextWallet.monthlyFee || wallet.monthlyFee || 1000),
-                trialCreditsGranted: wallet.trialCreditsGranted !== false
-            },
+            smsWallet: { ...wallet, ...nextWallet, lowBalanceThreshold: Number(nextWallet.lowBalanceThreshold || wallet.lowBalanceThreshold || 50), unitPrice: Number(nextWallet.unitPrice || wallet.unitPrice || 1), monthlyFee: Number(nextWallet.monthlyFee || wallet.monthlyFee || 1000), trialCreditsGranted: wallet.trialCreditsGranted !== false },
             smsBalance: nextWallet.smsBalance
         }, { merge: true });
     });
@@ -345,40 +328,15 @@ async function saveSettings(){
         if (cb) {
             const docId = getScrapSmsDocId();
             if (docId) {
-                await db.collection('scrap_sms_settings').doc(docId).set({
-                events: { advance: cb.checked },
-                updatedAt: new Date().toISOString()
-                }, { merge: true });
+                await db.collection('scrap_sms_settings').doc(docId).set({ events: { advance: cb.checked }, updatedAt: new Date().toISOString() }, { merge: true });
             }
         }
-        try {
-            if (businessId) localStorage.setItem(lsKey(), JSON.stringify({ savedAt: new Date().toISOString(), sm }));
-        } catch (e) {
-        }
-        try {
-            localStorage.setItem(lsGlobalKey, JSON.stringify({ businessId, savedAt: new Date().toISOString(), sm }));
-        } catch (e) {
-        }
-        const verifySnap = await db.collection('settings').doc(businessId).get().catch(() => null);
-        const verifyData = verifySnap && verifySnap.exists ? (verifySnap.data() || {}) : {};
-        const verifySm = verifyData.smsManager || {};
-
-        const ok =
-            !!verifySm &&
-            !!verifySm.events &&
-            verifySm.events.inbound === sm.events.inbound &&
-            verifySm.events.outbound === sm.events.outbound &&
-            verifySm.events.payment === sm.events.payment &&
-            verifySm.events.debt === sm.events.debt;
-        if (!ok) {
-            setMsg(`Saved locally but Firestore verify mismatch (businessId: ${businessId}).`, false);
-            return;
-        }
+        try { if (businessId) localStorage.setItem(lsKey(), JSON.stringify({ savedAt: new Date().toISOString(), sm })); } catch (e) {}
+        try { localStorage.setItem(lsGlobalKey, JSON.stringify({ businessId, savedAt: new Date().toISOString(), sm })); } catch (e) {}
         setDbg(`businessId: ${businessId} | saved: ${new Date().toLocaleString()}`);
         setMsg(`SMS Settings saved successfully. (businessId: ${businessId})`, true);
     } catch (e) {
         setMsg(`Save failed: ${e && (e.message || e)}`, false);
-        throw e;
     }
 }
 function setDbg(t){
@@ -391,15 +349,16 @@ document.getElementById('saveBtn').addEventListener('click', saveSettings);
 document.getElementById('saveHeaderBtn').addEventListener('click', saveHeader);
 document.getElementById('topupBtn').addEventListener('click', adminTopup);
 firebase.auth().onAuthStateChanged(async (u) => {
-    if (!u) { window.location.href = '/auth/login.html'; return; }
+    if (!u) { window.location.href = '/'; return; }
     currentUser = u;
     const ctx = await window.dashboardCore.getContext(u);
     businessId = String((ctx && ctx.businessId) || u.uid);
     businessType = String((ctx && ctx.businessType) || '');
     const bt = String(businessType || '').toLowerCase();
-    const scrapLink = document.getElementById('scrapSmsLink');
-    if (scrapLink) scrapLink.style.display = bt === 'scrap_collection_center' ? '' : 'none';
-
+    if (bt === 'scrap_collection_center') {
+        window.location.href = '/modules/admin/scrap-sms-settings.html';
+        return;
+    }
     try {
         if (window.SmsWalletCore && typeof window.SmsWalletCore.ensureSeeded === 'function') {
             await window.SmsWalletCore.ensureSeeded(businessId);
@@ -409,7 +368,7 @@ firebase.auth().onAuthStateChanged(async (u) => {
     }
     await loadSettings();
     await loadScrapAdvanceToggle();
-    await resolveAdminVisibility();
+    if (typeof resolveAdminVisibility === 'function') await resolveAdminVisibility(u);
 });
 </script>
 </body>

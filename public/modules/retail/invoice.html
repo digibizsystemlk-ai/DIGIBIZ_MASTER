@@ -138,13 +138,15 @@
         }
     </style>
 </head>
-<body>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="../../core/firebase-init.js"></script>
 
     <div class="invoice-box">
         <div class="header">
-            <div class="company-details">
-                <img src="/assets/img/logo-kumbuka.png" alt="Company Logo" class="company-logo">
-                <h1>KD KUMBUKA AGRO (PVT) LTD</h1>
+            <div class="company-details" id="companyHeaderWrap">
+                <img src="" alt="Logo" class="company-logo" id="companyLogo" style="display:none;">
+                <h1 id="companyNameDisplay">BUSINESS NAME</h1>
                 <div id="invoiceType" style="font-size: 18px; font-weight: 600; margin-top:10px;"></div>
             </div>
             <div class="invoice-details">
@@ -186,7 +188,7 @@
             </table>
         </div>
 
-        <div class="footer">
+        <div class="footer" id="invoiceFooter">
             <p>Thank you for your business!</p>
         </div>
     </div>
@@ -195,11 +197,55 @@
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
             const data = JSON.parse(sessionStorage.getItem('currentInvoiceData'));
             if (!data) {
                 document.body.innerHTML = '<h1>No invoice data found. Please complete a sale first.</h1>';
                 return;
+            }
+
+            const bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            if (bid && window.db) {
+                try {
+                    const bizDoc = await window.db.collection('businesses').doc(bid).get();
+                    if (bizDoc.exists) {
+                        const bizData = bizDoc.data();
+                        const allS = bizData.documentSettings || {};
+                        // New structure: allS['invoice']. Legacy structure: allS (root fields)
+                        const ds = allS['invoice'] || {};
+                        const headerOverride = ds.header || allS.invoiceHeaderOverride || '';
+                        const agentText = ds.agent || allS.agentText || '';
+                        const footerText = ds.footer || allS.invoiceFooterText || '';
+                        const showLogo = ds.showLogo !== undefined ? ds.showLogo : (allS.showLogo !== false);
+
+                        const name = headerOverride || bizData.name || 'BUSINESS NAME';
+                        document.getElementById('companyNameDisplay').textContent = name;
+                        
+                        if (showLogo && bizData.logoUrl) {
+                            const l = document.getElementById('companyLogo');
+                            l.src = bizData.logoUrl;
+                            l.style.display = 'block';
+                        }
+
+                        if (footerText) {
+                            document.getElementById('invoiceFooter').innerHTML = `<p>${footerText.replace(/\n/g, '<br>')}</p>`;
+                        } else {
+                            document.getElementById('invoiceFooter').innerHTML = `<p>Thank you for your business!</p>`;
+                        }
+
+                        if (agentText) {
+                            const agentDiv = document.createElement('div');
+                            agentDiv.style.textAlign = 'center';
+                            agentDiv.style.fontSize = '14px';
+                            agentDiv.style.fontWeight = '700';
+                            agentDiv.style.marginBottom = '15px';
+                            agentDiv.textContent = agentText;
+                            document.getElementById('companyHeaderWrap').appendChild(agentDiv);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Could not load business settings for invoice:', e);
+                }
             }
 
             const formatCurrency = (amt) => 'Rs ' + (amt || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

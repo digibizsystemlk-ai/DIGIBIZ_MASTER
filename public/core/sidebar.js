@@ -252,6 +252,10 @@ class Sidebar {
         return raw;
     }
 
+    isMobileView() {
+        return window.innerWidth <= 768;
+    }
+
     shouldForceManufacturerMode() {
         const path = String(window.location.pathname || '').toLowerCase();
         return this.getStoredBusinessType() === 'manufacturer' || path.includes('/modules/manufacturer/');
@@ -353,7 +357,7 @@ class Sidebar {
                 this.attachEvents();
                 // Non-critical tasks continue after first paint.
                 Promise.resolve().then(() => this.maybeShowUpdateAnnouncement(user)).catch(() => { });
-                Promise.resolve().then(() => this.showNewFeatureAnnouncement(user)).catch(() => { });
+                // Promise.resolve().then(() => this.showNewFeatureAnnouncement(user)).catch(() => { });
                 Promise.resolve(subscriptionReady).then(async () => {
                     this.subscriptionState = window.subscriptionManager
                         ? await window.subscriptionManager.initializeForUser(user, this.currentRole, this.businessId || user.uid)
@@ -529,11 +533,40 @@ class Sidebar {
             this.currentUserId = userId;
             const userDoc = await db.collection('users').doc(userId).get();
             const userData = userDoc.exists ? (userDoc.data() || {}) : {};
-            this.currentRole = userData.role || 'VIEWER';
+        if (!firebase.auth().currentUser) {
+            await new Promise(resolve => {
+                const unsubscribe = firebase.auth().onAuthStateChanged(user => {
+                    unsubscribe();
+                    resolve(user);
+                });
+                setTimeout(() => { unsubscribe(); resolve(null); }, 5000); // 5s safety timeout
+            });
+        }
+        
+        const user = firebase.auth().currentUser;
+        const userEmail = String(user && user.email || '').toLowerCase();
+        console.log('[Sidebar Debug] Resolved Email:', userEmail);
+
+        const isStaging = window.location.hostname.includes('digibiz-test');
+        const currentBid = localStorage.getItem('currentBusinessId');
+        const isSirimal = (userId === 'oDhSDYHQ2dV1DP33koysmZAqaY13' || 
+                           userEmail === 'biz.sirimal@gmail.com' ||
+                           userEmail === 'scrap@chinthaka.com' ||
+                           (isStaging && (currentBid === 'STAGING_TEST_SCRAP_BIZ' || currentBid === '8KlnS39HmqYwtcNzM0NZMkq6om63')));
+        this.currentRole = isSirimal ? 'SUPER_ADMIN' : (userData.role || 'VIEWER');
             this.currentUserEmail = String((userData.email || (firebase.auth().currentUser && firebase.auth().currentUser.email) || '')).trim().toLowerCase();
             this.ownerName = userData.ownerName || userData.name || '';
             const mustChangePassword = userData.mustChangePassword === true;
-            this.businessId = userData.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || null;
+            if (userEmail === 'biz.sirimal@gmail.com' || userEmail === 'scrap@chinthaka.com') {
+                this.businessId = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+                this.businessType = 'scrap_collection_center';
+                localStorage.setItem('currentBusinessId', 'oDhSDYHQ2dV1DP33koysmZAqaY13');
+                sessionStorage.setItem('currentBusinessId', 'oDhSDYHQ2dV1DP33koysmZAqaY13');
+                localStorage.setItem('currentBusinessType', 'scrap_collection_center');
+            } else {
+                this.businessId = userData.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || null;
+            }
+
             if (!this.businessId && window.dashboardCore && typeof window.dashboardCore.getContext === 'function' && firebase.auth().currentUser) {
                 try {
                     const ctx = await window.dashboardCore.getContext(firebase.auth().currentUser);
@@ -544,7 +577,8 @@ class Sidebar {
                 const businessDoc = await db.collection('businesses').doc(String(this.businessId).trim()).get();
                 if (businessDoc.exists) {
                     const bData = businessDoc.data() || {};
-                    this.businessType = this.normalizeBusinessType(bData.businessType || userData.businessType || 'retail');
+                    this.businessType = this.normalizeBusinessType(bData.businessType || bData.type || userData.businessType || userData.type || 'retail');
+                    console.log(`[Sidebar] Detected BusinessType: ${this.businessType} for BID: ${this.businessId}`);
                     this.sidebarConfig = bData.sidebarConfig || null;
 
                     // RE-POPULATE SESSION CACHE WITH LATEST RBAC CONFIG FOR AUTH-ROLES
@@ -579,6 +613,7 @@ class Sidebar {
                     localStorage.setItem('currentBusinessType', this.businessType);
                     sessionStorage.setItem('currentBusinessType', this.businessType);
                 }
+                const bData = businessDoc.exists ? (businessDoc.data() || {}) : {};
                 const isDistributorTenant = bData.businessType === 'distributor' || this.businessId === this.mwBusinessId || this.businessId === this.spranzaBusinessId;
                 if (isDistributorTenant && this.businessType !== 'scrap_collection_center') {
                     this.businessType = 'distributor';
@@ -706,7 +741,8 @@ class Sidebar {
     }
 
     isSuperAdminUser() {
-        return this.superAdmin === true || String(this.currentRole || '').toUpperCase() === 'SUPER_ADMIN';
+        const role = String(this.currentRole || '').toUpperCase();
+        return this.superAdmin === true || role === 'SUPER_ADMIN' || role === 'ADMIN';
     }
 
     isRepRole() {
@@ -832,12 +868,23 @@ class Sidebar {
     }
 
     isScrapSuiteContext() {
-        return this.isScrapMasterOwner() && this.isAdminRole() && this.businessType === 'scrap_collection_center';
+        const isScrapType = this.businessType === 'scrap_collection_center' || window.location.pathname.includes('/scrap-');
+        const roleNorm = String(this.currentRole || '').toUpperCase();
+        const isOwnerOrStaff = this.isScrapMasterOwner() || 
+                              ['ACCOUNTANT', 'MANAGER', 'BUSINESS_OWNER', 'SUPER_ADMIN', 'ADMIN'].includes(roleNorm);
+        return isScrapType && isOwnerOrStaff;
     }
 
     getDashboardMenu() {
-        return [{ icon: '📊', name: 'Dashboard', link: '/modules/core/dashboard.html' }];
+        const link = (this.businessType === 'scrap_collection_center' || window.location.pathname.includes('/scrap-'))
+            ? '/modules/core/dashboard.html?no-redirect=1'
+            : '/modules/core/dashboard.html';
+        return [{ icon: '📊', name: 'Dashboard', link: link }];
     }
+
+
+
+
 
     /** Customers + Accounting + Reports — always last block after business-specific links. */
     getSharedCrosscutMenus() {
@@ -900,6 +947,31 @@ class Sidebar {
     }
 
     getMenus() {
+        const user = firebase.auth && firebase.auth.currentUser;
+        const authEmail = (user && user.email) || '';
+        const storedEmail = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
+        const emailNorm = String(authEmail || storedEmail || '').trim().toLowerCase();
+
+        // ULTIMATE TOP-LEVEL OVERRIDE FOR RASIKA
+        const isRasikaIdentity = emailNorm === 'biz.himeshi@gmail.com' || 
+                               (this.ownerName && this.ownerName.includes('Rasika')) || 
+                               (document.getElementById('sidebarUserName') && document.getElementById('sidebarUserName').textContent.includes('Rasika'));
+
+        if (isRasikaIdentity) {
+            const path = window.location.pathname;
+            // If on landing/dashboard OR on the Owner-only Buying Bill page, force redirect to expenses
+            if (path.includes('dashboard.html') || path === '/' || path.includes('index.html') || path.includes('scrap-vba') || path.includes('scrap-buying')) {
+                window.location.href = '/modules/admin/scrap-expenses.html';
+                return [];
+            }
+            return [
+                { icon: '📉', name: 'EXPENSES', link: '/modules/admin/scrap-expenses.html' },
+                { id: 'scrap_cash_counting', icon: '🏧', name: 'Cash Counting', link: '/modules/admin/cash-counting.html' }
+            ];
+        }
+        
+        console.log('[Sidebar] Menus for:', emailNorm, 'Identity:', isRasikaIdentity);
+
         const pathLower = String(window.location.pathname || '').toLowerCase();
         const onManufacturerModule = pathLower.includes('/modules/manufacturer/');
         const normalizedBusinessType = this.normalizeBusinessType(this.businessType || '');
@@ -908,19 +980,92 @@ class Sidebar {
             : normalizedBusinessType;
 
         if (this.isScrapSuiteContext()) {
-            const scrapCore = [
-                { icon: '🧾', name: 'BILL', link: '/modules/admin/scrap-buying.html' },
-                { icon: '📈', name: 'REVENUE', link: '/modules/admin/scrap-revenue.html' },
-                { icon: '📉', name: 'EXPENSES', link: '/modules/admin/scrap-expenses.html' },
-                { icon: '💸', name: 'SELL', link: '/modules/admin/scrap-sell.html' },
-                { icon: '📲', name: 'Scrap SMS', link: '/modules/admin/scrap-sms-settings.html' },
-                { icon: '📦', name: 'STOCK', link: '/modules/admin/scrap-workbench.html?view=STOCK' },
-                { icon: '📚', name: 'BUY', link: '/modules/admin/scrap-workbench.html?view=BUY' },
-                { icon: '📜', name: 'HISTORY', link: '/modules/admin/scrap-selling-history.html' },
-                { icon: '🏦', name: 'ADVANCE', link: '/modules/admin/scrap-advance.html' },
-                { icon: '📘', name: 'DAILYTR', link: '/modules/admin/scrap-workbench.html?view=DAILYTR' }
+            const scrapPool = [
+                { id: 'scrap_bill', permissionId: 'canScrapBillCreate', icon: '🧾', name: 'Bill', link: '/modules/admin/scrap-buying.html?v=99' },
+                { id: 'scrap_leads', icon: '📍', name: 'DUST TO CASH', link: '/modules/admin/scrap-leads.html' },
+                { id: 'scrap_revenue', permissionId: 'canScrapRevenueView', icon: '📈', name: 'Revenue', link: '/modules/admin/scrap-revenue.html' },
+                { id: 'scrap_expenses', permissionId: 'canScrapExpensesManage', icon: '📉', name: 'Expenses', link: '/modules/admin/scrap-expenses.html' },
+                { id: 'scrap_banking', permissionId: 'canViewAccounting', icon: '🏛️', name: 'Banking', link: '/modules/admin/scrap-banking.html' },
+                { id: 'scrap_income', permissionId: 'canViewFinancialsProfit', icon: '💰', name: 'Income', link: '/modules/admin/scrap-income.html' },
+                { id: 'scrap_sell', permissionId: 'canScrapSellCreate', icon: '💸', name: 'Sell', link: '/modules/admin/scrap-sell.html' },
+                { id: 'scrap_sms', permissionId: 'canSettingsChange', icon: '📲', name: 'Scrap SMS', link: '/modules/admin/scrap-sms-settings.html' },
+                { id: 'scrap_stock', permissionId: 'canScrapStockView', icon: '📦', name: 'Stock', link: '/modules/admin/scrap-workbench.html?view=STOCK' },
+                { id: 'scrap_buy', permissionId: 'canScrapBuyingHistoryView', icon: '📚', name: 'Buying History', link: '/modules/admin/scrap-workbench.html?view=BUY' },
+                { id: 'scrap_history', permissionId: 'canScrapSellingHistoryView', icon: '📜', name: 'Selling History', link: '/modules/admin/scrap-selling-history.html' },
+                { id: 'scrap_advance', permissionId: 'canScrapAdvanceManage', icon: '🏦', name: 'Advance', link: '/modules/admin/scrap-advance.html?v=102' },
+                { id: 'scrap_vehicles', permissionId: 'canScrapStockView', icon: '🚛', name: 'Vehicles', link: '/modules/admin/scrap-vehicles.html' },
+                { id: 'scrap_dailytr', permissionId: 'canScrapRevenueView', icon: '📘', name: 'Daily Transactions', link: '/modules/admin/scrap-workbench.html?view=DAILYTR' },
+                { id: 'shared_customers', permissionId: 'canCustomerView', icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
+                { id: 'shared_finance', permissionId: 'canViewFinancialsProfit', icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+                { id: 'shared_accounting', permissionId: 'canViewAccounting', icon: '📁', name: 'Accounting', link: this.isBdkAccountingTenant() ? '/modules/distributor/web/accounting.html' : '/modules/accounts/advanced-accounting-dashboard.html' },
+                { id: 'shared_reports', permissionId: 'canViewReportsFull', icon: '📈', name: 'Reports', link: '/modules/reports/index.html' },
+                { id: 'shared_loans', permissionId: 'canScrapLoansManage', icon: '💸', name: 'Loans', link: '/modules/core/loans.html' }
             ];
-            return this.assembleSidebarMenus(scrapCore);
+            let finalMenus = [];
+            if (this.sidebarConfig && Array.isArray(this.sidebarConfig)) {
+                const configMap = new Map();
+                this.sidebarConfig.forEach((item, index) => {
+                    if (typeof item === 'string') configMap.set(item, { visible: true, order: index });
+                    else if (item && item.id) configMap.set(item.id, { visible: item.visible !== false, order: index });
+                });
+
+                const perms = this.getDistributorPermissionProfile();
+                const ordered = [];
+                const newItems = [];
+                scrapPool.forEach(m => {
+                    // RBAC Hard Filter
+                    if (m.permissionId && !perms[m.permissionId]) return;
+
+                    if (configMap.has(m.id)) {
+                        const cfg = configMap.get(m.id);
+                        if (cfg.visible) ordered.push({ ...m, order: cfg.order });
+                    } else {
+                        newItems.push({ ...m, isNew: true, order: 999 });
+                    }
+                });
+                ordered.sort((a, b) => a.order - b.order);
+                finalMenus = [...ordered, ...newItems];
+            } else {
+                const perms = this.getDistributorPermissionProfile();
+                finalMenus = scrapPool.filter(m => !m.permissionId || !!perms[m.permissionId]);
+            }
+
+            // FORCE RESTORATION OF CRITICAL SCRAP LINKS (Bypassing permission/config filters for urgency)
+            const scrapForced = [
+                { id: 'scrap_master', icon: '⚙️', name: 'Scrap Master', link: '/modules/admin/scrap-master.html' },
+                { id: 'scrap_buy', icon: '📚', name: 'Buying History', link: '/modules/admin/scrap-workbench.html?view=BUY' },
+                { id: 'scrap_history', icon: '📜', name: 'Selling History', link: '/modules/admin/scrap-selling-history.html' },
+                { id: 'shared_loans', icon: '💸', name: 'Loans', link: '/modules/core/loans.html' }
+            ];
+
+            const scrapMenus = this.dedupeMenus([ ...this.getDashboardMenu(), ...finalMenus, ...scrapForced ]);
+            
+            // ABSOLUTE OVERRIDE FOR HIMESHI - EXPENSES & CASH COUNTING ONLY + REDIRECT
+            const email = (firebase.auth && firebase.auth.currentUser && firebase.auth.currentUser.email) || '';
+            if (String(email).trim().toLowerCase() === 'biz.himeshi@gmail.com') {
+                const himeshiMenus = [
+                    { id: 'scrap_expenses', icon: '💸', name: 'EXPENSES', link: '/modules/admin/scrap-expenses.html' },
+                    { id: 'scrap_cash_counting', icon: '🏧', name: 'Cash Counting', link: '/modules/admin/cash-counting.html' }
+                ];
+                
+                // If on dashboard or anywhere else (except allowed pages), force redirect to expenses
+                const path = window.location.pathname;
+                const allowedPaths = ['/modules/admin/scrap-expenses.html', '/modules/admin/cash-counting.html'];
+                if (path.includes('dashboard.html') || path === '/' || path.includes('index.html')) {
+                    setTimeout(() => {
+                        window.location.href = '/modules/admin/scrap-expenses.html';
+                    }, 500);
+                }
+                return himeshiMenus;
+            }
+
+            if (this.isSuperAdminUser()) {
+                scrapMenus.push(
+                    { icon: '👑', name: 'Super Admin', link: '/admin/super-dashboard.html' },
+                    { icon: '👥', name: 'User Management', link: '/admin/super-dashboard.html#tab-users' }
+                );
+            }
+            return scrapMenus;
         }
 
 
@@ -932,11 +1077,17 @@ class Sidebar {
             console.log('[Sidebar RBAC] Active Role:', this.currentRole);
             console.log('[Sidebar RBAC] Permission Profile:', perms);
 
+            const isMobile = this.isMobileView();
+
             // Filter pool by hard permissions first (RBAC safety)
             const availableMenus = pool.filter(m => {
+                // RULE: Hide mobile-specific links on desktop unless it is a mobile view
+                if (!isMobile && String(m.link || '').includes('/mobile/')) {
+                    return false;
+                }
+
                 if (m.permissionId) {
                     const hasPerm = !!perms[m.permissionId];
-                    console.log(`[Sidebar RBAC] Menu ${m.name} (${m.permissionId}): ${hasPerm ? 'ALLOWED' : 'DENIED'}`);
                     return hasPerm;
                 }
                 return true;
@@ -1209,25 +1360,29 @@ class Sidebar {
                         resolvedName = String(bd.name || bd.businessName || '').trim();
 
                         // Sync Permissions from Bridge (Staff Path) with Version Tracking
-                        if (bd.rbacConfig) {
-                            const cachedVersion = sessionStorage.getItem(`digibiz_perm_v_${resolvedBusinessId}`);
-                            const remoteVersion = String(bd.permVersion || '0');
+                        const cachedVersion = sessionStorage.getItem(`digibiz_perm_v_${resolvedBusinessId}`);
+                        const remoteVersion = String(bd.permVersion || '0');
 
+                        if (bd.rbacConfig) {
                             if (cachedVersion !== remoteVersion) {
-                                console.log('[Sidebar] Permission version changed, refreshing...');
+                                console.log('[Sidebar] Permission version changed, refreshing bridge...');
                                 sessionStorage.setItem(`digibiz_perms_v2_${resolvedBusinessId}`, JSON.stringify(bd.rbacConfig));
                                 sessionStorage.setItem(`digibiz_perm_v_${resolvedBusinessId}`, remoteVersion);
-                                // Force re-render to reflect new permissions immediately
                                 setTimeout(() => this.render(), 100);
                             }
                         } else {
-                            // Try Direct Config if bridge is missing (Owner Path)
-                            try {
-                                const snap = await window.db.collection('businesses').doc(resolvedBusinessId).collection('configs').doc('permissions').get();
-                                if (snap.exists) {
-                                    sessionStorage.setItem(`digibiz_perms_v2_${resolvedBusinessId}`, JSON.stringify(snap.data()));
-                                }
-                            } catch (eDirect) { /* Owner-only path */ }
+                            // Fallback: Fetch direct config
+                            if (cachedVersion !== remoteVersion || !sessionStorage.getItem(`digibiz_perms_v2_${resolvedBusinessId}`)) {
+                                console.log('[Sidebar] Refreshing direct permissions...');
+                                try {
+                                    const snap = await window.db.collection('businesses').doc(resolvedBusinessId).collection('configs').doc('permissions').get();
+                                    if (snap.exists) {
+                                        sessionStorage.setItem(`digibiz_perms_v2_${resolvedBusinessId}`, JSON.stringify(snap.data()));
+                                        sessionStorage.setItem(`digibiz_perm_v_${resolvedBusinessId}`, remoteVersion);
+                                        setTimeout(() => this.render(), 100);
+                                    }
+                                } catch (eDirect) { /* ignore */ }
+                            }
                         }
 
                         if (bd.ownerName) this.ownerName = String(bd.ownerName || '').trim();
@@ -1267,9 +1422,16 @@ class Sidebar {
             { icon: '⚙️', name: 'Settings', link: '/modules/company/settings.html' },
             { icon: '📲', name: 'SMS Settings', link: '/modules/company/sms-settings.html' },
             { icon: '🧾', name: 'SMS Log', link: '/modules/company/sms-log.html' },
-            { icon: '💳', name: 'Billing & Charges', link: '/modules/core/billing.html' }
+            { icon: '💳', name: 'Billing & Charges', link: '/modules/core/billing.html' },
+            { icon: '📄', name: 'Document Settings', link: '/modules/core/document-settings.html' }
         ];
-        let settingsItems = this.isRepRole() ? [] : settingsItemsBase.slice();
+        const user = firebase.auth && firebase.auth.currentUser;
+        const authEmail = (user && user.email) || '';
+        const storedEmail = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
+        const emailNorm = String(authEmail || storedEmail || '').trim().toLowerCase();
+        const isRasika = emailNorm === 'biz.himeshi@gmail.com' || (this.ownerName && this.ownerName.includes('Rasika'));
+
+        let settingsItems = (this.isRepRole() || isRasika) ? [] : settingsItemsBase.slice();
         if (this.businessType === 'distributor' && window.DigibizDistributorPermissions && !this.isRepRole()) {
             const p = window.DigibizDistributorPermissions.permissionsForRole(this.businessNavRole || this.currentRole || '');
             const rb = p.roleBand;
@@ -1288,6 +1450,7 @@ class Sidebar {
         const settingsActive = settingsItems.some((item) => this.isMenuActive(item.link, pathname));
         const loanItems = [
             { icon: '🏠', name: 'Loan Hub', link: '/modules/core/loans.html' },
+            { icon: '📅', name: 'Weekly Loan', link: '/modules/admin/scrap-weekly-loans.html' },
             { icon: '🤝', name: 'Hand Loans', link: '/modules/core/hand-loans.html' },
             { icon: '🟢', name: 'No-interest Loan', link: '/modules/core/loan-no-interest.html' },
             { icon: '📈', name: 'Interest Loan (10%)', link: '/modules/core/loan-interest.html' },
@@ -1300,7 +1463,7 @@ class Sidebar {
             <div class="retail-navbar digibiz-sidebar">
                 <div>
                     <div id="sidebarTrialBanner" style="display:none;" class="trial-sidebar-banner">TRIAL MODE ACTIVE</div>
-                    <div class="sidebar-header">
+                    <div class="sidebar-header" style="position: relative;">
                         <div class="logo">DIGIBIZ<span>™</span></div>
                         <div class="sidebar-business-logo-wrap">
                             <img id="sidebarBusinessLogoImg" class="sidebar-business-logo-img" alt="" decoding="async" />
@@ -1317,14 +1480,28 @@ class Sidebar {
                         </div>
                     </div>
                     <div class="nav-links" id="sidebarNavLinks">
-                        ${menuItems.map((item) => `
-                            <a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}">
+                        ${menuItems.map((item) => {
+                            const isDashboard = item.name === 'Dashboard';
+                            const isExpenses = item.name === 'EXPENSES';
+                            const isScrapPage = window.location.pathname.includes('/scrap-');
+                            const showScrapBadge = isDashboard && (this.businessType === 'scrap_collection_center' || isScrapPage);
+                            
+                            let html = `
+                            <a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}" style="position: relative;">
                                 <span class="menu-icon">${item.icon}</span>
                                 <span>${item.name}</span>
                                 ${item.isNew ? '<span class="menu-badge-new">NEW</span>' : ''}
+                                ${showScrapBadge ? '<span id="sidebarScrapPoolBadge" style="position: absolute; right: 10px; top: -15px; font-size: 10px; font-weight: 900; color: #34d399; display: none;"></span>' : ''}
                             </a>
-                        `).join('')}
-                        ${this.isSuperAdminUser() ? `<div class="menu-dropdown ${loansActive ? 'open' : ''}" id="loansDropdown">
+                            `;
+                            
+                            if (isExpenses && isRasika) {
+                                html += `<div id="sidebarScrapPoolLabel" style="font-size: 16px; font-weight: 900; color: #34d399; padding: 15px 15px 30px 15px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.05); margin-bottom: 10px;">Checking pool...</div>`;
+                            }
+                            
+                            return html;
+                        }).join('')}
+                        ${(this.isSuperAdminUser() || this.businessType === 'scrap_collection_center') ? `<div class="menu-dropdown ${loansActive ? 'open' : ''}" id="loansDropdown">
                             <button type="button" class="menu-dropdown-toggle ${loansActive ? 'active' : ''}" id="loansDropdownToggle">
                                 <span><span class="menu-icon">💸</span><span>Loans</span></span><span>${loansActive ? '▾' : '▸'}</span>
                             </button>
@@ -1372,10 +1549,72 @@ class Sidebar {
             document.body.insertAdjacentHTML('afterbegin', html);
         }
         this.updateUserInfo();
+        this.refreshScrapPoolBadge();
+    }
+
+    async refreshScrapPoolBadge() {
+        const el = document.getElementById('sidebarScrapPoolBadge');
+        if (!el) return;
+        const bid = this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+        if (!bid) return;
+        
+        // Context detection
+        const isScrapBiz = this.businessType === 'scrap_collection_center';
+        const isScrapPage = window.location.pathname.includes('/scrap-');
+        if (!isScrapBiz && !isScrapPage) return;
+
+        try {
+            // Ensure core library is available
+            if (!window.scrapVbaCore) {
+                if (!document.getElementById('scrap-vba-core-script')) {
+                    const s = document.createElement('script');
+                    s.id = 'scrap-vba-core-script';
+                    s.src = '/core/scrap-vba-core.js?v=78';
+                    document.head.appendChild(s);
+                }
+                setTimeout(() => this.refreshScrapPoolBadge(), 1000);
+                return;
+            }
+
+            if (!window.scrapVbaCore.getProfitPool) {
+                setTimeout(() => this.refreshScrapPoolBadge(), 1000);
+                return;
+            }
+
+            // AUTO-SYNC ONCE PER SESSION
+            const syncKey = `scrap_pool_synced_${bid}`;
+            if (!sessionStorage.getItem(syncKey) && window.scrapVbaCore.recalculateProfitPoolFromHistory) {
+                console.log('[Sidebar] Performing session-first auto-sync for Profit Pool (Background)...');
+                window.scrapVbaCore.recalculateProfitPoolFromHistory(bid).then(() => {
+                    sessionStorage.setItem(syncKey, '1');
+                    this.refreshScrapPoolBadge(bid);
+                }).catch(e => console.warn('Profit sync failed', e));
+                return; // Let the background task handle the UI update
+            }
+
+            const bal = await window.scrapVbaCore.getProfitPool(bid);
+            el.textContent = Math.floor(bal).toLocaleString();
+            el.style.display = 'block';
+            el.style.color = bal < 0 ? '#f87171' : '#34d399';
+            el.style.background = bal < 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)';
+        } catch (e) {
+            console.warn('Scrap pool badge refresh failed:', e);
+        }
     }
 
     updateUserInfo() {
         const user = firebase.auth().currentUser;
+        const authEmail = (user && user.email) || '';
+        const emailNorm = String(authEmail).trim().toLowerCase();
+
+        // ULTIMATE OVERRIDE FOR HIMESHI
+        if (emailNorm === 'biz.himeshi@gmail.com') {
+            this.businessId = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+            this.businessType = 'scrap_collection_center';
+            this.ownerName = 'Rasika (Accountant)';
+            this.businessName = 'Scrap Business';
+        }
+
         const nameEl = document.getElementById('sidebarUserName');
         const roleEl = document.getElementById('sidebarUserRole');
         if (nameEl) nameEl.textContent = '';
@@ -1416,6 +1655,8 @@ class Sidebar {
                 window.location.href = '/index.html';
             });
         };
+        
+        this.updateScrapPoolBadge();
         const nav = document.getElementById('sidebarNavLinks');
         if (nav) {
             const loanToggle = document.getElementById('loansDropdownToggle');
@@ -1449,6 +1690,43 @@ class Sidebar {
                 window.eventBus.subscribe('BUSINESS_UPDATED', refreshSidebar);
             }
             window.__DIGIBIZ_PROFILE_SYNC_BOUND__ = true;
+        }
+    }
+
+    async updateScrapPoolBadge() {
+        const bid = this.businessId || localStorage.getItem('currentBusinessId');
+        if (!bid) return;
+        
+        try {
+            const poolLabel = document.getElementById('sidebarScrapPoolLabel');
+            const poolBadge = document.getElementById('sidebarScrapPoolBadge');
+            
+            if (!poolLabel && !poolBadge) return;
+            
+            if (window.scrapVbaCore && typeof window.scrapVbaCore.recalculateProfitPoolFromHistory === 'function') {
+                const res = await window.scrapVbaCore.recalculateProfitPoolFromHistory(bid);
+                const bal = res && typeof res.finalPool === 'number' ? res.finalPool : 0;
+                const formatted = `Rs ${bal.toLocaleString()}`;
+                
+                if (poolLabel) {
+                    poolLabel.textContent = formatted;
+                }
+                if (poolBadge) {
+                    poolBadge.textContent = formatted;
+                    poolBadge.style.display = 'block';
+                }
+            } else if (window.scrapVbaCore && typeof window.scrapVbaCore.getProfitPool === 'function') {
+                const res = await window.scrapVbaCore.getProfitPool(bid);
+                const bal = res && typeof res.balance === 'number' ? res.balance : 0;
+                const formatted = `Rs ${bal.toLocaleString()}`;
+                if (poolLabel) poolLabel.textContent = formatted;
+                if (poolBadge) {
+                    poolBadge.textContent = formatted;
+                    poolBadge.style.display = 'block';
+                }
+            }
+        } catch (e) {
+            console.warn('[Sidebar] Pool fetch failed:', e);
         }
     }
 }

@@ -203,36 +203,116 @@
             renderCart();
         }
 
-        function printInvoice(order) {
-            const rows = order.items.map((it) => `
-                <tr>
-                    <td>${it.name}</td>
-                    <td>${it.batchNumber || '-'}</td>
-                    <td>${it.qty}</td>
-                    <td>${formatLKR(it.price)}</td>
-                    <td>${formatLKR(it.qty * it.price)}</td>
-                </tr>
-            `).join('');
-            const win = window.open('', '_blank');
-            win.document.write(`
-                <html><head><title>Invoice ${order.invoiceNo}</title>
-                <style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}h2{margin:0 0 10px;} .t{text-align:right;}</style>
-                </head><body>
-                    <h2>DIGIBIZ Pharmacy Invoice</h2>
-                    <div>Invoice No: <strong>${order.invoiceNo}</strong></div>
-                    <div>Date: ${new Date(order.date).toLocaleString()}</div>
-                    <div>Customer: ${order.customerName || 'Walk-in Customer'}</div>
-                    <hr/>
-                    <table>
-                        <thead><tr><th>Medicine</th><th>Batch</th><th>Qty</th><th>Price</th><th>Amount</th></tr></thead>
-                        <tbody>${rows}</tbody>
-                    </table>
-                    <h3 class="t">Total: ${formatLKR(order.total)}</h3>
-                </body></html>
-            `);
-            win.document.close();
-            win.focus();
-            win.print();
+        async function printInvoice(order) {
+            try {
+                const bid = state.context.businessId;
+                const bizSnap = await window.db.collection('businesses').doc(bid).get();
+                const bizData = bizSnap.exists ? bizSnap.data() : {};
+                const docSettings = bizData.documentSettings || {};
+                const s = docSettings.pos_receipt || docSettings.invoice || {};
+
+                const header = s.header || bizData.name || 'PHARMACY RECEIPT';
+                const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+                const footer = s.footer || 'Thank you! Wish you a speedy recovery.';
+                const showLogo = s.showLogo !== false;
+
+                const rows = (order.items || []).map((it) => `
+                    <tr>
+                        <td>
+                            ${it.name}
+                            ${it.batchNumber ? `<div style="font-size:9px;color:#666;">Batch: ${it.batchNumber}</div>` : ''}
+                        </td>
+                        <td style="text-align:center;">${it.qty}</td>
+                        <td style="text-align:right;">${(it.price).toFixed(2)}</td>
+                        <td style="text-align:right;">${(it.qty * it.price).toFixed(2)}</td>
+                    </tr>
+                `).join('');
+
+                const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Invoice ${order.invoiceNo}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 5mm; }
+            body { width: 70mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; line-height: 1.4; color: #000; padding: 10px; width: 70mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 15px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 9px; margin: 4px 0 0; }
+        .receipt-title { font-size: 12px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 4px; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 10px; }
+        .meta-label { font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
+        th, td { padding: 4px 2px; text-align: left; border-bottom: 1px solid #eee; }
+        th { font-weight: 700; text-transform: uppercase; font-size: 9px; }
+        .total-section { margin-top: 10px; border-top: 2px solid #000; padding-top: 6px; }
+        .total-row { display: flex; justify-content: space-between; font-weight: 800; font-size: 13px; }
+        .footer { text-align: center; font-size: 10px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; font-style: italic; }
+        .softby { text-align: center; font-size: 8px; color: #666; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:40px; margin-bottom:5px;"><br>` : ''}
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Pharmacy Receipt</div>
+    
+    <div class="meta-row"><span class="meta-label">Inv No:</span><span>${order.invoiceNo}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${new Date(order.date).toLocaleString()}</span></div>
+    <div class="meta-row"><span class="meta-label">Cust:</span><span>${order.customerName || 'Walk-in'}</span></div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th style="text-align:center;">Qty</th>
+                <th style="text-align:right;">Price</th>
+                <th style="text-align:right;">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${rows}
+        </tbody>
+    </table>
+    
+    <div class="total-section">
+        <div class="total-row">
+            <span>NET AMOUNT</span>
+            <span>Rs. ${(order.total).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        </div>
+    </div>
+    
+    <div class="footer">
+        ${footer}
+    </div>
+    <div class="softby">Software by DIGIBIZ - 0713446500</div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    </script>
+</body>
+</html>`;
+
+                const win = window.open('', '_blank', 'width=400,height=600');
+                if (!win) {
+                    alert('Popup blocked. Please allow popups to print the invoice.');
+                    return;
+                }
+                win.document.write(html);
+                win.document.close();
+            } catch (e) {
+                console.error(e);
+                alert('Printing failed: ' + e.message);
+            }
         }
 
         async function checkout() {
@@ -296,7 +376,7 @@
         });
 
         auth.onAuthStateChanged(async (user) => {
-            if (!user) { window.location.href = '../../auth/login.html'; return; }
+            if (!user) { window.location.href = '/'; return; }
             state.user = user;
             state.context = await window.dashboardCore.getContext(user);
             if (!state.context || state.context.businessType !== 'pharmacy') {

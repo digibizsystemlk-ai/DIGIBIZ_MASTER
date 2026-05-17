@@ -226,16 +226,17 @@ const BUSINESS_TYPES = {
         hidden: true,
         restrictedToUid: "oDhSDYHQ2dV1DP33koysmZAqaY13",
         menus: [
-            { icon: "📊", name: "DASHBOARD", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN"] },
-            { icon: "🧾", name: "BILL", link: "/modules/admin/scrap-buying.html", role: ["SUPER_ADMIN"] },
-            { icon: "💸", name: "SELL", link: "/modules/admin/scrap-sell.html", role: ["SUPER_ADMIN"] },
-            { icon: "📦", name: "STOCK", link: "/modules/admin/scrap-workbench.html?view=STOCK", role: ["SUPER_ADMIN"] },
-            { icon: "📚", name: "BUY", link: "/modules/admin/scrap-workbench.html?view=BUY", role: ["SUPER_ADMIN"] },
-            { icon: "📜", name: "HISTORY", link: "/modules/admin/scrap-selling-history.html", role: ["SUPER_ADMIN"] },
-            { icon: "🏦", name: "ADVANCE", link: "/modules/admin/scrap-advance.html", role: ["SUPER_ADMIN"] },
-            { icon: "📘", name: "DAILYTR", link: "/modules/admin/scrap-workbench.html?view=DAILYTR", role: ["SUPER_ADMIN"] },
-            { icon: "📁", name: "ACCOUNTING", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN"] },
-            { icon: "📈", name: "REPORTS", link: "/modules/reports/index.html", role: ["SUPER_ADMIN"] }
+            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html?no-redirect=1", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "📍", name: "Public Leads", link: "/modules/admin/scrap-leads.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "🧾", name: "Bill", link: "/modules/admin/scrap-buying.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "💸", name: "Sell", link: "/modules/admin/scrap-sell.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "📦", name: "Stock", link: "/modules/admin/scrap-workbench.html?view=STOCK", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "📚", name: "Buying History", link: "/modules/admin/scrap-workbench.html?view=BUY", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "📜", name: "Selling History", link: "/modules/admin/scrap-selling-history.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "🏦", name: "Advance", link: "/modules/admin/scrap-advance.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "📘", name: "Daily Transactions", link: "/modules/admin/scrap-workbench.html?view=DAILYTR", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "📈", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] }
         ],
         dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
         isReady: true

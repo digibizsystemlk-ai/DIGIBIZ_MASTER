@@ -30,8 +30,24 @@ window.AuthUI = {
 
             const userDoc = await window.db.collection('users').doc(user.uid).get();
             const userData = userDoc.exists ? userDoc.data() : {};
-            const businessId = userData.businessId || user.uid;
+            const emailNorm = String(user.email || '').trim().toLowerCase();
             
+            let businessId = userData.businessId || user.uid;
+            
+            // 1. Staff Discovery Override
+            if (emailNorm) {
+                // Try registry first
+                const regDoc = await window.db.collection('staff_registry').doc(emailNorm).get();
+                if (regDoc.exists && regDoc.data().businessId) {
+                    businessId = regDoc.data().businessId;
+                } else {
+                    // Try direct bypasses
+                    if (emailNorm === 'biz.himeshi@gmail.com' || emailNorm === 'biz.sirimal@gmail.com') {
+                        businessId = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+                    }
+                }
+            }
+
             let businessType = 'retail';
             const businessDoc = await window.db.collection('businesses').doc(businessId).get();
             if (businessDoc.exists) {
@@ -58,6 +74,11 @@ window.AuthUI = {
             console.warn('[AuthUI] Login context resolution failed:', error);
         }
         
-        window.location.href = '../modules/core/dashboard.html';
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (isMobile) {
+            window.location.href = '../modules/admin/scrap-buying.html';
+        } else {
+            window.location.href = '../modules/core/dashboard.html';
+        }
     }
 };

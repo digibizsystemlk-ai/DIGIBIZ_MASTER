@@ -35,12 +35,13 @@
     <div class="card" style="overflow:auto;"><table id="historyTable"></table></div>
 </div>
 <script>
-const OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+let SCRAP_BUSINESS_ID = '';
 const fmt = (v) => `LKR ${(Number(v)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 async function loadHistory() {
+    if (!SCRAP_BUSINESS_ID) return;
     const [itemSnap, sellSnap] = await Promise.all([
-        db.collection('scrap_items').where('businessId','==',OWNER_UID).get(),
-        db.collection('selling_history').where('businessId','==',OWNER_UID).get()
+        db.collection('scrap_items').where('businessId','==',SCRAP_BUSINESS_ID).get(),
+        db.collection('selling_history').where('businessId','==',SCRAP_BUSINESS_ID).get()
     ]);
     const itemNames = itemSnap.docs.map((d)=>String(d.data().itemName||'').trim()).filter(Boolean).sort((a,b)=>a.localeCompare(b));
     const rows = sellSnap.docs.map((d)=>({ id:d.id, ...(d.data()||{}) }))
@@ -71,12 +72,27 @@ async function loadHistory() {
     });
 }
 auth.onAuthStateChanged(async (user) => {
-    if (!user) { window.location.href='../../auth/login.html'; return; }
-    const userDoc = await db.collection('users').doc(user.uid).get();
-    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    if (!user) { window.location.href='/'; return; }
+    
+    // Dynamic Business Context
+    let businessId = user.uid;
+    if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+        const ctx = await window.dashboardCore.getContext(user);
+        businessId = String((ctx && ctx.businessId) || user.uid);
+    } else {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    }
+    
     const bizDoc = await db.collection('businesses').doc(businessId).get();
     const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
-    if (user.uid !== OWNER_UID || businessType !== 'scrap_collection_center') { window.location.href = '/modules/core/dashboard.html'; return; }
+    
+    if (businessType !== 'scrap_collection_center') {
+        window.location.href = '/modules/core/dashboard.html';
+        return;
+    }
+    
+    SCRAP_BUSINESS_ID = businessId;
     await loadHistory();
 });
 </script>

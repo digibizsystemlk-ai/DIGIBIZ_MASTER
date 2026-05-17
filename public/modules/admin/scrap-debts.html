@@ -420,7 +420,8 @@ async function postLoanPayment(loanId) {
         if (!customerSnap.empty) {
             const customer = customerSnap.docs[0].data();
             const settings = settingsSnap.exists ? settingsSnap.data() : {};
-            const tpl = String(settings.tplLoan || 'Hi {{name}},\nYour loan balance is {{balance}}.\nDate: {{date}}\nThank you.');
+            const safeName = String(row.customerName || '').trim().replace(/\s+/g, '+');
+            const tpl = String(settings.tplLoan || `Loan updated. Due: {{balance}}\nLink: https://digibiz-sys.web.app/a/${safeName}/${SCRAP_BUSINESS_ID} `);
             const msg = tpl
                 .replace(/\{\{name\}\}/g, String(row.customerName || 'Customer'))
                 .replace(/\{\{balance\}\}/g, fmt(next))
@@ -516,7 +517,8 @@ async function saveAdvanceUpdate() {
     if (!customerSnap.empty && window.scrapVbaCore && (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function' || typeof window.scrapVbaCore.enqueuePendingSms === 'function')) {
         const customer = customerSnap.docs[0].data();
         const settings = settingsSnap.exists ? settingsSnap.data() : {};
-        const defaultMsg = window.scrapVbaCore.buildAdvanceBalanceMessage(customerName, amount, new Date().toISOString());
+        const safeName = customerName.trim().replace(/\s+/g, '+');
+        const defaultMsg = `Adv updated. Due: {{amount}}\nLink: https://digibiz-sys.web.app/a/${safeName}/${SCRAP_BUSINESS_ID} `;
         const tpl = String(settings.tplAdvance || defaultMsg);
         const msg = window.scrapVbaCore.renderTemplate
             ? window.scrapVbaCore.renderTemplate(tpl, {
@@ -524,7 +526,7 @@ async function saveAdvanceUpdate() {
                 amount: `Rs. ${Math.round(amount).toLocaleString()}/=`,
                 date: new Date().toLocaleString()
             })
-            : defaultMsg;
+            : defaultMsg.replace('{{amount}}', `Rs. ${Math.round(amount).toLocaleString()}/=`);
         const enabledAdvance = window.scrapVbaCore.isScrapSmsEventEnabled
             ? await window.scrapVbaCore.isScrapSmsEventEnabled(SCRAP_BUSINESS_ID, 'advance')
             : true;
@@ -545,7 +547,7 @@ async function saveExternalSettlement() {
     const amount = Number(document.getElementById('extSettlementAmount').value) || 0;
     const note = String(document.getElementById('extNote').value || '').trim();
     if (!customerName) return alert('Customer name is required.');
-    await db.collection('scrap_external_settlements').add({
+    const extRef = await db.collection('scrap_external_settlements').add({
         businessId: SCRAP_BUSINESS_ID,
         customerName,
         amount,
@@ -558,7 +560,7 @@ async function saveExternalSettlement() {
         if (amount > 0) {
             await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
                 description: `External settlement receivable - ${customerName}`,
-                reference: customerName,
+                reference: extRef.id,
                 referenceType: 'SCRAP_EXT_SETTLEMENT',
                 date: new Date().toISOString(),
                 entries: [
@@ -569,7 +571,7 @@ async function saveExternalSettlement() {
         } else {
             await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
                 description: `External settlement payable - ${customerName}`,
-                reference: customerName,
+                reference: extRef.id,
                 referenceType: 'SCRAP_EXT_SETTLEMENT',
                 date: new Date().toISOString(),
                 entries: [
@@ -621,15 +623,26 @@ document.getElementById('saveAdvanceBtn').addEventListener('click', saveAdvanceU
 document.getElementById('saveExtSettlementBtn').addEventListener('click', saveExternalSettlement);
 
 auth.onAuthStateChanged(async (user) => {
-    if (!user) { window.location.href = '../../auth/login.html'; return; }
-    const userDoc = await db.collection('users').doc(user.uid).get();
-    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    if (!user) { window.location.href = '/'; return; }
+    
+    // Dynamic Business Context
+    let businessId = user.uid;
+    if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+        const ctx = await window.dashboardCore.getContext(user);
+        businessId = String((ctx && ctx.businessId) || user.uid);
+    } else {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    }
+    
     const bizDoc = await db.collection('businesses').doc(businessId).get();
     const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
+    
     if (businessType !== 'scrap_collection_center') {
         window.location.href = '/modules/core/dashboard.html';
         return;
     }
+    
     SCRAP_BUSINESS_ID = businessId;
     await loadUniversalCustomersForDatalist();
     wireCustomerAutofill();

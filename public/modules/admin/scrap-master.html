@@ -99,6 +99,24 @@
                 <button id="addBtn" type="button" disabled>Add Item</button>
             </div>
         </section>
+        <section class="card" id="offlineSettingsCard" style="background: #fff; border: 1px solid #10b981; margin-top:4px; display:none;">
+            <h3 style="color: #059669;"><i class="fas fa-shield-alt"></i> Offline Security Settings (නොබැඳි ආරක්ෂාව)</h3>
+            <p class="small" style="margin-bottom:12px; color: #475569;">අන්තර්ජාලය නොමැති විට පද්ධතියට ආරක්ෂිතව ලොග් වීම සඳහා PIN අංකයක් මෙහිදී සකසා ගන්න.</p>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <input type="password" id="newOfflinePin" placeholder="4-6 Digit PIN" maxlength="6" style="width:160px; text-align:center; font-size:18px; border: 2px solid #10b981;">
+                <button id="savePinBtn" style="background: #10b981; padding: 12px 20px;">Save Offline PIN</button>
+                <span id="pinStatus" style="font-size:12px; font-weight:800; padding: 5px 10px; border-radius: 6px;"></span>
+            </div>
+        </section>
+
+        <section class="card" style="background: #f8fafc; border: 1px solid #cbd5e1;">
+            <h3 style="color: #0c4a6e;">📊 History & Logs</h3>
+            <div style="display: flex; gap: 12px; margin-top: 10px;">
+                <button onclick="window.location.href='/modules/admin/scrap-workbench.html?view=BUY'" style="background: #0369a1; flex: 1; padding: 15px;">📚 Buying History</button>
+                <button onclick="window.location.href='/modules/admin/scrap-selling-history.html'" style="background: #15803d; flex: 1; padding: 15px;">📜 Selling History</button>
+                <button onclick="window.location.href='/modules/admin/scrap-workbench.html?view=DAILYTR'" style="background: #334155; flex: 1; padding: 15px;">📘 Daily Transactions</button>
+            </div>
+        </section>
         <section class="card">
             <h3>Scrap Inventory Table</h3>
             <div class="table-wrap">
@@ -141,7 +159,7 @@
     </div>
 </div>
 <script>
-    const OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+    let SCRAP_BUSINESS_ID = '';
     const COLLECTION = 'scrap_items';
     const state = { items: [], userId: null, unsub: null, isEditMode: false };
 
@@ -156,7 +174,7 @@
         const sellingPrice = toNum(item.sellingPrice);
         const profit = toNum(item.profit);
         const cp = Number(item.costPrice);
-        const buyingPrice = Number.isFinite(cp) && cp > 0 ? cp : 0;
+        const buyingPrice = Number.isFinite(cp) && cp > 0 ? cp : (sellingPrice - profit);
         return {
             ...item,
             currentStock,
@@ -211,9 +229,9 @@
     }
 
     async function persistRow(id, patch) {
+        if (!SCRAP_BUSINESS_ID) return;
         await db.collection(COLLECTION).doc(id).update({
             ...patch,
-            costPrice: Math.max(0, Number(state.items.find((r) => r.id === id)?.costPrice) || 0),
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
     }
@@ -242,6 +260,7 @@
     }
 
     async function addItem() {
+        if (!SCRAP_BUSINESS_ID) return;
         const itemName = document.getElementById('itemName').value.trim();
         const currentStock = toNum(document.getElementById('currentStock').value);
         const sellingPrice = toNum(document.getElementById('sellingPrice').value);
@@ -251,12 +270,12 @@
             return;
         }
         await db.collection(COLLECTION).add({
-            businessId: OWNER_UID,
+            businessId: SCRAP_BUSINESS_ID,
             itemName,
             currentStock,
             sellingPrice,
             profit,
-            costPrice: 0,
+            costPrice: Math.max(0, sellingPrice - profit),
             createdBy: state.userId,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -268,9 +287,10 @@
     }
 
     function startRealtime() {
+        if (!SCRAP_BUSINESS_ID) return;
         if (state.unsub) state.unsub();
         state.unsub = db.collection(COLLECTION)
-            .where('businessId', '==', OWNER_UID)
+            .where('businessId', '==', SCRAP_BUSINESS_ID)
             .onSnapshot((snap) => {
                 state.items = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
                     .sort((a, b) => String(a.itemName || '').localeCompare(String(b.itemName || '')));
@@ -281,9 +301,10 @@
     }
 
     async function loadBuyingHistory() {
+        if (!SCRAP_BUSINESS_ID) return;
         try {
             const snap = await db.collection('buying_history')
-                .where('businessId', '==', OWNER_UID)
+                .where('businessId', '==', SCRAP_BUSINESS_ID)
                 .get();
             const rows = snap.docs.map((d) => d.data())
                 .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
@@ -302,9 +323,10 @@
     }
 
     async function loadRewardsSummary() {
+        if (!SCRAP_BUSINESS_ID) return;
         try {
             if (window.scrapVbaCore && typeof window.scrapVbaCore.getSupplierRewardSummary === 'function') {
-                const result = await window.scrapVbaCore.getSupplierRewardSummary(OWNER_UID);
+                const result = await window.scrapVbaCore.getSupplierRewardSummary(SCRAP_BUSINESS_ID);
                 if (result && result.topSupplier) {
                     document.getElementById('kpiTopSupplier').textContent = `${result.topSupplier.name} (${toNum(result.topSupplier.weight).toFixed(2)}kg)`;
                     document.getElementById('kpiReward').textContent = `Top Reward: ${result.topSupplier.name}`;
@@ -322,16 +344,17 @@
     }
 
     async function ensureHistoryCollections() {
+        if (!SCRAP_BUSINESS_ID) return;
         const nowIso = new Date().toISOString();
         await Promise.all([
-            db.collection('buying_history').doc(`${OWNER_UID}_init`).set({
-                businessId: OWNER_UID,
+            db.collection('buying_history').doc(`${SCRAP_BUSINESS_ID}_init`).set({
+                businessId: SCRAP_BUSINESS_ID,
                 init: true,
                 date: nowIso,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             }, { merge: true }),
-            db.collection('selling_history').doc(`${OWNER_UID}_init`).set({
-                businessId: OWNER_UID,
+            db.collection('selling_history').doc(`${SCRAP_BUSINESS_ID}_init`).set({
+                businessId: SCRAP_BUSINESS_ID,
                 init: true,
                 date: nowIso,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -347,26 +370,66 @@
         renderTable();
     });
 
+    function updatePinStatus() {
+        const status = document.getElementById('pinStatus');
+        if (!status) return;
+        if (window.digibizOfflineAuth && window.digibizOfflineAuth.hasPin()) {
+            status.textContent = '✅ OFFLINE PIN ACTIVE';
+            status.style.background = '#dcfce7';
+            status.style.color = '#15803d';
+        } else {
+            status.textContent = '⚠️ PIN NOT SET';
+            status.style.background = '#fee2e2';
+            status.style.color = '#b91c1c';
+        }
+    }
+
     auth.onAuthStateChanged(async (user) => {
         if (!user) {
-            window.location.href = '../../auth/login.html';
+            window.location.href = '/';
             return;
         }
         state.userId = user.uid;
-        const userDoc = await db.collection('users').doc(user.uid).get();
-        const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+        
+        // Dynamic Business Context
+        let businessId = user.uid;
+        if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+            const ctx = await window.dashboardCore.getContext(user);
+            businessId = String((ctx && ctx.businessId) || user.uid);
+        } else {
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+        }
+        
         const bizDoc = await db.collection('businesses').doc(businessId).get();
         const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
-        if (user.uid !== OWNER_UID || businessType !== 'scrap_collection_center') {
-            alert('Access denied. Super admin owner only.');
+        
+        if (businessType !== 'scrap_collection_center') {
+            alert('Access denied. Scrap business owner only.');
             window.location.href = '/modules/core/dashboard.html';
             return;
         }
+        
+        SCRAP_BUSINESS_ID = businessId;
+        
+        // Offline Security UI
+        if (document.getElementById('offlineSettingsCard')) {
+            document.getElementById('offlineSettingsCard').style.display = 'block';
+            updatePinStatus();
+        }
+
+        // Enable fields
+        document.getElementById('itemName').disabled = false;
+        document.getElementById('currentStock').disabled = false;
+        document.getElementById('sellingPrice').disabled = false;
+        document.getElementById('profit').disabled = false;
+        document.getElementById('addBtn').disabled = false;
+        
         startRealtime();
         if (window.scrapVbaCore && typeof window.scrapVbaCore.calculateAllDailyInterest === 'function') {
-            const interestKey = `scrapDailyInterest_${OWNER_UID}_${new Date().toISOString().slice(0, 10)}`;
+            const interestKey = `scrapDailyInterest_${SCRAP_BUSINESS_ID}_${new Date().toISOString().slice(0, 10)}`;
             if (!localStorage.getItem(interestKey)) {
-                await window.scrapVbaCore.calculateAllDailyInterest(OWNER_UID);
+                await window.scrapVbaCore.calculateAllDailyInterest(SCRAP_BUSINESS_ID);
                 localStorage.setItem(interestKey, '1');
             }
         }
@@ -374,6 +437,23 @@
         await loadBuyingHistory();
         await loadRewardsSummary();
     });
+
+    const savePinBtn = document.getElementById('savePinBtn');
+    if (savePinBtn) {
+        savePinBtn.addEventListener('click', () => {
+            const pin = document.getElementById('newOfflinePin').value;
+            if (!pin || pin.length < 4) {
+                alert('PIN එක අවම වශයෙන් ඉලක්කම් 4ක් විය යුතුයි.');
+                return;
+            }
+            if (window.digibizOfflineAuth && window.digibizOfflineAuth.setPin(pin)) {
+                alert('Offline PIN එක සාර්ථකව සුරකින ලදී. දැන් ඔබට අන්තර්ජාලය නොමැති විට මෙම PIN එක භාවිතා කළ හැකියි.');
+                document.getElementById('newOfflinePin').value = '';
+                updatePinStatus();
+            }
+        });
+    }
 </script>
+<script src="../../core/offline-auth.js?v=1"></script>
 </body>
 </html>
