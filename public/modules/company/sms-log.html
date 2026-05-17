@@ -13,6 +13,7 @@
     <script src="/core/firebase-init.js?v=1"></script>
     <script src="/core/dashboard-core.js?v=62"></script>
     <script src="/core/sidebar.js?v=63"></script>
+    <script src="/core/scrap-vba-core.js?v=62"></script>
     <style>
         body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f8fafc;color:#0f172a}
         .wrap{padding:24px}
@@ -32,7 +33,7 @@
     <div class="card">
         <table>
             <thead>
-                <tr><th>Mobile</th><th>Message</th><th>Delivery</th><th>Final Status</th><th>Debug</th><th>Type</th><th>Credits</th><th>Balance after</th><th>Queued</th><th>Sent</th></tr>
+                <tr><th>Mobile</th><th>Message</th><th>Delivery</th><th>Final Status</th><th>Debug</th><th>Type</th><th>Credits</th><th>Balance after</th><th>Queued</th><th>Sent</th><th>Action</th></tr>
             </thead>
             <tbody id="rows"></tbody>
         </table>
@@ -125,10 +126,35 @@ firebase.auth().onAuthStateChanged(async (u) => {
                     if (st === 'failed') return x.failedAt ? fmtDate(x.failedAt) : (fmtDate(x.updatedAt) || 'FAILED');
                     return '—';
                 })()}</td>
+                <td>
+                    <button class="resend-btn" onclick="window.resendSms('${esc(x.mobile || x.to || '')}', '${esc(x.message || x.body || '')}')" style="background:#0284c7;color:#fff;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:bold;transition:background 0.2s;white-space:nowrap;">නැවත යවන්න</button>
+                </td>
             </tr>`;
             }).join('')
-            : `<tr><td colspan="10" class="msg">No rows for this business yet. If you expect SMS here, confirm customer mobile, SMS event settings, and gateway app connectivity. This page shows server-side truth, not phone outbox state.</td></tr>`;
+            : `<tr><td colspan="11" class="msg">No rows for this business yet. If you expect SMS here, confirm customer mobile, SMS event settings, and gateway app connectivity. This page shows server-side truth, not phone outbox state.</td></tr>`;
         document.getElementById('rows').innerHTML = body;
+    };
+
+    window.resendSms = async (mobile, message) => {
+        if (!mobile || !message) return;
+        const cleanMsg = message.replace(/^\[[A-Z0-9]+\]\s*-\s*/i, '');
+        if (!confirm(`මෙම SMS පණිවිඩය නැවත යැවීමට අවශ්‍යද?\n\nදුරකථනය: ${mobile}\nපණිවිඩය: ${cleanMsg}`)) return;
+        
+        try {
+            if (!window.scrapVbaCore || typeof window.scrapVbaCore.enqueuePendingSms !== 'function') {
+                alert('SMS පද්ධතිය සූදානම් නැත. කරුණාකර පිටුව නැවත පූරණය කරන්න (Reload).');
+                return;
+            }
+            
+            const res = await window.scrapVbaCore.enqueuePendingSms(businessId, mobile, cleanMsg);
+            if (res && res.ok) {
+                alert('SMS පණිවිඩය නැවත සාර්ථකව පෝලිමට එක් කරන ලදී!');
+            } else {
+                alert('SMS පණිවිඩය පෝලිමට එක් කිරීමට අපොහොසත් විය: ' + (res.skipped || 'නොදන්නා දෝෂයකි'));
+            }
+        } catch (e) {
+            alert('දෝෂයක් සිදු විය: ' + (e.message || e));
+        }
     };
 
     // Live updates for queue/pending changes

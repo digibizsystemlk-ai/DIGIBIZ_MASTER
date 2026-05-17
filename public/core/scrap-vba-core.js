@@ -307,6 +307,15 @@ try {
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
                 tx.set(pendingRef, payload);
+
+                // Write directly to sms_logs for an instant server-side audit trail
+                const logRef = window.db.collection("sms_logs").doc(pendingRef.id);
+                tx.set(logRef, {
+                    ...payload,
+                    status: "queued", // initial delivery status shown in logs
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
                 tx.set(settingsRef, {
                     smsWallet: {
                         ...liveWallet,
