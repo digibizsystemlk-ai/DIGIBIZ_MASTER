@@ -884,9 +884,15 @@
                         </div>
                     </div>
 
-                    <div style="margin-top:8px;">
-                        <button id="printA5Btn" type="button" style="background:#1d4ed8;">Print A5 Bill</button>
+                    <div id="activeSuppliersSection" style="margin-top:20px; margin-bottom:20px; display:none; border-top:1px dashed #cbd5e1; padding-top:15px;">
+                        <div style="font-size:11px; font-weight:800; color:#64748b; text-transform:uppercase; margin-bottom:8px; letter-spacing:0.05em;">
+                            සක්‍රීය සාමාජිකයින් (Active Suppliers)
+                        </div>
+                        <div id="activeSuppliersList" style="font-size:13px; font-weight:800; color:#0ea5e9; line-height:1.6; display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+                        </div>
                     </div>
+
+
                     <div id="smsDebugBadge" class="small"
                         style="margin-top:8px;display:none;padding:8px;border-radius:8px;"></div>
                 </section>
@@ -951,6 +957,8 @@
                     <div id="activeDraftsList"
                         style="margin-bottom:12px; display:flex; gap:8px; overflow-x:auto; padding:4px 0; scrollbar-width:none;">
                     </div>
+
+
 
                     <div class="mobile-item-adder"
                         style="display:none; margin-bottom:15px; padding:12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:12px;">
@@ -2124,12 +2132,213 @@
             const inp = document.getElementById('supplierName');
             if (inp) {
                 inp.value = name;
+                inp.dispatchEvent(new Event('input'));
+                inp.dispatchEvent(new Event('change'));
                 loadDraftForSupplier(name);
                 if (name.toUpperCase() !== 'TEMPORARY WALK-IN') {
                     speakText(`${name} ලෝඩින්`);
                 } else {
                     speakText(`ලෝඩින්`);
                 }
+            }
+        }
+
+        let advancesCache = [];
+        let billsCache = [];
+        let outstandingAdvancesCache = {};
+        let advancesListener = null;
+        let billsListener = null;
+        let outstandingAdvancesListener = null;
+
+        function getSlDateStr(dateInput) {
+            if (!dateInput) return '';
+            if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+                return dateInput;
+            }
+            const d = new Date(dateInput);
+            if (isNaN(d.getTime())) return '';
+            const slDate = new Date(d.getTime() + (330 * 60000));
+            return slDate.toISOString().split('T')[0];
+        }
+
+        function getDaysBetween(dateStr1, dateStr2) {
+            const d1 = new Date(dateStr1 + 'T00:00:00Z');
+            const d2 = new Date(dateStr2 + 'T00:00:00Z');
+            const diffMs = d2.getTime() - d1.getTime();
+            return Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+        }
+
+        function listenToActiveSuppliers() {
+            if (advancesListener) advancesListener();
+            if (billsListener) billsListener();
+            if (outstandingAdvancesListener) outstandingAdvancesListener();
+
+            const sixtyDaysAgo = new Date();
+            sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+            const sixtyDaysAgoIsoStr = sixtyDaysAgo.toISOString();
+
+            outstandingAdvancesListener = db.collection('scrap_advances')
+                .where('businessId', '==', SCRAP_BUSINESS_ID)
+                .onSnapshot(snap => {
+                    outstandingAdvancesCache = {};
+                    snap.docs.forEach(doc => {
+                        const data = doc.data() || {};
+                        const key = normalizePersonKey(data.supplierName || data.customerName || '');
+                        if (key) {
+                            outstandingAdvancesCache[key] = Number(data.balance) || 0;
+                        }
+                    });
+                    calculateAndRenderActiveSuppliers();
+                }, err => {
+                    console.warn("Outstanding advances listener error:", err);
+                });
+
+            advancesListener = db.collection('scrap_advance_history')
+                .where('businessId', '==', SCRAP_BUSINESS_ID)
+                .where('date', '>=', sixtyDaysAgoIsoStr)
+                .onSnapshot(snap => {
+                    advancesCache = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    calculateAndRenderActiveSuppliers();
+                }, err => {
+                    console.warn("Advances active listener error, trying fallback...", err);
+                    advancesListener = db.collection('scrap_advance_history')
+                        .where('businessId', '==', SCRAP_BUSINESS_ID)
+                        .limit(500)
+                        .onSnapshot(snap => {
+                            advancesCache = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                            calculateAndRenderActiveSuppliers();
+                        });
+                });
+
+            billsListener = db.collection('buying_history')
+                .where('businessId', '==', SCRAP_BUSINESS_ID)
+                .where('date', '>=', sixtyDaysAgoIsoStr.split('T')[0])
+                .onSnapshot(snap => {
+                    billsCache = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    calculateAndRenderActiveSuppliers();
+                }, err => {
+                    console.warn("Bills active listener error, trying fallback...", err);
+                    billsListener = db.collection('buying_history')
+                        .where('businessId', '==', SCRAP_BUSINESS_ID)
+                        .limit(500)
+                        .onSnapshot(snap => {
+                            billsCache = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                            calculateAndRenderActiveSuppliers();
+                        });
+                });
+        }
+
+        function calculateAndRenderActiveSuppliers() {
+            const advancesGrouped = {};
+            advancesCache.forEach(doc => {
+                const amt = Number(doc.amount) || 0;
+                if (amt <= 0.01) return; // Only positive advance issues count
+
+                const key = loanPersonKey(doc);
+                if (!key) return;
+
+                const dateStr = getSlDateStr(doc.date || doc.createdAt?.toDate?.() || doc.createdAt);
+                if (!dateStr) return;
+
+                const timeMs = doc.date ? new Date(doc.date).getTime() : (doc.createdAt?.toMillis?.() || Date.now());
+
+                if (!advancesGrouped[key]) {
+                    advancesGrouped[key] = {
+                        displayName: doc.supplierName || doc.customerName || doc.name || '',
+                        dates: {}
+                    };
+                }
+                if (!advancesGrouped[key].dates[dateStr] || timeMs < advancesGrouped[key].dates[dateStr]) {
+                    advancesGrouped[key].dates[dateStr] = timeMs;
+                }
+            });
+
+            const billsGrouped = {};
+            billsCache.forEach(doc => {
+                const key = loanPersonKey(doc);
+                if (!key) return;
+
+                const dateStr = getSlDateStr(doc.billDateTime || doc.date);
+                if (!dateStr) return;
+
+                if (!billsGrouped[key]) {
+                    billsGrouped[key] = new Set();
+                }
+                billsGrouped[key].add(dateStr);
+            });
+
+            const activeSuppliers = [];
+            const slNow = new Date(new Date().getTime() + (330 * 60000));
+            const todayStr = slNow.toISOString().split('T')[0];
+
+            for (const key in advancesGrouped) {
+                // If they have no active advance balance in our scrap_advances cache, skip them!
+                const currentBal = outstandingAdvancesCache[key] || 0;
+                if (currentBal <= 0.01) continue;
+
+                const supplier = advancesGrouped[key];
+                const billDates = billsGrouped[key] || new Set();
+
+                const unclearedDates = [];
+                for (const advDateStr in supplier.dates) {
+                    let cleared = false;
+                    for (const billDateStr of billDates) {
+                        if (billDateStr >= advDateStr) {
+                            cleared = true;
+                            break;
+                        }
+                    }
+                    if (!cleared) {
+                        unclearedDates.push(advDateStr);
+                    }
+                }
+
+                if (unclearedDates.length > 0) {
+                    unclearedDates.sort();
+                    const earliestUnclearedDateStr = unclearedDates[0];
+                    const daysElapsed = getDaysBetween(earliestUnclearedDateStr, todayStr);
+
+                    activeSuppliers.push({
+                        displayName: supplier.displayName,
+                        earliestUnclearedDateStr,
+                        daysElapsed
+                    });
+                }
+            }
+
+            activeSuppliers.sort((a, b) => {
+                if (b.daysElapsed !== a.daysElapsed) {
+                    return b.daysElapsed - a.daysElapsed;
+                }
+                return String(a.displayName).localeCompare(String(b.displayName));
+            });
+
+            const listContainer = document.getElementById('activeSuppliersList');
+            const sectionContainer = document.getElementById('activeSuppliersSection');
+            if (!listContainer || !sectionContainer) return;
+
+            if (activeSuppliers.length === 0) {
+                sectionContainer.style.display = 'none';
+                listContainer.innerHTML = '';
+                return;
+            }
+
+            sectionContainer.style.display = 'block';
+            const rendered = activeSuppliers.map(s => {
+                const badge = s.daysElapsed > 0 ? ` (<span style="color: #ef4444; font-weight: 900;">${s.daysElapsed}</span>)` : '';
+                return `<span onclick="switchToActiveSupplier('${escHtml(s.displayName).replace(/'/g, "\\'")}')" style="cursor: pointer; color: #0ea5e9; text-decoration: underline; text-decoration-style: dotted;" title="Click to select ${escHtml(s.displayName)}">👤 ${escHtml(s.displayName)}${badge}</span>`;
+            });
+
+            listContainer.innerHTML = rendered.join('<span style="color: #cbd5e1; margin: 0 4px;">•</span>');
+        }
+
+        function switchToActiveSupplier(name) {
+            const inp = document.getElementById('supplierName');
+            if (inp) {
+                inp.value = name;
+                inp.dispatchEvent(new Event('input'));
+                inp.dispatchEvent(new Event('change'));
+                speakText(`${name} ලෝඩින්`);
             }
         }
 
@@ -2784,6 +2993,20 @@
                             patch.pendingRemovalAt = firebase.firestore.FieldValue.delete();
                         }
                         await ref.set(patch, { merge: true });
+                        try {
+                            await db.collection('loan_interest_history').add({
+                                businessId: SCRAP_BUSINESS_ID,
+                                loanId: row.id,
+                                customerName: supplierName,
+                                date: new Date().toISOString(),
+                                amount: -amt,
+                                type: 'BILL_DEDUCT',
+                                principalChange: -principalPaid,
+                                interestChange: -intPaid,
+                                note: `Bill deduction: ${billNo || ''}`,
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        } catch (e) { console.warn("Failed to write to loan_interest_history:", e); }
                         scrapLoanCredit += amt;
                         continue;
                     }
@@ -2968,6 +3191,22 @@
                                         active: (bCur + iCur - take) > 0.01,
                                         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                                     }, { merge: true });
+                                    if (src === 'loan_interest_entries') {
+                                        try {
+                                            await db.collection('loan_interest_history').add({
+                                                businessId: SCRAP_BUSINESS_ID,
+                                                loanId: L.id,
+                                                customerName: supplierName,
+                                                date: new Date().toISOString(),
+                                                amount: -take,
+                                                type: 'BILL_DEDUCT',
+                                                principalChange: -pPaid,
+                                                interestChange: -iPaid,
+                                                note: `Settle via Bill surplus`,
+                                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                                            });
+                                        } catch (e) { console.warn("Failed to write to loan_interest_history:", e); }
+                                    }
                                 } else {
                                     await ref.update({
                                         balance: firebase.firestore.FieldValue.increment(-take),
@@ -3804,7 +4043,7 @@
             autoAdjustDeductionsForCollection(grand + val);
         });
         document.getElementById('paymentMethod').addEventListener('change', updateBillPreview);
-        document.getElementById('printA5Btn').addEventListener('click', () => { printA5Bill().catch((e) => alert(String(e && e.message || e))); });
+
 
         auth.onAuthStateChanged(async (user) => {
             if (!user) { window.location.href = '/'; return; }
@@ -3843,6 +4082,7 @@
             await refreshSupplierBalances();
             updateBillPreview();
             listenToDrafts();
+            listenToActiveSuppliers();
 
             // Toggle Walk-in Name field
             const supInput = document.getElementById('supplierName');

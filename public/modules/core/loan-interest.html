@@ -241,6 +241,20 @@ async function saveLoan(){
     lastInterestCalcAt:new Date().toISOString(),
     active:true
   });
+  try {
+    await db.collection('loan_interest_history').add({
+      businessId,
+      loanId: loanRef.id,
+      customerName: c.fullName || cid,
+      date: new Date().toISOString(),
+      amount: amount,
+      type: 'ISSUE',
+      principalChange: amount,
+      interestChange: 0,
+      note: `Principal issue`,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e) { console.warn("Failed to write to loan_interest_history:", e); }
   await addJournal(`Interest loan given - ${c.fullName||cid}`,[{...GL_INT_AR,debit:amount,credit:0},{...GL_CASH,debit:0,credit:amount}],'LOAN_INTEREST_GIVEN',{ collection: 'loan_interest_entries', docId: loanRef.id });
   const nm = c.fullName || cid;
   const smsRes = await enqueueSms(mob, `Dear ${nm}, interest loan issued Rs.${amount.toFixed(2)} at ${RATE}% monthly. Principal due Rs.${amount.toFixed(2)}.`);
@@ -272,6 +286,20 @@ async function repay(id){
         if (tot <= 0.0001 && window.LoanZeroCleanup) patch.pendingRemovalAt = window.LoanZeroCleanup.removalTimestamp();
         else patch.pendingRemovalAt = firebase.firestore.FieldValue.delete();
         await ref.set(patch,{merge:true});
+        try {
+            await db.collection('loan_interest_history').add({
+                businessId,
+                loanId: id,
+                customerName: r.customerName || '-',
+                date: new Date().toISOString(),
+                amount: -pay,
+                type: 'REPAY',
+                principalChange: -principalPaid,
+                interestChange: -intPaid,
+                note: `Repayment - ${method}`,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (e) { console.warn("Failed to write to loan_interest_history:", e); }
         await addJournal(`Interest loan repayment - ${r.customerName||'-'} (${method})`,[{...GL_PAY,debit:pay,credit:0},{...GL_INT_AR,debit:0,credit:principalPaid},{...GL_INT_INC,debit:0,credit:intPaid}],'LOAN_INTEREST_REPAY',{ collection: 'loan_interest_entries', docId: id });
         const totalDueAfter = (Number(principal)||0) + (Number(intOut)||0);
         const mob = pickMobile(r) || (r.customerId ? pickMobile(customerMap[r.customerId]) : '');
@@ -309,7 +337,7 @@ async function loadRows(){
   }
   const snap = await db.collection('loan_interest_entries').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
   const rows = snap.docs.map((d)=>({id:d.id,...(d.data()||{})}));
-  document.getElementById('rows').innerHTML = rows.map((r)=>`<tr><td>${r.customerName||'-'}</td><td>${m(r.principalOutstanding)}</td><td>${m(r.interestOutstanding)}</td><td>${m((Number(r.principalOutstanding)||0)+(Number(r.interestOutstanding)||0))}</td><td>${r.lastInterestCalcAt?new Date(r.lastInterestCalcAt).toLocaleString():'-'}</td><td><button type="button" data-id="${r.id}" ${((Number(r.principalOutstanding)||0)+(Number(r.interestOutstanding)||0))<=0?'disabled':''}>Receive</button></td></tr>`).join('') || '<tr><td colspan="6">No records</td></tr>';
+  document.getElementById('rows').innerHTML = rows.map((r)=>`<tr><td>${r.customerName||'-'}</td><td>${m(r.principalOutstanding).replace('Rs. ','')}</td><td>${m(r.interestOutstanding).replace('Rs. ','')}</td><td><b onclick="openInterestHistory('${r.id}', '${(r.customerName||'').replace(/'/g, "\\'")}', ${Number(r.principalOutstanding || 0)}, ${Number(r.interestOutstanding || 0)})" style="color:#2563eb;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">${m((Number(r.principalOutstanding)||0)+(Number(r.interestOutstanding)||0)).replace('Rs. ','')}</b></td><td>${r.lastInterestCalcAt?new Date(r.lastInterestCalcAt).toLocaleString():'-'}</td><td><button type="button" data-id="${r.id}" ${((Number(r.principalOutstanding)||0)+(Number(r.interestOutstanding)||0))<=0?'disabled':''}>Receive</button></td></tr>`).join('') || '<tr><td colspan="6">No records</td></tr>';
   document.querySelectorAll('#rows button[data-id]').forEach((b)=>b.onclick=()=>repay(b.dataset.id));
 }
 firebase.auth().onAuthStateChanged(async (u)=>{
@@ -331,6 +359,106 @@ firebase.auth().onAuthStateChanged(async (u)=>{
 });
 document.getElementById('saveBtn').onclick = saveLoan;
 document.getElementById('clearAllBtn').onclick = deleteAllInterestLoansForBusiness;
+</script>
+
+<!-- Interest Loan History Modal -->
+<div id="interestHistoryModal" class="modal-ov">
+    <div class="modal-card" style="max-width:500px; padding:0; overflow:hidden;">
+        <div style="padding:20px 25px; border-bottom:1px solid #bbf7d0; display:flex; justify-content:space-between; align-items:center; background:#ecfdf5;">
+            <div>
+                <div style="font-size:18px; font-weight:800; color:#14532d;" id="ihTitle">Interest Loan History</div>
+                <div style="font-size:12px; font-weight:600; color:#166534; margin-top:2px;" id="ihSubtitle">Loading...</div>
+            </div>
+            <button onclick="document.getElementById('interestHistoryModal').style.display='none'" style="background:#f1f5f9; border:none; padding:8px 15px; border-radius:12px; font-size:12px; font-weight:700; color:#475569; cursor:pointer;">Close</button>
+        </div>
+        <div style="overflow-y:auto; padding:0; flex:1; max-height: 60vh;">
+            <table style="width:100%; border-collapse:collapse; font-size:13px; margin:0;">
+                <thead style="position:sticky; top:0; background:#f8fafc; z-index:2;">
+                    <tr>
+                        <th style="padding:12px 15px; text-align:left; font-size:11px; font-weight:700; color:#166534; border-bottom:1px solid #bbf7d0;">DATE</th>
+                        <th style="padding:12px 15px; text-align:right; font-size:11px; font-weight:700; color:#166534; border-bottom:1px solid #bbf7d0;">CHANGE</th>
+                        <th style="padding:12px 15px; text-align:right; font-size:11px; font-weight:700; color:#166534; border-bottom:1px solid #bbf7d0;">TOTAL BALANCE</th>
+                    </tr>
+                </thead>
+                <tbody id="ihBody">
+                    <tr><td colspan="3" style="text-align:center; padding:30px; color:#166534;">Loading data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+async function openInterestHistory(loanId, customerName, currentPrincipal, currentInterest) {
+    const m = document.getElementById('interestHistoryModal');
+    if(!m) return;
+    m.style.display = 'flex';
+    document.getElementById('ihTitle').textContent = `History: ${customerName}`;
+    document.getElementById('ihSubtitle').textContent = "Fetching records...";
+    document.getElementById('ihBody').innerHTML = '<tr><td colspan="3" style="text-align:center; padding:30px; color:#166534;">Please wait...</td></tr>';
+
+    try {
+        const snap = await db.collection('loan_interest_history')
+            .where('businessId', '==', businessId)
+            .where('loanId', '==', loanId)
+            .limit(500)
+            .get();
+        
+        let allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        allDocs.sort((a,b)=>String(a.date || '').localeCompare(String(b.date || '')));
+        
+        let runningP = 0;
+        let runningI = 0;
+        let lastZeroIdx = -1;
+        const withTotals = allDocs.map((x, idx)=>{
+            const pChg = Number(x.principalChange || 0);
+            const iChg = Number(x.interestChange || 0);
+            runningP += pChg;
+            runningI += iChg;
+            if (Math.abs(runningP + runningI) < 0.01) lastZeroIdx = idx;
+            return { ...x, runningP, runningI, runningTotal: runningP + runningI };
+        });
+
+        const cycleRows = withTotals.slice(lastZeroIdx + 1);
+        let rows = cycleRows.slice().sort((a,b)=>String(b.date || '').localeCompare(String(a.date || '')));
+
+        if (rows.length === 0 && (currentPrincipal > 0 || currentInterest > 0)) {
+            rows = [{
+                date: new Date().toISOString(),
+                amount: currentPrincipal + currentInterest,
+                runningTotal: currentPrincipal + currentInterest,
+                note: 'START / Current Balance'
+            }];
+        }
+
+        document.getElementById('ihSubtitle').textContent = `Found ${rows.length} records`;
+
+        document.getElementById('ihBody').innerHTML = rows.map((x)=>{
+            const dt = x.date ? new Date(x.date).toLocaleDateString() : '-';
+            const amt = Number(x.amount || 0);
+            const sign = amt >= 0 ? '+' : '';
+            const tone = amt >= 0 ? '#166534' : '#b91c1c';
+            
+            return `<tr>
+                <td style="padding:12px 15px; border-bottom:1px solid #bbf7d0;">
+                    <div style="font-weight:600; color:#14532d;">${dt}</div>
+                    <div style="font-size:10px; color:#166534; margin-top:2px;">${x.note || '-'}</div>
+                </td>
+                <td style="padding:12px 15px; text-align:right; font-weight:800; color:${tone}; border-bottom:1px solid #bbf7d0;">
+                    ${sign}${Math.abs(amt).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}
+                </td>
+                <td style="padding:12px 15px; text-align:right; font-weight:700; color:#14532d; border-bottom:1px solid #bbf7d0;">
+                    ${(x.runningTotal || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}
+                </td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="3" style="text-align:center; padding:30px; color:#166534;">No records found.</td></tr>';
+
+    } catch (err) {
+        console.error("History Error:", err);
+        document.getElementById('ihSubtitle').textContent = "Error.";
+        document.getElementById('ihBody').innerHTML = `<tr><td colspan="3" style="text-align:center; padding:30px; color:#ef4444;">Failed to fetch data.</td></tr>`;
+    }
+}
 </script>
 </body>
 </html>
