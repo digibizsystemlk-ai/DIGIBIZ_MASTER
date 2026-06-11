@@ -109,13 +109,13 @@ window.WeeklyLoanCore = (function() {
         },
 
         /**
-         * Calculate daily compound interest
+         * Calculate daily compound interest based on 10% monthly rate (compounded daily at 10%/30 per day)
          */
         calculateOverduePenalty(unpaidAmount, daysOverdue) {
             if (daysOverdue <= 0) return 0;
-            // Compound: A = P(1 + r)^t
-            const r = DAILY_OVERDUE_RATE;
-            const totalWithPenalty = unpaidAmount * Math.pow(1 + r, daysOverdue);
+            // Daily rate is 10% / 30
+            const dailyRate = MONTHLY_RATE / 30;
+            const totalWithPenalty = unpaidAmount * Math.pow(1 + dailyRate, daysOverdue);
             return totalWithPenalty - unpaidAmount;
         },
 
@@ -127,6 +127,7 @@ window.WeeklyLoanCore = (function() {
             let totalOverdueInterest = 0;
 
             loanData.schedule.forEach(inst => {
+                inst.daysOverdue = 0; // Initialize default daysOverdue
                 if (inst.status === 'PAID') return;
 
                 const dueDate = new Date(inst.dueDate);
@@ -134,7 +135,7 @@ window.WeeklyLoanCore = (function() {
                     const daysDiff = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
                     const unpaid = inst.amount - (inst.paidAmount || 0);
                     if (unpaid > 0) {
-                        // Compound interest includes previous penalty
+                        inst.daysOverdue = daysDiff;
                         inst.overdueInterest = this.calculateOverduePenalty(unpaid, daysDiff);
                         inst.status = 'OVERDUE';
                         totalOverdueInterest += inst.overdueInterest;

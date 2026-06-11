@@ -883,7 +883,400 @@ try {
         return { sent: 0 };
     }
 
+    let polkatuListenerUnsubscribe = null;
+
+    async function getChamaraPhoneNumber(businessId) {
+        if (!window.db || !businessId) return null;
+        try {
+            const snap = await window.db.collection('customers')
+                .where('businessId', '==', businessId)
+                .get();
+            for (const doc of snap.docs) {
+                const data = doc.data() || {};
+                const name = String(data.fullName || '').trim().toLowerCase();
+                const type = String(data.type || data.context || '').trim().toLowerCase();
+                if (name === 'chamara' && (type === 'buyer' || type.includes('buyer'))) {
+                    return String(data.mobile || data.phone || '').trim();
+                }
+            }
+            // Fallback
+            for (const doc of snap.docs) {
+                const data = doc.data() || {};
+                const name = String(data.fullName || '').trim().toLowerCase();
+                if (name === 'chamara') {
+                    return String(data.mobile || data.phone || '').trim();
+                }
+            }
+        } catch (err) {
+            console.error("[Polkatu-Alert] Error looking up Chamara phone number:", err);
+        }
+        return null;
+    }
+
+    async function sendPolkatuAlertSms(businessId, roundedVal) {
+        try {
+            const phone = await getChamaraPhoneNumber(businessId);
+            if (!phone) {
+                console.warn("[Polkatu-Alert] SMS skipped: Chamara phone number not found in customers database.");
+                return;
+            }
+            const msg = `Hi Chamara, we have around ${roundedVal} kg in stock.`;
+            console.log(`[Polkatu-Alert] Enqueueing SMS to ${phone}: "${msg}"`);
+            const smsRes = await enqueuePendingSms(businessId, phone, msg);
+            console.log("[Polkatu-Alert] SMS queue result:", smsRes);
+        } catch (e) {
+            console.error("[Polkatu-Alert] Failed to send SMS:", e);
+        }
+    }
+
+    function startPolkatuStockAlertListener(businessId) {
+        if (polkatuListenerUnsubscribe) return; // already listening
+        if (!window.db || !businessId) return;
+
+        console.log(`[Polkatu-Alert] Starting stock listener for business: ${businessId}`);
+        
+        polkatuListenerUnsubscribe = window.db.collection('scrap_items')
+            .where('businessId', '==', businessId)
+            .where('itemName', '==', 'පොල්කටු')
+            .onSnapshot((snapshot) => {
+                snapshot.docChanges().forEach(async (change) => {
+                    if (change.type === 'modified' || change.type === 'added') {
+                        const itemDoc = change.doc;
+                        const data = itemDoc.data() || {};
+                        const currentStock = Number(data.currentStock || 0);
+                        const lastAlerted = Number(data.lastAlertedStock || 0);
+                        
+                        if (currentStock > 800) {
+                            const roundedNew = Math.round(currentStock / 100) * 100;
+                            if (roundedNew >= 800 && roundedNew !== lastAlerted) {
+                                const itemRef = itemDoc.ref;
+                                try {
+                                    const shouldSend = await window.db.runTransaction(async (transaction) => {
+                                        const freshDoc = await transaction.get(itemRef);
+                                        if (!freshDoc.exists) return { send: false };
+                                        const freshData = freshDoc.data() || {};
+                                        const dbLastAlerted = Number(freshData.lastAlertedStock || 0);
+                                        const freshStock = Number(freshData.currentStock || 0);
+                                        const freshRounded = Math.round(freshStock / 100) * 100;
+                                        
+                                        if (freshStock > 800 && freshRounded >= 800 && dbLastAlerted !== freshRounded) {
+                                            transaction.update(itemRef, { lastAlertedStock: freshRounded });
+                                            return { send: true, roundedVal: freshRounded };
+                                        }
+                                        return { send: false };
+                                    });
+
+                                    if (shouldSend && shouldSend.send) {
+                                        console.log(`[Polkatu-Alert] Triggering SMS for rounded stock: ${shouldSend.roundedVal}`);
+                                        await sendPolkatuAlertSms(businessId, shouldSend.roundedVal);
+                                    }
+                                } catch (txErr) {
+                                    console.error("[Polkatu-Alert] Transaction error:", txErr);
+                                }
+                            }
+                        }
+                    }
+                });
+            }, (error) => {
+                console.error("[Polkatu-Alert] Listener error:", error);
+            });
+    }
+
+    if (typeof window !== 'undefined' && typeof firebase !== 'undefined' && firebase.auth) {
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (user && window.db) {
+                const businessId = await getEffectiveSmsWalletBusinessId();
+                if (businessId) {
+                    startPolkatuStockAlertListener(businessId);
+                }
+            } else {
+                if (polkatuListenerUnsubscribe) {
+                    polkatuListenerUnsubscribe();
+                    polkatuListenerUnsubscribe = null;
+                }
+            }
+        });
+    }
+
+    async function evaluateDownBuyingPriceCriteria(businessId, supplierName, targetDate = new Date(), ignoreBypass = false) {
+        if (!window.db || !businessId || !supplierName) {
+            return { active: false, reason: "" };
+        }
+        
+        let customerId = "";
+        let customerData = null;
+        try {
+            const custSnap = await window.db.collection('customers')
+                .where('businessId', '==', businessId)
+                .where('fullName', '==', supplierName)
+                .get();
+            const activeDocs = custSnap.docs.filter(d => (d.data() || {}).isActive !== false);
+            if (activeDocs.length > 0) {
+                customerId = activeDocs[0].id;
+                customerData = activeDocs[0].data();
+            }
+        } catch (e) {
+            console.warn("[DownPriceCheck] Customer query error:", e);
+        }
+
+        // Determine effective start date limit
+        if (!ignoreBypass) {
+            let effectiveLimit = new Date('2026-06-06T00:00:00');
+            if (customerData && customerData.downPriceStartDate) {
+                effectiveLimit = new Date(customerData.downPriceStartDate + 'T00:00:00');
+            }
+            if (targetDate < effectiveLimit) {
+                return { active: false, reason: "" };
+            }
+        }
+
+        // Condition 1: Hand Loan (GIVEN type only)
+        try {
+            const hlSnap = await window.db.collection('hand_loans')
+                .where('businessId', '==', businessId)
+                .where('type', '==', 'GIVEN')
+                .where('active', '==', true)
+                .get();
+            for (const doc of hlSnap.docs) {
+                const hl = doc.data() || {};
+                const nameMatch = String(hl.customerName || '').trim().toLowerCase() === supplierName.toLowerCase();
+                const idMatch = customerId && hl.customerId === customerId;
+                
+                if (nameMatch || idMatch) {
+                    const balance = Number(hl.balance || 0);
+                    if (balance > 0.01) {
+                        let diffDays = 0;
+                        if (hl.date) {
+                            const [y, m, d] = hl.date.split('-').map(Number);
+                            const loanTime = new Date(y, m - 1, d).getTime();
+                            diffDays = Math.floor((targetDate.getTime() - loanTime) / (24 * 60 * 60 * 1000));
+                        }
+                        
+                        if (balance > 20000) {
+                            return { 
+                                active: true, 
+                                reason: `Hand Loan outstanding Rs. ${balance.toLocaleString()} (> Rs. 20,000)` 
+                            };
+                        }
+                        if (diffDays > 10) {
+                            return { 
+                                active: true, 
+                                reason: `Hand Loan outstanding for ${diffDays} days (> 10 days)` 
+                            };
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[DownPriceCheck] Hand loan check error:", e);
+        }
+
+        // Condition 2: No Interest Loan
+        try {
+            const nilSnap = await window.db.collection('loan_no_interest')
+                .where('businessId', '==', businessId)
+                .where('active', '==', true)
+                .get();
+                
+            for (const doc of nilSnap.docs) {
+                const nil = doc.data() || {};
+                const nameMatch = String(nil.customerName || '').trim().toLowerCase() === supplierName.toLowerCase();
+                const idMatch = customerId && nil.customerId === customerId;
+                
+                if (nameMatch || idMatch) {
+                    const balance = Number(nil.balance || 0);
+                    if (balance > 0.01) {
+                        let diffDays = 0;
+                        if (nil.date) {
+                            const [y, m, d] = nil.date.split('-').map(Number);
+                            const loanTime = new Date(y, m - 1, d).getTime();
+                            diffDays = Math.floor((targetDate.getTime() - loanTime) / (24 * 60 * 60 * 1000));
+                        }
+                        
+                        if (balance > 20000) {
+                            return { 
+                                active: true, 
+                                reason: `No Interest Loan outstanding Rs. ${balance.toLocaleString()} (> Rs. 20,000)` 
+                            };
+                        }
+                        if (diffDays > 10) {
+                            return { 
+                                active: true, 
+                                reason: `No Interest Loan outstanding for ${diffDays} days (> 10 days)` 
+                            };
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[DownPriceCheck] No interest loan check error:", e);
+        }
+
+        // Condition: Weekly Loans (Active and Overdue)
+        try {
+            const targetDateStr = targetDate.toISOString().split('T')[0];
+            const wSnap = await window.db.collection('weekly_loans')
+                .where('businessId', '==', businessId)
+                .where('customerName', '==', supplierName)
+                .where('active', '==', true)
+                .get();
+                
+            for (const doc of wSnap.docs) {
+                const wl = doc.data() || {};
+                const schedule = wl.schedule || [];
+                for (const inst of schedule) {
+                    const isInstOverdue = inst.status === 'OVERDUE' || (inst.dueDate && inst.dueDate < targetDateStr && (Number(inst.amount) - Number(inst.paidAmount) > 0.01));
+                    if (isInstOverdue) {
+                        const due = Number(inst.amount) - Number(inst.paidAmount);
+                        return {
+                            active: true,
+                            reason: `Weekly Loan overdue Rs. ${due.toLocaleString()} is not settled`
+                        };
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[DownPriceCheck] Weekly loan check error:", e);
+        }
+
+        // Condition 3: Advanced
+        try {
+            const advId = `ADV_${businessId}_${String(supplierName).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
+            const advDoc = await window.db.collection('scrap_advances').doc(advId).get();
+            
+            if (advDoc.exists) {
+                const adv = advDoc.data() || {};
+                const balance = Number(adv.balance || 0);
+                
+                if (balance > 0.01) {
+                    const histSnap = await window.db.collection('scrap_advance_history')
+                        .where('businessId', '==', businessId)
+                        .get();
+                        
+                    const supplierDocs = histSnap.docs
+                        .map(d => d.data())
+                        .filter(d => String(d.supplierName || '').trim().toLowerCase() === supplierName.toLowerCase());
+                        
+                    const sorted = supplierDocs.sort((a, b) => 
+                        String(a.date || '').localeCompare(String(b.date || ''))
+                    );
+                    
+                    let running = 0;
+                    const histWithBal = [];
+                    for (const x of sorted) {
+                        running += Number(x.amount || 0);
+                        histWithBal.push({
+                            time: new Date(x.date).getTime(),
+                            balance: running
+                        });
+                    }
+                    
+                    const sevenDaysLimit = targetDate.getTime() - 7 * 24 * 60 * 60 * 1000;
+                    
+                    let balAtStart = 0;
+                    for (const h of histWithBal) {
+                        if (h.time < sevenDaysLimit) {
+                            balAtStart = h.balance;
+                        }
+                    }
+                    
+                    let heldContinuous = true;
+                    if (balAtStart <= 0.01) {
+                        heldContinuous = false;
+                    } else {
+                        for (const h of histWithBal) {
+                            if (h.time >= sevenDaysLimit && h.balance <= 0.01) {
+                                heldContinuous = false;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (heldContinuous) {
+                        let crossedTime = targetDate.getTime();
+                        for (let i = histWithBal.length - 1; i >= 0; i--) {
+                            if (histWithBal[i].balance <= 0.01) {
+                                if (i + 1 < histWithBal.length) {
+                                    crossedTime = histWithBal[i+1].time;
+                                }
+                                break;
+                            }
+                            if (i === 0 && histWithBal[i].balance > 0.01) {
+                                crossedTime = histWithBal[0].time;
+                            }
+                        }
+                        const days = Math.floor((targetDate.getTime() - crossedTime) / (24 * 60 * 60 * 1000));
+                        
+                        return {
+                            active: true,
+                            reason: `Advance Rs. ${balance.toLocaleString()} held for ${days} days (> 7 days)`
+                        };
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[DownPriceCheck] Advance check error:", e);
+        }
+
+        // Condition 4: Interest Loans (Requires Rs 500 minimum payment in last 10 days)
+        try {
+            const ilSnap = await window.db.collection('loan_interest_entries')
+                .where('businessId', '==', businessId)
+                .where('active', '==', true)
+                .get();
+                
+            const myLoans = ilSnap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(l => String(l.customerName || '').trim().toLowerCase() === supplierName.toLowerCase() || (customerId && l.customerId === customerId));
+                
+            if (myLoans.length > 0) {
+                const activeLoans = myLoans.filter(l => (Number(l.principalOutstanding) + Number(l.interestOutstanding)) > 0.01);
+                if (activeLoans.length > 0) {
+                    const tenDaysAgoTime = targetDate.getTime() - 10 * 24 * 60 * 60 * 1000;
+                    const tenDaysAgoIso = new Date(tenDaysAgoTime).toISOString();
+                    let totalPaidLast10Days = 0;
+                    
+                    for (const l of activeLoans) {
+                        const hSnap = await window.db.collection('loan_interest_history')
+                            .where('loanId', '==', l.id)
+                            .where('date', '>=', tenDaysAgoIso)
+                            .get();
+                        hSnap.docs.forEach(d => {
+                            const h = d.data();
+                            if (h.type === 'REPAY') {
+                                totalPaidLast10Days += Math.abs(Number(h.amount || 0));
+                            }
+                        });
+                    }
+                    
+                    if (totalPaidLast10Days < 500) {
+                        return {
+                            active: true,
+                            reason: `Interest Loan active: Rs. 500 minimum payment not met in last 10 days`
+                        };
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[DownPriceCheck] Interest loan check error:", e);
+        }
+
+        return { active: false, reason: "" };
+    }
+
+    async function isSupplierClean(businessId, supplierName, targetDate = new Date()) {
+        if (!window.db || !businessId || !supplierName) return false;
+        // Evaluate the criteria with ignoreBypass = true
+        const result = await evaluateDownBuyingPriceCriteria(businessId, supplierName, targetDate, true);
+        return !result.active;
+    }
+
     window.scrapVbaCore = {
+        evaluateDownBuyingPriceCriteria,
+        isSupplierClean,
+        startPolkatuStockAlertListener,
+        getChamaraPhoneNumber,
+        sendPolkatuAlertSms,
         formatWeight,
         enqueuePendingSms,
         enqueuePendingSmsForScrap,

@@ -33,6 +33,7 @@
     <script src="../../core/sidebar.js?v=200"></script>
     <script src="../../core/sms-wallet-core.js?v=117"></script>
     <script src="../../core/scrap-vba-core.js?v=117"></script>
+    <script src="../../core/scrap-weekly-loans.js?v=201"></script>
     <script>
         function logToDebug(m, type = 'info') {
             const el = document.getElementById('debugConsole');
@@ -724,6 +725,11 @@
             color: #000000 !important;
         }
 
+        #weeklyLoanBox:not(.has-balance) .t,
+        #weeklyLoanBox:not(.has-balance) #bal_WEEKLY {
+            color: #2563eb !important;
+        }
+
         /* Vehicle Hire Special Style */
         .charge-box.has-hire {
             background: #22c55e !important; /* Green */
@@ -751,6 +757,34 @@
             justify-self: center;
             width: 100%;
             max-width: 220px;
+        }
+
+        /* Hide spinner arrows for weight number inputs */
+        input[data-input="weight"]::-webkit-outer-spin-button,
+        input[data-input="weight"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[data-input="weight"] {
+            -moz-appearance: textfield;
+        }
+
+        /* Beautiful premium dark blue styling for locked weights */
+        input[data-input="weight"].locked-weight {
+            background-color: #1e3a8a !important; /* Premium dark blue background */
+            color: #ffffff !important; /* Bold white text */
+            font-weight: 800 !important; /* Bold style */
+            border-color: #3b82f6 !important; /* Soft blue border */
+            cursor: pointer;
+        }
+
+        /* Beautiful premium dark green styling for locked subtotal (Amount) */
+        td.locked-subtotal {
+            background-color: #166534 !important; /* Premium dark green background */
+            color: #ffffff !important; /* Bold white text */
+            font-weight: 800 !important; /* Bold style */
+            font-size: 17px !important; /* Noticeably larger font size */
+            border: 1px solid #86efac !important; /* Soft green border */
         }
     </style>
 </head>
@@ -802,8 +836,8 @@
                                 data-bucket="STANDARD" placeholder="0">
                         </div>
                         <div class="charge-box" id="weeklyLoanBox" style="display:none;">
-                            <div class="t" style="color:#2563eb;">Weekly Loan (වාරික)</div>
-                            <div class="bal">Due/Overdue: <span id="bal_WEEKLY" style="color:#2563eb;">LKR 0.00</span></div>
+                            <div class="t">Weekly Loan (වාරික)</div>
+                            <div class="bal">Due/Overdue: <span id="bal_WEEKLY">LKR 0.00</span></div>
                             <label class="small mobile-hide" for="apply_WEEKLY">මෙම බිලෙන්</label>
                             <input id="apply_WEEKLY" type="number" step="0.01" min="0" value="0" data-bucket="WEEKLY"
                                 placeholder="0">
@@ -902,9 +936,10 @@
                     <div
                         style="margin-bottom: 15px; padding:12px; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
                         <div style="position:relative; margin-bottom:10px;">
-                            <div
-                                style="font-size:11px; font-weight:800; color:#64748b; text-transform:uppercase; margin-bottom:4px;">
-                                Supplier</div>
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                <div style="font-size:11px; font-weight:800; color:#64748b; text-transform:uppercase;">Supplier</div>
+                                <button id="supplierSettingsBtn" type="button" style="display:none; padding:2px 8px; background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; border-radius:6px; font-size:10px; font-weight:700; cursor:pointer;">⚙️ Down Price Start Date</button>
+                            </div>
                             <input id="supplierName" list="supplierList" placeholder="නම ඇතුළත් කරන්න"
                                 style="width:100%; font-size: 18px; font-weight: 700; padding: 12px; border: 2px solid #0ea5e9; border-radius: 10px; background: #fff;"
                                 autocomplete="off">
@@ -971,11 +1006,24 @@
                         </select>
                     </div>
 
-                    <div
-                        style="margin-bottom:15px; padding:10px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
-                        <div><span class="small">Total:</span> <span class="total" id="sessionTotal"
-                                style="font-size:18px;">LKR 0.00</span></div>
-                        <div class="small">Weight: <b id="sessionWeight">0.00</b> kg</div>
+                    <div id="downPriceSummaryBar"
+                        style="margin-bottom:15px; padding:10px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap: 8px; transition: background 0.3s ease, color 0.3s ease;">
+                        <div id="totalsWrapper" style="display:flex; gap:15px; align-items:center; flex-wrap:wrap;">
+                            <div><span class="small" id="sessionTotalLabel">Total:</span> <span class="total" id="sessionTotal"
+                                    style="font-size:18px;">LKR 0.00</span></div>
+                        </div>
+                        
+                        <!-- Middle Badge for Bypassed Down Price -->
+                        <div id="downPriceBadgeContainer" style="display:flex; align-items:center; gap:8px;">
+                            <div id="downPriceBypassedBadge" style="display:none; background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; padding:6px 16px; border-radius:8px; font-size:14px; font-weight:800; letter-spacing:0.05em; text-align:center;">Down Price Applied.</div>
+                            <div id="downPriceDaysLeftBadge" style="display:none; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; padding:6px 16px; border-radius:8px; font-size:14px; font-weight:800; text-align:center;"></div>
+                        </div>
+
+                        <div id="downPriceReasonContainer" style="display:none; width:100%; text-align:center; order:3; margin-top:4px; align-items:center; justify-content:center; gap:8px; flex-wrap: wrap;">
+                            <span id="downPriceReasonText" style="font-size:12px; font-weight:bold;"></span>
+                            <button id="overrideDownPriceBtn" type="button" style="display:none; background:transparent; color:#ffffff; border:1px solid #ffffff; padding:4px 10px; border-radius:6px; font-size:11px; font-weight:800; cursor:pointer; transition:all 0.2s;"></button>
+                        </div>
+                        <div class="small" id="sessionWeightLabel">Weight: <b id="sessionWeight">0.00</b> kg</div>
                     </div>
 
                     <h3 class="pane-title"
@@ -1022,7 +1070,7 @@
                     </div>
                 </section>
                 <section class="bill-pane bill-pane--right">
-                    <div class="bill-totals-heading">Bill Summary</div>
+                    <div class="bill-totals-heading" style="display:flex; justify-content:space-between; align-items:center;"><span>Bill Summary</span><span id="downPriceLossInline" style="display:none; font-size:12px; font-weight:bold; color:#b91c1c; background:#fee2e2; padding:2px 8px; border-radius:12px;">අහිමි වූ මුදල: Rs. 0/=</span></div>
                     <div id="billGrandRight" class="bill-grand-line">LKR 0.00</div>
                     <div class="bill-summary bill-summary--right">
                         <div id="boxItems" class="sum-box income">
@@ -1088,6 +1136,7 @@
                     <div id="paymentMethodContainer" style="margin-top:15px; padding:15px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:12px;">
                         <label style="display:block; font-size:12px; font-weight:700; color:#0369a1; margin-bottom:8px; text-transform:uppercase;">ගෙවන ක්‍රමය (Payment Method)</label>
                         <select id="paymentMethod" style="width:100%; padding:12px; font-size:16px; border:2px solid #0ea5e9; border-radius:10px; background:#fff; color:#0f172a; font-weight:700;">
+                            <option value="">-- තෝරන්න --</option>
                             <option value="CASH">💵 Cash (අතින් මුදල්)</option>
                             <option value="BANK">🏦 Bank Transfer (බැංකුවෙන්)</option>
                             <option value="MIXED">🔄 Cash + Bank (මිශ්‍ර)</option>
@@ -1190,6 +1239,37 @@
         </div>
     </div>
 
+    <!-- Supplier Settings Modal -->
+    <div id="supplierSettingsModal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; justify-content:center; align-items:center;">
+        <div
+            style="background:#fff; width:92%; max-width:450px; border-radius:16px; overflow:hidden; box-shadow:0 20px 25px -5px rgba(0,0,0,0.1); max-height:90vh; overflow-y:auto;">
+            <div
+                style="background:#0ea5e9; padding:20px; color:#fff; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:1;">
+                <h3 style="margin:0; font-size:18px;">කස්ටමර් සැකසුම් (Customer Settings)</h3>
+                <span onclick="closeSupplierSettingsModal()"
+                    style="cursor:pointer; font-size:24px; font-weight:800;">&times;</span>
+            </div>
+            <div style="padding:20px;">
+                <div style="margin-bottom:12px;">
+                    <label style="display:block; font-size:12px; font-weight:700; color:#64748b; margin-bottom:4px;">කස්ටමර්ගේ නම (Customer Name)</label>
+                    <input id="settingsCustName" type="text" readonly
+                        style="width:100%; padding:12px; border:1px solid #cbd5e1; border-radius:8px; background:#f1f5f9; color:#475569; font-weight:700;">
+                </div>
+                <div style="margin-bottom:20px;">
+                    <label style="display:block; font-size:12px; font-weight:700; color:#64748b; margin-bottom:4px;">Down Price ක්‍රියාත්මක වන දිනය (Down Price Start Date)</label>
+                    <input id="settingsDownPriceStartDate" type="date"
+                        style="width:100%; padding:12px; border:1px solid #cbd5e1; border-radius:8px; font-weight:700;">
+                    <p style="font-size:11px; color:#64748b; margin-top:4px;">මෙම කස්ටමර් සඳහා Down Price නීති ක්‍රියාත්මක වන දිනය මෙහිදී වෙනස් කළ හැකිය. හිස්ව තැබුවහොත් පොදු ක්‍රියාත්මක වන දිනය (2026-06-06) ක්‍රියාත්මක වේ.</p>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px;">
+                    <button onclick="closeSupplierSettingsModal()" style="padding:10px 16px; background:#64748b; color:#fff; border:none; border-radius:8px; font-weight:700; cursor:pointer;">Close</button>
+                    <button id="saveSupplierSettingsBtn" style="padding:10px 20px; background:#0ea5e9; color:#fff; border:none; border-radius:8px; font-weight:800; cursor:pointer;">Save Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Customer Loan History Modal (Mirroring view-bill.html) -->
     <div id="customerHistoryModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:20000; align-items:center; justify-content:center; padding:15px; opacity:0; transition:opacity 0.2s ease;">
         <div id="customerHistoryBox" style="background:#fff; width:100%; max-width:600px; border-radius:20px; overflow:hidden; transform:scale(0.95); transition:transform 0.2s ease; display:flex; flex-direction:column; max-height:90vh;">
@@ -1222,7 +1302,7 @@
 
         /** Set in auth from users.businessId (or user.uid). All scrap_* queries use this — not a hardcoded UID. */
         let SCRAP_BUSINESS_ID = '';
-        const state = { items: [], weights: {}, loans: [] };
+        const state = { items: [], weights: {}, loans: [], applyDownBuyingPrice: { active: false, reason: "" }, downPriceOverrideActive: false };
         const peopleByName = {};
         let selectedSupplierPhone = '';
         let supplierRefreshTimer = null;
@@ -1715,7 +1795,7 @@
             }
 
             // 2. Other Buckets
-            ['HAND', 'ADV_LN', 'STANDARD', 'INVESTOR_8'].forEach(b => {
+            ['HAND', 'ADV_LN', 'STANDARD', 'INVESTOR_8', 'WEEKLY'].forEach(b => {
                 const bal = Number(String(document.getElementById(`bal_${b}`)?.textContent || '').replace(/[^0-9.]/g, '')) || 0;
                 const box = document.getElementById(`apply_${b}`)?.closest('.charge-box');
                 if (box) {
@@ -1807,6 +1887,15 @@
                 // Default: Suggest full balance deduction
                 el.value = bal > 0.01 ? bal.toFixed(2) : '';
             });
+
+            // Weekly Loan Auto-apply
+            const wEl = document.getElementById('apply_WEEKLY');
+            if (wEl && wEl.dataset.userEdited !== '1') {
+                const wBalEl = document.getElementById('bal_WEEKLY');
+                const wBalText = String(wBalEl?.textContent || '').replace(/[^0-9.]/g, '');
+                const wBal = Number(wBalText || 0);
+                wEl.value = wBal > 0.01 ? wBal.toFixed(2) : '';
+            }
         }
 
         /**
@@ -1839,7 +1928,448 @@
             updateBillPreview();
         }
 
+        function evaluateDownPriceCriteriaSync(targetDate = new Date(), deductions = {}) {
+            const res = evaluateDownPriceCriteriaSyncInternal(targetDate, deductions);
+            if (res.active && state.downPriceOverrideActive) {
+                return { active: false, reason: res.reason, overridden: true };
+            }
+            return res;
+        }
+
+        function evaluateDownPriceCriteriaSyncInternal(targetDate = new Date(), deductions = {}, ignoreBypass = false) {
+            if (!state.downPriceCache) {
+                return { active: false, reason: "" };
+            }
+            const supplierName = String(document.getElementById('supplierName')?.value || '').trim();
+            const pick = peoplePickForSupplierInput(supplierName);
+            
+            if (!ignoreBypass) {
+                let effectiveLimit = new Date('2026-06-06T00:00:00');
+                if (pick && pick.downPriceStartDate) {
+                    effectiveLimit = new Date(pick.downPriceStartDate + 'T00:00:00');
+                }
+                
+                if (targetDate < effectiveLimit) {
+                    return { active: false, reason: "" };
+                }
+            }
+
+            const cache = state.downPriceCache;
+            const appliedHand = Number(deductions.handLoanApply) || 0;
+            const appliedNoInt = Number(deductions.noIntLoanApply) || 0;
+            const appliedWeekly = Number(deductions.weeklyLoanApply) || 0;
+            const appliedAdvance = Number(deductions.advanceApply) || 0;
+
+            // 1. Hand Loan Check (only GIVEN and active)
+            for (const hl of (cache.handLoans || [])) {
+                const balance = Number(hl.balance || 0);
+                const remaining = balance - appliedHand;
+                if (remaining > 0.01) {
+                    let diffDays = 0;
+                    if (hl.date) {
+                        const [y, m, d] = hl.date.split('-').map(Number);
+                        const loanTime = new Date(y, m - 1, d).getTime();
+                        diffDays = Math.floor((targetDate.getTime() - loanTime) / (24 * 60 * 60 * 1000));
+                    }
+                    if (remaining > 20000) {
+                        return { 
+                            active: true, 
+                            reason: `Hand Loan outstanding Rs. ${remaining.toLocaleString()} (> Rs. 20,000)` 
+                        };
+                    }
+                    if (diffDays > 10) {
+                        return { 
+                            active: true, 
+                            reason: `Hand Loan outstanding for ${diffDays} days (> 10 days)` 
+                        };
+                    }
+                }
+            }
+
+            // 2. No Interest Loan Check (active)
+            for (const nil of (cache.noIntLoans || [])) {
+                const balance = Number(nil.balance || 0);
+                const remaining = balance - appliedNoInt;
+                if (remaining > 0.01) {
+                    let diffDays = 0;
+                    if (nil.date) {
+                        const [y, m, d] = nil.date.split('-').map(Number);
+                        const loanTime = new Date(y, m - 1, d).getTime();
+                        diffDays = Math.floor((targetDate.getTime() - loanTime) / (24 * 60 * 60 * 1000));
+                    }
+                    if (remaining > 20000) {
+                        return { 
+                            active: true, 
+                            reason: `No Interest Loan outstanding Rs. ${remaining.toLocaleString()} (> Rs. 20,000)` 
+                        };
+                    }
+                    if (diffDays > 10) {
+                        return { 
+                            active: true, 
+                            reason: `No Interest Loan outstanding for ${diffDays} days (> 10 days)` 
+                        };
+                    }
+                }
+            }
+
+            // 3. Weekly Loan Check
+            let totalWeeklyOverdue = 0;
+            const targetDateStr = targetDate.toISOString().split('T')[0];
+            for (const wl of (cache.weeklyLoans || [])) {
+                const schedule = wl.schedule || [];
+                for (const inst of schedule) {
+                    const isInstOverdue = inst.status === 'OVERDUE' || (inst.dueDate && inst.dueDate < targetDateStr && (Number(inst.amount) - Number(inst.paidAmount) > 0.01));
+                    if (isInstOverdue) {
+                        const due = Number(inst.amount) - Number(inst.paidAmount);
+                        totalWeeklyOverdue += due;
+                    }
+                }
+            }
+            
+            const remainingWeeklyOverdue = totalWeeklyOverdue - appliedWeekly;
+            if (remainingWeeklyOverdue > 0.01) {
+                return {
+                    active: true,
+                    reason: `Weekly Loan overdue Rs. ${remainingWeeklyOverdue.toLocaleString()} is not settled`
+                };
+            }
+
+            // 4. Advance Check
+            if (cache.advance) {
+                const balance = Number(cache.advance.balance || 0);
+                const remaining = balance - appliedAdvance;
+                
+                if (remaining > 0.01) {
+                    const sorted = (cache.advanceHistory || []).sort((a, b) => 
+                        String(a.date || '').localeCompare(String(b.date || ''))
+                    );
+                    
+                    let running = 0;
+                    const histWithBal = [];
+                    for (const x of sorted) {
+                        running += Number(x.amount || 0);
+                        histWithBal.push({
+                            time: new Date(x.date).getTime(),
+                            balance: running
+                        });
+                    }
+                    
+                    const sevenDaysLimit = targetDate.getTime() - 7 * 24 * 60 * 60 * 1000;
+                    
+                    let balAtStart = 0;
+                    for (const h of histWithBal) {
+                        if (h.time < sevenDaysLimit) {
+                            balAtStart = h.balance;
+                        }
+                    }
+                    
+                    let heldContinuous = true;
+                    if (balAtStart <= 0.01) {
+                        heldContinuous = false;
+                    } else {
+                        for (const h of histWithBal) {
+                            if (h.time >= sevenDaysLimit && h.balance <= 0.01) {
+                                heldContinuous = false;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (heldContinuous) {
+                        let crossedTime = targetDate.getTime();
+                        for (let i = histWithBal.length - 1; i >= 0; i--) {
+                            if (histWithBal[i].balance <= 0.01) {
+                                if (i + 1 < histWithBal.length) {
+                                    crossedTime = histWithBal[i+1].time;
+                                }
+                                break;
+                            }
+                            if (i === 0 && histWithBal[i].balance > 0.01) {
+                                crossedTime = histWithBal[0].time;
+                            }
+                        }
+                        const days = Math.floor((targetDate.getTime() - crossedTime) / (24 * 60 * 60 * 1000));
+                        return {
+                            active: true,
+                            reason: `Advance Rs. ${remaining.toLocaleString()} held for ${days} days (> 7 days)`
+                        };
+                    }
+                }
+            }
+
+            // 5. Interest Loan Check
+            if (cache.interestLoans && cache.interestLoans.length > 0) {
+                const activeInterestLoans = cache.interestLoans.filter(l => (Number(l.principalOutstanding) + Number(l.interestOutstanding)) > 0.01);
+                if (activeInterestLoans.length > 0) {
+                    const tenDaysAgoTime = targetDate.getTime() - 10 * 24 * 60 * 60 * 1000;
+                    let totalPaidLast10Days = 0;
+                    for (const h of (cache.interestHistory || [])) {
+                        const hTime = new Date(h.date).getTime();
+                        if (hTime >= tenDaysAgoTime && h.type === 'REPAY') {
+                            totalPaidLast10Days += Math.abs(Number(h.amount || 0));
+                        }
+                    }
+                    const shortfall = 500 - totalPaidLast10Days;
+                    if (shortfall > 0) {
+                        const appliedIntLoan = Number(deductions.intLoanApply) || 0;
+                        const remainingShortfall = shortfall - appliedIntLoan;
+                        if (remainingShortfall > 0.01) {
+                            return {
+                                active: true,
+                                reason: `Interest Loan active: Rs. 500 minimum payment not met in last 10 days`
+                            };
+                        }
+                    }
+                }
+            }
+
+            return { active: false, reason: "" };
+        }
+
+        function calculateDownPriceLoss() {
+            let totalLoss = 0;
+            if (state.applyDownBuyingPrice && state.applyDownBuyingPrice.active) {
+                state.items.forEach((item) => {
+                    const weight = Number(state.weights[item.id]) || 0;
+                    if (weight > 0 && item.downBuyingPrice !== undefined && item.downBuyingPrice !== null) {
+                        const regularPrice = Number(item.costPrice) || 0;
+                        const downPrice = Number(item.downBuyingPrice) || 0;
+                        if (regularPrice > downPrice) {
+                            totalLoss += (regularPrice - downPrice) * weight;
+                        }
+                    }
+                });
+            }
+            return totalLoss;
+        }
+
+        function updateDownPriceIndicator() {
+            const bar = document.getElementById('downPriceSummaryBar');
+            const reasonCont = document.getElementById('downPriceReasonContainer');
+            const reasonEl = document.getElementById('downPriceReasonText');
+            const overrideBtn = document.getElementById('overrideDownPriceBtn');
+            const totalLabel = document.getElementById('sessionTotalLabel');
+            const weightLabel = document.getElementById('sessionWeightLabel');
+            const totalsWrapper = document.getElementById('totalsWrapper');
+            
+            const isCriteriaMet = state.applyDownBuyingPrice && (state.applyDownBuyingPrice.active || state.applyDownBuyingPrice.overridden);
+            const isOverridden = state.applyDownBuyingPrice && state.applyDownBuyingPrice.overridden;
+            const reason = state.applyDownBuyingPrice ? state.applyDownBuyingPrice.reason : "";
+            
+            let targetDate = new Date();
+            const dtVal = document.getElementById('billDateTime')?.value;
+            if (dtVal) {
+                targetDate = new Date(dtVal);
+            }
+            const bypassLimit = new Date('2026-06-15T00:00:00');
+            const showOverrideBtn = isCriteriaMet && (targetDate < bypassLimit);
+
+            // Calculate totals for comparison
+            let normalTotal = 0;
+            let downTotal = 0;
+            state.items.forEach((item) => {
+                const w = Number(state.weights[item.id]) || 0;
+                const cp = Number(item.costPrice) || 0;
+                const bp = buyingPrice(item);
+                normalTotal += w * cp;
+                downTotal += w * bp;
+            });
+            const loss = Math.max(0, normalTotal - downTotal);
+            
+            if (isCriteriaMet) {
+                const badge = document.getElementById('downPriceBypassedBadge');
+                if (badge) badge.style.display = 'none';
+                const daysBadge = document.getElementById('downPriceDaysLeftBadge');
+                if (daysBadge) daysBadge.style.display = 'none';
+
+                if (reasonCont) {
+                    reasonCont.style.display = 'flex';
+                }
+                if (overrideBtn) {
+                    if (showOverrideBtn) {
+                        overrideBtn.style.display = 'inline-block';
+                        if (isOverridden) {
+                            overrideBtn.textContent = 'නැවත සක්‍රීය කරන්න (Re-enable)';
+                            overrideBtn.onmouseover = () => { overrideBtn.style.background = '#ffffff'; overrideBtn.style.color = '#475569'; };
+                            overrideBtn.onmouseout = () => { overrideBtn.style.background = 'transparent'; overrideBtn.style.color = '#ffffff'; };
+                        } else {
+                            overrideBtn.textContent = 'තාවකාලිකව අහෝසි කරන්න (Bypass)';
+                            overrideBtn.onmouseover = () => { overrideBtn.style.background = '#ffffff'; overrideBtn.style.color = '#991b1b'; };
+                            overrideBtn.onmouseout = () => { overrideBtn.style.background = 'transparent'; overrideBtn.style.color = '#ffffff'; };
+                        }
+                    } else {
+                        overrideBtn.style.display = 'none';
+                    }
+                }
+                
+                if (isOverridden) {
+                    if (bar) {
+                        bar.style.background = '#475569'; // Slate Grey
+                        bar.style.color = '#ffffff';
+                        bar.style.borderColor = '#334155';
+                    }
+                    if (reasonEl) {
+                        reasonEl.textContent = `⚠️ Down Price සක්‍රීයයි (${reason}), නමුත් තාවකාලිකව අක්‍රීය කර ඇත.`;
+                    }
+                    if (totalsWrapper) {
+                        totalsWrapper.innerHTML = `
+                            <div style="font-size:18px; font-weight:800; background:rgba(255,255,255,0.25); padding:3px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.4);">
+                                <span style="font-size:11px; font-weight:700; text-transform:uppercase;">Normal Price:</span> <span id="sessionTotal">${fmt(normalTotal)}</span>
+                            </div>
+                            <div style="font-size:18px; font-weight:800; opacity:0.6; text-decoration:line-through;">
+                                <span style="font-size:11px; font-weight:700; text-transform:uppercase;">Down Price:</span> <span id="sessionDownTotal">${fmt(downTotal)}</span>
+                            </div>
+                            <div style="font-size:18px; font-weight:800; opacity:0.6;">
+                                <span style="font-size:11px; font-weight:700; text-transform:uppercase;">අහිමි වූ මුදල:</span> <span>${fmt(0)}</span>
+                            </div>
+                        `;
+                    }
+                } else {
+                    if (bar) {
+                        bar.style.background = '#991b1b'; // Dark Red
+                        bar.style.color = '#ffffff';
+                        bar.style.borderColor = '#7f1d1d';
+                    }
+                    if (reasonEl) {
+                        const lossVal = calculateDownPriceLoss();
+                        const lossText = ` | අහිමි වූ මුදල: Rs. ${Math.round(lossVal).toLocaleString()}/=`;
+                        reasonEl.textContent = `⚠️ Down Buying Price: ${reason}${lossText}`;
+                    }
+                    if (totalsWrapper) {
+                        totalsWrapper.innerHTML = `
+                            <div style="font-size:18px; font-weight:800; opacity:0.75;">
+                                <span style="font-size:11px; font-weight:700; text-transform:uppercase;">Normal Price:</span> <span id="sessionNormalTotal">${fmt(normalTotal)}</span>
+                            </div>
+                            <div style="font-size:18px; font-weight:800; background:rgba(255,255,255,0.25); padding:3px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.4);">
+                                <span style="font-size:11px; font-weight:700; text-transform:uppercase;">Down Price:</span> <span id="sessionTotal">${fmt(downTotal)}</span>
+                            </div>
+                            <div style="font-size:18px; font-weight:800; color:#fca5a5;">
+                                <span style="font-size:11px; font-weight:700; text-transform:uppercase; color:#fee2e2;">අහිමි වූ මුදල:</span> <span>${fmt(loss)}</span>
+                            </div>
+                        `;
+                    }
+                }
+                if (totalLabel) totalLabel.style.color = '#ffffff';
+                if (weightLabel) weightLabel.style.color = '#ffffff';
+            } else {
+                let targetDate = new Date();
+                const dtVal = document.getElementById('billDateTime')?.value;
+                if (dtVal) {
+                    targetDate = new Date(dtVal);
+                }
+                const rawCriteria = evaluateDownPriceCriteriaSyncInternal(targetDate, {});
+                const wasBypassedByDeductions = rawCriteria && rawCriteria.active;
+
+                // Calculate days left to start date
+                let diffDays = 0;
+                let hasFutureStartDate = false;
+                const supplierName = String(document.getElementById('supplierName')?.value || '').trim();
+                const pick = peoplePickForSupplierInput(supplierName);
+                if (pick && pick.downPriceStartDate) {
+                    const startDt = new Date(pick.downPriceStartDate + 'T00:00:00');
+                    const targetMidnight = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+                    const startMidnightVal = new Date(startDt.getFullYear(), startDt.getMonth(), startDt.getDate());
+                    const diffTime = startMidnightVal.getTime() - targetMidnight.getTime();
+                    diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    if (diffDays > 0) {
+                        hasFutureStartDate = true;
+                    }
+                }
+
+                let wouldApplyOnStartDate = false;
+                if (hasFutureStartDate) {
+                    const startDt = new Date(pick.downPriceStartDate + 'T00:00:00');
+                    const deductions = {
+                        handLoanApply: Number(document.getElementById('apply_HAND')?.value) || 0,
+                        noIntLoanApply: Number(document.getElementById('apply_ADV_LN')?.value) || 0,
+                        weeklyLoanApply: Number(document.getElementById('apply_WEEKLY')?.value) || 0,
+                        advanceApply: Number(document.getElementById('advanceApplyAmount')?.value || 0)
+                    };
+                    const startCriteria = evaluateDownPriceCriteriaSyncInternal(startDt, deductions);
+                    wouldApplyOnStartDate = startCriteria && startCriteria.active;
+                }
+
+                const badge = document.getElementById('downPriceBypassedBadge');
+                const daysBadge = document.getElementById('downPriceDaysLeftBadge');
+
+                const showBypassed = wasBypassedByDeductions || wouldApplyOnStartDate;
+                const showDaysLeft = wouldApplyOnStartDate && diffDays > 0;
+
+                if (badge) {
+                    badge.style.display = showBypassed ? 'block' : 'none';
+                }
+                if (daysBadge) {
+                    if (showDaysLeft) {
+                        daysBadge.style.display = 'block';
+                        daysBadge.textContent = `තව දින ${diffDays} යි`;
+                    } else {
+                        daysBadge.style.display = 'none';
+                    }
+                }
+
+                if (bar) {
+                    bar.style.background = '#f8fafc';
+                    bar.style.color = '';
+                    bar.style.borderColor = '#e2e8f0';
+                }
+                if (reasonCont) {
+                    reasonCont.style.display = 'none';
+                }
+                if (reasonEl) {
+                    reasonEl.textContent = '';
+                }
+                if (overrideBtn) {
+                    overrideBtn.style.display = 'none';
+                }
+                if (totalsWrapper) {
+                    totalsWrapper.innerHTML = `
+                        <div><span class="small" id="sessionTotalLabel">Total:</span> <span class="total" id="sessionTotal" style="font-size:18px;">${fmt(normalTotal)}</span></div>
+                    `;
+                }
+                if (totalLabel) totalLabel.style.color = '';
+                if (weightLabel) weightLabel.style.color = '';
+            }
+        }
+
         function updateBillPreview() {
+            // Evaluate Down Buying Price Criteria based on current UI deductions
+            const deductions = {
+                handLoanApply: Number(document.getElementById('apply_HAND')?.value) || 0,
+                noIntLoanApply: Number(document.getElementById('apply_ADV_LN')?.value) || 0,
+                weeklyLoanApply: Number(document.getElementById('apply_WEEKLY')?.value) || 0,
+                advanceApply: Number(document.getElementById('advanceApplyAmount')?.value || 0),
+                intLoanApply: Number(document.getElementById('apply_STANDARD')?.value) || 0
+            };
+            
+            let targetDate = new Date();
+            const dtVal = document.getElementById('billDateTime')?.value;
+            if (dtVal) {
+                targetDate = new Date(dtVal);
+            }
+            
+            state.applyDownBuyingPrice = evaluateDownPriceCriteriaSync(targetDate, deductions);
+            state.isSupplierClean = !evaluateDownPriceCriteriaSyncInternal(targetDate, deductions, true).active;
+
+            // Update rates and subtotals in the DOM dynamically
+            state.items.forEach((item) => {
+                const price = buyingPrice(item);
+                const isDownPriceActive = state.applyDownBuyingPrice && state.applyDownBuyingPrice.active && item.downBuyingPrice !== undefined && item.downBuyingPrice !== null;
+                const rateStyle = isDownPriceActive ? 'color: #b91c1c; font-weight: 800;' : 'color: #64748b; font-weight: 700;';
+                
+                const rateCells = document.querySelectorAll(`.item-rate-cell[data-id="${item.id}"]`);
+                rateCells.forEach((cell) => {
+                    cell.textContent = price.toFixed(2);
+                    cell.style.cssText = rateStyle;
+                });
+                
+                const weight = Number(state.weights[item.id]) || 0;
+                const sub = weight * price;
+                const subEl = document.querySelector(`[data-subtotal="${item.id}"]`);
+                if (subEl) {
+                    subEl.textContent = sub > 0.0001 ? Math.round(sub).toLocaleString() : '';
+                }
+            });
+
             const itemsSub = billItemsSubtotal();
             const misc = miscChargesVal();
             const grand = itemsSub + misc;
@@ -2016,9 +2546,32 @@
                     }
                 }
             }
+
+            // Calculate and display lost amount
+            const loss = calculateDownPriceLoss();
+            const lossEl = document.getElementById('downPriceLossInline');
+            if (state.applyDownBuyingPrice && state.applyDownBuyingPrice.active) {
+                if (lossEl) {
+                    lossEl.textContent = `අහිමි වූ මුදල: Rs. ${Math.round(loss).toLocaleString()}/=`;
+                    lossEl.style.display = 'inline-block';
+                }
+            } else {
+                if (lossEl) {
+                    lossEl.style.display = 'none';
+                }
+            }
+            
+            // Update Summary Bar styling
+            updateDownPriceIndicator();
         }
 
         function buyingPrice(item) {
+            if (state.applyDownBuyingPrice && state.applyDownBuyingPrice.active && item && item.downBuyingPrice !== undefined && item.downBuyingPrice !== null) {
+                return Number(item.downBuyingPrice);
+            }
+            if (state.isSupplierClean && item && item.growingPrice !== undefined && item.growingPrice !== null) {
+                return Number(item.growingPrice);
+            }
             const cp = Number(item.costPrice);
             if (Number.isFinite(cp) && cp > 0) return cp;
             return 0;
@@ -2382,11 +2935,17 @@
                 const sub = weight * price;
                 const isZero = (weight <= 0.0001);
                 const rowClass = isZero ? 'zero-weight' : 'has-weight';
+                const isLocked = weight > 0.0001;
+                const lockAttr = isLocked ? 'readonly class="locked-weight"' : '';
+                const subtotalClass = isLocked ? 'locked-subtotal' : '';
+                const formattedSub = sub > 0.0001 ? Math.round(sub).toLocaleString() : '';
+                const isDownPriceActive = state.applyDownBuyingPrice && state.applyDownBuyingPrice.active && item.downBuyingPrice !== undefined && item.downBuyingPrice !== null;
+                const rateStyle = isDownPriceActive ? 'color: #b91c1c; font-weight: 800;' : 'color: #64748b; font-weight: 700;';
                 return `<tr data-id="${item.id}" class="${rowClass}">
                         <td>${item.itemName || item.name || '-'}</td>
-                        <td class="num"><input data-input="weight" data-idx="${idx}" data-id="${item.id}" type="number" step="0.01" value="${weight || ''}"></td>
-                        <td class="num" style="color: #64748b; font-weight: 700;">${price.toFixed(2)}</td>
-                        <td class="num" data-subtotal="${item.id}">${fmt(sub)}</td>
+                        <td class="num"><input data-input="weight" data-idx="${idx}" data-id="${item.id}" type="number" step="0.01" value="${weight || ''}" ${lockAttr}></td>
+                        <td class="num item-rate-cell" data-id="${item.id}" style="${rateStyle}">${price.toFixed(2)}</td>
+                        <td class="num ${subtotalClass}" data-subtotal="${item.id}">${formattedSub}</td>
                     </tr>`;
             }).join('') || '<tr><td colspan="4">No items in scrap_items.</td></tr>'}
             </tbody>
@@ -2406,7 +2965,7 @@
                     const item = state.items.find((r) => r.id === id);
                     const sub = (Number(state.weights[id]) || 0) * buyingPrice(item || {});
                     const subEl = wrap.querySelector(`[data-subtotal="${id}"]`);
-                    if (subEl) subEl.textContent = fmt(sub);
+                    if (subEl) subEl.textContent = sub > 0.0001 ? Math.round(sub).toLocaleString() : '';
                     updateTotals();
                     debounceSaveDraft();
                 });
@@ -2433,6 +2992,32 @@
                     const idx = Number(input.dataset.idx);
                     const next = allInputs.find((el) => Number(el.dataset.idx) === idx + 1);
                     if (next) next.focus();
+                });
+
+                // Auto-lock weight input when leaving it (blur)
+                input.addEventListener('blur', () => {
+                    const val = Number(input.value) || 0;
+                    const subEl = wrap.querySelector(`[data-subtotal="${input.dataset.id}"]`);
+                    if (val > 0.0001) {
+                        input.readOnly = true;
+                        input.classList.add('locked-weight');
+                        if (subEl) subEl.classList.add('locked-subtotal');
+                    } else {
+                        input.readOnly = false;
+                        input.classList.remove('locked-weight');
+                        if (subEl) subEl.classList.remove('locked-subtotal');
+                    }
+                });
+
+                // Unlock weight input on double-click
+                input.addEventListener('dblclick', () => {
+                    if (input.readOnly) {
+                        input.readOnly = false;
+                        input.classList.remove('locked-weight');
+                        const subEl = wrap.querySelector(`[data-subtotal="${input.dataset.id}"]`);
+                        if (subEl) subEl.classList.remove('locked-subtotal');
+                        input.select();
+                    }
                 });
             });
 
@@ -2520,7 +3105,7 @@
 
                 let html = '';
                 snap.docs.forEach(d => {
-                    const row = d.data() || {};
+                    const row = { id: d.id, ...(d.data() || {}) };
                     if (row.isActive === false) return;
 
                     const name = String(row.fullName || row.name || '').trim();
@@ -2560,6 +3145,24 @@
             if (isTempWalkIn && !walkInName) {
                 alert('කරුණාකර Walk-in පාරිභෝගිකයාගේ නම ඇතුළත් කරන්න.');
                 return;
+            }
+
+            const collAdj = document.getElementById('collectionAdjust');
+            if (collAdj && collAdj.style.display !== 'none') {
+                const accInput = document.getElementById('actualCollectedCash');
+                if (!accInput || accInput.value.trim() === '') {
+                    showMiddleRedError('කරුණාකර ලැබුණු මුදල (Cash Received) ඇතුළත් කරන්න! (අවම 0 විය හැක)');
+                    return;
+                }
+            }
+
+            const pmCont = document.getElementById('paymentMethodContainer');
+            if (pmCont && pmCont.style.display !== 'none') {
+                const payMethod = document.getElementById('paymentMethod')?.value;
+                if (!payMethod || payMethod === '') {
+                    showMiddleRedError('කරුණාකර ගෙවන ක්‍රමය (Payment Method) තෝරන්න!');
+                    return;
+                }
             }
 
             const confirmMsg = isTempWalkIn ? `Save bill for ${walkInName}?` : `Save bill for ${supplierName}?`;
@@ -3369,11 +3972,49 @@
             }, 4000);
         }
         
+        function showMiddleRedError(msg) {
+            document.getElementById('middleRedErrorOverlay')?.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = 'middleRedErrorOverlay';
+            overlay.style = "position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:99999; display:flex; justify-content:center; align-items:center; backdrop-filter:blur(4px);";
+
+            const card = document.createElement('div');
+            card.style = "background:#fff; border:4px solid #dc2626; border-radius:20px; padding:30px; maxWidth:500px; width:90%; textAlign:center; boxShadow:0 25px 50px -12px rgba(220, 38, 38, 0.25); animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); text-align:center;";
+
+            const icon = document.createElement('div');
+            icon.textContent = '⚠️';
+            icon.style = "font-size:64px; margin-bottom:15px;";
+
+            const title = document.createElement('h2');
+            title.textContent = 'අවධානය යොමු කරන්න!';
+            title.style = "color:#dc2626; margin:0 0 15px 0; font-size:24px; font-weight:900;";
+
+            const body = document.createElement('p');
+            body.textContent = msg;
+            body.style = "color:#1e293b; font-size:18px; font-weight:700; line-height:1.6; margin:0 0 25px 0;";
+
+            const btn = document.createElement('button');
+            btn.textContent = 'හරි (OK)';
+            btn.style = "background:#dc2626; color:#fff; border:none; border-radius:10px; padding:12px 30px; font-size:16px; font-weight:800; cursor:pointer; transition:background 0.2s;";
+            btn.onmouseover = () => { btn.style.background = '#b91c1c'; };
+            btn.onmouseout = () => { btn.style.background = '#dc2626'; };
+            btn.onclick = () => { overlay.remove(); };
+
+            card.appendChild(icon);
+            card.appendChild(title);
+            card.appendChild(body);
+            card.appendChild(btn);
+            overlay.appendChild(card);
+            document.body.appendChild(overlay);
+        }
+        
         // Add animations to document
         const style = document.createElement('style');
         style.textContent = `
             @keyframes slideInDown { from { top: -60px; opacity: 0; } to { top: 20px; opacity: 1; } }
             @keyframes slideOutUp { from { top: 20px; opacity: 1; } to { top: -60px; opacity: 0; } }
+            @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         `;
         document.head.appendChild(style);
 
@@ -3391,7 +4032,12 @@
         async function refreshSupplierBalances() {
             const supplierName = String(document.getElementById('supplierName').value || '').trim();
             state.loans = [];
+            state.downPriceOverrideActive = false; // Reset bypass override when supplier changes
+            const pmEl = document.getElementById('paymentMethod');
+            if (pmEl) pmEl.value = "";
             if (!supplierName) {
+                state.applyDownBuyingPrice = { active: false, reason: "" };
+                state.downPriceCache = null;
                 setAdvanceBalanceText(0);
                 ['HAND', 'ADV_LN', 'STANDARD', 'INVESTOR_8', 'WEEKLY'].forEach((b) => {
                     const el = document.getElementById(`bal_${b}`);
@@ -3406,6 +4052,7 @@
                 const applyEl = document.getElementById('advanceApplyAmount');
                 if (applyEl) applyEl.value = '';
                 updateBillPreview();
+                renderSheet();
                 return;
             }
             const pick = peoplePickForSupplierInput(supplierName);
@@ -3476,6 +4123,130 @@
                     }).join('')
                     : '';
             }
+
+            // Check Down Price Trigger - Fetch & cache base balances, then run sync evaluator
+            try {
+                let targetDate = new Date();
+                const dtVal = document.getElementById('billDateTime')?.value;
+                if (dtVal) {
+                    targetDate = new Date(dtVal);
+                }
+
+                // Resolve customer ID
+                let customerId = "";
+                const pick = peoplePickForSupplierInput(supplierName);
+                if (pick && pick.id) {
+                    customerId = pick.id;
+                }
+
+                // Fetch GIVEN Hand Loans
+                let hlDocs = [];
+                try {
+                    const hlSnap = await db.collection('hand_loans')
+                        .where('businessId', '==', SCRAP_BUSINESS_ID)
+                        .where('type', '==', 'GIVEN')
+                        .where('active', '==', true)
+                        .get();
+                    hlDocs = hlSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(hl => {
+                        const nameMatch = String(hl.customerName || '').trim().toLowerCase() === supplierName.toLowerCase();
+                        const idMatch = customerId && hl.customerId === customerId;
+                        return nameMatch || idMatch;
+                    });
+                } catch (e) { console.warn('Fetch hand loans for down price error:', e); }
+
+                // Fetch active No Interest Loans
+                let nilDocs = [];
+                try {
+                    const nilSnap = await db.collection('loan_no_interest')
+                        .where('businessId', '==', SCRAP_BUSINESS_ID)
+                        .where('active', '==', true)
+                        .get();
+                    nilDocs = nilSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(nil => {
+                        const nameMatch = String(nil.customerName || '').trim().toLowerCase() === supplierName.toLowerCase();
+                        const idMatch = customerId && nil.customerId === customerId;
+                        return nameMatch || idMatch;
+                    });
+                } catch (e) { console.warn('Fetch no interest loans for down price error:', e); }
+
+                // Fetch active Weekly Loans
+                let wDocs = [];
+                try {
+                    const wSnap = await db.collection('weekly_loans')
+                        .where('businessId', '==', SCRAP_BUSINESS_ID)
+                        .where('customerName', '==', supplierName)
+                        .where('active', '==', true)
+                        .get();
+                    wDocs = wSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                } catch (e) { console.warn('Fetch weekly loans for down price error:', e); }
+
+                // Fetch Interest Loans
+                let interestLoans = [];
+                let interestHistory = [];
+                try {
+                    const intSnap = await db.collection('loan_interest_entries')
+                        .where('businessId', '==', SCRAP_BUSINESS_ID)
+                        .where('customerName', '==', supplierName)
+                        .where('active', '==', true)
+                        .get();
+                    interestLoans = intSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                    if (interestLoans.length > 0) {
+                        const histSnap = await db.collection('loan_interest_history')
+                            .where('businessId', '==', SCRAP_BUSINESS_ID)
+                            .where('customerName', '==', supplierName)
+                            .get();
+                        interestHistory = histSnap.docs.map(d => d.data());
+                    }
+                } catch (e) { console.warn('Fetch interest loans for down price error:', e); }
+
+                // Fetch Advance Balance
+                let advData = null;
+                try {
+                    const advId = advanceDocId(supplierName);
+                    const advDoc = await db.collection('scrap_advances').doc(advId).get();
+                    advData = advDoc && advDoc.exists ? advDoc.data() : null;
+                } catch (e) { console.warn('Fetch advance for down price error:', e); }
+
+                // Fetch Advance History
+                let advHistory = [];
+                try {
+                    if (advData && Number(advData.balance) > 20000) {
+                        const histSnap = await db.collection('scrap_advance_history')
+                            .where('businessId', '==', SCRAP_BUSINESS_ID)
+                            .get();
+                        advHistory = histSnap.docs
+                            .map(d => d.data())
+                            .filter(d => String(d.supplierName || '').trim().toLowerCase() === supplierName.toLowerCase());
+                    }
+                } catch (e) { console.warn('Fetch advance history for down price error:', e); }
+
+                state.downPriceCache = {
+                    handLoans: hlDocs,
+                    noIntLoans: nilDocs,
+                    weeklyLoans: wDocs,
+                    advance: advData,
+                    advanceHistory: advHistory,
+                    interestLoans: interestLoans,
+                    interestHistory: interestHistory
+                };
+
+                const initialDeductions = {
+                    handLoanApply: Number(document.getElementById('apply_HAND')?.value) || 0,
+                    noIntLoanApply: Number(document.getElementById('apply_ADV_LN')?.value) || 0,
+                    weeklyLoanApply: Number(document.getElementById('apply_WEEKLY')?.value) || 0,
+                    advanceApply: Number(document.getElementById('advanceApplyAmount')?.value || 0)
+                };
+                state.applyDownBuyingPrice = evaluateDownPriceCriteriaSync(targetDate, initialDeductions);
+
+            } catch (e) {
+                console.warn('Down price evaluation error:', e);
+                state.applyDownBuyingPrice = { active: false, reason: "" };
+                state.downPriceCache = null;
+            }
+
+            // Re-render sheet to update displayed rates
+            renderSheet();
+
             suggestAdvanceFromBanner();
             suggestLoans();
             updateBillPreview();
@@ -3491,6 +4262,8 @@
                     updateBillPreview();
                 }
             } catch (e) { console.warn('Vehicle hire fetch error:', e); }
+            
+            updateSupplierSettingsBtnVisibility();
         }
 
 
@@ -3564,8 +4337,7 @@
             if (!body) return;
 
             // Sri Lanka Timezone calculation for "Today"
-            const slNow = new Date(new Date().getTime() + (330 * 60000));
-            const todayStr = slNow.toISOString().split('T')[0];
+            const todayStr = new Date().toLocaleDateString('en-CA');
             
             if (titleEl) {
                 titleEl.innerHTML = `Buying History <span style="font-size:14px; background:#0ea5e9; color:#fff; padding:2px 10px; border-radius:20px; margin-left:10px;">TODAY: ${todayStr}</span>`;
@@ -3598,8 +4370,12 @@
             });
             console.log(`[loadBuyingHistory] ${rows.length} rows remaining after Today filter.`);
 
-            // Final safety sort
-            rows.sort((a, b) => String(b.billDateTime || b.date || '').localeCompare(String(a.billDateTime || a.date || '')));
+            // Final safety sort - newest first using epoch timestamps
+            rows.sort((a, b) => {
+                const timeA = new Date(a.billDateTime || a.date || 0).getTime();
+                const timeB = new Date(b.billDateTime || b.date || 0).getTime();
+                return timeB - timeA;
+            });
 
             body.innerHTML = rows
                 .filter(r => r && r.supplierName) 
@@ -3607,8 +4383,11 @@
                     const rawDt = r.billDateTime || r.date;
                     let dtDisp = '-';
                     if (rawDt) {
-                        const d = new Date(new Date(rawDt).getTime() + (330 * 60000));
-                        const datePart = d.toISOString().split('T')[0];
+                        const d = new Date(rawDt);
+                        const year = d.getFullYear();
+                        const month = String(d.getMonth() + 1).padStart(2, '0');
+                        const dateVal = String(d.getDate()).padStart(2, '0');
+                        const datePart = `${year}-${month}-${dateVal}`;
                         const timePart = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
                         dtDisp = `<div style="font-size:10px; color:#64748b;">${datePart}</div><div style="font-weight:700;">${timePart}</div>`;
                     }
@@ -3889,12 +4668,14 @@
             else supplierRefreshTimer = setTimeout(run, 300);
         }
         function onSupplierNameChanged(ev) {
-            ['advanceApplyAmount', 'apply_HAND', 'apply_ADV_LN', 'apply_STANDARD', 'apply_INVESTOR_8'].forEach(id => {
+            ['advanceApplyAmount', 'apply_HAND', 'apply_ADV_LN', 'apply_STANDARD', 'apply_INVESTOR_8', 'apply_WEEKLY'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) delete el.dataset.userEdited;
             });
             const name = (ev && ev.target && ev.target.value) || document.getElementById('supplierName').value || '';
             const immediate = !!(ev && (ev.type === 'change' || ev.type === 'blur'));
+
+            updateSupplierSettingsBtnVisibility();
 
             // New Customer Detection (Hint only)
             const hint = document.getElementById('newCustomerHint');
@@ -3911,6 +4692,104 @@
             }
             scheduleSupplierRefresh(immediate);
         }
+
+        function updateSupplierSettingsBtnVisibility() {
+            const name = document.getElementById('supplierName')?.value || '';
+            const pick = peoplePickForSupplierInput(name);
+            const btn = document.getElementById('supplierSettingsBtn');
+            if (btn) {
+                let show = false;
+                if (pick && name.toUpperCase() !== 'TEMPORARY WALK-IN') {
+                    // Check if already configured
+                    const isConfigured = !!pick.downPriceStartDate;
+                    if (!isConfigured) {
+                        show = true;
+                    }
+                }
+                btn.style.display = show ? 'inline-block' : 'none';
+            }
+        }
+
+        function openSupplierSettingsModal() {
+            const supplierName = document.getElementById('supplierName')?.value?.trim();
+            const pick = peoplePickForSupplierInput(supplierName);
+            if (!pick) return;
+            
+            document.getElementById('settingsCustName').value = pick.fullName || supplierName;
+            document.getElementById('settingsDownPriceStartDate').value = pick.downPriceStartDate || '';
+            document.getElementById('supplierSettingsModal').style.display = 'flex';
+        }
+        
+        function closeSupplierSettingsModal() {
+            document.getElementById('supplierSettingsModal').style.display = 'none';
+        }
+        
+        async function saveSupplierSettings() {
+            const supplierName = document.getElementById('supplierName')?.value?.trim();
+            const pick = peoplePickForSupplierInput(supplierName);
+            if (!pick) return;
+            
+            const btn = document.getElementById('saveSupplierSettingsBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Saving...';
+            }
+            
+            const dateStr = document.getElementById('settingsDownPriceStartDate').value;
+            
+            try {
+                let docId = "";
+                const cleanMobile = String(pick.mobile || '').replace(/[^0-9]/g, '');
+                if (cleanMobile) {
+                    docId = `${SCRAP_BUSINESS_ID}_${cleanMobile}`;
+                } else if (pick.id) {
+                    docId = pick.id;
+                } else {
+                    const snap = await db.collection('customers')
+                        .where('businessId', '==', SCRAP_BUSINESS_ID)
+                        .where('fullName', '==', pick.fullName)
+                        .get();
+                    if (snap.docs.length > 0) {
+                        docId = snap.docs[0].id;
+                    }
+                }
+                
+                if (docId) {
+                    const updateData = {
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    if (dateStr) {
+                        updateData.downPriceStartDate = dateStr;
+                    } else {
+                        updateData.downPriceStartDate = firebase.firestore.FieldValue.delete();
+                    }
+                    
+                    await db.collection('customers').doc(docId).update(updateData);
+                    
+                    if (dateStr) {
+                        pick.downPriceStartDate = dateStr;
+                    } else {
+                        delete pick.downPriceStartDate;
+                    }
+                    
+                    alert('සැකසුම් සාර්ථකව සුරැකින ලදී!');
+                    closeSupplierSettingsModal();
+                    
+                    await refreshSupplierBalances();
+                } else {
+                    alert('කස්ටමර්ගේ ලේඛනය සොයාගත නොහැකි විය.');
+                }
+            } catch (e) {
+                console.error("Failed to save supplier settings:", e);
+                alert("Settings සුරැකීමට අපොහොසත් විය: " + e.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Save Settings';
+                }
+            }
+        }
+
 
         function showNewCustomerModal(name) {
             document.getElementById('newCustName').value = name;
@@ -4043,6 +4922,12 @@
             autoAdjustDeductionsForCollection(grand + val);
         });
         document.getElementById('paymentMethod').addEventListener('change', updateBillPreview);
+        document.getElementById('overrideDownPriceBtn')?.addEventListener('click', () => {
+            state.downPriceOverrideActive = !state.downPriceOverrideActive;
+            updateBillPreview();
+        });
+        document.getElementById('supplierSettingsBtn')?.addEventListener('click', openSupplierSettingsModal);
+        document.getElementById('saveSupplierSettingsBtn')?.addEventListener('click', saveSupplierSettings);
 
 
         auth.onAuthStateChanged(async (user) => {
@@ -4098,6 +4983,13 @@
             supInput.addEventListener('input', checkWalkIn);
             supInput.addEventListener('change', checkWalkIn);
             checkWalkIn();
+
+            const dtInput = document.getElementById('billDateTime');
+            if (dtInput) {
+                dtInput.addEventListener('change', async () => {
+                    await refreshSupplierBalances();
+                });
+            }
         });
 
         // WhatsApp Share Button handled via saveBuyingSession now.

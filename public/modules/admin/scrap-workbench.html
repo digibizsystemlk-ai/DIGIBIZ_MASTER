@@ -64,6 +64,14 @@
             .bill-foot{grid-template-columns:1fr;}
             .bill-actions{justify-content:flex-start;}
         }
+        .indika-highlight {
+            color: #2563eb !important;
+            font-weight: 800 !important;
+        }
+        .stock-name-cell {
+            cursor: pointer;
+            user-select: none;
+        }
     </style>
 </head>
 <body>
@@ -171,7 +179,10 @@ async function renderSTOCK(body) {
     const stockValue = rows.reduce((sum, r) => sum + ((Number(r.currentStock) || 0) * unitCost(r)), 0);
     const totalSalesValue = rows.reduce((sum, r) => sum + ((Number(r.currentStock) || 0) * (Number(r.sellingPrice) || 0)), 0);
     const expectedProfit = totalSalesValue - stockValue;
-    body.innerHTML = `<div class="summary-grid">
+    const indikaValue = rows.reduce((sum, r) => sum + (r.indikaSelected === true ? ((Number(r.currentStock) || 0) * (Number(r.sellingPrice) || 0)) : 0), 0);
+
+    body.innerHTML = `<div class="summary-grid" style="grid-template-columns: repeat(4, minmax(180px, 1fr));">
+      <div class="summary-card" style="border-color:#2563eb; background:#f0f9ff;"><div class="small" style="color:#2563eb; font-weight:700;">INDIKA (Highlighted Stock Value)</div><div class="kpi" style="color:#1d4ed8;">${fmt(indikaValue)}</div></div>
       <div class="summary-card"><div class="small">Total Purchase Value</div><div class="kpi">${fmt(stockValue)}</div></div>
       <div class="summary-card"><div class="small">Total Sales Value</div><div class="kpi">${fmt(totalSalesValue)}</div></div>
       <div class="summary-card"><div class="small">Expected Profit on Stock</div><div class="kpi">${fmt(expectedProfit)}</div></div>
@@ -188,14 +199,18 @@ async function renderSTOCK(body) {
       ${isBulkEditMode ? '<button id="saveBulkBtn" style="background:#16a34a;">Save All Changes</button>' : ''}
       ${isReorderMode ? '<button id="saveOrderBtn" style="background:#16a34a;">Save New Order</button>' : ''}
     </div>
-    <table><thead><tr><th>Item Name</th><th>Current Stock</th><th>Buying Price</th><th>Profit</th><th>Sell Price</th><th>Action</th></tr></thead><tbody>${
+    <table><thead><tr><th>Item Name</th><th>Current Stock</th><th>Growing Price</th><th>Buying Price</th><th>Down Buying Price / ඩවුන් මිල</th><th>Profit</th><th>Sell Price</th><th>Action</th></tr></thead><tbody>${
         rows.map(r => {
+            const isIndika = r.indikaSelected === true;
+            const highlightClass = isIndika ? 'indika-highlight' : '';
             if (isBulkEditMode) {
                 const buy = (Number(r.sellingPrice)||0) - (Number(r.profit)||0);
                 return `<tr>
-                    <td><input data-bulk-name="${r.id}" value="${escHtml(r.itemName)}" style="width:100%;box-sizing:border-box;padding:4px;"></td>
-                    <td>${Number(r.currentStock||0)}</td>
+                    <td class="stock-name-cell ${highlightClass}" data-id="${r.id}"><input data-bulk-name="${r.id}" value="${escHtml(r.itemName)}" style="width:100%;box-sizing:border-box;padding:4px;"></td>
+                    <td>${Number(r.currentStock||0).toFixed(1)}</td>
+                    <td>${r.growingPrice !== undefined && r.growingPrice !== null ? Number(r.growingPrice) : '-'}</td>
                     <td data-bulk-buy-display="${r.id}">${buy.toFixed(2)}</td>
+                    <td>${r.downBuyingPrice !== undefined && r.downBuyingPrice !== null ? Number(r.downBuyingPrice) : '-'}</td>
                     <td><input type="number" step="0.01" data-bulk-profit="${r.id}" value="${Number(r.profit)||0}" style="width:80px;padding:4px;"></td>
                     <td><input type="number" step="0.01" data-bulk-sell="${r.id}" value="${Number(r.sellingPrice)||0}" style="width:80px;padding:4px;"></td>
                     <td>-</td>
@@ -203,9 +218,11 @@ async function renderSTOCK(body) {
             }
             if (isReorderMode) {
                 return `<tr>
-                    <td>${escHtml(r.itemName)}</td>
-                    <td>${Number(r.currentStock||0)}</td>
+                    <td class="stock-name-cell ${highlightClass}" data-id="${r.id}">${escHtml(r.itemName)}</td>
+                    <td>${Number(r.currentStock||0).toFixed(1)}</td>
+                    <td>${r.growingPrice !== undefined && r.growingPrice !== null ? Number(r.growingPrice) : '-'}</td>
                     <td>${Number(unitCost(r) || 0)}</td>
+                    <td>${r.downBuyingPrice !== undefined && r.downBuyingPrice !== null ? Number(r.downBuyingPrice) : '-'}</td>
                     <td>${Number(r.profit||0)}</td>
                     <td>${Number(r.sellingPrice||0)}</td>
                     <td>
@@ -214,8 +231,32 @@ async function renderSTOCK(body) {
                     </td>
                 </tr>`;
             }
-            return `<tr><td>${r.itemName||'-'}</td><td>${Number(r.currentStock||0)}</td><td>${Number(unitCost(r) || 0)}</td><td>${Number(r.profit||0)}</td><td>${Number(r.sellingPrice||0)}</td><td><button data-edit="${r.id}" style="padding:4px 8px;">Edit</button></td></tr>`;
-        }).join('') || '<tr><td colspan="6">No items</td></tr>'
+            
+            let growingPriceHtml = '';
+            if (r.growingPrice !== undefined && r.growingPrice !== null) {
+                growingPriceHtml = `<span class="growing-price-text" data-id="${r.id}" style="cursor: pointer; display: inline-block; min-width: 60px; min-height: 20px; font-weight: bold; color: #059669;">${r.growingPrice}</span>`;
+            } else {
+                growingPriceHtml = `<input type="number" step="0.01" placeholder="Add Price" class="growing-price-input" data-id="${r.id}" style="width: 80px; padding: 4px;">`;
+            }
+            
+            let downBuyHtml = '';
+            if (r.downBuyingPrice !== undefined && r.downBuyingPrice !== null) {
+                downBuyHtml = `<span class="down-price-text" data-id="${r.id}" style="cursor: pointer; display: inline-block; min-width: 60px; min-height: 20px; font-weight: bold; color: #b91c1c;">${r.downBuyingPrice}</span>`;
+            } else {
+                downBuyHtml = `<input type="number" step="0.01" placeholder="Add Down Price" class="down-price-input" data-id="${r.id}" style="width: 100px; padding: 4px;">`;
+            }
+            
+            return `<tr>
+                <td class="stock-name-cell ${highlightClass}" data-id="${r.id}">${r.itemName||'-'}</td>
+                <td>${Number(r.currentStock||0).toFixed(1)}</td>
+                <td>${growingPriceHtml}</td>
+                <td>${Number(unitCost(r) || 0)}</td>
+                <td>${downBuyHtml}</td>
+                <td>${Number(r.profit||0)}</td>
+                <td>${Number(r.sellingPrice||0)}</td>
+                <td><button data-edit="${r.id}" style="padding:4px 8px;">Edit</button></td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="7">No items</td></tr>'
     }</tbody></table>`;
     document.getElementById('stockAddBtn').addEventListener('click', async () => {
         const itemName = String(document.getElementById('stockNewName').value || '').trim();
@@ -369,8 +410,10 @@ async function renderSTOCK(body) {
             const tbody = body.querySelector('tbody');
             tbody.innerHTML = rows.map((r, idx) => `<tr draggable="true" data-index="${idx}" style="cursor:move;">
                 <td>${escHtml(r.itemName)}</td>
-                <td>${Number(r.currentStock||0)}</td>
+                <td>${Number(r.currentStock||0).toFixed(1)}</td>
+                <td>${r.growingPrice !== undefined && r.growingPrice !== null ? Number(r.growingPrice) : '-'}</td>
                 <td>${Number(unitCost(r) || 0)}</td>
+                <td>${r.downBuyingPrice !== undefined && r.downBuyingPrice !== null ? Number(r.downBuyingPrice) : '-'}</td>
                 <td>${Number(r.profit||0)}</td>
                 <td>${Number(r.sellingPrice||0)}</td>
                 <td>
@@ -431,10 +474,11 @@ async function renderSTOCK(body) {
                 <h3 style="margin-bottom:8px;">Edit Item</h3>
                 <div class="small" style="margin-bottom:4px;">${escHtml(row.itemName || '-')}</div>
                 <div class="small" style="margin-bottom:8px;color:#0369a1;">Buying Price: <b id="mBuyDisp">${(Number(row.sellingPrice||0) - Number(row.profit||0)).toFixed(2)}</b></div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;">
                     <div><label class="small">Stock</label><input id="mQty" type="number" step="0.01" value="${Number(row.currentStock) || 0}" style="width:100%;"></div>
                     <div><label class="small">Profit</label><input id="mProfit" type="number" step="0.01" value="${Number(row.profit) || 0}" style="width:100%;"></div>
                     <div><label class="small">Sell Price</label><input id="mSell" type="number" step="0.01" value="${Number(row.sellingPrice) || 0}" style="width:100%;"></div>
+                    <div><label class="small">Down Price</label><input id="mDown" type="number" step="0.01" value="${row.downBuyingPrice !== undefined && row.downBuyingPrice !== null ? Number(row.downBuyingPrice) : ''}" placeholder="None" style="width:100%;"></div>
                 </div>
                 <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end;">
                     <button id="mDelete" class="danger">Delete</button>
@@ -455,11 +499,23 @@ async function renderSTOCK(body) {
                 const currentStock = Number(wrap.querySelector('#mQty').value) || 0;
                 const profit = Number(wrap.querySelector('#mProfit').value) || 0;
                 const sellingPrice = Number(wrap.querySelector('#mSell').value) || 0;
-                await db.collection('scrap_items').doc(id).update({
+                const downVal = wrap.querySelector('#mDown').value.trim();
+                const updateData = {
                     currentStock, profit, sellingPrice,
                     costPrice: sellingPrice - profit,
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                };
+                if (downVal === '') {
+                    updateData.downBuyingPrice = firebase.firestore.FieldValue.delete();
+                } else {
+                    const downPrice = Number(downVal);
+                    if (isNaN(downPrice) || downPrice < 0) {
+                        alert('Please enter a valid positive number for Down Price');
+                        return;
+                    }
+                    updateData.downBuyingPrice = downPrice;
+                }
+                await db.collection('scrap_items').doc(id).update(updateData);
                 if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
                     await window.scrapVbaCore.syncInventoryAssetWithStock(SCRAP_BUSINESS_ID);
                 }
@@ -477,6 +533,190 @@ async function renderSTOCK(body) {
             });
         });
     });
+
+    // Attach triple click event listeners to toggle highlight state
+    body.querySelectorAll('.stock-name-cell').forEach((cell) => {
+        cell.addEventListener('click', async (e) => {
+            if (e.detail === 3) {
+                e.preventDefault();
+                const itemId = cell.dataset.id;
+                const item = rows.find(x => x.id === itemId);
+                if (!item) return;
+                
+                const newSelected = !item.indikaSelected;
+                showLoading(true);
+                try {
+                    await db.collection('scrap_items').doc(itemId).update({
+                        indikaSelected: newSelected,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    await renderSTOCK(body);
+                } catch(err) {
+                    alert('Error updating highlight status: ' + err.message);
+                } finally {
+                    showLoading(false);
+                }
+            }
+        });
+    });
+
+    // Inline edit listeners for Down Buying Price
+    body.querySelectorAll('.down-price-input').forEach((input) => {
+        input.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                const itemId = input.dataset.id;
+                const valStr = input.value.trim();
+                showLoading(true);
+                try {
+                    if (valStr === '') {
+                        await db.collection('scrap_items').doc(itemId).update({
+                            downBuyingPrice: firebase.firestore.FieldValue.delete(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    } else {
+                        const downPrice = Number(valStr);
+                        if (isNaN(downPrice) || downPrice < 0) {
+                            alert('Please enter a valid positive number');
+                            return;
+                        }
+                        await db.collection('scrap_items').doc(itemId).update({
+                            downBuyingPrice: downPrice,
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                    await renderSTOCK(body);
+                } catch(err) {
+                    alert('Error updating down price: ' + err.message);
+                } finally {
+                    showLoading(false);
+                }
+            }
+        });
+    });
+
+    body.querySelectorAll('.down-price-text').forEach((span) => {
+        span.addEventListener('dblclick', (e) => {
+            const itemId = span.dataset.id;
+            const currentVal = span.textContent;
+            const parent = span.parentNode;
+            parent.innerHTML = `<input type="number" step="0.01" value="${currentVal}" class="down-price-input" data-id="${itemId}" style="width: 100px; padding: 4px;" autofocus>`;
+            const input = parent.querySelector('.down-price-input');
+            input.focus();
+            input.addEventListener('keypress', async (evt) => {
+                if (evt.key === 'Enter') {
+                    const valStr = input.value.trim();
+                    showLoading(true);
+                    try {
+                        if (valStr === '') {
+                            await db.collection('scrap_items').doc(itemId).update({
+                                downBuyingPrice: firebase.firestore.FieldValue.delete(),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        } else {
+                            const downPrice = Number(valStr);
+                            if (isNaN(downPrice) || downPrice < 0) {
+                                alert('Please enter a valid positive number');
+                                return;
+                            }
+                            await db.collection('scrap_items').doc(itemId).update({
+                                downBuyingPrice: downPrice,
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                        await renderSTOCK(body);
+                    } catch(err) {
+                        alert('Error updating down price: ' + err.message);
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+            });
+            input.addEventListener('keydown', (evt) => {
+                if (evt.key === 'Escape') {
+                    renderSTOCK(body);
+                }
+            });
+        });
+    });
+
+    // Inline edit listeners for Growing Price
+    body.querySelectorAll('.growing-price-input').forEach((input) => {
+        input.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                const itemId = input.dataset.id;
+                const valStr = input.value.trim();
+                showLoading(true);
+                try {
+                    if (valStr === '') {
+                        await db.collection('scrap_items').doc(itemId).update({
+                            growingPrice: firebase.firestore.FieldValue.delete(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    } else {
+                        const growingPrice = Number(valStr);
+                        if (isNaN(growingPrice) || growingPrice < 0) {
+                            alert('Please enter a valid positive number');
+                            return;
+                        }
+                        await db.collection('scrap_items').doc(itemId).update({
+                            growingPrice: growingPrice,
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                    await renderSTOCK(body);
+                } catch(err) {
+                    alert('Error updating growing price: ' + err.message);
+                } finally {
+                    showLoading(false);
+                }
+            }
+        });
+    });
+
+    body.querySelectorAll('.growing-price-text').forEach((span) => {
+        span.addEventListener('dblclick', (e) => {
+            const itemId = span.dataset.id;
+            const currentVal = span.textContent;
+            const parent = span.parentNode;
+            parent.innerHTML = `<input type="number" step="0.01" value="${currentVal}" class="growing-price-input" data-id="${itemId}" style="width: 80px; padding: 4px;" autofocus>`;
+            const input = parent.querySelector('.growing-price-input');
+            input.focus();
+            input.addEventListener('keypress', async (evt) => {
+                if (evt.key === 'Enter') {
+                    const valStr = input.value.trim();
+                    showLoading(true);
+                    try {
+                        if (valStr === '') {
+                            await db.collection('scrap_items').doc(itemId).update({
+                                growingPrice: firebase.firestore.FieldValue.delete(),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        } else {
+                            const growingPrice = Number(valStr);
+                            if (isNaN(growingPrice) || growingPrice < 0) {
+                                alert('Please enter a valid positive number');
+                                return;
+                            }
+                            await db.collection('scrap_items').doc(itemId).update({
+                                growingPrice: growingPrice,
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                        await renderSTOCK(body);
+                    } catch(err) {
+                        alert('Error updating growing price: ' + err.message);
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+            });
+            input.addEventListener('keydown', (evt) => {
+                if (evt.key === 'Escape') {
+                    renderSTOCK(body);
+                }
+            });
+        });
+    });
 }
 
 async function renderBUY(body) {
@@ -485,9 +725,32 @@ async function renderBUY(body) {
         db.collection('scrap_items').where('businessId', '==', SCRAP_BUSINESS_ID).get()
     ]);
     const itemNames = itemSnap.docs.map((d) => String(d.data().itemName || '').trim()).filter(Boolean).sort((a, b) => a.localeCompare(b));
-    const rows = buySnap.docs.map((d) => d.data())
-        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-    body.innerHTML = `<div class="small" style="margin-bottom:8px;">Newest transactions on top. Item columns follow stock list.</div>
+    const rows = buySnap.docs.map((d) => {
+        const data = d.data();
+        return { id: d.id, ...data };
+    }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+    body.innerHTML = `
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;background:#fff;padding:12px;border:1px solid #dbe4ee;border-radius:10px;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+            <label class="small" style="font-weight:700;">Supplier Name / නම</label>
+            <input id="buySearchName" placeholder="Search by name..." style="min-width:220px;padding:8px;font-size:13px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+            <label class="small" style="font-weight:700;">From Date / ආරම්භක දිනය</label>
+            <input id="buySearchFrom" type="date" style="padding:8px;font-size:13px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+            <label class="small" style="font-weight:700;">To Date / අවසාන දිනය</label>
+            <input id="buySearchTo" type="date" style="padding:8px;font-size:13px;">
+        </div>
+        <div style="display:flex;align-items:flex-end;height:100%;margin-top:18px;">
+            <button id="buySearchReset" style="background:#64748b;font-weight:700;padding:9px 15px;">Reset / පැහැදිලි කරන්න</button>
+        </div>
+        <div style="margin-left:auto;text-align:right;align-self:flex-end;margin-top:18px;">
+            <span class="small" style="font-weight:700;">Records / ගනුදෙනු ගණන: <b id="buyFilteredCount" style="color:#0f3b2c;font-size:14px;">0</b></span>
+        </div>
+      </div>
       <div style="overflow:auto;border:1px solid #e2e8f0;border-radius:10px;">
         <table style="min-width:${Math.max(1200, 750 + (itemNames.length * 110))}px;">
           <thead>
@@ -496,24 +759,100 @@ async function renderBUY(body) {
               ${itemNames.map((n) => `<th>${n}</th>`).join('')}
             </tr>
           </thead>
-          <tbody>
-            ${rows.map((r) => {
-                const weights = {};
-                (Array.isArray(r.items) ? r.items : []).forEach((line) => {
-                    weights[String(line.itemName || '').trim()] = Number(line.weight) || 0;
-                });
-                return `<tr>
-                  <td>${r.date ? new Date(r.date).toLocaleString() : '-'}</td>
-                  <td><a href="#" onclick="viewFullBill('${r.id || ''}', ${JSON.stringify(r).replace(/"/g, '&quot;')}); return false;" style="color:#0ea5e9; font-weight:700; text-decoration:none;">${r.supplierName || '-'}</a></td>
-                  <td>${(Number(r.totalWeight) || 0).toFixed(2)}</td>
-                  <td>${fmt(r.totalAmount || 0)}</td>
-                  ${itemNames.map((name) => `<td>${(weights[name] || 0).toFixed(2)}</td>`).join('')}
-                </tr>`;
-
-            }).join('') || `<tr><td colspan="${4 + itemNames.length}">No buying history</td></tr>`}
-          </tbody>
+          <tbody id="buyTableBody"></tbody>
         </table>
       </div>`;
+
+    const nameInput = document.getElementById('buySearchName');
+    const fromInput = document.getElementById('buySearchFrom');
+    const toInput = document.getElementById('buySearchTo');
+    const resetBtn = document.getElementById('buySearchReset');
+    const tbody = document.getElementById('buyTableBody');
+    const countEl = document.getElementById('buyFilteredCount');
+
+    const formatDate = (isoStr) => {
+        if (!isoStr) return '';
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleDateString('en-CA'); // YYYY-MM-DD
+    };
+
+    function applyFilters() {
+        const nameVal = nameInput.value.trim().toLowerCase();
+        const fromVal = fromInput.value;
+        const toVal = toInput.value;
+
+        const filtered = rows.filter((r) => {
+            // Name match
+            if (nameVal) {
+                const supplierName = String(r.supplierName || '').toLowerCase();
+                const walkInName = String(r.walkInName || '').toLowerCase();
+                if (!supplierName.includes(nameVal) && !walkInName.includes(nameVal)) {
+                    return false;
+                }
+            }
+
+            // Date match
+            if (fromVal || toVal) {
+                const dateStr = r.date || r.billDateTime || '';
+                const rowDate = formatDate(dateStr);
+                if (!rowDate) return false;
+                if (fromVal && rowDate < fromVal) return false;
+                if (toVal && rowDate > toVal) return false;
+            }
+
+            return true;
+        });
+
+        countEl.textContent = filtered.length;
+
+        const todayIso = new Date().toLocaleDateString('en-CA');
+        const yesterdayIso = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
+
+        tbody.innerHTML = filtered.map((r) => {
+            const weights = {};
+            (Array.isArray(r.items) ? r.items : []).forEach((line) => {
+                weights[String(line.itemName || '').trim()] = Number(line.weight) || 0;
+            });
+
+            let dateHtml = '-';
+            if (r.date) {
+                const rDateObj = new Date(r.date);
+                const rIso = rDateObj.toLocaleDateString('en-CA');
+                const timeStr = rDateObj.toLocaleString();
+                
+                if (rIso === todayIso) {
+                    dateHtml = `<span style="color:#16a34a; font-weight:700;">${timeStr}</span>`;
+                } else if (rIso === yesterdayIso) {
+                    dateHtml = `<span style="color:#a16207; font-weight:700;">${timeStr}</span>`;
+                } else {
+                    dateHtml = timeStr;
+                }
+            }
+
+            return `<tr>
+              <td>${dateHtml}</td>
+              <td><a href="#" onclick="viewFullBill('${r.id || ''}', ${JSON.stringify(r).replace(/"/g, '&quot;')}); return false;" style="color:#0ea5e9; font-weight:700; text-decoration:none;">${r.supplierName || '-'}</a></td>
+              <td>${(Number(r.totalWeight) || 0).toFixed(2)}</td>
+              <td>${fmt(r.totalAmount || 0)}</td>
+              ${itemNames.map((name) => `<td>${(weights[name] || 0).toFixed(2)}</td>`).join('')}
+            </tr>`;
+        }).join('') || `<tr><td colspan="${4 + itemNames.length}" style="text-align:center;padding:20px;color:#64748b;">No matching records found / ගැලපෙන ගනුදෙනු සොයාගත නොහැක</td></tr>`;
+    }
+
+    // Event listeners
+    nameInput.addEventListener('input', applyFilters);
+    fromInput.addEventListener('change', applyFilters);
+    toInput.addEventListener('change', applyFilters);
+    resetBtn.addEventListener('click', () => {
+        nameInput.value = '';
+        fromInput.value = '';
+        toInput.value = '';
+        applyFilters();
+    });
+
+    // Initial render
+    applyFilters();
 }
 
 async function renderDAILYTR(body) {
@@ -1688,14 +2027,19 @@ function viewFullBill(id, r) {
             <table class="bill-table" style="margin-bottom:15px;">
                 <thead><tr><th>Item</th><th style="text-align:right;">Weight</th><th style="text-align:right;">Price</th><th style="text-align:right;">Total</th></tr></thead>
                 <tbody>
-                    ${(r.items || []).map(line => `
-                        <tr>
-                            <td>${line.itemName || '-'}</td>
-                            <td style="text-align:right;">${(Number(line.weight)||0).toFixed(2)}</td>
-                            <td style="text-align:right;">${(Number(line.buyingPrice)||0).toFixed(2)}</td>
-                            <td style="text-align:right;">${fmt(line.subtotal)}</td>
-                        </tr>
-                    `).join('')}
+                    ${(r.items || []).map(line => {
+                        const price = Number(line.buyingPrice || line.price || 0);
+                        const weight = Number(line.weight || 0);
+                        const sub = line.subtotal !== undefined ? Number(line.subtotal) : (weight * price);
+                        return `
+                            <tr>
+                                <td>${line.itemName || '-'}</td>
+                                <td style="text-align:right;">${weight.toFixed(2)}</td>
+                                <td style="text-align:right;">${price.toFixed(2)}</td>
+                                <td style="text-align:right;">${fmt(sub)}</td>
+                            </tr>
+                        `;
+                    }).join('')}
                 </tbody>
             </table>
             <div style="border-top:1px solid #e2e8f0; padding-top:10px; font-size:13px;">
@@ -1713,50 +2057,6 @@ function viewFullBill(id, r) {
                     <span>WhatsApp Share</span>
                 </button>
                 <button onclick="this.closest('.modal').remove()" style="padding:10px 20px; background:#64748b; color:#fff; border:none; border-radius:8px; cursor:pointer;">Close</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(wrap);
-}
-
-function viewFullBill(id, r) {
-    const wrap = document.createElement('div');
-    wrap.className = 'modal';
-    wrap.innerHTML = `
-        <div class="modal-card" style="width:600px; max-width:95vw;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                <h3 style="margin:0;">Bill Detail</h3>
-                <button onclick="this.closest('.modal').remove()" style="background:#64748b; padding:4px 10px;">Close</button>
-            </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px; margin-bottom:15px; background:#f8fafc; padding:10px; border-radius:8px;">
-                <div><b>Date:</b> ${r.date ? new Date(r.date).toLocaleString() : '-'}</div>
-                <div><b>Supplier:</b> ${r.supplierName || '-'}</div>
-                <div><b>Type:</b> ${r.customerType || '-'}</div>
-                <div><b>Session ID:</b> ${r.id || '-'}</div>
-            </div>
-            <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:15px;">
-                <thead><tr style="background:#f1f5f9;"><th>Item</th><th style="text-align:right;">Weight</th><th style="text-align:right;">Price</th><th style="text-align:right;">Amount</th></tr></thead>
-                <tbody>
-                    ${(Array.isArray(r.items) ? r.items : []).map(l => `
-                        <tr>
-                            <td>${l.itemName || '-'}</td>
-                            <td style="text-align:right;">${(Number(l.weight) || 0).toFixed(2)}</td>
-                            <td style="text-align:right;">${(Number(l.price) || 0).toFixed(2)}</td>
-                            <td style="text-align:right;">${fmt(Number(l.weight) * Number(l.price))}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-            <div style="border-top:2px solid #e2e8f0; padding-top:10px; font-size:14px; font-weight:700;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Grand Total:</span><span>${fmt(r.billGrandTotal || r.totalAmount)}</span></div>
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#b91c1c;"><span>Advance/Loan Applied:</span><span>- ${fmt((r.advanceApplied || 0) + (r.loanDeduction || 0))}</span></div>
-                <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:18px; color:#15803d; background:#dcfce7; padding:8px; border-radius:8px;"><span>CASH PAID:</span><span>${fmt(r.cashPaid)}</span></div>
-            </div>
-            <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center;">
-                <button onclick="shareBillViaWhatsapp(${JSON.stringify(r).replace(/"/g, '&quot;')})" style="padding:10px 15px; background:#16a34a; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:5px;">
-                    <span>WhatsApp Share</span>
-                </button>
-                <button onclick="this.closest('.modal').remove()" style="padding:10px 25px; background:#64748b; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:700;">OK</button>
             </div>
         </div>
     `;

@@ -4,6 +4,7 @@
  */
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
@@ -602,5 +603,63 @@ exports.getE2ETestRunResult = onCall(
             durationMs: Number(parsed.durationMs || 0),
             logs,
         };
+    }
+);
+
+exports.onBusinessCreatedReferral = onDocumentCreated(
+    {
+        document: "businesses/{businessId}",
+        memory: "256MiB",
+        timeoutSeconds: 60,
+    },
+    async (event) => {
+        const snap = event.data;
+        if (!snap) return;
+        const bizData = snap.data() || {};
+        const referrerId = bizData.referredBy;
+        if (!referrerId) return;
+        
+        logger.info(`New business ${event.params.businessId} registered with referrer ${referrerId}`);
+        const referrerSettingsRef = db.collection("settings").doc(referrerId);
+        try {
+            await db.runTransaction(async (tx) => {
+                const refSnap = await tx.get(referrerSettingsRef);
+                if (!refSnap.exists) {
+                    logger.warn(`Referrer settings not found for ${referrerId}`);
+                    return;
+                }
+                const refData = refSnap.data() || {};
+                const sub = refData.subscription || {};
+                const currentExpireStr = sub.expireDate || sub.trialEnd;
+                if (currentExpireStr) {
+                    const currentExpire = new Date(currentExpireStr);
+                    const nextExpire = new Date(currentExpire.getTime() + (3 * 24 * 60 * 60 * 1000));
+                    const updatedSub = {
+                        ...sub,
+                        expireDate: nextExpire.toISOString()
+                    };
+                    if (sub.trialEnd) {
+                        updatedSub.trialEnd = nextExpire.toISOString();
+                    }
+                    
+                    const wallet = refData.smsWallet || {};
+                    let updatedWallet = { ...wallet };
+                    if (wallet.trialSmsExpiresAt) {
+                        const currentTrialSmsExpire = new Date(wallet.trialSmsExpiresAt);
+                        const nextTrialSmsExpire = new Date(currentTrialSmsExpire.getTime() + (3 * 24 * 60 * 60 * 1000));
+                        updatedWallet.trialSmsExpiresAt = nextTrialSmsExpire.toISOString();
+                        updatedWallet.smsBalance = Number(updatedWallet.smsBalance || 0);
+                    }
+                    
+                    tx.set(referrerSettingsRef, {
+                        subscription: updatedSub,
+                        smsWallet: updatedWallet
+                    }, { merge: true });
+                    logger.info(`Successfully added 3 days referral reward to ${referrerId}`);
+                }
+            });
+        } catch (e) {
+            logger.error(`Referral reward transaction failed for ${referrerId}:`, e);
+        }
     }
 );

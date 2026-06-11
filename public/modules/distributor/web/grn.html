@@ -93,8 +93,8 @@
                 <input id="brand" type="text" placeholder="Brand">
             </div>
             <div>
-                <label for="barcode">Barcode</label>
-                <input id="barcode" type="text" placeholder="Barcode">
+                <label for="productCode">Item Code</label>
+                <input id="productCode" type="text" placeholder="Item Code">
             </div>
             <div>
                 <label for="sellingPrice">Selling Price *</label>
@@ -284,7 +284,7 @@
         document.getElementById('productName').value = normalizeText(p.name);
         document.getElementById('category').value = normalizeText(p.category);
         document.getElementById('brand').value = normalizeText(p.brand);
-        document.getElementById('barcode').value = normalizeText(p.barcode);
+        document.getElementById('productCode').value = normalizeText(p.productCode);
         var sp = toNum(p.unitPrice);
         var bp = toNum(p.buyingPrice != null ? p.buyingPrice : p.lastBuyingPrice);
         document.getElementById('sellingPrice').value = sp ? String(sp) : '';
@@ -316,6 +316,25 @@
         if (hit) applyGrnProductPick(hit);
         else grnPickedProduct = null;
     }
+    function syncGrnFormFromCatalogByCode() {
+        var inp = document.getElementById('productCode');
+        if (!inp || !grnCatalogLoaded) return;
+        var v = normalizeText(inp.value).toUpperCase().replace(/\s+/g, '');
+        if (!v) {
+            grnPickedProduct = null;
+            return;
+        }
+        var hit = null;
+        for (var i = 0; i < grnCatalog.length; i++) {
+            var pc = normalizeText(grnCatalog[i].productCode || grnCatalog[i].barcode).toUpperCase().replace(/\s+/g, '');
+            if (pc && pc === v) {
+                hit = grnCatalog[i];
+                break;
+            }
+        }
+        if (hit) applyGrnProductPick(hit);
+        else grnPickedProduct = null;
+    }
     function bindGrnProductSearchInput() {
         var inp = document.getElementById('productName');
         if (!inp || inp.dataset.grnSearchBound === '1') return;
@@ -326,6 +345,17 @@
             tmr = setTimeout(syncGrnFormFromCatalogByName, 120);
         });
         inp.addEventListener('change', syncGrnFormFromCatalogByName);
+    }
+    function bindGrnProductCodeInput() {
+        var inp = document.getElementById('productCode');
+        if (!inp || inp.dataset.grnCodeBound === '1') return;
+        inp.dataset.grnCodeBound = '1';
+        var tmr = null;
+        inp.addEventListener('input', function () {
+            clearTimeout(tmr);
+            tmr = setTimeout(syncGrnFormFromCatalogByCode, 120);
+        });
+        inp.addEventListener('change', syncGrnFormFromCatalogByCode);
     }
     function bindGrnEntryCardDelegation() {
         var card = document.getElementById('grnEntryCard');
@@ -501,7 +531,7 @@
             document.getElementById('productName').value = '';
             document.getElementById('category').value = '';
             document.getElementById('brand').value = '';
-            document.getElementById('barcode').value = '';
+            document.getElementById('productCode').value = '';
             document.getElementById('sellingPrice').value = '';
             document.getElementById('buyingPrice').value = '';
             document.getElementById('receivedQty').value = '0';
@@ -509,7 +539,7 @@
             document.getElementById('productName').value = normalizeText(row.productName);
             document.getElementById('category').value = normalizeText(row.category);
             document.getElementById('brand').value = normalizeText(row.brand);
-            document.getElementById('barcode').value = normalizeText(row.barcode);
+            document.getElementById('productCode').value = normalizeText(row.productCode || row.barcode);
             document.getElementById('sellingPrice').value = String(toNum(row.sellingPrice));
             document.getElementById('buyingPrice').value = String(toNum(row.buyingPrice));
             document.getElementById('receivedQty').value = String(toNum(row.quantity));
@@ -823,20 +853,20 @@
         if (isNaN(buyingPrice) || buyingPrice < 0) return showMsg('Buying Price is required.', 'err');
         var category = normalizeText(document.getElementById('category').value);
         var brand = normalizeText(document.getElementById('brand').value);
-        var barcode = normalizeText(document.getElementById('barcode').value);
+        var productCode = normalizeText(document.getElementById('productCode').value);
         var productId = '';
         if (grnPickedProduct && grnPickedProduct.id) {
             productId = normalizeText(grnPickedProduct.id);
         }
         if (grnPickedProduct && !category && grnPickedProduct.category) category = normalizeText(grnPickedProduct.category);
         if (grnPickedProduct && !brand && grnPickedProduct.brand) brand = normalizeText(grnPickedProduct.brand);
-        if (grnPickedProduct && !barcode && grnPickedProduct.barcode) barcode = normalizeText(grnPickedProduct.barcode);
+        if (grnPickedProduct && !productCode && grnPickedProduct.productCode) productCode = normalizeText(grnPickedProduct.productCode);
+        var barcode = grnPickedProduct && grnPickedProduct.barcode ? normalizeText(grnPickedProduct.barcode) : '';
         var lineTotal = buyingPrice * qty;
-        var pcode = grnPickedProduct && grnPickedProduct.productCode ? normalizeText(grnPickedProduct.productCode) : '';
         grnItems.push({
             productId: productId,
             productName: productName,
-            productCode: pcode,
+            productCode: productCode,
             category: category,
             brand: brand,
             barcode: barcode,
@@ -848,6 +878,7 @@
         });
         renderGrnItemsTable();
         document.getElementById('receivedQty').value = '0';
+        document.getElementById('productCode').value = '';
         grnPickedProduct = null;
         showMsg('Line added. Add more lines or click Save GRN.', 'ok');
     }
@@ -871,6 +902,7 @@
             var productName = '';
             var category = '';
             var brand = '';
+            var productCode = '';
             var barcode = '';
             var sellingPrice = 0;
             var buyingPrice = 0;
@@ -887,7 +919,8 @@
                 productName = normalizeText(document.getElementById('productName').value);
                 category = normalizeText(document.getElementById('category').value);
                 brand = normalizeText(document.getElementById('brand').value);
-                barcode = normalizeText(document.getElementById('barcode').value);
+                productCode = normalizeText(document.getElementById('productCode').value);
+                barcode = grnPickedProduct && grnPickedProduct.barcode ? normalizeText(grnPickedProduct.barcode) : '';
                 sellingPrice = Number(document.getElementById('sellingPrice').value);
                 buyingPrice = Number(document.getElementById('buyingPrice').value);
                 currentStockInput = Math.max(0, parseInt(document.getElementById('currentStock').value, 10) || 0);
@@ -919,7 +952,8 @@
                         name: line.productName,
                         category: line.category,
                         brand: line.brand,
-                        barcode: line.barcode,
+                        productCode: line.productCode || '',
+                        barcode: line.barcode || '',
                         unitPrice: toNum(line.sellingPrice),
                         buyingPrice: toNum(line.buyingPrice),
                         lastBuyingPrice: toNum(line.buyingPrice),
@@ -936,7 +970,7 @@
                         productCode: line.productCode || '',
                         category: line.category,
                         brand: line.brand,
-                        barcode: line.barcode,
+                        barcode: line.barcode || '',
                         quantity: toNum(line.quantity),
                         unitPrice: toNum(line.unitPrice),
                         buyingPrice: toNum(line.buyingPrice),
@@ -960,6 +994,7 @@
                     productName: resolvedItems.length > 1 ? (resolvedItems.length + ' products') : (resolvedItems[0] ? resolvedItems[0].productName : ''),
                     category: resolvedItems[0] ? resolvedItems[0].category : '',
                     brand: resolvedItems[0] ? resolvedItems[0].brand : '',
+                    productCode: resolvedItems[0] ? resolvedItems[0].productCode : '',
                     barcode: resolvedItems[0] ? resolvedItems[0].barcode : '',
                     quantity: totQty,
                     buyingPrice: avgBuy,
@@ -1003,6 +1038,7 @@
                 name: productName,
                 category: category,
                 brand: brand,
+                productCode: productCode,
                 barcode: barcode,
                 unitPrice: sellingPrice,
                 buyingPrice: buyingPrice,
@@ -1029,6 +1065,7 @@
                 productName: productName,
                 category: category,
                 brand: brand,
+                productCode: productCode,
                 barcode: barcode,
                 quantity: receivedQty,
                 buyingPrice: buyingPrice,
@@ -1091,6 +1128,7 @@
         document.getElementById('grnDate').value = new Date().toISOString().slice(0, 10);
         await loadGrnProductCatalog();
         bindGrnProductSearchInput();
+        bindGrnProductCodeInput();
         bindGrnEntryCardDelegation();
         bindMwGrnSellingBuyingSync();
         if (isMwTradingTenant()) {

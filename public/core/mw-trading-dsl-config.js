@@ -4,7 +4,7 @@
 
     const DigibizMwDslConfig = {
         FOOTER_DIGIBIZ: 'Software Solution by DIGIBIZ - 0713446500',
-        DSL_HEADER: 'DSL ENTERPRISES',
+        DSL_HEADER: 'DSL ENTERPRISES (PVT) LTD',
         DSL_SUBHEADER: '147/1 Agulana Station Road Moratuwa | 0760817149',
         AGENT_FOOTER_NOTE: 'Agent: SPRANZA_PVT_LTD',
         COST_TO_SELL_MULTIPLIER: 1.07,

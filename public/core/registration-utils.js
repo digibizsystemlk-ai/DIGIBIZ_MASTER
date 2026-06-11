@@ -26,12 +26,12 @@ window.RegistrationUI = {
             return;
         }
 
-        const types = Object.keys(window.BUSINESS_TYPES);
+        const types = ['distributor'];
         selectElement.innerHTML = '<option value="" disabled selected>Select your business type...</option>';
 
         const promises = types.map(async (key) => {
             const type = window.BUSINESS_TYPES[key];
-            if (type.hidden === true) return;
+            if (!type || type.hidden === true) return;
 
             try {
                 // Smart Check Logic:
@@ -61,10 +61,9 @@ window.RegistrationUI = {
 
         await Promise.all(promises);
 
-        // Always add "Other" option
-        const otherOption = document.createElement('option');
-        otherOption.value = 'other';
-        otherOption.textContent = '➕ මම සොයන ව්‍යාපාර වර්ගය මෙහි නැත...';
-        selectElement.appendChild(otherOption);
+        // Select distributor by default if it is available
+        if (selectElement.querySelector('option[value="distributor"]')) {
+            selectElement.value = 'distributor';
+        }
     }
 };
