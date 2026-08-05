@@ -16,7 +16,7 @@
     <script src="/core/loan-sms-notice.js?v=1"></script>
     <script src="/core/scrap-vba-core.js?v=1"></script>
     <script src="/core/dashboard-core.js?v=62"></script>
-    <script src="/core/sidebar.js?v=64"></script>
+    <script src="/core/sidebar.js?v=1010"></script>
     <style>
         body{font-family:Inter,system-ui,sans-serif;background:#fef2f2;margin:0;color:#450a0a}
         /* Match Loans Hub / loan-interest: padding only — no margin:auto centering (avoids extra left gap beside sidebar). */
@@ -100,6 +100,57 @@
         <div class="modal-foot">
             <button class="btn-ghost" onclick="closeSettleModal()">Cancel</button>
             <button class="btn-primary" id="confirmSettleBtn">Confirm Pay</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-ov" id="historyModal">
+    <div class="modal-card" style="max-width:900px; width:95%; max-height:90vh;">
+        <div style="padding:20px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <h3 id="historyTitle" style="font-size:20px; margin-bottom:4px; color:#0f3b2c;">Loan History</h3>
+                <div id="historySubtitle" style="font-size:13px; color:#64748b;">Loading ledger...</div>
+            </div>
+            <button class="btn-ghost" onclick="closeHistoryModal()" style="font-size:24px; padding:0 8px;">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:0; overflow-y:auto; flex:1; background:#f8fafc;">
+            <div style="padding:20px;">
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; margin-bottom:20px;">
+                    <div style="background:#fff; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">
+                        <div style="font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase;">Start Date</div>
+                        <div id="histStartDate" style="font-size:16px; font-weight:700; color:#0f172a; margin-top:4px;">-</div>
+                    </div>
+                    <div style="background:#fff; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">
+                        <div style="font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase;">Principal Issued</div>
+                        <div id="histPrincipalIssued" style="font-size:16px; font-weight:700; color:#0f172a; margin-top:4px;">-</div>
+                    </div>
+                    <div style="background:#fff; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">
+                        <div style="font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase;">Total Repaid</div>
+                        <div id="histTotalRepaid" style="font-size:16px; font-weight:700; color:#15803d; margin-top:4px;">-</div>
+                    </div>
+                    <div style="background:#fff; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">
+                        <div style="font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase;">Current Balance</div>
+                        <div id="histCurrentBalance" style="font-size:16px; font-weight:700; color:#b91c1c; margin-top:4px;">-</div>
+                    </div>
+                </div>
+
+                <table style="width:100%; font-size:13px; background:#fff; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                    <thead>
+                        <tr>
+                            <th style="background:#f1f5f9; padding:8px; text-align:left;">Date</th>
+                            <th style="background:#f1f5f9; padding:8px; text-align:left;">Description</th>
+                            <th style="background:#f1f5f9; padding:8px; text-align:right;">Principal Change</th>
+                            <th style="background:#f1f5f9; padding:8px; text-align:right; font-weight:700;">Principal Bal</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyRows">
+                        <!-- Dynamic -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="modal-foot" style="background:#f8fafc; border-top:1px solid #e2e8f0; padding:12px 20px; display:flex; justify-content:flex-end;">
+            <button class="btn-ghost" onclick="closeHistoryModal()" style="padding:8px 16px; border-radius:6px; font-weight:600; cursor:pointer;">Close</button>
         </div>
     </div>
 </div>
@@ -195,6 +246,9 @@ async function saveLoan(){
   if (smsRes?.ok) showSmsDebug(`SMS queued for ${customerName}.`, true);
   else showSmsDebug(`SMS skipped for ${customerName}: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
   document.getElementById('amount').value=''; await loadRows();
+  if (window.scrapVbaCore && typeof window.scrapVbaCore.recordTotalLoanHistory === 'function') {
+      await window.scrapVbaCore.recordTotalLoanHistory(businessId, customerName);
+  }
 }
 function closeSettleModal(){ document.getElementById('settleModal').style.display='none'; }
 async function repay(id){
@@ -225,9 +279,230 @@ async function repay(id){
         if (smsRes?.ok) showSmsDebug(`Repayment SMS queued for ${row.customerName || 'customer'}.`, true);
         else showSmsDebug(`Repayment SMS skipped: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
         closeSettleModal(); await loadRows();
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.recordTotalLoanHistory === 'function') {
+            await window.scrapVbaCore.recordTotalLoanHistory(businessId, row.customerName || '-');
+        }
     } catch(e) { alert(e.message || 'Error'); }
     finally { btn.disabled = false; btn.textContent = 'Confirm Pay'; }
   };
+}
+
+function closeHistoryModal() {
+    document.getElementById('historyModal').style.display = 'none';
+}
+
+async function viewLoanHistory(loanId) {
+    const snap = await db.collection('loan_no_interest').doc(loanId).get();
+    if (!snap.exists) return;
+    const match = snap.data();
+
+    const modal = document.getElementById('historyModal');
+    modal.style.display = 'flex';
+    
+    document.getElementById('historyTitle').textContent = `Loan History: ${match.customerName || '-'}`;
+    document.getElementById('historySubtitle').textContent = `Fetching transactions...`;
+    
+    document.getElementById('histStartDate').textContent = '-';
+    document.getElementById('histPrincipalIssued').textContent = '-';
+    document.getElementById('histTotalRepaid').textContent = '-';
+    document.getElementById('histCurrentBalance').textContent = '-';
+    
+    const tbody = document.getElementById('historyRows');
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#64748b; padding:20px;">Loading ledger data...</td></tr>`;
+
+    try {
+        const jSnap = await db.collection('journal').doc(businessId).collection('entries')
+            .where('loanDocId', '==', loanId)
+            .get();
+
+        const events = [];
+
+        let issueDate = null;
+
+        jSnap.forEach(d => {
+            const data = d.data();
+            const dateObj = data.date ? (data.date.toDate ? data.date.toDate() : new Date(data.date)) : new Date();
+            
+            if (data.referenceType === 'LOAN_NO_INTEREST') {
+                const pDebit = (data.entries || []).filter(e => e.accountCode === '1-1030-11').reduce((s, e) => s + n(e.debit), 0);
+                events.push({
+                    id: d.id,
+                    date: dateObj,
+                    type: 'ISSUE',
+                    amount: pDebit,
+                    description: `No-Interest Loan Issued`
+                });
+                if (!issueDate || dateObj < issueDate) issueDate = dateObj;
+            } else if (data.referenceType === 'LOAN_NO_INTEREST_REPAY') {
+                const pCredit = (data.entries || []).filter(e => e.accountCode === '1-1030-11').reduce((s, e) => s + n(e.credit), 0);
+                events.push({
+                    id: d.id,
+                    date: dateObj,
+                    type: 'REPAY',
+                    amount: pCredit,
+                    description: `Direct Repayment (${data.description || 'Cash'})`
+                });
+            } else if (data.referenceType === 'BILL_PURCHASE') {
+                const pCredit = (data.entries || []).filter(e => e.accountCode === '1-1030-11').reduce((s, e) => s + n(e.credit), 0);
+                if (pCredit > 0) {
+                    events.push({
+                        id: d.id,
+                        date: dateObj,
+                        type: 'REPAY',
+                        amount: pCredit,
+                        description: `Scrap Deduction (${data.description})`
+                    });
+                }
+            }
+        });
+
+        // Fallback issue date if journal not found
+        if (!issueDate) {
+            issueDate = match.createdAt ? (match.createdAt.toDate ? match.createdAt.toDate() : new Date(match.createdAt)) : new Date(match.date || Date.now());
+            const issueAmt = n(match.principalAmount || match.principalOutstanding || 0);
+            if (issueAmt > 0) {
+                events.push({
+                    id: 'fallback_issue',
+                    date: issueDate,
+                    type: 'ISSUE',
+                    amount: issueAmt,
+                    description: `No-Interest Loan Issued (Legacy)`
+                });
+            }
+        }
+
+        // Fetch buying history for scrap deductions
+        const buySnap = await db.collection('buying_history')
+            .where('businessId', '==', businessId)
+            .where('supplierName', '==', match.customerName || match.customerId)
+            .get();
+
+        const pAmount = n(match.principalAmount || match.principalOutstanding || 0);
+        const cBal = Math.max(0, n(match.balance || match.principalOutstanding || 0));
+        let expectedScrap = pAmount - cBal;
+        
+        events.forEach(e => {
+            if (e.type === 'REPAY') expectedScrap -= e.amount;
+        });
+
+        if (expectedScrap > 0.01) {
+            const scrapEvents = [];
+            buySnap.forEach(d => {
+                const data = d.data();
+                const dDate = data.billDateTime ? new Date(data.billDateTime) : (data.date ? new Date(data.date) : new Date());
+                if (dDate >= issueDate) {
+                    const deduct = n((data.loanApplyBreakdown && data.loanApplyBreakdown.STANDARD) || data.scrapLoanDeduction || 0) + 
+                                   n((data.loanApplyBreakdown && data.loanApplyBreakdown.ADV_LN) || 0) +
+                                   n((data.loanApplyBreakdown && data.loanApplyBreakdown.NO_INTEREST) || 0);
+                    if (deduct > 0.01) {
+                        scrapEvents.push({ id: d.id, date: dDate, amount: deduct, billNo: data.billNo || '' });
+                    }
+                }
+            });
+
+            scrapEvents.sort((a, b) => a.date - b.date);
+
+            for (const se of scrapEvents) {
+                if (expectedScrap <= 0.01) break;
+                const assigned = Math.min(se.amount, expectedScrap);
+                events.push({
+                    id: se.id,
+                    date: se.date,
+                    type: 'REPAY',
+                    amount: assigned,
+                    description: `Scrap Deduction (Bill #${se.billNo})`
+                });
+                expectedScrap -= assigned;
+            }
+
+            if (expectedScrap > 0.01) {
+                events.push({
+                    id: 'unmatched_scrap',
+                    date: new Date(),
+                    type: 'REPAY',
+                    amount: expectedScrap,
+                    description: `Other Deductions / Manual Adjustments`
+                });
+            }
+        }
+
+        events.sort((a, b) => a.date - b.date);
+
+        let currentPrincipal = 0;
+        let lastDateStr = null;
+        let totalRepaid = 0;
+        let principalIssued = 0;
+
+        const ledger = [];
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        for (const ev of events) {
+            const dateStr = ev.date.toISOString().split('T')[0];
+            
+            if (ev.type === 'ISSUE') {
+                principalIssued += ev.amount;
+                currentPrincipal += ev.amount;
+                
+                if (!lastDateStr) {
+                    document.getElementById('histStartDate').textContent = dateStr;
+                }
+                
+                ledger.push({
+                    date: dateStr,
+                    description: ev.description,
+                    pChange: ev.amount,
+                    pBal: currentPrincipal,
+                    type: 'ISSUE'
+                });
+            } else if (ev.type === 'REPAY') {
+                const payment = ev.amount;
+                totalRepaid += payment;
+                currentPrincipal -= payment;
+                
+                ledger.push({
+                    date: dateStr,
+                    description: ev.description,
+                    pChange: -payment,
+                    pBal: currentPrincipal,
+                    type: 'REPAY'
+                });
+            }
+
+            lastDateStr = dateStr;
+        }
+
+        document.getElementById('histPrincipalIssued').textContent = m(principalIssued);
+        document.getElementById('histTotalRepaid').textContent = m(totalRepaid);
+        document.getElementById('histCurrentBalance').textContent = m(currentPrincipal);
+
+        if (ledger.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#64748b; padding:20px;">No transaction records found.</td></tr>`;
+            return;
+        }
+
+        const reversedLedger = [...ledger].reverse();
+        tbody.innerHTML = reversedLedger.map(l => {
+            let rowBg = '#fff';
+            if (l.type === 'ISSUE') rowBg = '#fdf2f8';
+            else if (l.type === 'REPAY') rowBg = '#f0fdf4';
+            
+            const pcColor = l.pChange > 0 ? '#b91c1c' : '#15803d';
+            
+            return `
+                <tr style="background:${rowBg}">
+                    <td>${l.date}</td>
+                    <td>${l.description}</td>
+                    <td style="text-align:right; color:${pcColor}; font-weight:600;">${l.pChange > 0 ? '+' : ''}${n(l.pChange).toLocaleString()}</td>
+                    <td style="text-align:right; font-weight:700;">${n(l.pBal).toLocaleString()}</td>
+                </tr>
+            `;
+        }).join('');
+
+        document.getElementById('historySubtitle').textContent = `Ledger up to ${todayStr}`;
+    } catch (err) {
+        console.error(err);
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#dc2626; padding:20px;">Error loading data: ${err.message}</td></tr>`;
+    }
 }
 async function deleteAllNoInterestForBusiness(){
   if (!confirm('Delete ALL no-interest loan records for this business? This cannot be undone. Existing journal entries are NOT reversed.')) return;
@@ -254,7 +529,39 @@ async function loadRows(){
     await window.LoanZeroCleanup.sweepExpired(db, businessId, 'loan_no_interest', noIntFullyZero);
   }
   const snap = await db.collection('loan_no_interest').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
-  const rows = snap.docs.map((d)=>({id:d.id,...(d.data()||{})})).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  let rows = snap.docs.map((d)=>({id:d.id,...(d.data()||{})})).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const searchFilter = urlParams.get('customer') || urlParams.get('search');
+  if (searchFilter) {
+      rows = rows.filter(r => String(r.customerName || '').toLowerCase().includes(searchFilter.toLowerCase()));
+      // Show filter notice
+      let noticeEl = document.getElementById('filterNotice');
+      if (!noticeEl) {
+          noticeEl = document.createElement('div');
+          noticeEl.id = 'filterNotice';
+          noticeEl.style = 'margin: 10px 0; font-size: 13px; color: #b91c1c; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; background: #fee2e2; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 8px;';
+          const container = document.querySelector('.wrap');
+          if (container) {
+              const kpis = document.querySelector('.kpis');
+              if (kpis) kpis.parentNode.insertBefore(noticeEl, kpis.nextSibling);
+              else container.insertBefore(noticeEl, container.firstChild);
+          }
+      }
+      const cleanFilterVal = String(searchFilter).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      noticeEl.innerHTML = `Showing results for: <strong>${cleanFilterVal}</strong> <button onclick="clearFilter()" style="margin-left: 8px; padding: 2px 8px; font-size: 11px; background: #fff; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; color: #b91c1c; font-weight: 700;">Clear</button>`;
+  } else {
+      const noticeEl = document.getElementById('filterNotice');
+      if (noticeEl) noticeEl.remove();
+  }
+
+  window.clearFilter = function() {
+      const url = new URL(window.location);
+      url.searchParams.delete('customer');
+      url.searchParams.delete('search');
+      window.history.replaceState({}, '', url);
+      loadRows();
+  };
   let totOut = 0, totPaid = 0, activeCount = 0;
   document.getElementById('rows').innerHTML = rows.map((r)=>{
     const principalAmount = n(r.principalAmount || r.principalOutstanding);
@@ -266,7 +573,7 @@ async function loadRows(){
     totPaid += totalPaid;
     if (balance > 0.0001) activeCount += 1;
     return `<tr>
-      <td>${r.customerName||'-'}</td>
+      <td style="font-weight:700; color:#0f3b2c; cursor:pointer; text-decoration:underline;" onclick="viewLoanHistory('${r.id}')" title="Click to view history">${r.customerName||'-'}</td>
       <td>${m(principalAmount)}</td>
       <td>${m(totalPayable)}</td>
       <td>${m(totalPaid)}</td>

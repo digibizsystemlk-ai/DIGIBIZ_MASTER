@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manufacturer Stock 360 - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=70"></script>
+    <script src="/core/sidebar.js?v=1008"></script>
+    <script src="/core/sms-wallet-core.js?v=4"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=9"></script>
+    <style id="mfgStyle"></style>
+</head>
+<body>
+<div class="mfg-wrap">
+    <div class="mfg-head">
+        <h2>Stock 360 View</h2>
+        <p id="mfgBusinessCtx"></p>
+    </div>
+    <div class="mfg-grid">
+        <div class="mfg-card">
+            <h3>Transformation Mapping</h3>
+            <div><label>Raw Material</label><input id="rawMaterial"></div>
+            <div><label>Finished Products (comma-separated)</label><textarea id="finishedProducts" rows="2"></textarea></div>
+            <div class="mfg-row3">
+                <div><label>Input Qty</label><input type="number" id="inputQty" min="0" step="0.01"></div>
+                <div><label>Output Qty</label><input type="number" id="outputQty" min="0" step="0.01"></div>
+                <div><label>Wastage %</label><input type="number" id="wastagePct" min="0" step="0.01"></div>
+            </div>
+            <button id="saveMapBtn" style="margin-top:8px;">Save Map</button>
+            <div class="mfg-msg" id="mapMsg"></div>
+        </div>
+        <div class="mfg-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <h3>Raw Materials</h3>
+                <div id="kubukaExportUi" style="display:none;gap:8px;">
+                    <input type="date" id="exportStartDate">
+                    <input type="date" id="exportEndDate">
+                    <button id="exportBtn">Export</button>
+                </div>
+            </div>
+            <table><thead><tr><th>Name</th><th>Stock</th><th>Unit Cost</th><th>Value</th><th>Actions</th></tr></thead><tbody id="rmRows"></tbody></table>
+        </div>
+        <div class="mfg-card">
+            <h3>Finished Goods</h3>
+            <table><thead><tr><th>Name</th><th>Stock</th><th>Unit Price</th><th>Value</th><th>Actions</th></tr></thead><tbody id="fgRows"></tbody></table>
+        </div>
+        <div class="mfg-card">
+            <h3>Transformation Maps</h3>
+            <table><thead><tr><th>Raw</th><th>Finished</th><th>Ratio</th><th>Actions</th></tr></thead><tbody id="mapRows"></tbody></table>
+        </div>
+        <div class="mfg-card">
+            <h3>Production Run Entry</h3>
+            <div class="mfg-row">
+                <div><label>Raw Material</label><input id="prRawMaterial" placeholder="Tea Leaf / Raw item"></div>
+                <div><label>Finished Product</label><input id="prFinishedProduct" placeholder="Packed Tea"></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Raw Qty Used</label><input type="number" id="prRawQty" min="0" step="0.01"></div>
+                <div><label>Finished Qty Produced</label><input type="number" id="prFinishedQty" min="0" step="0.01"></div>
+                <div><label>Raw Unit Cost (auto)</label><input type="number" id="prRawUnitCost" min="0" step="0.01" readonly></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Raw Material Cost (auto)</label><input type="number" id="prRawCost" min="0" step="0.01" readonly></div>
+                <div><label>Labor Cost</label><input type="number" id="prLaborCost" min="0" step="0.01"></div>
+                <div><label>Overhead Cost</label><input type="number" id="prOverheadCost" min="0" step="0.01"></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Total Production Cost (auto)</label><input type="number" id="prTotalCost" min="0" step="0.01" readonly></div>
+                <div><label>FG Unit Cost (auto)</label><input type="number" id="prFgUnitCost" min="0" step="0.01" readonly></div>
+                <div><label>Notes</label><input id="prNotes" placeholder="Batch / remarks"></div>
+            </div>
+            <button id="recordProductionBtn" style="margin-top:10px;">Record Production Run</button>
+            <div class="mfg-msg" id="productionMsg"></div>
+        </div>
+    </div>
+</div>
+<div id="editModal" class="mfg-modal" style="display:none;">
+    <div class="mfg-modal-box">
+        <h3 id="editTitle">Edit Row</h3>
+        <div class="mfg-row">
+            <div><label>Name</label><input id="editName"></div>
+            <div><label>Stock Qty</label><input type="number" id="editStockQty" min="0" step="0.01"></div>
+        </div>
+        <div class="mfg-row" style="margin-top:8px;">
+            <div><label>Unit Cost/Price</label><input type="number" id="editUnitCost" min="0" step="0.01"></div>
+            <div><label>Finished Products (comma separated, map only)</label><input id="editFinishedProducts"></div>
+        </div>
+        <div class="mfg-row3" style="margin-top:8px;">
+            <div><label>Input Qty (map)</label><input type="number" id="editInputQty" min="0" step="0.01"></div>
+            <div><label>Output Qty (map)</label><input type="number" id="editOutputQty" min="0" step="0.01"></div>
+            <div><label>Wastage % (map)</label><input type="number" id="editWastagePct" min="0" step="0.01"></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+            <button type="button" id="editCancelBtn">Cancel</button>
+            <button type="button" id="editSaveBtn">Update</button>
+        </div>
+    </div>
+</div>
+<script>
+const db = firebase.firestore();
+document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
+const modalStyle = document.createElement('style');
+modalStyle.textContent = `.mfg-modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:12000;padding:14px}.mfg-modal-box{max-width:840px;width:100%;background:#fff;border-radius:12px;padding:14px}`;
+document.head.appendChild(modalStyle);
+let editType = '';
+let editingRowId = '';
+const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+function v(id){ return document.getElementById(id).value; }
+function n(id){ return Number(v(id)) || 0; }
+function normalizeKey(name){ return String(name || '').trim().toUpperCase(); }
+function isKubuka(){ return ManufacturerModule.businessId === KUBUKA_BID; }
+
+async function exportRawMaterialReport() {
+    if (!isKubuka()) return;
+
+    const startDate = v('exportStartDate');
+    const endDate = v('exportEndDate');
+
+    if (!startDate || !endDate) {
+        alert('Please select a start and end date for the export.');
+        return;
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999); // Include the whole end day
+
+    try {
+        const snapshot = await db.collection('manufacturer_production_runs')
+            .where('businessId', '==', KUBUKA_BID)
+            .where('createdAt', '>=', start)
+            .where('createdAt', '<=', end)
+            .orderBy('createdAt', 'desc')
+            .get();
+
+        if (snapshot.empty) {
+            alert('No raw material usage data found for the selected date range.');
+            return;
+        }
+
+        let csvContent = 'data:text/csv;charset=utf-8,Date,Raw Material,Qty Used,Unit Cost,Total Cost,Finished Product,Finished Qty,Notes\n';
+        snapshot.forEach(doc => {
+            const run = doc.data();
+            const record = [
+                run.createdAt.toDate().toISOString().slice(0, 10),
+                run.rawMaterial,
+                run.rawQty,
+                run.rawUnitCost,
+                run.rawCost,
+                run.finishedProduct,
+                run.finishedQty,
+                run.notes
+            ].join(',');
+            csvContent += record + '\n';
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement('a');
+        link.setAttribute('href', encodedUri);
+        link.setAttribute('download', `raw_material_report_${startDate}_to_${endDate}.csv`);
+        document.body.appendChild(link); // Required for Firefox
+        link.click();
+        document.body.removeChild(link);
+
+    } catch (error) {
+        console.error('Error exporting report:', error);
+        alert('Failed to export report. See console for details.');
+    }
+}
+
+async function saveInvoiceDoc(invoice){
+    if (!isKubuka()) return null;
+    const id = invoice.invoiceNo || (`INV-${Date.now()}`);
+    await db.collection('invoices').doc(id).set({
+        ...invoice,
+        businessId: ManufacturerModule.businessId,
+        printHistory: [{ printedAt: new Date(), channel: 'browser-print' }],
+        createdAt: new Date(),
+        isActive: true
+    }, { merge: true });
+    return id;
+}
+function printThermalProductionVoucher(voucher){
+    if (!isKubuka()) return;
+    const w = window.open('', '_blank', 'width=420,height=760');
+    if (!w) return;
+    w.document.write(`
+        <html><head><title>${voucher.invoiceNo}</title><style>
+            @page{size:80mm auto;margin:2mm;}
+            body{font-family:Arial,sans-serif;width:76mm;margin:0 auto;padding:2mm;color:#111}
+            h2{font-size:13px;text-align:center;margin:0 0 6px}
+            p{font-size:11px;line-height:1.35;margin:0 0 6px}
+        </style></head><body>
+            <h2>KUBUKA TEA FACTORY<br>Production Voucher</h2>
+            <p>No: ${voucher.invoiceNo}<br>Date: ${voucher.date || ''}</p>
+            <p>Raw: ${voucher.rawMaterial || '-'} (${voucher.rawQty || 0})<br>Finished: ${voucher.finishedProduct || '-'} (${voucher.finishedQty || 0})<br>Labor: Rs ${ManufacturerModule.money(voucher.laborCost || 0)}<br>Overhead: Rs ${ManufacturerModule.money(voucher.overheadCost || 0)}<br>Total Cost: Rs ${ManufacturerModule.money(voucher.totalAmount || 0)}</p>
+        </body></html>
+    `);
+    w.document.close(); w.focus(); w.print();
+}
+function calcProductionCosts(){
+    const rawQty = n('prRawQty');
+    const rawUnitCost = n('prRawUnitCost');
+    const rawCost = rawQty * rawUnitCost;
+    const labor = n('prLaborCost');
+    const overhead = n('prOverheadCost');
+    const totalCost = rawCost + labor + overhead;
+    const fgQty = n('prFinishedQty');
+    const fgUnitCost = fgQty > 0 ? (totalCost / fgQty) : 0;
+    document.getElementById('prRawCost').value = rawCost.toFixed(2);
+    document.getElementById('prTotalCost').value = totalCost.toFixed(2);
+    document.getElementById('prFgUnitCost').value = fgUnitCost.toFixed(4);
+}
+async function loadRawCostHint(){
+    const bid = ManufacturerModule.businessId;
+    const rawKey = normalizeKey(v('prRawMaterial'));
+    if (!bid || !rawKey) {
+        document.getElementById('prRawUnitCost').value = '0.00';
+        calcProductionCosts();
+        return;
+    }
+    const doc = await db.collection('manufacturer_raw_materials').doc(`${bid}_${rawKey}`).get().catch(() => null);
+    const x = doc && doc.exists ? (doc.data() || {}) : {};
+    document.getElementById('prRawUnitCost').value = (Number(x.lastUnitCost) || 0).toFixed(2);
+    calcProductionCosts();
+}
+async function refresh(){
+    const bid = ManufacturerModule.businessId;
+    const [rm, fg, maps] = await Promise.all([
+        db.collection('manufacturer_raw_materials').where('businessId','==',bid).get().catch(()=>({docs:[]})),
+        db.collection('manufacturer_finished_products').where('businessId','==',bid).get().catch(()=>({docs:[]})),
+        db.collection('manufacturer_transformations').where('businessId','==',bid).limit(100).get().catch(()=>({docs:[]}))
+    ]);
+    const mapRows = maps.docs
+        .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+        .filter((x) => x.isActive !== false)
+        .sort((a, b) => {
+            const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+            const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+            return tb - ta;
+        })
+        .slice(0, 50);
+    document.getElementById('rmRows').innerHTML = rm.docs.map((d)=>{
+        const x=d.data()||{}; const v=(Number(x.stockQty)||0)*(Number(x.lastUnitCost)||0);
+        if (x.isActive === false) return '';
+        return `<tr><td class="wrap-name">${x.name||'-'}</td><td>${Number(x.stockQty)||0}</td><td>Rs ${ManufacturerModule.money(x.lastUnitCost)}</td><td>Rs ${ManufacturerModule.money(v)}</td><td><button type="button" onclick="openEditStock('RM','${d.id}')">✏️</button> <button type="button" onclick="deleteStock('RM','${d.id}')">🗑️</button></td></tr>`;
+    }).join('');
+    document.getElementById('fgRows').innerHTML = fg.docs.map((d)=>{
+        const x=d.data()||{}; const v=(Number(x.stockQty)||0)*(Number(x.unitPrice)||0);
+        if (x.isActive === false) return '';
+        return `<tr><td class="wrap-name">${x.name||'-'}</td><td>${Number(x.stockQty)||0}</td><td>Rs ${ManufacturerModule.money(x.unitPrice)}</td><td>Rs ${ManufacturerModule.money(v)}</td><td><button type="button" onclick="openEditStock('FG','${d.id}')">✏️</button> <button type="button" onclick="deleteStock('FG','${d.id}')">🗑️</button></td></tr>`;
+    }).join('');
+    document.getElementById('mapRows').innerHTML = mapRows.map((x)=>{
+        return `<tr><td class="wrap-name">${x.rawMaterial||'-'}</td><td class="wrap-name">${(x.finishedProducts||[]).join(', ')}</td><td>${Number(x.inputQty)||0} → ${Number(x.outputQty)||0} (${Number(x.wastagePct)||0}% waste)</td><td><button type="button" onclick="openEditStock('MAP','${x.id}')">✏️</button> <button type="button" onclick="deleteStock('MAP','${x.id}')">🗑️</button></td></tr>`;
+    }).join('');
+}
+function openEditStock(type, id){
+    editType = type;
+    editingRowId = id;
+    const coll = type === 'RM' ? 'manufacturer_raw_materials' : (type === 'FG' ? 'manufacturer_finished_products' : 'manufacturer_transformations');
+    db.collection(coll).doc(id).get().then((doc) => {
+        const x = doc.exists ? (doc.data() || {}) : {};
+        document.getElementById('editTitle').textContent = `Edit ${type}`;
+        document.getElementById('editName').value = x.name || x.rawMaterial || '';
+        document.getElementById('editStockQty').value = Number(x.stockQty || 0);
+        document.getElementById('editUnitCost').value = Number(x.lastUnitCost || x.unitPrice || 0);
+        document.getElementById('editFinishedProducts').value = Array.isArray(x.finishedProducts) ? x.finishedProducts.join(', ') : '';
+        document.getElementById('editInputQty').value = Number(x.inputQty || 0);
+        document.getElementById('editOutputQty').value = Number(x.outputQty || 0);
+        document.getElementById('editWastagePct').value = Number(x.wastagePct || 0);
+        document.getElementById('editModal').style.display = 'flex';
+    }).catch((e) => alert('Unable to open edit: ' + (e.message || e)));
+}
+function closeEditStock(){
+    editType = '';
+    editingRowId = '';
+    document.getElementById('editModal').style.display = 'none';
+}
+async function saveEditStock(){
+    if (!editingRowId || !editType) return;
+    if (editType === 'RM') {
+        await db.collection('manufacturer_raw_materials').doc(editingRowId).update({
+            name: v('editName').trim(),
+            stockQty: Number(v('editStockQty')) || 0,
+            lastUnitCost: Number(v('editUnitCost')) || 0,
+            updatedAt: new Date()
+        });
+    } else if (editType === 'FG') {
+        await db.collection('manufacturer_finished_products').doc(editingRowId).update({
+            name: v('editName').trim(),
+            stockQty: Number(v('editStockQty')) || 0,
+            unitPrice: Number(v('editUnitCost')) || 0,
+            updatedAt: new Date()
+        });
+    } else {
+        await db.collection('manufacturer_transformations').doc(editingRowId).update({
+            rawMaterial: v('editName').trim(),
+            finishedProducts: v('editFinishedProducts').split(',').map((s) => s.trim()).filter(Boolean),
+            inputQty: Number(v('editInputQty')) || 0,
+            outputQty: Number(v('editOutputQty')) || 0,
+            wastagePct: Number(v('editWastagePct')) || 0,
+            updatedAt: new Date()
+        });
+    }
+    closeEditStock();
+    await refresh();
+}
+async function deleteStock(type, id){
+    if (!confirm('Are you sure you want to delete this record?')) return;
+    const coll = type === 'RM' ? 'manufacturer_raw_materials' : (type === 'FG' ? 'manufacturer_finished_products' : 'manufacturer_transformations');
+    await db.collection(coll).doc(id).update({ isActive: false, deletedAt: new Date() });
+    await refresh();
+}
+window.openEditStock = openEditStock;
+window.deleteStock = deleteStock;
+async function saveMap(){
+    const bid = ManufacturerModule.businessId;
+    const id = ManufacturerModule.uuid('MAP');
+    await db.collection('manufacturer_transformations').doc(id).set({
+        businessId: bid,
+        mapId: id,
+        rawMaterial: v('rawMaterial').trim(),
+        finishedProducts: v('finishedProducts').split(',').map((s)=>s.trim()).filter(Boolean),
+        inputQty: n('inputQty'),
+        outputQty: n('outputQty'),
+        wastagePct: n('wastagePct'),
+        createdAt: new Date()
+    });
+    await ManufacturerModule.enqueueSms('TRANSFORMATION_UPDATED', `Transformation updated: ${v('rawMaterial')} -> ${v('finishedProducts')}`);
+    document.getElementById('mapMsg').textContent = 'Transformation map saved.';
+    refresh();
+}
+async function recordProductionRun(){
+    const bid = ManufacturerModule.businessId;
+    const msg = document.getElementById('productionMsg');
+    msg.className = 'mfg-msg';
+    msg.textContent = '';
+    const rawMaterial = v('prRawMaterial').trim();
+    const finishedProduct = v('prFinishedProduct').trim();
+    const rawQty = n('prRawQty');
+    const finishedQty = n('prFinishedQty');
+    const laborCost = n('prLaborCost');
+    const overheadCost = n('prOverheadCost');
+    const rawUnitCost = n('prRawUnitCost');
+    if (!rawMaterial || !finishedProduct || rawQty <= 0 || finishedQty <= 0) {
+        msg.classList.add('err');
+        msg.textContent = 'Enter raw material, finished product, raw qty, and finished qty.';
+        return;
+    }
+    const runId = ManufacturerModule.uuid('MPR');
+    const rawCost = rawQty * rawUnitCost;
+    const totalCost = rawCost + laborCost + overheadCost;
+    const fgUnitCost = finishedQty > 0 ? (totalCost / fgQty) : 0;
+    const rawKey = normalizeKey(rawMaterial);
+    const fgKey = normalizeKey(finishedProduct);
+    const rawRef = db.collection('manufacturer_raw_materials').doc(`${bid}_${rawKey}`);
+    const fgRef = db.collection('manufacturer_finished_products').doc(`${bid}_${fgKey}`);
+    try {
+        await db.runTransaction(async (tx) => {
+            const rawDoc = await tx.get(rawRef);
+            const rawData = rawDoc.exists ? (rawDoc.data() || {}) : {};
+            const currentRawQty = Number(rawData.stockQty) || 0;
+            if (currentRawQty < rawQty) {
+                throw new Error(`Insufficient raw stock. Available ${currentRawQty}, required ${rawQty}.`);
+            }
+            const fgDoc = await tx.get(fgRef);
+            const fgData = fgDoc.exists ? (fgDoc.data() || {}) : {};
+            const oldFgQty = Number(fgData.stockQty) || 0;
+            const oldFgUnitCost = Number(fgData.unitCost) || 0;
+            const newFgQty = oldFgQty + finishedQty;
+            const newFgUnitCost = newFgQty > 0
+                ? (((oldFgQty * oldFgUnitCost) + totalCost) / newFgQty)
+                : fgUnitCost;
+            tx.set(rawRef, {
+                businessId: bid,
+                name: rawMaterial,
+                stockQty: currentRawQty - rawQty,
+                updatedAt: new Date()
+            }, { merge: true });
+            tx.set(fgRef, {
+                businessId: bid,
+                name: finishedProduct,
+                stockQty: newFgQty,
+                unitCost: Number(newFgUnitCost.toFixed(4)),
+                updatedAt: new Date()
+            }, { merge: true });
+            tx.set(db.collection('manufacturer_production_runs').doc(runId), {
+                businessId: bid,
+                runId,
+                rawMaterial,
+                finishedProduct,
+                rawQty,
+                finishedQty,
+                rawUnitCost,
+                rawCost,
+                laborCost,
+                overheadCost,
+                processingCost: laborCost + overheadCost,
+                totalCost,
+                fgUnitCost: Number(fgUnitCost.toFixed(4)),
+                notes: v('prNotes').trim(),
+                createdAt: new Date()
+            });
+        });
+        ManufacturerModule.publishEvent('MANUFACTURING_PRODUCTION_RECORDED', {
+            businessId: bid,
+            runId,
+            rawMaterial,
+            finishedProduct,
+            rawQty,
+            finishedQty,
+            rawCost,
+            laborCost,
+            overheadCost,
+            totalCost
+        });
+        if (isKubuka()) {
+            const voucher = {
+                invoiceNo: `PROD-${Date.now()}`,
+                invoiceType: 'PRODUCTION_VOUCHER',
+                referenceId: runId,
+                rawMaterial,
+                rawQty,
+                finishedProduct,
+                finishedQty,
+                laborCost,
+                overheadCost,
+                totalAmount: totalCost,
+                date: new Date().toISOString().slice(0, 10)
+            };
+            await saveInvoiceDoc(voucher);
+            printThermalProductionVoucher(voucher);
+        }
+        msg.textContent = 'Production run recorded. Raw stock consumed and finished stock updated.';
+        ['prRawMaterial','prFinishedProduct','prRawQty','prFinishedQty','prLaborCost','prOverheadCost','prRawUnitCost','prRawCost','prTotalCost','prFgUnitCost','prNotes']
+            .forEach((id) => { document.getElementById(id).value = ''; });
+        document.getElementById('prRawUnitCost').value = '0.00';
+        document.getElementById('prRawCost').value = '0.00';
+        document.getElementById('prTotalCost').value = '0.00';
+        document.getElementById('prFgUnitCost').value = '0.0000';
+        await refresh();
+    } catch (err) {
+        console.error(err);
+        msg.classList.add('err');
+        msg.textContent = err.message || 'Failed to record production run.';
+    }
+}
+(async function(){
+    await ManufacturerModule.init('stock');
+    if (isKubuka()) {
+        document.getElementById('kubukaExportUi').style.display = 'flex';
+        document.getElementById('exportBtn').onclick = exportRawMaterialReport;
+        const today = new Date().toISOString().slice(0, 10);
+        document.getElementById('exportStartDate').value = today;
+        document.getElementById('exportEndDate').value = today;
+    }
+    document.getElementById('saveMapBtn').onclick = saveMap;
+    document.getElementById('editSaveBtn').onclick = saveEditStock;
+    document.getElementById('editCancelBtn').onclick = closeEditStock;
+    ['prRawQty','prLaborCost','prOverheadCost','prFinishedQty'].forEach((id)=>{
+        document.getElementById(id).addEventListener('input', calcProductionCosts);
+    });
+    document.getElementById('prRawMaterial').addEventListener('blur', loadRawCostHint);
+    document.getElementById('recordProductionBtn').onclick = recordProductionRun;
+    document.getElementById('prRawUnitCost').value = '0.00';
+    document.getElementById('prRawCost').value = '0.00';
+    document.getElementById('prTotalCost').value = '0.00';
+    document.getElementById('prFgUnitCost').value = '0.0000';
+    refresh();
+})();
+</script>
+</body>
+</html>

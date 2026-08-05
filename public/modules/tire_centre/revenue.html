@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Revenue & Profit Analysis — Tire Center Terminal</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=58"></script>
+    <script src="../../core/auth-roles.js?v=58"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #10b981;
+            --primary-dark: #059669;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #0f172a;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+            --shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05);
+        }
+
+        body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; line-height: 1.5; }
+        .page { padding: 30px; max-width: 1280px; margin: 0 auto; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; }
+        .header-text h1 { font-family: 'Outfit', sans-serif; font-size: 28px; font-weight: 800; color: #0f3b2c; margin: 0; letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px; }
+        .header-text p { font-size: 14px; color: var(--text-light); margin: 4px 0 0; }
+        
+        .btn { background: #0f3b2c; color: #fff; border: none; padding: 10px 20px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 13.5px; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; box-shadow: var(--shadow-sm); }
+        .btn:hover { background: #10b981; transform: translateY(-1px); }
+        
+        /* Executive KPI Grid */
+        .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 18px 20px; transition: all 0.2s; box-shadow: var(--shadow-sm); position: relative; overflow: hidden; }
+        .kpi:hover { transform: translateY(-2px); border-color: #cbd5e1; box-shadow: var(--shadow); }
+        .kpi .l { font-size: 11px; color: var(--text-light); text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
+        .kpi .v { font-size: 22px; font-weight: 800; color: var(--text); margin-top: 8px; font-family: 'Outfit', sans-serif; }
+        .kpi .sub { font-size: 11.5px; color: var(--text-light); margin-top: 4px; font-weight: 600; }
+        
+        .kpi.product-kpi { border-left: 4px solid #3b82f6; }
+        .kpi.service-kpi { border-left: 4px solid #8b5cf6; }
+        .kpi.profit-kpi { border-left: 4px solid #10b981; background: #f0fdf4; }
+        .kpi.profit-kpi .v { color: #047857; }
+        .kpi.danger-kpi { border-left: 4px solid #ef4444; background: #fef2f2; }
+        .kpi.danger-kpi .v { color: #b91c1c; }
+        .kpi.net-kpi { background: linear-gradient(135deg, #0f3b2c 0%, #047857 100%); color: white; border: none; }
+        .kpi.net-kpi .l { color: rgba(255,255,255,0.85); }
+        .kpi.net-kpi .v { color: #ffffff; }
+        .kpi.net-kpi .sub { color: rgba(255,255,255,0.75); }
+
+        /* Revenue Mix Bar */
+        .revenue-mix-card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 20px 24px; margin-bottom: 24px; box-shadow: var(--shadow-sm); }
+        .mix-title { font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 800; color: var(--text); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .mix-bar-track { height: 14px; background: #e2e8f0; border-radius: 20px; overflow: hidden; display: flex; margin-bottom: 10px; }
+        .mix-bar-product { background: linear-gradient(90deg, #3b82f6, #60a5fa); height: 100%; transition: width 0.5s ease; }
+        .mix-bar-service { background: linear-gradient(90deg, #8b5cf6, #a78bfa); height: 100%; transition: width 0.5s ease; }
+        .mix-legend { display: flex; gap: 20px; font-size: 12.5px; font-weight: 700; color: var(--text-light); }
+        .mix-legend-item { display: flex; align-items: center; gap: 6px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+        /* Split Panels Grid */
+        .split-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+        @media (max-width: 900px) { .split-grid { grid-template-columns: 1fr; } }
+        
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 22px; margin-bottom: 24px; box-shadow: var(--shadow-sm); }
+        .section-title { font-family: 'Outfit', sans-serif; font-size: 17px; font-weight: 800; color: #0f3b2c; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+        
+        table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+        th { background: #fafbfc; color: var(--text-light); font-weight: 800; padding: 10px 14px; text-align: left; border-bottom: 1.5px solid var(--border); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.5px; }
+        td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; color: var(--text); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f8fafc; }
+        .num { text-align: right; font-family: monospace; font-weight: 700; font-size: 13px; }
+        
+        .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+        .badge-product { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+        .badge-service { background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; }
+        .badge-combo { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+        
+        .customer-link { color: #0284c7; cursor: pointer; font-weight: 700; text-decoration: none; transition: color 0.2s; }
+        .customer-link:hover { color: #0369a1; text-decoration: underline; }
+
+        /* Modal Styles */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+        .modal-card { background: #fff; border-radius: 20px; width: 100%; max-width: 620px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); animation: modalIn 0.25s ease-out; overflow: hidden; }
+        @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .modal-header { padding: 18px 24px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; background: #fafbfc; }
+        .modal-header h2 { margin: 0; font-family: 'Outfit', sans-serif; font-size: 17px; font-weight: 800; color: #0f3b2c; }
+        .modal-close { background: #f1f5f9; border: none; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; transition: all 0.2s; font-weight: 700; }
+        .modal-close:hover { background: #e2e8f0; color: #0f172a; }
+        .modal-body { padding: 20px 24px; max-height: 70vh; overflow-y: auto; }
+        .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f5f9; align-items: center; }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-info { display: flex; flex-direction: column; gap: 2px; }
+        .detail-name { font-weight: 700; color: #0f172a; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+        .detail-meta { font-size: 11.5px; color: #64748b; font-family: monospace; }
+        .detail-profit { font-weight: 800; color: #16a34a; font-family: monospace; text-align: right; font-size: 13.5px; }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="header">
+        <div class="header-text">
+            <h1><i class="fa-solid fa-chart-pie" style="color:#10b981;"></i> Revenue & Profit Analysis</h1>
+            <p>Dedicated profitability breakdown for Tire Center: Tire/Parts Sales vs. Auto Services Income.</p>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <button type="button" id="refreshBtn" class="btn">
+                <span>🔄</span> Sync & Refresh Data
+            </button>
+        </div>
+    </div>
+
+    <!-- 6 Executive KPI Cards -->
+    <div class="kpis">
+        <div class="kpi">
+            <div class="l"><i class="fa-solid fa-sack-dollar" style="color:#10b981;"></i> Total Revenue (Today)</div>
+            <div class="v" id="kSales">LKR 0.00</div>
+            <div class="sub" id="kSalesSub">0 total transactions</div>
+        </div>
+        <div class="kpi product-kpi">
+            <div class="l"><i class="fa-solid fa-box" style="color:#3b82f6;"></i> Tire & Product Sales</div>
+            <div class="v" id="kProdSales">LKR 0.00</div>
+            <div class="sub" id="kProdMargin">Margin: LKR 0.00</div>
+        </div>
+        <div class="kpi service-kpi">
+            <div class="l"><i class="fa-solid fa-screwdriver-wrench" style="color:#8b5cf6;"></i> Auto Service Income</div>
+            <div class="v" id="kServSales">LKR 0.00</div>
+            <div class="sub" id="kServMargin">100% Service Margin</div>
+        </div>
+        <div class="kpi profit-kpi">
+            <div class="l"><i class="fa-solid fa-chart-line" style="color:#10b981;"></i> Total Gross Margin</div>
+            <div class="v" id="kMargin">LKR 0.00</div>
+            <div class="sub">Product + Service Profits</div>
+        </div>
+        <div class="kpi danger-kpi">
+            <div class="l"><i class="fa-solid fa-receipt" style="color:#ef4444;"></i> Daily Expenses</div>
+            <div class="v" id="kExp">LKR 0.00</div>
+            <div class="sub" id="kExpCount">0 expense logs</div>
+        </div>
+        <div class="kpi net-kpi">
+            <div class="l"><i class="fa-solid fa-piggy-bank"></i> Net Daily Profit</div>
+            <div class="v" id="kNet">LKR 0.00</div>
+            <div class="sub">Gross Profit - Expenses</div>
+        </div>
+    </div>
+
+    <!-- Revenue Mix Breakdown Bar -->
+    <div class="revenue-mix-card">
+        <div class="mix-title">
+            <span><i class="fa-solid fa-layer-group" style="color:#10b981; margin-right:8px;"></i> Revenue Source Breakdown (Today)</span>
+            <span id="mixPctLabel" style="font-size:13px; font-weight:700; color:var(--text-light);">Products 0% · Services 0%</span>
+        </div>
+        <div class="mix-bar-track">
+            <div class="mix-bar-product" id="barProduct" style="width: 50%;"></div>
+            <div class="mix-bar-service" id="barService" style="width: 50%;"></div>
+        </div>
+        <div class="mix-legend">
+            <div class="mix-legend-item"><span class="dot" style="background:#3b82f6;"></span> Tire & Parts Sales: <span id="legProductVal" style="color:var(--text);">Rs. 0.00</span></div>
+            <div class="mix-legend-item"><span class="dot" style="background:#8b5cf6;"></span> Auto Services Income: <span id="legServiceVal" style="color:var(--text);">Rs. 0.00</span></div>
+        </div>
+    </div>
+
+    <!-- Top Breakdown Tables (Services vs Products Today) -->
+    <div class="split-grid">
+        <div class="card" style="margin-bottom:0;">
+            <div class="section-title">
+                <span><i class="fa-solid fa-screwdriver-wrench" style="color:#8b5cf6;"></i> Auto Services Rendered Today</span>
+                <span class="badge badge-service" id="serviceJobsCountBadge">0 Jobs</span>
+            </div>
+            <div style="overflow:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Service Name</th>
+                            <th class="num">Jobs Done</th>
+                            <th class="num">Total Revenue</th>
+                        </tr>
+                    </thead>
+                    <tbody id="serviceBreakdownBody">
+                        <tr><td colspan="3" style="text-align:center; padding:30px; color:#64748b;">No services rendered today.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:0;">
+            <div class="section-title">
+                <span><i class="fa-solid fa-box" style="color:#3b82f6;"></i> Tire & Parts Sold Today</span>
+                <span class="badge badge-product" id="productQtyCountBadge">0 Items</span>
+            </div>
+            <div style="overflow:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Product Name</th>
+                            <th class="num">Qty Sold</th>
+                            <th class="num">Revenue</th>
+                            <th class="num">Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productBreakdownBody">
+                        <tr><td colspan="4" style="text-align:center; padding:30px; color:#64748b;">No physical products sold today.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- All Today Invoices Table -->
+    <div class="card">
+        <div class="section-title">
+            <span><i class="fa-solid fa-file-invoice-dollar" style="color:#10b981;"></i> Today Invoices & Profit Breakdown</span>
+        </div>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Type</th>
+                        <th>Customer</th>
+                        <th>Invoice No</th>
+                        <th class="num">Bill Total</th>
+                        <th class="num">Cost / Margin</th>
+                    </tr>
+                </thead>
+                <tbody id="salesBody">
+                    <tr><td colspan="6" style="text-align:center; padding:40px; color:#64748b;">Initializing financial data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Expenses Table -->
+    <div class="card">
+        <div class="section-title">
+            <span><i class="fa-solid fa-wallet" style="color:#ef4444;"></i> Daily Expenses Log</span>
+        </div>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Category</th>
+                        <th class="num">Amount</th>
+                        <th>Note / Remarks</th>
+                    </tr>
+                </thead>
+                <tbody id="expBody">
+                    <tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">No expenses recorded today.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Daily Profit History -->
+    <div class="card">
+        <div class="section-title">
+            <span><i class="fa-solid fa-clock-rotate-left" style="color:#10b981;"></i> Daily Profit & Revenue History (Last 365 Days)</span>
+        </div>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th class="num">Product Sales</th>
+                        <th class="num">Service Income</th>
+                        <th class="num">Total Sales</th>
+                        <th class="num">Gross Margin</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody">
+                    <tr><td colspan="5" style="text-align:center; padding:40px; color:#64748b;">Calculating history...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Details Modal -->
+<div id="detailsModal" class="modal-overlay" onclick="if(event.target===this) closeModal()">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h2 id="modalTitle">Invoice Profit Breakdown</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body" id="modalBody">
+            <!-- Details injected here -->
+        </div>
+    </div>
+</div>
+
+<script>
+let TIRE_BUSINESS_ID = '';
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtInt = (v) => `Rs ${(Math.round(Number(v)) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+function localDateKey(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function rowLocalDateKey(row) {
+    const raw = row.date || row.createdAt || row.expenseDate;
+    let dt = null;
+    if (raw && typeof raw.toDate === 'function') dt = raw.toDate();
+    else if (typeof raw === 'string' || raw instanceof Date) dt = new Date(raw);
+    if (!dt || Number.isNaN(dt.getTime())) return '';
+    return localDateKey(dt);
+}
+
+function isTodayRow(row) {
+    const rk = rowLocalDateKey(row);
+    const tk = localDateKey();
+    return rk && tk && rk.slice(0, 10) === tk.slice(0, 10);
+}
+
+async function refresh() {
+    try {
+        if (!TIRE_BUSINESS_ID) return;
+        const todayK = localDateKey();
+        const opt = navigator.onLine ? {} : { source: 'cache' };
+
+        const [salesSnap, expSnap] = await Promise.all([
+            db.collection('orders').doc(TIRE_BUSINESS_ID).collection('list').orderBy('createdAt', 'desc').limit(1500).get(opt).catch(() => ({ docs: [] })),
+            db.collection('expenses').doc(TIRE_BUSINESS_ID).collection('list').orderBy('expenseDate', 'desc').limit(1500).get(opt).catch(() => ({ docs: [] }))
+        ]);
+
+        let salesTotal = 0;
+        let productSalesTotal = 0;
+        let serviceSalesTotal = 0;
+        let productMarginTotal = 0;
+        let serviceMarginTotal = 0;
+
+        const serviceMapToday = {};
+        const productMapToday = {};
+        const salesRows = [];
+
+        let totalServiceJobsToday = 0;
+        let totalProductsSoldToday = 0;
+
+        salesSnap.docs.forEach((d) => {
+            const b = d.data() || {};
+            if (b.isReversed === true || b.status === 'cancelled') return;
+
+            const isToday = isTodayRow(b);
+            const items = Array.isArray(b.items) ? b.items : [];
+
+            let orderProdRev = 0;
+            let orderServRev = 0;
+            let orderProdCost = 0;
+            let hasService = false;
+            let hasProduct = false;
+
+            const lineBreakdown = [];
+
+            items.forEach((line) => {
+                const qty = Number(line.quantity || 0);
+                const price = Number(line.price || 0);
+                const cost = Number(line.cost || 0);
+                const isServ = line.isService === true || line.category === 'Services' || String(line.category || '').toLowerCase().includes('service');
+
+                const lineRev = qty * price;
+
+                if (isServ) {
+                    hasService = true;
+                    orderServRev += lineRev;
+                    totalServiceJobsToday += isToday ? qty : 0;
+                    
+                    if (isToday) {
+                        if (!serviceMapToday[line.name]) serviceMapToday[line.name] = { name: line.name || 'Service', jobs: 0, revenue: 0 };
+                        serviceMapToday[line.name].jobs += qty;
+                        serviceMapToday[line.name].revenue += lineRev;
+                    }
+                } else {
+                    hasProduct = true;
+                    orderProdRev += lineRev;
+                    orderProdCost += qty * cost;
+                    totalProductsSoldToday += isToday ? qty : 0;
+
+                    if (isToday) {
+                        const lineProfit = qty * (price - cost);
+                        if (!productMapToday[line.name]) productMapToday[line.name] = { name: line.name || 'Product', qty: 0, revenue: 0, profit: 0 };
+                        productMapToday[line.name].qty += qty;
+                        productMapToday[line.name].revenue += lineRev;
+                        productMapToday[line.name].profit += lineProfit;
+                    }
+                }
+
+                lineBreakdown.push({
+                    name: line.name || 'Item',
+                    qty: qty,
+                    price: price,
+                    cost: isServ ? 0 : cost,
+                    profit: isServ ? lineRev : (qty * (price - cost)),
+                    isService: isServ
+                });
+            });
+
+            const orderTotal = Number(b.total || (orderProdRev + orderServRev) || 0);
+            const orderProdProfit = Math.max(0, orderProdRev - orderProdCost);
+            const orderServProfit = orderServRev;
+            const orderTotalMargin = orderProdProfit + orderServProfit;
+
+            if (isToday) {
+                salesTotal += orderTotal;
+                productSalesTotal += orderProdRev;
+                serviceSalesTotal += orderServRev;
+                productMarginTotal += orderProdProfit;
+                serviceMarginTotal += orderServProfit;
+
+                const rawBt = b.createdAt;
+                const btDt = rawBt && rawBt.toDate ? rawBt.toDate() : (rawBt ? new Date(rawBt) : null);
+                const tlabel = btDt && !Number.isNaN(btDt.getTime()) ? btDt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : (rowLocalDateKey(b) || '-');
+
+                let typeBadge = '<span class="badge badge-product"><i class="fa-solid fa-box"></i> Product</span>';
+                if (hasService && hasProduct) typeBadge = '<span class="badge badge-combo"><i class="fa-solid fa-layer-group"></i> Hybrid</span>';
+                else if (hasService) typeBadge = '<span class="badge badge-service"><i class="fa-solid fa-screwdriver-wrench"></i> Service</span>';
+
+                salesRows.push({
+                    t: tlabel,
+                    typeBadge,
+                    customer: b.customer ? (b.customer.name || b.customer.fullName || 'Guest') : 'Guest',
+                    invoiceNo: b.invoiceNo || 'N/A',
+                    total: orderTotal,
+                    margin: orderTotalMargin,
+                    items: lineBreakdown
+                });
+            }
+        });
+
+        // 1. Update KPI Cards
+        document.getElementById('kSales').textContent = fmt(salesTotal);
+        document.getElementById('kSalesSub').textContent = `${salesRows.length} sales sessions today`;
+        
+        document.getElementById('kProdSales').textContent = fmt(productSalesTotal);
+        document.getElementById('kProdMargin').textContent = `Margin: ${fmt(productMarginTotal)}`;
+
+        document.getElementById('kServSales').textContent = fmt(serviceSalesTotal);
+        document.getElementById('kServMargin').textContent = `Profit: ${fmt(serviceSalesTotal)}`;
+
+        const totalGrossMargin = productMarginTotal + serviceMarginTotal;
+        document.getElementById('kMargin').textContent = fmt(totalGrossMargin);
+
+        // Expenses calculations
+        let expTotal = 0;
+        const expRows = [];
+        expSnap.docs.forEach((d) => {
+            const r = d.data() || {};
+            if (String(r.expenseDate || '') === todayK) {
+                const a = Number(r.amount) || 0;
+                expTotal += a;
+                expRows.push({ 
+                    t: r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-', 
+                    cat: r.category || 'General', 
+                    a, 
+                    note: r.note || '' 
+                });
+            }
+        });
+
+        document.getElementById('kExp').textContent = fmt(expTotal);
+        document.getElementById('kExpCount').textContent = `${expRows.length} expense logs today`;
+
+        const netDailyProfit = totalGrossMargin - expTotal;
+        document.getElementById('kNet').textContent = fmt(netDailyProfit);
+
+        // 2. Revenue Mix Bar Update
+        const mixTotal = productSalesTotal + serviceSalesTotal;
+        const prodPct = mixTotal > 0 ? Math.round((productSalesTotal / mixTotal) * 100) : 0;
+        const servPct = mixTotal > 0 ? (100 - prodPct) : 0;
+
+        document.getElementById('barProduct').style.width = `${prodPct}%`;
+        document.getElementById('barService').style.width = `${servPct}%`;
+        document.getElementById('mixPctLabel').textContent = `Tire/Parts ${prodPct}% · Services ${servPct}%`;
+        document.getElementById('legProductVal').textContent = fmt(productSalesTotal);
+        document.getElementById('legServiceVal').textContent = fmt(serviceSalesTotal);
+
+        // 3. Render Top Services Table
+        const serviceListToday = Object.values(serviceMapToday).sort((a, b) => b.revenue - a.revenue);
+        document.getElementById('serviceJobsCountBadge').textContent = `${totalServiceJobsToday} Jobs Done`;
+        document.getElementById('serviceBreakdownBody').innerHTML = serviceListToday.length
+            ? serviceListToday.map(s => `<tr>
+                <td><strong style="color:#0f3b2c;"><i class="fa-solid fa-screwdriver-wrench" style="color:#8b5cf6; margin-right:6px;"></i> ${String(s.name).replace(/</g,'&lt;')}</strong></td>
+                <td class="num">${s.jobs}</td>
+                <td class="num" style="color:#6d28d9;">${fmt(s.revenue)}</td>
+            </tr>`).join('')
+            : '<tr><td colspan="3" style="text-align:center; padding:30px; color:#64748b;">No services rendered today.</td></tr>';
+
+        // 4. Render Top Products Table
+        const productListToday = Object.values(productMapToday).sort((a, b) => b.revenue - a.revenue);
+        document.getElementById('productQtyCountBadge').textContent = `${totalProductsSoldToday} Items Sold`;
+        document.getElementById('productBreakdownBody').innerHTML = productListToday.length
+            ? productListToday.map(p => `<tr>
+                <td><strong style="color:#0f3b2c;"><i class="fa-solid fa-box" style="color:#3b82f6; margin-right:6px;"></i> ${String(p.name).replace(/</g,'&lt;')}</strong></td>
+                <td class="num">${p.qty}</td>
+                <td class="num">${fmt(p.revenue)}</td>
+                <td class="num" style="color:#166534;">+ ${fmt(p.profit)}</td>
+            </tr>`).join('')
+            : '<tr><td colspan="4" style="text-align:center; padding:30px; color:#64748b;">No physical products sold today.</td></tr>';
+
+        // 5. Render All Today Invoices Table
+        document.getElementById('salesBody').innerHTML = salesRows.length
+            ? salesRows.map((r, idx) => `<tr>
+                <td><span class="badge" style="background:#f1f5f9; color:#475569;">${r.t}</span></td>
+                <td>${r.typeBadge}</td>
+                <td><span class="customer-link" onclick="showDetails(${idx})">${String(r.customer).replace(/</g,'&lt;')}</span></td>
+                <td><span style="font-family:monospace; font-weight:700;">${r.invoiceNo}</span></td>
+                <td class="num">${fmt(r.total)}</td>
+                <td class="num" style="color:#166534;">+ ${fmt(r.margin)}</td>
+            </tr>`).join('')
+            : '<tr><td colspan="6" style="text-align:center; padding:40px; color:#64748b;">No sales recorded today.</td></tr>';
+
+        // 6. Render Expenses Table
+        document.getElementById('expBody').innerHTML = expRows.length
+            ? expRows.map((r) => `<tr>
+                <td><span class="badge" style="background:#f1f5f9; color:#475569;">${r.t}</span></td>
+                <td><span class="badge" style="background:#fef2f2; color:#b91c1c;">${String(r.cat).replace(/</g,'&lt;')}</span></td>
+                <td class="num" style="color:#991b1b;">- ${fmt(r.a)}</td>
+                <td>${String(r.note).replace(/</g,'&lt;')}</td>
+            </tr>`).join('')
+            : '<tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">No expenses recorded today.</td></tr>';
+
+        // 7. Render Daily Profit History (Product vs Service vs Total)
+        const histProdMap = {};
+        const histServMap = {};
+        const histMarginMap = {};
+
+        salesSnap.docs.forEach((d) => {
+            const b = d.data() || {};
+            if (b.isReversed === true || b.status === 'cancelled') return;
+            const dateKey = rowLocalDateKey(b);
+            if (!dateKey) return;
+
+            const items = Array.isArray(b.items) ? b.items : [];
+            let pRev = 0;
+            let sRev = 0;
+            let pCost = 0;
+
+            items.forEach((line) => {
+                const qty = Number(line.quantity || 0);
+                const price = Number(line.price || 0);
+                const cost = Number(line.cost || 0);
+                const isServ = line.isService === true || line.category === 'Services' || String(line.category || '').toLowerCase().includes('service');
+
+                if (isServ) {
+                    sRev += qty * price;
+                } else {
+                    pRev += qty * price;
+                    pCost += qty * cost;
+                }
+            });
+
+            const margin = Math.max(0, pRev - pCost) + sRev;
+
+            histProdMap[dateKey] = (histProdMap[dateKey] || 0) + pRev;
+            histServMap[dateKey] = (histServMap[dateKey] || 0) + sRev;
+            histMarginMap[dateKey] = (histMarginMap[dateKey] || 0) + margin;
+        });
+
+        const historyRows = Object.keys(histMarginMap).sort((a, b) => b.localeCompare(a)).slice(0, 365);
+        document.getElementById('historyBody').innerHTML = historyRows.length
+            ? historyRows.map(k => {
+                const pVal = histProdMap[k] || 0;
+                const sVal = histServMap[k] || 0;
+                const tVal = pVal + sVal;
+                const mVal = histMarginMap[k] || 0;
+                return `<tr>
+                    <td style="font-weight:700; color:#1e293b;"><i class="fa-regular fa-calendar-days" style="color:#10b981; margin-right:6px;"></i> ${k}</td>
+                    <td class="num" style="color:#2563eb;">${fmtInt(pVal)}</td>
+                    <td class="num" style="color:#7c3aed;">${fmtInt(sVal)}</td>
+                    <td class="num" style="font-weight:800;">${fmtInt(tVal)}</td>
+                    <td class="num" style="color:#166534;">+ ${fmtInt(mVal)}</td>
+                </tr>`;
+            }).join('')
+            : '<tr><td colspan="5" style="text-align:center; padding:40px; color:#64748b;">No history available.</td></tr>';
+
+        window.lastSalesRows = salesRows;
+    } catch (err) {
+        console.error("[RefreshError]", err);
+        document.getElementById('salesBody').innerHTML = `<tr><td colspan="6" style="text-align:center; padding:20px; color:red;">Error loading data: ${err.message}</td></tr>`;
+    }
+}
+
+document.getElementById('refreshBtn').addEventListener('click', () => {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+    refresh().catch((e) => alert(String(e && e.message || e))).finally(() => {
+        btn.disabled = false;
+        btn.textContent = 'Sync & Refresh Data';
+    });
+});
+
+function showDetails(idx) {
+    const session = window.lastSalesRows && window.lastSalesRows[idx];
+    if (!session) return;
+
+    document.getElementById('modalTitle').textContent = `Profit & Line Breakdown: ${session.invoiceNo} (${session.customer})`;
+    const body = document.getElementById('modalBody');
+    
+    if (!session.items || session.items.length === 0) {
+        body.innerHTML = '<p style="text-align:center; color:#64748b;">No items found for this invoice.</p>';
+    } else {
+        body.innerHTML = session.items.map(it => `
+            <div class="detail-row">
+                <div class="detail-info">
+                    <span class="detail-name">
+                        ${it.isService ? '<span class="badge badge-service"><i class="fa-solid fa-screwdriver-wrench"></i> Service</span>' : '<span class="badge badge-product"><i class="fa-solid fa-box"></i> Product</span>'}
+                        ${it.name}
+                    </span>
+                    <span class="detail-meta">${it.qty} unit(s) × Price: Rs ${it.price.toFixed(2)} ${it.isService ? '(100% Service Margin)' : `- Cost: Rs ${it.cost.toFixed(2)}`}</span>
+                </div>
+                <div class="detail-profit">+ ${fmt(it.profit)}</div>
+            </div>
+        `).join('');
+    }
+    
+    document.getElementById('detailsModal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('detailsModal').style.display = 'none';
+}
+
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '/'; return; }
+    const userDoc = await db.collection('users').doc(user.uid).get();
+    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    TIRE_BUSINESS_ID = businessId;
+    
+    await refresh();
+});
+</script>
+</body>
+</html>

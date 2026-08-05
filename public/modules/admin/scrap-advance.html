@@ -22,6 +22,7 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="../../core/firebase-init.js?v=102"></script>
     <script src="../../core/event-validation.js?v=102"></script>
     <script src="../../core/event-bus.js?v=102"></script>
@@ -30,7 +31,7 @@
     <script src="../../core/business-types.js?v=102"></script>
     <script src="../../core/dashboard-core.js?v=102"></script>
     <script src="../../core/subscription-manager.js?v=102"></script>
-    <script src="../../core/sidebar.js?v=200"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
     <script src="../../core/sms-wallet-core.js?v=102"></script>
     <script src="../../core/scrap-vba-core.js?v=102"></script>
 
@@ -80,18 +81,19 @@
         }
 
         .existing-bal {
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            color: #b91c1c;
-            padding: 10px;
-            border-radius: 10px;
-            font-size: 12px;
-            font-weight: 700;
+            background: #fff1f2;
+            border: 1px solid #ffe4e6;
+            color: #9f1239;
+            padding: 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 600;
             display: none;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            animation: fadeIn 0.3s ease;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+            animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         @keyframes fadeIn {
@@ -531,23 +533,388 @@
 
             if (!name) {
                 balDiv.style.display = 'none';
+                document.body.style.backgroundColor = '#f8fafc';
                 return;
             }
             try {
+                let htmlStr = '';
+                
+                // 1. Advance Balance
                 const docRef = db.collection('scrap_advances').doc(advId(name));
                 const snap = await docRef.get();
                 if (snap.exists) {
                     const bal = Number(snap.data().balance) || 0;
                     if (bal > 0.01) {
-                        balDiv.innerHTML = `<span style="font-size:16px;">⚠️</span> දැනට පවතින අත්තිකාරම් ශේෂය: <b style="font-size:14px; margin-left:5px;">${fmt(bal)}</b>`;
-                        balDiv.style.display = 'flex';
-                        return;
+                        htmlStr += `<div style="display:flex; justify-content:space-between; width:100%; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px; margin-bottom:2px;">
+                            <span style="display:flex; align-items:center; gap:6px; font-weight:500; color:#475569;">
+                                <span style="font-size:16px;">⚠️</span> Advance Balance:
+                            </span>
+                            <b style="font-size:14px; color:#e11d48; font-weight:700;">${fmt(bal)}</b>
+                        </div>`;
                     }
                 }
-                balDiv.style.display = 'none';
+                
+                // 2. Weekly Loans
+                let wArrearsAmt = 0;
+                let wArrearsCount = 0;
+                const targetDateStr = new Date().toISOString().split('T')[0];
+                const wq = await db.collection('weekly_loans')
+                    .where('businessId', '==', SCRAP_BUSINESS_ID)
+                    .where('active', '==', true)
+                    .where('customerName', '==', name)
+                    .get();
+                    
+                wq.forEach(d => {
+                    const wl = d.data();
+                    const sched = wl.schedule || [];
+                    for (const inst of sched) {
+                        const amt = Number(inst.amount) - Number(inst.paidAmount);
+                        if (amt > 0.01) {
+                            const isInstOverdue = inst.status === 'OVERDUE' || (inst.dueDate && inst.dueDate < targetDateStr);
+                            if (isInstOverdue) {
+                                wArrearsAmt += amt;
+                                wArrearsCount++;
+                            }
+                        }
+                    }
+                });
+                if (wArrearsAmt > 0.01) {
+                    htmlStr += `<div style="display:flex; justify-content:space-between; width:100%; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px; margin-bottom:2px;">
+                        <span style="display:flex; align-items:center; gap:6px; font-weight:500; color:#475569;">
+                            <span style="font-size:16px;">📅</span> Weekly Loan Arrears (${wArrearsCount} installments):
+                        </span>
+                        <b style="font-size:14px; color:#e11d48; font-weight:700;">${fmt(wArrearsAmt)}</b>
+                    </div>`;
+                }
+
+                // 3. Hand Loans
+                let handTotal = 0;
+                const hq = await db.collection('hand_loans')
+                    .where('businessId', '==', SCRAP_BUSINESS_ID)
+                    .where('type', '==', 'GIVEN')
+                    .where('active', '==', true)
+                    .where('customerName', '==', name)
+                    .get();
+                hq.forEach(d => handTotal += Number(d.data().balance || 0));
+                if (handTotal > 0.01) {
+                    htmlStr += `<div style="display:flex; justify-content:space-between; width:100%; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px; margin-bottom:2px;">
+                        <span style="display:flex; align-items:center; gap:6px; font-weight:500; color:#475569;">
+                            <span style="font-size:16px;">🤝</span> Hand Loans:
+                        </span>
+                        <b style="font-size:14px; color:#e11d48; font-weight:700;">${fmt(handTotal)}</b>
+                    </div>`;
+                }
+
+                // 4. No-interest Loans
+                let niTotal = 0;
+                const nq = await db.collection('loan_no_interest')
+                    .where('businessId', '==', SCRAP_BUSINESS_ID)
+                    .where('active', '==', true)
+                    .where('customerName', '==', name)
+                    .get();
+                nq.forEach(d => niTotal += Number(d.data().balance || 0));
+                if (niTotal > 0.01) {
+                    htmlStr += `<div style="display:flex; justify-content:space-between; width:100%; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px; margin-bottom:2px;">
+                        <span style="display:flex; align-items:center; gap:6px; font-weight:500; color:#475569;">
+                            <span style="font-size:16px;">🟢</span> No-interest Loans:
+                        </span>
+                        <b style="font-size:14px; color:#e11d48; font-weight:700;">${fmt(niTotal)}</b>
+                    </div>`;
+                }
+
+                // 5. Interest Loans
+                let iTotal = 0;
+                const iq = await db.collection('loan_interest_entries')
+                    .where('businessId', '==', SCRAP_BUSINESS_ID)
+                    .where('active', '==', true)
+                    .where('customerName', '==', name)
+                    .get();
+                iq.forEach(d => iTotal += (Number(d.data().principalOutstanding || 0) + Number(d.data().interestOutstanding || 0)));
+                if (iTotal > 0.01) {
+                    htmlStr += `<div style="display:flex; justify-content:space-between; width:100%; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px; margin-bottom:2px;">
+                        <span style="display:flex; align-items:center; gap:6px; font-weight:500; color:#475569;">
+                            <span style="font-size:16px;">📈</span> Interest Loans (10%):
+                        </span>
+                        <b style="font-size:14px; color:#e11d48; font-weight:700;">${fmt(iTotal)}</b>
+                    </div>`;
+                }
+
+                // 5.5 Daily Loans
+                let dTotal = 0;
+                const dq = await db.collection('loan_daily_entries')
+                    .where('businessId', '==', SCRAP_BUSINESS_ID)
+                    .where('active', '==', true)
+                    .where('customerName', '==', name)
+                    .get();
+                const todayStr = new Date().toISOString().split('T')[0];
+                dq.forEach(d => {
+                    let data = d.data();
+                    let principal = Number(data.principalOutstanding);
+                    let interest = Number(data.interestOutstanding);
+                    if (isNaN(principal) || data.principalOutstanding === undefined) {
+                        const pAmt = Number(data.principalAmount || 0);
+                        const iAmt = Number(data.interestAmount || 0);
+                        const totPay = pAmt + iAmt;
+                        const paid = Number(data.totalPaid || 0);
+                        if (totPay > 0) {
+                            const piRatio = pAmt / totPay;
+                            principal = Math.max(0, pAmt - (paid * piRatio));
+                            interest = Math.max(0, iAmt - (paid * (1 - piRatio)));
+                        } else {
+                            principal = Number(data.balance || 0);
+                            interest = 0;
+                        }
+                    }
+                    const lastCalc = data.lastInterestCalcAt || data.date || todayStr;
+                    const d1 = new Date(lastCalc + 'T00:00:00Z');
+                    const d2 = new Date(todayStr + 'T00:00:00Z');
+                    const diffMs = d2.getTime() - d1.getTime();
+                    const diffDays = Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+                    if (diffDays > 0 && principal > 0.01) {
+                        const dailyRate = 0.10 / 30;
+                        interest += Math.round((principal * dailyRate * diffDays) * 100) / 100;
+                    }
+                    dTotal += Math.round((principal + interest) * 100) / 100;
+                });
+                if (dTotal > 0.01) {
+                    htmlStr += `<div style="display:flex; justify-content:space-between; width:100%; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px; margin-bottom:2px;">
+                        <span style="display:flex; align-items:center; gap:6px; font-weight:500; color:#475569;">
+                            <span style="font-size:16px;">📅</span> Daily Loans (10%):
+                        </span>
+                        <b style="font-size:14px; color:#e11d48; font-weight:700;">${fmt(dTotal)}</b>
+                    </div>`;
+                }
+
+                // 5.7 Advanced Loans
+                let advLoanTotal = 0;
+                const adq = await db.collection('loan_advanced_entries')
+                    .where('businessId', '==', SCRAP_BUSINESS_ID)
+                    .where('customerName', '==', name)
+                    .get();
+                adq.forEach(d => {
+                    const data = d.data();
+                    const bal = Number(data.balance || data.principalOutstanding || 0);
+                    const status = String(data.status || '').toLowerCase();
+                    if (bal > 0.01 && status !== 'closed' && status !== 'settled') {
+                        advLoanTotal += (bal + Number(data.interestOutstanding || 0));
+                    }
+                });
+                if (advLoanTotal > 0.01) {
+                    htmlStr += `<div style="display:flex; justify-content:space-between; width:100%; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px; margin-bottom:2px;">
+                        <span style="display:flex; align-items:center; gap:6px; font-weight:500; color:#475569;">
+                            <span style="font-size:16px;">🏛️</span> Advanced Loans:
+                        </span>
+                        <b style="font-size:14px; color:#e11d48; font-weight:700;">${fmt(advLoanTotal)}</b>
+                    </div>`;
+                }
+
+                const totalOtherLoans = wArrearsAmt + handTotal + niTotal + iTotal + dTotal + advLoanTotal;
+                let advBal = 0;
+                if (snap.exists) {
+                    advBal = Number(snap.data().balance) || 0;
+                }
+                const grandTotal = advBal + totalOtherLoans;
+
+                if (totalOtherLoans > 0.01) {
+                    htmlStr += `<div style="display:flex; justify-content:space-between; width:100%; align-items:center; padding-top:4px; margin-top:2px;">
+                        <span style="display:flex; align-items:center; gap:6px; font-weight:600; color:#334155;">
+                            <span style="font-size:16px;">📊</span> <b>Other Loans Total:</b>
+                        </span>
+                        <b style="font-size:14px; color:#be123c; font-weight:800;">${fmt(totalOtherLoans)}</b>
+                    </div>`;
+                }
+
+                if (advBal > 0.01 && totalOtherLoans > 0.01) {
+                    htmlStr += `<div style="display:flex; justify-content:space-between; width:100%; align-items:center; border-top:2px solid #fda4af; padding-top:8px; margin-top:4px;">
+                        <span style="display:flex; align-items:center; gap:6px; font-weight:700; color:#1e293b;">
+                            <span style="font-size:16px;">💰</span> <b>Grand Total (All):</b>
+                        </span>
+                        <b style="font-size:16px; color:#9f1239; font-weight:850;">${fmt(grandTotal)}</b>
+                    </div>`;
+                }
+
+                if (htmlStr) {
+                    balDiv.innerHTML = `<div style="width:100%; display:flex; flex-direction:column; gap:4px;">${htmlStr}</div><div style="margin-top:10px;"><canvas id="otherLoansChart"></canvas></div>`;
+                    balDiv.style.display = 'flex';
+                    renderOtherLoansChart(name, totalOtherLoans);
+                } else {
+                    balDiv.innerHTML = `<div style="margin-top:10px;"><canvas id="otherLoansChart"></canvas></div>`;
+                    balDiv.style.display = 'flex';
+                    renderOtherLoansChart(name, 0);
+                }
             } catch (e) {
                 console.warn("Balance check error", e);
                 balDiv.style.display = 'none';
+            }
+        }
+
+        let otherLoansChartInst = null;
+        async function renderOtherLoansChart(name, currentBalance = 0) {
+            const canvas = document.getElementById('otherLoansChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            if (otherLoansChartInst) {
+                otherLoansChartInst.destroy();
+                otherLoansChartInst = null;
+            }
+
+            try {
+                let snap = await db.collection('total_loan_history')
+                    .where('businessId', '==', SCRAP_BUSINESS_ID)
+                    .where('customerName', '==', name)
+                    .get();
+
+                if (window.scrapVbaCore && typeof window.scrapVbaCore.recordTotalLoanHistory === 'function') {
+                    let latestLoggedBal = null;
+                    if (!snap.empty) {
+                        const sortedDocs = snap.docs.map(d => d.data());
+                        sortedDocs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                        latestLoggedBal = Number(sortedDocs[0].totalBalance);
+                    }
+
+                    if (latestLoggedBal === null || (currentBalance > 0.01 && Math.abs(latestLoggedBal - currentBalance) > 0.05)) {
+                        console.log(`[OtherLoansChart] Balance changed from ${latestLoggedBal} to ${currentBalance}. Recording history...`);
+                        await window.scrapVbaCore.recordTotalLoanHistory(SCRAP_BUSINESS_ID, name);
+                        
+                        snap = await db.collection('total_loan_history')
+                            .where('businessId', '==', SCRAP_BUSINESS_ID)
+                            .where('customerName', '==', name)
+                            .get();
+                    }
+                }
+
+                if (snap.empty) {
+                    canvas.style.display = 'none';
+                    return;
+                }
+
+                const docs = snap.docs.map(d => d.data());
+                docs.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+                
+                let startIndex = 0;
+                for (let i = docs.length - 1; i >= 0; i--) {
+                    if (Number(docs[i].totalBalance) <= 0.01) {
+                        startIndex = i;
+                        break;
+                    }
+                }
+
+                let cycleDocs = docs.slice(startIndex);
+                while (cycleDocs.length > 0 && Number(cycleDocs[0].totalBalance) <= 0.01) {
+                    cycleDocs.shift();
+                }
+
+                if (cycleDocs.length > 0 && currentBalance > 0.01) {
+                    const latestDoc = cycleDocs[cycleDocs.length - 1];
+                    if (Math.abs(Number(latestDoc.totalBalance) - currentBalance) > 0.05) {
+                        cycleDocs.push({
+                            date: new Date().toISOString(),
+                            totalBalance: currentBalance
+                        });
+                    }
+                }
+
+                if (cycleDocs.length === 1) {
+                    cycleDocs.push({
+                        date: new Date().toISOString(),
+                        totalBalance: cycleDocs[0].totalBalance
+                    });
+                }
+
+                if (cycleDocs.length === 0) {
+                    canvas.style.display = 'none';
+                    document.body.style.backgroundColor = '#f8fafc';
+                    return;
+                }
+
+                // Calculate 14-day trend
+                let trend = 'NONE';
+                if (cycleDocs.length > 1) {
+                    const latestDoc = cycleDocs[cycleDocs.length - 1];
+                    const currentBal = Number(latestDoc.totalBalance);
+                    
+                    const today = new Date();
+                    const fourteenDaysAgo = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
+                    const cutoffStr = fourteenDaysAgo.toISOString();
+                    
+                    let compareDoc = null;
+                    for (let i = cycleDocs.length - 1; i >= 0; i--) {
+                        if (cycleDocs[i].date <= cutoffStr) {
+                            compareDoc = cycleDocs[i];
+                            break;
+                        }
+                    }
+                    if (!compareDoc) {
+                        compareDoc = cycleDocs[0];
+                    }
+                    if (compareDoc && compareDoc !== latestDoc) {
+                        const pastBal = Number(compareDoc.totalBalance);
+                        if (currentBal < pastBal - 0.01) {
+                            trend = 'GOOD';
+                        } else if (currentBal > pastBal + 0.01) {
+                            trend = 'BAD';
+                        }
+                    }
+                }
+
+                // Apply style to parent container and body background
+                const bodyEl = document.body;
+                const containerBox = canvas.closest('.existing-bal');
+                if (trend === 'GOOD') {
+                    if (bodyEl) bodyEl.style.backgroundColor = '#f0fdf4';
+                    if (containerBox) {
+                        containerBox.style.background = '#e8f5e9';
+                        containerBox.style.borderColor = '#a5d6a7';
+                    }
+                } else if (trend === 'BAD') {
+                    if (bodyEl) bodyEl.style.backgroundColor = '#fff1f2';
+                    if (containerBox) {
+                        containerBox.style.background = '#ffebee';
+                        containerBox.style.borderColor = '#ffcdd2';
+                    }
+                } else {
+                    if (bodyEl) bodyEl.style.backgroundColor = '#f8fafc';
+                    if (containerBox) {
+                        containerBox.style.background = '#fff1f2';
+                        containerBox.style.borderColor = '#ffe4e6';
+                    }
+                }
+
+                canvas.style.display = 'block';
+                const labels = cycleDocs.map(d => {
+                    const dt = new Date(d.date);
+                    return dt.toLocaleDateString(undefined, {month:'short', day:'numeric'}) + ' ' + dt.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
+                });
+                const data = cycleDocs.map(d => Number(d.totalBalance));
+
+                otherLoansChartInst = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Other Loans Balance',
+                            data: data,
+                            borderColor: '#b91c1c',
+                            backgroundColor: 'rgba(185, 28, 28, 0.15)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: { display: false },
+                            y: { display: true, beginAtZero: false, ticks: {font: {size: 10}} }
+                        }
+                    }
+                });
+            } catch(e) {
+                console.warn("Chart render error", e);
             }
         }
 
@@ -691,7 +1058,25 @@
                             entries
                         });
                     }
-                    alert('Balance adjusted.');
+                    let smsQueued = false;
+                    if (window.scrapVbaCore?.enqueuePendingSmsForScrap || window.scrapVbaCore?.enqueuePendingSms) {
+                        const enabled = window.scrapVbaCore.isScrapSmsEventEnabled ? await window.scrapVbaCore.isScrapSmsEventEnabled(SCRAP_BUSINESS_ID, 'advance') : false;
+                        const phone = typeof findSupplierPhoneByName === 'function' ? await findSupplierPhoneByName(name) : '';
+                        if (enabled && phone) {
+                            const safeName = encodeURIComponent(name).replace(/%20/g, '+');
+                            const tpl = `Adv updated. Due: {{amount}}\nLink: https://digibiz-sys.web.app/a/${safeName}/${SCRAP_BUSINESS_ID} `;
+                            const msg = window.scrapVbaCore.renderTemplate ? window.scrapVbaCore.renderTemplate(tpl, { name: name, amount: `Rs. ${Math.round(next).toLocaleString()}/=`, date: new Date().toLocaleString() }) : '';
+                            if (msg) {
+                                await Promise.race([
+                                    (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function' ? window.scrapVbaCore.enqueuePendingSmsForScrap(phone, msg) : window.scrapVbaCore.enqueuePendingSms(SCRAP_BUSINESS_ID, phone, msg)),
+                                    new Promise((_, reject) => setTimeout(() => reject(new Error('SMS Timeout')), 3000))
+                                ]).catch(e => console.warn("[Advance Edit] SMS failed or timed out:", e));
+                                smsQueued = true;
+                            }
+                        }
+                    }
+
+                    alert(`Balance adjusted. ${smsQueued ? 'SMS Sent.' : ''}`);
                     await loadBalances();
                 });
             });

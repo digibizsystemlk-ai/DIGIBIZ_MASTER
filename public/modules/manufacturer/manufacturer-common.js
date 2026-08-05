@@ -7,6 +7,33 @@ window.ManufacturerModule = (function () {
         return (Number(n) || 0).toFixed(2);
     };
 
+    API.baseStyles = `
+        body { font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+        .mfg-wrap { padding: 24px; max-width: 1380px; margin: 0 auto; }
+        .mfg-head { margin-bottom: 20px; }
+        .mfg-head h2 { font-size: 22px; font-weight: 800; color: #0f172a; margin: 0 0 4px 0; letter-spacing: -0.5px; }
+        .mfg-head p { font-size: 13px; color: #64748b; margin: 0; }
+        .mfg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+        @media (max-width: 1024px) { .mfg-grid { grid-template-columns: 1fr; } }
+        .mfg-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 22px; box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05); }
+        .mfg-card h3 { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 16px 0; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9; }
+        .mfg-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .mfg-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 640px) { .mfg-row, .mfg-row3 { grid-template-columns: 1fr; } }
+        .mfg-card label { display: block; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .mfg-card input, .mfg-card select, .mfg-card textarea { width: 100%; box-sizing: border-box; padding: 10px 14px; font-size: 14px; font-family: inherit; color: #0f172a; background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; outline: none; transition: all 0.2s ease; }
+        .mfg-card input:focus, .mfg-card select:focus, .mfg-card textarea:focus { background-color: #ffffff; border-color: #0284c7; box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15); }
+        .mfg-card select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23475569'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; padding-right: 36px; cursor: pointer; }
+        .mfg-msg { margin-top: 10px; padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; display: none; }
+        .mfg-msg:not(:empty) { display: block; }
+        .mfg-msg.err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .mfg-msg:not(.err) { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+        th { background: #f1f5f9; color: #475569; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; padding: 10px 12px; text-align: left; border-bottom: 2px solid #e2e8f0; }
+        td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+        tr:hover td { background: #f8fafc; }
+    `;
+
     API.formatDate = function (v) {
         if (!v) return '-';
         if (typeof v.toDate === 'function') return v.toDate().toLocaleString();
@@ -543,6 +570,20 @@ window.ManufacturerModule = (function () {
         const amt = Number(data.amount) || 0;
         if (!bid || amt <= 0) return;
         await API.upsertFlatAccountBalance(bid, 'OperatingExpenses', amt, new Date());
+    };
+
+    API.syncFlatAccountingProductionRecorded = async function (data) {
+        const bid = data.businessId;
+        const totalRmCost = Number(data.totalRmCost) || 0;
+        const totalLaborOverhead = (Number(data.laborCost) || 0) + (Number(data.overheadCost) || 0);
+        const totalBatchCost = Number(data.totalBatchCost) || (totalRmCost + totalLaborOverhead);
+        if (!bid || totalBatchCost <= 0) return;
+        const now = new Date();
+        await Promise.all([
+            API.upsertFlatAccountBalance(bid, 'RawMaterialStockValue', -totalRmCost, now),
+            API.upsertFlatAccountBalance(bid, 'FinishedGoodsStockValue', totalBatchCost, now),
+            API.upsertFlatAccountBalance(bid, 'StockValue', totalLaborOverhead, now)
+        ]);
     };
 
     return API;

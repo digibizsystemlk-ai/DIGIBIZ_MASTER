@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script>
+        window.addEventListener('error', function(e) {
+            var d = document.createElement('div');
+            d.style.position = 'fixed'; d.style.top = '10px'; d.style.left = '10px'; d.style.right = '10px';
+            d.style.background = '#fee2e2'; d.style.color = '#991b1b'; d.style.border = '2px solid #ef4444';
+            d.style.padding = '15px'; d.style.borderRadius = '8px'; d.style.zIndex = '99999999';
+            d.style.fontFamily = 'monospace'; d.style.fontSize = '14px'; d.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.1)';
+            d.innerHTML = '<strong>[DIGIBIZ FRONTEND ERROR]</strong><br>' +
+                          'Message: ' + e.message + '<br>' +
+                          'File: ' + e.filename + '<br>' +
+                          'Line: ' + e.lineno + ':' + e.colno + '<br>' +
+                          'Stack: <pre style="margin-top:5px; white-space:pre-wrap; font-size:12px;">' + (e.error ? e.error.stack : '') + '</pre>';
+            if (document.body) document.body.appendChild(d);
+        });
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Workbench — DIGIBIZ Tire Center</title>
+    <style>
+        html.digibiz-sidebar-reserved body { margin-left: 260px; }
+        @media (max-width: 768px) { html.digibiz-sidebar-reserved body { margin-left: 0; } }
+    </style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=64"></script>
+    <script src="../../core/auth-roles.js?v=64"></script>
+    <script src="../../core/dashboard-core.js?v=64"></script>
+    <script src="../../core/sidebar.js?v=1008"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0f3b2c;
+            --primary-light: #10b981;
+            --text-dark: #0f172a;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --bg-page: #f8fafc;
+            --shadow: 0 4px 12px rgba(15, 59, 44, 0.05);
+            --danger: #ef4444;
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg-page); color: var(--text-dark); margin: 0; padding: 0; }
+        .page { padding: 25px; max-width: 1000px; margin: 0 auto; }
+        .card { background: white; border: 1px solid var(--border); border-radius: 20px; padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow); }
+        h1 { font-family: 'Outfit', sans-serif; font-size: 24px; font-weight: 800; color: var(--primary); margin: 0; }
+        p.desc { font-size: 13px; color: var(--text-light); margin: 4px 0 0; }
+        .filter-bar { display: flex; gap: 15px; align-items: center; margin-top: 20px; flex-wrap: wrap; }
+        .filter-bar label { font-size: 11px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em; }
+        .filter-bar input, .filter-bar select { padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 13px; color: var(--text-dark); min-width: 150px; background: white; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 15px; }
+        th, td { padding: 12px 10px; border-bottom: 1px solid #f1f5f9; text-align: left; }
+        th { background: #f8fafc; font-weight: 700; color: var(--text-light); text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; }
+        .num { text-align: right; font-weight: 700; }
+        .btn-void { background: #fee2e2; color: var(--danger); border: 1px solid #fecaca; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 700; transition: all 0.2s; }
+        .btn-void:hover { background: var(--danger); color: white; border-color: var(--danger); }
+        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: var(--primary); color: white; padding: 12px 24px; border-radius: 30px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); display: none; z-index: 10000; font-size: 14px; font-weight: 600; }
+        .loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.7); display: none; align-items: center; justify-content: center; z-index: 99999; font-weight: 700; color: var(--primary); font-size: 16px; backdrop-filter: blur(2px); }
+        @media (max-width: 768px) {
+            html, body { max-width: 100vw !important; overflow-x: hidden !important; }
+            .page { padding: 12px !important; }
+            .card { padding: 16px !important; border-radius: 16px !important; }
+            .filter-bar input, .filter-bar select { width: 100% !important; min-width: 0 !important; }
+            .mobile-hide { display: none !important; }
+            th, td { padding: 10px 6px; }
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px; }
+        .kpi-box { background: #f8fafc; border: 1px solid var(--border); border-radius: 14px; padding: 16px; text-align: left; }
+        .kpi-box .lbl { font-size: 11px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em; }
+        .kpi-box .val { font-size: 20px; font-weight: 800; color: var(--primary); margin-top: 4px; }
+        .kpi-box .sub { font-size: 11px; color: #10b981; font-weight: 600; margin-top: 2px; }
+        .chart-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-top: 20px; }
+        @media (max-width: 768px) { .chart-grid { grid-template-columns: 1fr; } }
+        .btn-filter {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1.5px solid var(--border);
+            background: white;
+            color: var(--text-light);
+            transition: all 0.2s ease;
+        }
+        .btn-filter:hover {
+            background: #f1f5f9;
+        }
+        .btn-filter.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+    </style>
+</head>
+<body>
+<div id="toast" class="toast"></div>
+<div id="loadingOverlay" class="loading-overlay">Processing Reversal...</div>
+<div class="page">
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
+            <div>
+                <h1>Tire Center Operations &amp; Sales Dashboard</h1>
+                <p class="desc">Real-time daily sales analytics, profit metrics, and transaction reversal terminal.</p>
+            </div>
+            <div id="kpiTotalSales" style="font-weight:800; font-size:14px; padding:10px 18px; border-radius:20px; border:2px solid var(--primary); background:#f8fafc;">Sales: Rs. 0.00</div>
+        </div>
+
+        <!-- KPI Cards Grid -->
+        <div class="kpi-row">
+            <div class="kpi-box">
+                <div class="lbl">💵 Today's Total Sales</div>
+                <div class="val" id="kpiCardSales">Rs. 0.00</div>
+                <div class="sub">● Live Firestore Sync</div>
+            </div>
+            <div class="kpi-box">
+                <div class="lbl">📦 Completed Orders</div>
+                <div class="val" id="kpiCardOrders">0</div>
+                <div class="sub">Transactions today</div>
+            </div>
+            <div class="kpi-box">
+                <div class="lbl">💸 Operating Expenses</div>
+                <div class="val" id="kpiCardExpenses" style="color:#ef4444;">Rs. 0.00</div>
+                <div class="sub">Logged today</div>
+            </div>
+            <div class="kpi-box">
+                <div class="lbl">📈 Estimated Net Margin</div>
+                <div class="val" id="kpiCardNetProfit" style="color:#10b981;">Rs. 0.00</div>
+                <div class="sub">Sales minus expenses</div>
+            </div>
+            <div class="kpi-box" style="cursor: pointer;" onclick="alert('This displays the live cash remaining in drawer today (Sales cash - Expenses cash - Cash deposits to bank).')">
+                <div class="lbl">💵 Cash in Drawer</div>
+                <div class="val" id="kpiCardCashDrawer" style="color:#0284c7;">Rs. 0.00</div>
+                <div class="sub">Cash on hand</div>
+            </div>
+        </div>
+        
+        <!-- Transaction Reversal Notice Banner -->
+        <div style="background: #e0f2fe; border: 1px solid #bae6fd; color: #0369a1; border-radius: 12px; padding: 12px 16px; margin-top: 20px; margin-bottom: 5px; font-size: 13.5px; font-weight: 600;">
+            ℹ️ To reverse or void any transaction, click the 'VOID' button on the right of the transaction row below.
+        </div>
+        
+        <div class="filter-bar">
+            <div>
+                <label style="display:block;">Start Date</label>
+                <input type="date" id="searchStartDate" onchange="loadDailyTransactions()">
+            </div>
+            <div>
+                <label style="display:block;">End Date</label>
+                <input type="date" id="searchEndDate" onchange="loadDailyTransactions()">
+            </div>
+            <div>
+                <label style="display:block;">Transaction Type</label>
+                <select id="typeFilter" onchange="filterList()">
+                    <option value="ALL">All Transactions</option>
+                    <option value="SALE">Sales</option>
+                    <option value="PURCHASE">Stock Purchases</option>
+                    <option value="EXPENSE">Expenses</option>
+                    <option value="ONBOARDING">Setup Transactions</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;">Payment Method</label>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="paymentFilterGroup">
+                    <button type="button" class="btn-filter active" data-value="ALL" onclick="setPaymentFilter('ALL')">All</button>
+                    <button type="button" class="btn-filter" data-value="CASH" onclick="setPaymentFilter('CASH')">💵 Cash</button>
+                    <button type="button" class="btn-filter" data-value="BANK" onclick="setPaymentFilter('BANK')">🏛️ Bank/Card</button>
+                    <button type="button" class="btn-filter" data-value="CREDIT" onclick="setPaymentFilter('CREDIT')">💳 Credit</button>
+                    <button type="button" class="btn-filter" data-value="CHEQUE" onclick="setPaymentFilter('CHEQUE')">✍️ Cheque</button>
+                </div>
+            </div>
+        </div>
+        <div style="display: flex; gap: 20px; margin-top: 20px; background: #f8fafc; padding: 14px 18px; border-radius: 12px; font-size: 13.5px; font-weight: 700; border: 1.5px solid var(--border); flex-wrap: wrap;" id="totalsSummaryBar">
+            <div style="color: var(--text-dark); display: flex; align-items: center;"><i class="fas fa-chart-pie" style="margin-right: 6px;"></i> Summary:</div>
+            <div style="color: #0284c7;">💵 Cash: <span id="summaryCash">Rs. 0.00</span></div>
+            <div style="color: var(--primary);">🏛️ Bank/Card: <span id="summaryBank">Rs. 0.00</span></div>
+            <div style="color: var(--danger);">💳 Credit: <span id="summaryCredit">Rs. 0.00</span></div>
+            <div style="color: var(--warning);">✍️ Cheque: <span id="summaryCheque">Rs. 0.00</span></div>
+        </div>
+    </div> <!-- Header card ends at line 140 -->
+
+    <!-- Tabs Navigation -->
+    <div style="display:flex; gap:10px; margin-bottom:15px; margin-top:20px;">
+        <button id="btnDailyTab" onclick="switchTab('daily')" style="background:var(--primary); color:white; border:none; padding:10px 20px; border-radius:10px; font-weight:700; cursor:pointer; font-size:13.5px; transition:0.2s;">Daily Transactions</button>
+        <button id="btnChequeTab" onclick="switchTab('cheque')" style="background:#e2e8f0; color:var(--text-dark); border:none; padding:10px 20px; border-radius:10px; font-weight:700; cursor:pointer; font-size:13.5px; transition:0.2s;">Cheque Registry</button>
+    </div>
+
+    <!-- Daily Transactions Pane -->
+    <div id="paneDaily">
+        <div class="card">
+            <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date / Time</th>
+                        <th>Transaction Type</th>
+                        <th>Details</th>
+                        <th>Payment Method</th>
+                        <th class="num">Amount (Rs.)</th>
+                        <th style="text-align:center;">Reversal</th>
+                    </tr>
+                </thead>
+                <tbody id="workbenchTrBody">
+                    <tr>
+                        <td colspan="6" style="text-align:center; padding:40px; color:#94a3b8;">Loading transactions...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    </div> <!-- paneDaily ends here -->
+
+    <!-- Cheque Registry Pane -->
+    <div id="paneCheque" style="display:none;">
+        <div class="card">
+            <h3 style="margin:0 0 15px 0; font-weight:800; font-size:16px;">Cheque Registry</h3>
+            <div style="overflow-x:auto;">
+                <table class="data-table" style="width:100%; border-collapse:collapse;">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left; padding:12px; border-bottom:2px solid var(--border);">Date Received</th>
+                            <th style="text-align:left; padding:12px; border-bottom:2px solid var(--border);">Reference / Type</th>
+                            <th style="text-align:left; padding:12px; border-bottom:2px solid var(--border);">Customer / Supplier</th>
+                            <th style="text-align:left; padding:12px; border-bottom:2px solid var(--border);">Cheque No &amp; Bank</th>
+                            <th class="num" style="text-align:right; padding:12px; border-bottom:2px solid var(--border);">Amount (Rs.)</th>
+                            <th style="text-align:left; padding:12px; border-bottom:2px solid var(--border);">Status</th>
+                            <th style="text-align:center; padding:12px; border-bottom:2px solid var(--border);">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="chequeRegistryTrBody">
+                        <tr>
+                            <td colspan="7" style="text-align:center; padding:40px; color:#94a3b8;">Loading cheques...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentBusinessId = '';
+    let allTransactions = [];
+    const fmt = (v) => `Rs. ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    function switchTab(tab) {
+        if (tab === 'daily') {
+            document.getElementById('paneDaily').style.display = 'block';
+            document.getElementById('paneCheque').style.display = 'none';
+            document.getElementById('btnDailyTab').style.background = 'var(--primary)';
+            document.getElementById('btnDailyTab').style.color = 'white';
+            document.getElementById('btnChequeTab').style.background = '#e2e8f0';
+            document.getElementById('btnChequeTab').style.color = 'var(--text-dark)';
+        } else {
+            document.getElementById('paneDaily').style.display = 'none';
+            document.getElementById('paneCheque').style.display = 'block';
+            document.getElementById('btnDailyTab').style.background = '#e2e8f0';
+            document.getElementById('btnDailyTab').style.color = 'var(--text-dark)';
+            document.getElementById('btnChequeTab').style.background = 'var(--primary)';
+            document.getElementById('btnChequeTab').style.color = 'white';
+            loadChequeRegistry();
+        }
+    }
+
+    async function loadChequeRegistry() {
+        if (!currentBusinessId) return;
+        
+        const body = document.getElementById('chequeRegistryTrBody');
+        body.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:#94a3b8;">Fetching cheques...</td></tr>';
+        
+        try {
+            // 1. Fetch sales with paymentMethod == cheque
+            const salesSnap = await db.collection('orders').doc(currentBusinessId).collection('list')
+                .where('paymentMethod', '==', 'cheque')
+                .get();
+                
+            let cheques = salesSnap.docs.map(doc => {
+                const d = doc.data();
+                return {
+                    id: doc.id,
+                    dbType: 'sale',
+                    date: d.createdAt ? (d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt)) : new Date(),
+                    refNo: d.invoiceNo || doc.id,
+                    type: 'Customer Cheque (Sale)',
+                    party: d.customer?.name || 'Walk-in Customer',
+                    chequeNo: d.chequeNo || 'N/A',
+                    chequeBank: d.chequeBank || 'N/A',
+                    amount: d.total || 0,
+                    status: d.chequeStatus || 'pending'
+                };
+            });
+            
+            // 2. Fetch purchases with paymentMethod == cheque
+            const purchasesSnap = await db.collection('purchases').doc(currentBusinessId).collection('orders')
+                .where('paymentMethod', '==', 'cheque')
+                .get();
+                
+            const purCheques = purchasesSnap.docs.map(doc => {
+                const d = doc.data();
+                return {
+                    id: doc.id,
+                    dbType: 'purchase',
+                    date: d.createdAt ? (d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt)) : new Date(),
+                    refNo: d.poNo || doc.id,
+                    type: 'Supplier Cheque (Purchase)',
+                    party: d.supplierName || 'General Supplier',
+                    chequeNo: d.chequeNo || 'N/A',
+                    chequeBank: d.chequeBank || 'N/A',
+                    amount: d.total || 0,
+                    status: d.chequeStatus || 'pending'
+                };
+            });
+            
+            cheques = cheques.concat(purCheques);
+            cheques.sort((a,b) => b.date - a.date);
+            
+            if (cheques.length === 0) {
+                body.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:#94a3b8;">No cheques found in registry.</td></tr>';
+                return;
+            }
+            
+            body.innerHTML = cheques.map(c => {
+                let badgeStyle = 'background:#fef3c7; color:#d97706; font-size:11px; padding:4px 8px; border-radius:6px; font-weight:700;';
+                if (c.status === 'cleared') {
+                    badgeStyle = 'background:#d1fae5; color:#059669; font-size:11px; padding:4px 8px; border-radius:6px; font-weight:700;';
+                } else if (c.status === 'bounced') {
+                    badgeStyle = 'background:#fee2e2; color:#dc2626; font-size:11px; padding:4px 8px; border-radius:6px; font-weight:700;';
+                }
+                
+                const showActions = c.status === 'pending';
+                const actionBtns = showActions ? `
+                    <button class="btn-outline" onclick="updateChequeStatus('${c.dbType}', '${c.id}', 'cleared')" style="padding:4px 8px; font-size:11.5px; border-color:#059669; color:#059669; margin-right:5px; font-weight:700; background:none; cursor:pointer; border-radius:6px;">Clear</button>
+                    <button class="btn-void" onclick="updateChequeStatus('${c.dbType}', '${c.id}', 'bounced')" style="padding:4px 8px; font-size:11.5px; font-weight:700; cursor:pointer;">Bounce</button>
+                ` : '-';
+                
+                const formattedDate = c.date.toISOString().slice(0, 10);
+                
+                return `
+                    <tr>
+                        <td style="padding:12px; border-bottom:1px solid #f1f5f9;"><strong>${formattedDate}</strong></td>
+                        <td style="padding:12px; border-bottom:1px solid #f1f5f9;">
+                            <div style="font-weight:700; color:#1e293b;">${c.refNo}</div>
+                            <div style="font-size:10px; color:#94a3b8;">${c.type}</div>
+                        </td>
+                        <td style="padding:12px; border-bottom:1px solid #f1f5f9;">${c.party}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f1f5f9;">
+                            <div style="font-weight:700; color:#0f172a;">#${c.chequeNo}</div>
+                            <div style="font-size:10.5px; color:#64748b;">${c.chequeBank}</div>
+                        </td>
+                        <td class="num" style="padding:12px; border-bottom:1px solid #f1f5f9; text-align:right; font-weight:700;">${Number(c.amount).toLocaleString('en-LK', { minimumFractionDigits: 2 })}</td>
+                        <td style="padding:12px; border-bottom:1px solid #f1f5f9;"><span style="${badgeStyle}">${c.status.toUpperCase()}</span></td>
+                        <td style="padding:12px; border-bottom:1px solid #f1f5f9; text-align:center;">${actionBtns}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+        } catch (e) {
+            console.error('Failed to load cheque registry:', e);
+            body.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:40px; color:#dc2626;">Error loading cheque registry.</td></tr>';
+        }
+    }
+
+    window.updateChequeStatus = async function(dbType, docId, newStatus) {
+        if (!confirm(`Mark this cheque as ${newStatus}?`)) return;
+        
+        try {
+            const coll = dbType === 'sale' ? 'orders' : 'purchases';
+            const subColl = dbType === 'sale' ? 'list' : 'orders';
+            
+            await db.collection(coll).doc(currentBusinessId).collection(subColl).doc(docId).update({
+                chequeStatus: newStatus
+            });
+            
+            showToast(`Cheque marked as ${newStatus}!`);
+            await loadChequeRegistry();
+        } catch (e) {
+            console.error(e);
+            showToast('Failed to update cheque status', true);
+        }
+    };
+
+    function filterList() {
+        const type = document.getElementById('typeFilter').value;
+        const body = document.getElementById('workbenchTrBody');
+        
+        let filtered = allTransactions;
+        if (type !== 'ALL') {
+            filtered = allTransactions.filter(t => t.type === type);
+        }
+
+        // Apply Payment Method Filter
+        if (activePaymentFilter !== 'ALL') {
+            if (activePaymentFilter === 'BANK') {
+                filtered = filtered.filter(t => ['BANK', 'CARD', 'ONLINE'].includes(t.paymentMethod));
+            } else {
+                filtered = filtered.filter(t => t.paymentMethod === activePaymentFilter);
+            }
+        }
+
+        // Calculate Totals Summary
+        let cashTotal = 0;
+        let bankTotal = 0;
+        let creditTotal = 0;
+        let chequeTotal = 0;
+
+        filtered.forEach(t => {
+            const amt = t.amount || 0;
+            const pay = String(t.paymentMethod || 'CASH').toUpperCase();
+            const factor = (t.type === 'EXPENSE' || t.type === 'WITHDRAWAL') ? -1 : 1;
+            
+            if (pay === 'CASH') {
+                cashTotal += (amt * factor);
+            } else if (['BANK', 'CARD', 'ONLINE'].includes(pay)) {
+                bankTotal += (amt * factor);
+            } else if (pay === 'CREDIT') {
+                creditTotal += amt;
+            } else if (pay === 'CHEQUE') {
+                chequeTotal += amt;
+            }
+        });
+
+        document.getElementById('summaryCash').textContent = fmt(cashTotal);
+        document.getElementById('summaryBank').textContent = fmt(bankTotal);
+        document.getElementById('summaryCredit').textContent = fmt(creditTotal);
+        document.getElementById('summaryCheque').textContent = fmt(chequeTotal);
+
+        if (filtered.length === 0) {
+            body.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:#94a3b8;">No transactions found for the selected dates/filters.</td></tr>';
+            return;
+        }
+
+        body.innerHTML = filtered.map(t => {
+            let typeLabel = '';
+            let typeColor = '';
+            if (t.type === 'SALE') { typeLabel = 'Sale'; typeColor = '#059669'; }
+            else if (t.type === 'PURCHASE') { typeLabel = 'Purchase'; typeColor = '#2563eb'; }
+            else if (t.type === 'EXPENSE') { typeLabel = 'Expense'; typeColor = '#dc2626'; }
+            else if (t.type === 'ONBOARDING') { typeLabel = 'Setup'; typeColor = '#7c3aed'; }
+
+            const pay = String(t.paymentMethod || 'CASH').toUpperCase();
+
+            return `
+                <tr>
+                    <td>
+                        <div style="font-weight:700; color:#1e293b;">${t.dateStr}</div>
+                        <div style="font-size:10px; color:#94a3b8; margin-top:2px;">🕒 ${t.timeStr}</div>
+                    </td>
+                    <td><span style="background:${typeColor}15; color:${typeColor}; padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700;">${typeLabel}</span></td>
+                    <td style="font-weight:500; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.detail || '-'}</td>
+                    <td><span style="font-weight:600; font-size:11px;">${pay}</span></td>
+                    <td class="num">${fmt(t.amount).replace('Rs. ', '')}</td>
+                    <td style="text-align:center;">
+                        <button type="button" class="btn-void" onclick="reverseTransaction('${t.type}', '${t.id}', '${t.ref || ''}')">VOID</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    let activePaymentFilter = 'ALL';
+
+    function setPaymentFilter(val) {
+        activePaymentFilter = val;
+        document.querySelectorAll('#paymentFilterGroup .btn-filter').forEach(btn => {
+            if (btn.getAttribute('data-value') === val) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+        filterList();
+    }
+
+    async function loadDailyTransactions() {
+        if (!currentBusinessId) return;
+        const startDateVal = document.getElementById('searchStartDate').value;
+        const endDateVal = document.getElementById('searchEndDate').value;
+        if (!startDateVal || !endDateVal) return;
+
+        const body = document.getElementById('workbenchTrBody');
+        body.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:#94a3b8;">Fetching transactions...</td></tr>';
+
+        try {
+            const startOfDay = new Date(startDateVal + 'T00:00:00');
+            const endOfDay = new Date(endDateVal + 'T23:59:59.999');
+
+            // 1. Fetch Sales (Orders)
+            const salesSnap = await db.collection('orders').doc(currentBusinessId).collection('list')
+                .where('createdAt', '>=', startOfDay)
+                .where('createdAt', '<=', endOfDay)
+                .get();
+
+            const sales = salesSnap.docs.map(doc => {
+                const d = doc.data();
+                const ts = d.createdAt ? d.createdAt.toDate() : new Date();
+                const tDateStr = ts.toISOString().split('T')[0];
+                return {
+                    id: doc.id,
+                    type: 'SALE',
+                    dateStr: tDateStr,
+                    timeStr: ts.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    timestamp: ts.getTime(),
+                    detail: `Invoice: ${d.invoiceNo || doc.id} - ${d.customer?.name || 'Walk-in'}`,
+                    paymentMethod: d.paymentMethod ? d.paymentMethod.toUpperCase() : 'CASH',
+                    amount: d.total || 0,
+                    ref: doc.id
+                };
+            });
+
+            // 2. Fetch Purchases
+            const purchasesSnap = await db.collection('purchases').doc(currentBusinessId).collection('orders')
+                .where('createdAt', '>=', startOfDay)
+                .where('createdAt', '<=', endOfDay)
+                .get();
+
+            const purchases = purchasesSnap.docs.map(doc => {
+                const d = doc.data();
+                const ts = d.createdAt ? d.createdAt.toDate() : new Date();
+                const tDateStr = ts.toISOString().split('T')[0];
+                return {
+                    id: doc.id,
+                    type: 'PURCHASE',
+                    dateStr: tDateStr,
+                    timeStr: ts.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    timestamp: ts.getTime(),
+                    detail: `PO: ${d.poNo || doc.id} - ${d.supplierName || 'General Supplier'}`,
+                    paymentMethod: d.paymentMethod ? d.paymentMethod.toUpperCase() : 'CREDIT',
+                    amount: d.total || 0,
+                    ref: doc.id
+                };
+            });
+
+            // 3. Fetch Expenses
+            const expensesSnap = await db.collection('expenses').doc(currentBusinessId).collection('list')
+                .where('expenseDate', '>=', startDateVal)
+                .where('expenseDate', '<=', endDateVal)
+                .get();
+
+            const expenses = expensesSnap.docs.map(doc => {
+                const d = doc.data();
+                const ts = d.createdAt ? d.createdAt.toDate() : new Date();
+                return {
+                    id: doc.id,
+                    type: 'EXPENSE',
+                    dateStr: d.expenseDate || ts.toISOString().split('T')[0],
+                    timeStr: ts.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                    timestamp: ts.getTime(),
+                    detail: `${d.category} - ${d.note || ''}`,
+                    paymentMethod: d.paymentMethod || 'CASH',
+                    amount: d.amount || 0,
+                    ref: doc.id
+                };
+            });
+
+            // 4. Fetch Onboarding Entries from Journal
+            const onboardingSnap = await db.collection('journal').doc(currentBusinessId).collection('entries')
+                .where('refType', '==', 'ONBOARDING')
+                .get();
+                
+            const onboarding = onboardingSnap.docs
+                .filter(doc => {
+                    const d = doc.data();
+                    const ts = (d.date && d.date.toDate) ? d.date.toDate() : (d.createdAt && d.createdAt.toDate ? d.createdAt.toDate() : new Date());
+                    const entryDateStr = ts.getFullYear() + '-' + String(ts.getMonth() + 1).padStart(2, '0') + '-' + String(ts.getDate()).padStart(2, '0');
+                    return entryDateStr >= startDateVal && entryDateStr <= endDateVal;
+                })
+                .map(doc => {
+                    const d = doc.data();
+                    const ts = (d.date && d.date.toDate) ? d.date.toDate() : (d.createdAt && d.createdAt.toDate ? d.createdAt.toDate() : new Date());
+                    const entryDateStr = ts.getFullYear() + '-' + String(ts.getMonth() + 1).padStart(2, '0') + '-' + String(ts.getDate()).padStart(2, '0');
+                    
+                    // Sum amount
+                    const sumAmt = (d.entries || [])
+                        .filter(e => e.type === 'debit')
+                        .reduce((s, e) => s + (e.amount || 0), 0);
+
+                    return {
+                        id: doc.id,
+                        type: 'ONBOARDING',
+                        dateStr: entryDateStr,
+                        timeStr: ts.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                        timestamp: ts.getTime(),
+                        detail: `${d.memo || 'Onboarding Entry'}`,
+                        paymentMethod: 'EQUITY',
+                        amount: sumAmt,
+                        ref: d.ref || ''
+                    };
+                });
+
+            // Combine and sort by timestamp
+            allTransactions = [...sales, ...purchases, ...expenses, ...onboarding];
+            allTransactions.sort((a, b) => b.timestamp - a.timestamp);
+
+            // Update KPI Cards
+            const totalSales = sales.reduce((sum, s) => sum + s.amount, 0);
+            const totalExp = expenses.reduce((sum, e) => sum + e.amount, 0);
+            const netProfit = totalSales - totalExp;
+
+            document.getElementById('kpiTotalSales').textContent = `Sales: ${fmt(totalSales)}`;
+            document.getElementById('kpiCardSales').textContent = fmt(totalSales);
+            document.getElementById('kpiCardOrders').textContent = sales.length;
+            document.getElementById('kpiCardExpenses').textContent = fmt(totalExp);
+            document.getElementById('kpiCardNetProfit').textContent = fmt(netProfit);
+
+            // Live Cash in Drawer calculation
+            const cashSales = sales.filter(s => s.paymentMethod === 'CASH').reduce((sum, s) => sum + s.amount, 0);
+            const cashExpenses = expenses.filter(e => e.paymentMethod === 'CASH').reduce((sum, e) => sum + e.amount, 0);
+
+            // Fetch cash deposits to bank
+            let cashDeposits = 0;
+            try {
+                const depSnap = await db.collection('banks').doc(currentBusinessId).collection('transactions')
+                    .where('type', '==', 'CASH_DEPOSIT')
+                    .where('createdAt', '>=', startOfDay)
+                    .where('createdAt', '<=', endOfDay)
+                    .get();
+                depSnap.forEach(doc => {
+                    cashDeposits += (doc.data().amount || 0);
+                });
+            } catch (depErr) {
+                console.error('Error fetching cash deposits:', depErr);
+            }
+
+            // Fetch onboarding balances
+            let onboardingCashVal = 0;
+            try {
+                const wizardSnap = await db.collection('wizards').doc(currentBusinessId).get();
+                const initCash = wizardSnap.exists ? (wizardSnap.data().onboardingBalances?.cash || 0) : 0;
+                const wizardCreatedAt = wizardSnap.exists && wizardSnap.data().createdAt ? wizardSnap.data().createdAt.toDate() : null;
+                if (wizardCreatedAt) {
+                    const wizardDateStr = wizardCreatedAt.getFullYear() + '-' + String(wizardCreatedAt.getMonth() + 1).padStart(2, '0') + '-' + String(wizardCreatedAt.getDate()).padStart(2, '0');
+                    if (wizardDateStr >= startDateVal && wizardDateStr <= endDateVal) {
+                        onboardingCashVal = initCash;
+                    }
+                }
+            } catch (wizErr) {
+                console.error('Error fetching onboarding cash:', wizErr);
+            }
+
+            const liveCash = (onboardingCashVal + cashSales) - cashExpenses - cashDeposits;
+            document.getElementById('kpiCardCashDrawer').textContent = fmt(Math.max(0, liveCash));
+
+            filterList();
+        } catch (err) {
+            console.error('[Workbench] Load failed:', err);
+            body.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:#ef4444;">Failed to load transactions: ' + err.message + '</td></tr>';
+        }
+    }
+
+    async function reverseTransaction(type, id, ref) {
+        const password = prompt("For security verification, please enter your Business Owner password to void this transaction:");
+        if (!password) return;
+
+        const overlay = document.getElementById('loadingOverlay');
+        overlay.style.display = 'flex';
+        overlay.textContent = "Verifying Password...";
+
+        try {
+            // Verify password using Firebase Auth re-authentication
+            const user = auth.currentUser;
+            if (!user) throw new Error("No user logged in.");
+            
+            const credential = firebase.auth.EmailAuthProvider.credential(user.email, password);
+            await user.reauthenticateWithCredential(credential);
+            
+            overlay.textContent = "Processing Reversal...";
+            const batch = db.batch();
+
+            if (type === 'SALE') {
+                // 1. Fetch Order Items to reverse stock
+                const orderDoc = await db.collection('orders').doc(currentBusinessId).collection('list').doc(id).get();
+                if (orderDoc.exists) {
+                    const orderData = orderDoc.data();
+                    if (Array.isArray(orderData.items)) {
+                        for (const item of orderData.items) {
+                            const pRef = db.collection('products').doc(currentBusinessId).collection('list').doc(item.id);
+                            // Increment stock back
+                            const qty = parseFloat(item.quantity) || 0;
+                            batch.update(pRef, {
+                                stock: firebase.firestore.FieldValue.increment(qty)
+                            });
+                        }
+                    }
+                    // Delete Order Document
+                    batch.delete(orderDoc.ref);
+                }
+
+                // 2. Clear associated Journal entries
+                const journalSnap = await db.collection('journal').doc(currentBusinessId).collection('entries')
+                    .where('ref', '==', id)
+                    .get();
+                journalSnap.forEach(doc => batch.delete(doc.ref));
+
+            } else if (type === 'PURCHASE') {
+                // 1. Fetch Purchase items to reverse stock
+                const poDoc = await db.collection('purchases').doc(currentBusinessId).collection('orders').doc(id).get();
+                if (poDoc.exists) {
+                    const poData = poDoc.data();
+                    if (Array.isArray(poData.items)) {
+                        for (const item of poData.items) {
+                            const pRef = db.collection('products').doc(currentBusinessId).collection('list').doc(item.id || item.productId);
+                            // Decrement stock (since PO added stock)
+                            const qty = parseFloat(item.quantity) || 0;
+                            batch.update(pRef, {
+                                stock: firebase.firestore.FieldValue.increment(-qty)
+                            });
+                        }
+                    }
+                    // Delete Purchase Document
+                    batch.delete(poDoc.ref);
+                }
+
+                // 2. Clear associated Journal entries
+                const journalSnap = await db.collection('journal').doc(currentBusinessId).collection('entries')
+                    .where('ref', '==', id)
+                    .get();
+                journalSnap.forEach(doc => batch.delete(doc.ref));
+
+            } else if (type === 'EXPENSE') {
+                // 1. Delete expense document
+                const expRef = db.collection('expenses').doc(currentBusinessId).collection('list').doc(id);
+                batch.delete(expRef);
+
+                // 2. Clear associated Journal entries
+                const journalSnap = await db.collection('journal').doc(currentBusinessId).collection('entries')
+                    .where('ref', '==', id)
+                    .get();
+                journalSnap.forEach(doc => batch.delete(doc.ref));
+
+            } else if (type === 'ONBOARDING') {
+                // 1. Delete associated journal entry
+                const entryRef = db.collection('journal').doc(currentBusinessId).collection('entries').doc(id);
+                batch.delete(entryRef);
+
+                // 2. Reset onboarding steps in business profile
+                let stepKey = '';
+                if (ref.includes('cash')) stepKey = 'cash';
+                else if (ref.includes('bank')) stepKey = 'bank';
+                else if (ref.includes('receivables')) stepKey = 'receivables';
+                else if (ref.includes('payables')) stepKey = 'payables';
+                else if (ref.includes('inventory')) stepKey = 'inventory';
+
+                if (stepKey) {
+                    const updatePayload = {};
+                    updatePayload[`onboardingStepsCompleted.${stepKey}`] = false;
+                    updatePayload[`onboardingBalances.${stepKey}`] = 0;
+                    updatePayload['onboardingCompleted'] = false;
+                    
+                    batch.update(db.collection('businesses').doc(currentBusinessId), updatePayload);
+                }
+            }
+
+            await batch.commit();
+            showToast('✅ Transaction successfully voided and reversed!');
+            await loadDailyTransactions();
+        } catch (err) {
+            console.error('[Workbench] Reversal failed:', err);
+            let userMsg = err.message;
+            if (err.code === 'auth/wrong-password' || err.message.includes('password')) {
+                userMsg = 'Incorrect password! Access denied.';
+            }
+            alert('Action failed: ' + userMsg);
+        } finally {
+            overlay.style.display = 'none';
+        }
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.style.display = 'block';
+        setTimeout(() => { t.style.display = 'none'; }, 3000);
+    }
+
+    auth.onAuthStateChanged(async (user) => {
+        if (!user) { window.location.href = '/'; return; }
+        
+        let businessId = user.uid;
+        try {
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+        } catch (e) {
+            console.warn('[Workbench] Context fetch failed, using UID.');
+        }
+
+        currentBusinessId = businessId;
+        
+        // Set search date inputs to today
+        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+        document.getElementById('searchStartDate').value = todayStr;
+        document.getElementById('searchEndDate').value = todayStr;
+
+        await loadDailyTransactions();
+    });
+</script>
+</body>
+</html>

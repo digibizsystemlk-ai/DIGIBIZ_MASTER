@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Loan Summary - DIGIBIZ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=201"></script>
+    <script src="/core/scrap-daily-loans.js?v=201"></script>
+
+    <style>
+        :root {
+            --primary: #0f172a;
+            --accent: #2563eb;
+            --success: #10b981;
+            --danger: #ef4444;
+            --bg: #f1f5f9;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--primary);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .card {
+            background: white;
+            width: 100%;
+            max-width: 650px;
+            border-radius: 24px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            padding: 32px;
+            box-sizing: border-box;
+            margin-bottom: 20px;
+        }
+
+        .logo { font-weight: 800; font-size: 24px; text-align: center; margin-bottom: 5px; letter-spacing: -1px; }
+        .logo span { color: var(--accent); }
+
+        .customer-name { font-size: 22px; font-weight: 800; margin-bottom: 8px; text-align: center; }
+        .loan-id { font-size: 11px; color: #64748b; text-align: center; margin-bottom: 32px; text-transform: uppercase; letter-spacing: 1px; }
+
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 16px; margin-bottom: 32px; }
+        .stat-item { background: #f8fafc; padding: 16px; border-radius: 16px; text-align: center; border: 1px solid #e2e8f0; }
+        .stat-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
+        .stat-val { font-size: 16px; font-weight: 800; }
+
+        .ledger-title { font-size: 14px; font-weight: 700; margin-bottom: 16px; color: #64748b; text-transform: uppercase; }
+        
+        .table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 16px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #f1f5f9; }
+        th { background: #f8fafc; font-weight: 700; color: #64748b; font-size: 11px; text-transform: uppercase; }
+        .text-right { text-align: right; }
+        
+        .status-badge { font-size: 10px; font-weight: 800; padding: 4px 8px; border-radius: 6px; text-transform: uppercase; }
+        .status-active { background: #dcfce7; color: #166534; }
+        .status-settled { background: #e2e8f0; color: #475569; }
+
+        .footer { font-size: 12px; color: #64748b; text-align: center; max-width: 400px; }
+        #loading { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 100; font-weight: 800; }
+    </style>
+</head>
+<body>
+
+    <div id="loading">දත්ත ලබාගනිමින් පවතී...</div>
+
+    <div class="card" id="mainCard" style="display: none;">
+        <div class="logo" style="color: var(--accent); margin-bottom: 5px;">අපේ කඩේ</div>
+        <div style="text-align: center; font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 30px; letter-spacing: 2px;">DAILY LOAN</div>
+        
+        <div class="customer-name" id="customerName">-</div>
+        <div class="loan-id" id="loanId">-</div>
+
+        <div class="stat-grid">
+            <div class="stat-item">
+                <div class="stat-label">Principal</div>
+                <div class="stat-val" id="valPrincipal">Rs. 0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Accrued Interest</div>
+                <div class="stat-val" id="valInterest" style="color: var(--danger);">Rs. 0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Total Repaid</div>
+                <div class="stat-val" id="valPaid" style="color: var(--success);">Rs. 0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Remaining Balance</div>
+                <div class="stat-val" id="valRemain" style="color: var(--accent);">Rs. 0</div>
+            </div>
+        </div>
+
+        <div class="ledger-title">ගණුදෙනු විස්තරය (Transaction Ledger)</div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>දිනය</th>
+                        <th>විස්තරය</th>
+                        <th class="text-right">ණය වෙනස</th>
+                        <th class="text-right">පොලී වෙනස</th>
+                        <th class="text-right">මුළු හිඟය</th>
+                    </tr>
+                </thead>
+                <tbody id="ledgerRows">
+                    <tr><td colspan="5" style="text-align:center; color:#64748b;">No records found.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="footer">
+        මෙය ස්වයංක්‍රීයව උත්පාදනය කරන ලද වාර්තාවකි. කිසියම් ගැටළුවක් ඇත්නම් කරුණාකර ඔබගේ සේවා සපයන්නා අමතන්න.
+        <br><br>
+        Powered by DIGIBIZ™
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const loanId = urlParams.get('id');
+
+        function n(v) { return Number(v) || 0; }
+        function m(v) { return 'Rs. ' + n(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!loanId) {
+                document.getElementById('loading').textContent = 'Invalid Loan ID';
+                return;
+            }
+
+            try {
+                let db = window.db;
+                if (!db) {
+                    for (let i = 0; i < 20; i++) {
+                        await new Promise(r => setTimeout(r, 200));
+                        if (window.db) { db = window.db; break; }
+                    }
+                }
+                if (!db) throw new Error("Firebase DB not initialized");
+
+                const doc = await db.collection('loan_daily_entries').doc(loanId).get();
+                if (!doc.exists) {
+                    document.getElementById('loading').textContent = 'Loan record not found';
+                    return;
+                }
+
+                let data = doc.data();
+                const businessId = data.businessId;
+
+                // Sync/accrue interest to today in memory
+                if (window.DailyLoanCore) {
+                    data = window.DailyLoanCore.refreshDailyLoanAccruedInterest(data);
+                }
+
+                // Fetch ledger events
+                const [jSnap, buySnap] = await Promise.all([
+                    db.collection('journal').doc(businessId).collection('entries').where('loanDocId', '==', loanId).get(),
+                    db.collection('buying_history').where('businessId', '==', businessId).where('supplierName', '==', data.customerName).get()
+                ]);
+
+                const events = [];
+
+                jSnap.forEach(d => {
+                    const rowData = d.data();
+                    const dateObj = rowData.date ? (rowData.date.toDate ? rowData.date.toDate() : new Date(rowData.date)) : new Date();
+                    
+                    if (rowData.referenceType === 'LOAN_DAILY_ISSUE') {
+                        const pDebit = (rowData.entries || []).filter(e => e.accountCode === '1-1050-01').reduce((s, e) => s + n(e.debit), 0);
+                        events.push({
+                            id: d.id,
+                            date: dateObj,
+                            type: 'ISSUE',
+                            amount: pDebit,
+                            description: `Daily Loan Issued`
+                        });
+                    } else if (rowData.referenceType === 'LOAN_DAILY_REPAY') {
+                        const pCredit = (rowData.entries || []).filter(e => e.accountCode === '1-1050-01').reduce((s, e) => s + n(e.credit), 0);
+                        const iCredit = (rowData.entries || []).filter(e => e.accountCode === '4-4020-01').reduce((s, e) => s + n(e.credit), 0);
+                        events.push({
+                            id: d.id,
+                            date: dateObj,
+                            type: 'REPAY',
+                            amount: pCredit + iCredit,
+                            pPaidDirect: pCredit,
+                            iPaidDirect: iCredit,
+                            description: `Direct Repayment (${rowData.description || 'Cash'})`
+                        });
+                    }
+                });
+
+                buySnap.forEach(d => {
+                    const rowData = d.data();
+                    const dailyDeduct = n(rowData.dailyLoanDeduction || (rowData.loanApplyBreakdown && rowData.loanApplyBreakdown.DAILY) || 0);
+                    if (dailyDeduct > 0.01) {
+                        const dateObj = rowData.billDateTime ? new Date(rowData.billDateTime) : (rowData.date ? new Date(rowData.date) : new Date());
+                        events.push({
+                            id: d.id,
+                            date: dateObj,
+                            type: 'SCRAP_DEDUCTION',
+                            amount: dailyDeduct,
+                            description: `Scrap Deduction (Bill #${rowData.billNo || ''})`
+                        });
+                    }
+                });
+
+                // Sort events oldest first for chronological interest accrual
+                events.sort((a, b) => a.date - b.date);
+
+                let currentPrincipal = 0;
+                let currentInterest = 0;
+                let lastDateStr = null;
+                let totalInterestAccrued = 0;
+                let totalRepaid = 0;
+                let principalIssued = 0;
+
+                const ledger = [];
+                const todayStr = new Date().toISOString().split('T')[0];
+
+                if (events.length === 0) {
+                    const pVal = data.principalAmount || data.principalOutstanding || data.balance || 0;
+                    principalIssued = pVal;
+                    currentPrincipal = pVal;
+                    lastDateStr = data.date || todayStr;
+                    
+                    ledger.push({
+                        date: lastDateStr,
+                        description: `Loan Issued (Legacy Setup)`,
+                        pChange: pVal,
+                        iChange: 0,
+                        pBal: pVal,
+                        iBal: 0,
+                        tBal: pVal,
+                        type: 'ISSUE'
+                    });
+                }
+
+                for (const ev of events) {
+                    const dateStr = ev.date.toISOString().split('T')[0];
+
+                    if (lastDateStr && dateStr > lastDateStr && currentPrincipal > 0.01) {
+                        const diffDays = window.DailyLoanCore.getDaysBetween(lastDateStr, dateStr);
+                        if (diffDays > 0) {
+                            const dailyRate = 0.10 / 30;
+                            const accrued = Math.round((currentPrincipal * dailyRate * diffDays) * 100) / 100;
+                            currentInterest += accrued;
+                            totalInterestAccrued += accrued;
+                            ledger.push({
+                                date: dateStr,
+                                description: `Interest Accrued (${diffDays} days at 10%/mo)`,
+                                pChange: 0,
+                                iChange: accrued,
+                                pBal: currentPrincipal,
+                                iBal: currentInterest,
+                                tBal: currentPrincipal + currentInterest,
+                                type: 'ACCRUAL'
+                            });
+                        }
+                    }
+
+                    if (ev.type === 'ISSUE') {
+                        currentPrincipal += ev.amount;
+                        principalIssued += ev.amount;
+                        ledger.push({
+                            date: dateStr,
+                            description: ev.description,
+                            pChange: ev.amount,
+                            iChange: 0,
+                            pBal: currentPrincipal,
+                            iBal: currentInterest,
+                            tBal: currentPrincipal + currentInterest,
+                            type: 'ISSUE'
+                        });
+                    } else if (ev.type === 'REPAY' || ev.type === 'SCRAP_DEDUCTION') {
+                        const payment = ev.amount;
+                        totalRepaid += payment;
+                        
+                        let pPaid = 0;
+                        let iPaid = 0;
+                        
+                        if (ev.type === 'REPAY' && ev.pPaidDirect !== undefined && ev.iPaidDirect !== undefined) {
+                            pPaid = ev.pPaidDirect;
+                            iPaid = ev.iPaidDirect;
+                        } else {
+                            iPaid = Math.min(currentInterest, payment);
+                            pPaid = Math.min(currentPrincipal, payment - iPaid);
+                        }
+                        
+                        currentInterest -= iPaid;
+                        currentPrincipal -= pPaid;
+                        
+                        ledger.push({
+                            date: dateStr,
+                            description: ev.description,
+                            pChange: -pPaid,
+                            iChange: -iPaid,
+                            pBal: currentPrincipal,
+                            iBal: currentInterest,
+                            tBal: currentPrincipal + currentInterest,
+                            type: 'REPAY'
+                        });
+                    }
+
+                    lastDateStr = dateStr;
+                }
+
+                if (lastDateStr && todayStr > lastDateStr && currentPrincipal > 0.01 && data.active) {
+                    const diffDays = window.DailyLoanCore.getDaysBetween(lastDateStr, todayStr);
+                    if (diffDays > 0) {
+                        const dailyRate = 0.10 / 30;
+                        const accrued = Math.round((currentPrincipal * dailyRate * diffDays) * 100) / 100;
+                        currentInterest += accrued;
+                        totalInterestAccrued += accrued;
+                        ledger.push({
+                            date: todayStr,
+                            description: `Interest Accrued (${diffDays} days to Today)`,
+                            pChange: 0,
+                            iChange: accrued,
+                            pBal: currentPrincipal,
+                            iBal: currentInterest,
+                            tBal: currentPrincipal + currentInterest,
+                            type: 'ACCRUAL'
+                        });
+                    }
+                }
+
+                // Render customer info
+                document.getElementById('customerName').textContent = data.customerName;
+                document.getElementById('loanId').textContent = `Loan Ref: ${loanId.slice(-8)}`;
+                
+                // Render stats
+                document.getElementById('valPrincipal').textContent = m(principalIssued);
+                document.getElementById('valInterest').textContent = m(totalInterestAccrued);
+                document.getElementById('valPaid').textContent = m(totalRepaid);
+                document.getElementById('valRemain').textContent = m(currentPrincipal + currentInterest);
+
+                // Render ledger table (REVERSED: newest at the top!)
+                const reversedLedger = [...ledger].reverse();
+                const container = document.getElementById('ledgerRows');
+                
+                if (reversedLedger.length === 0) {
+                    container.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#64748b; padding:20px;">No transaction records found.</td></tr>`;
+                } else {
+                    container.innerHTML = reversedLedger.map(row => {
+                        let pChangeText = '-';
+                        if (row.pChange > 0) pChangeText = `<span style="color:#16a34a; font-weight:600;">+${n(row.pChange).toLocaleString()}</span>`;
+                        else if (row.pChange < 0) pChangeText = `<span style="color:#dc2626; font-weight:600;">${n(row.pChange).toLocaleString()}</span>`;
+
+                        let iChangeText = '-';
+                        if (row.iChange > 0) iChangeText = `<span style="color:#16a34a; font-weight:600;">+${n(row.iChange).toLocaleString()}</span>`;
+                        else if (row.iChange < 0) iChangeText = `<span style="color:#dc2626; font-weight:600;">${n(row.iChange).toLocaleString()}</span>`;
+
+                        let rowBg = '';
+                        if (row.type === 'ISSUE') rowBg = 'background:#f0fdf4;';
+                        else if (row.type === 'REPAY') rowBg = 'background:#eff6ff;';
+                        else if (row.type === 'ACCRUAL') rowBg = 'background:#fffbeb;';
+
+                        return `
+                            <tr style="${rowBg}">
+                                <td style="padding:10px 14px;">${row.date}</td>
+                                <td style="padding:10px 14px; font-weight:600;">${row.description}</td>
+                                <td style="padding:10px 14px; text-align:right;">${pChangeText}</td>
+                                <td style="padding:10px 14px; text-align:right;">${iChangeText}</td>
+                                <td style="padding:10px 14px; text-align:right; font-weight:700; color:#0f172a;">${n(row.tBal).toLocaleString()}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('mainCard').style.display = 'block';
+
+            } catch (e) {
+                console.error("[ViewDailyLoan] Error:", e);
+                document.getElementById('loading').textContent = 'Error loading data: ' + e.message;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manufacturer Outbound - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=70"></script>
+    <script src="/core/sidebar.js?v=1008"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="/core/sms-wallet-core.js?v=4"></script>
+    <script src="/core/ui-helpers.js?v=1"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=9"></script>
+    <style id="mfgStyle"></style>
+</head>
+<body>
+<div class="mfg-wrap">
+    <div class="mfg-head">
+        <h2>Outbound Sales</h2>
+        <p id="mfgBusinessCtx"></p>
+    </div>
+    <div class="mfg-grid">
+        <div class="mfg-card">
+            <h3>Finished Goods Sale</h3>
+            <div class="mfg-row" id="saleTypeRow" style="display:none;">
+                <div>
+                    <label>Sale Type</label>
+                    <select id="saleType">
+                        <option value="SHOP">Shop Sales</option>
+                        <option value="SHOWROOM">Showroom Sales</option>
+                    </select>
+                </div>
+                <div></div>
+            </div>
+            <div id="shopSection" style="display:none;">
+            <div class="mfg-row">
+                <div>
+                    <label>Company / Buyer (from Customers list)</label>
+                    <select id="buyerCustomerId" class="mfg-select-customer">
+                        <option value="">Select…</option>
+                    </select>
+                    <div id="buyerCustomerBanner" class="mfg-customer-banner" role="status"></div>
+                </div>
+                <div><label>Product Name</label><input id="productName"></div>
+            </div>
+            <div class="mfg-row3" id="shopAdvancedFields" style="margin-top:8px;display:none;">
+                <div><label>Shop Contact</label><input id="shopContact" placeholder="Phone"></div>
+                <div><label>Shop Address</label><input id="shopAddress" placeholder="Address"></div>
+                <div><label>Delivery Date</label><input type="date" id="deliveryDate"></div>
+            </div>
+            </div>
+            <div id="showroomSection" style="display:none;">
+                <div class="mfg-row">
+                    <div><label>Walk-in Customer Name</label><input id="walkInCustomer" placeholder="Optional"></div>
+                    <div><label>Product Name</label><input id="showroomProductName"></div>
+                </div>
+            </div>
+            <div class="mfg-row" style="margin-top:8px;">
+                <div>
+                    <label>Sales Category (learn-as-you-go)</label>
+                    <input id="salesCategory" list="salesCategoryList" placeholder="Type category or select">
+                    <datalist id="salesCategoryList"></datalist>
+                </div>
+                <div></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Qty</label><input type="number" id="qty" min="0" step="0.01"></div>
+                <div><label>Unit Price</label><input type="number" id="unitPrice" min="0" step="0.01"></div>
+                <div><label>Total Amount</label><input type="number" id="amount" min="0" step="0.01"></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Payment Mode</label>
+                    <select id="paymentMode">
+                        <option value="CASH">Cash</option>
+                        <option value="BANK">Bank</option>
+                        <option value="CREDIT">Credit</option>
+                        <option value="CHEQUE">Cheque</option>
+                        <option value="CARD">Card</option>
+                    </select>
+                </div>
+                <div><label>Due Date (Credit)</label><input type="date" id="dueDate"></div>
+                <div><label>Cheque Clearance Date</label><input type="date" id="chequeClearanceDate"></div>
+            </div>
+            <button id="saveBtn" style="margin-top:10px;">Record Sale</button>
+            <div id="msg" class="mfg-msg"></div>
+        </div>
+        <div class="mfg-card">
+            <h3>Latest Outbound Entries</h3>
+            <table>
+                <thead><tr><th>Company</th><th>Product</th><th>Amount</th><th>Payment</th><th>Date</th><th>Actions</th></tr></thead>
+                <tbody id="historyRows"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<div id="editModal" class="mfg-modal" style="display:none;">
+    <div class="mfg-modal-box">
+        <h3>Edit Outbound Sale</h3>
+        <div class="mfg-row">
+            <div><label>Company</label><input id="editCompanyName"></div>
+            <div><label>Product</label><input id="editProductName"></div>
+        </div>
+        <div class="mfg-row3" style="margin-top:8px;">
+            <div><label>Qty</label><input type="number" id="editQty" min="0" step="0.01"></div>
+            <div><label>Unit Price</label><input type="number" id="editUnitPrice" min="0" step="0.01"></div>
+            <div><label>Amount</label><input type="number" id="editAmount" min="0" step="0.01"></div>
+        </div>
+        <div class="mfg-row3" style="margin-top:8px;">
+            <div><label>Payment Mode</label><input id="editPaymentMode"></div>
+            <div><label>Due Date</label><input type="date" id="editDueDate"></div>
+            <div><label>Cheque Clearance Date</label><input type="date" id="editChequeClearanceDate"></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+            <button type="button" id="editCancelBtn">Cancel</button>
+            <button type="button" id="editSaveBtn">Update</button>
+        </div>
+    </div>
+</div>
+<script>
+document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
+const modalStyle = document.createElement('style');
+modalStyle.textContent = `.mfg-modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:12000;padding:14px}.mfg-modal-box{max-width:760px;width:100%;background:#fff;border-radius:12px;padding:14px}`;
+document.head.appendChild(modalStyle);
+const buyerCustomerById = {};
+const KDU_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+let isKduTeaFactory = false;
+let editingRowId = '';
+function v(id){ return document.getElementById(id).value; }
+function n(id){ return Number(v(id)) || 0; }
+function payStatus(mode){ return mode === 'CREDIT' ? 'PENDING' : (mode === 'CHEQUE' ? 'PENDING_CLEARANCE' : 'PAID'); }
+function normalizeKey(name){ return String(name || '').trim().toUpperCase(); }
+function paymentModeForSaleType(mode, saleType){
+    const m = String(mode || '').toUpperCase();
+    if (saleType === 'SHOWROOM' && m === 'CARD') return 'BANK';
+    return m;
+}
+function recalcAmount(){
+    const qty = Number(document.getElementById('qty').value || 0);
+    const unitPrice = Number(document.getElementById('unitPrice').value || 0);
+    const total = Number.isFinite(qty * unitPrice) ? (qty * unitPrice) : 0;
+    document.getElementById('amount').value = total.toFixed(2);
+}
+function activeSaleType(){
+    if (!isKduTeaFactory) return 'STANDARD';
+    return v('saleType') || 'SHOP';
+}
+function getProductNameByType(){
+    const saleType = activeSaleType();
+    if (saleType === 'SHOWROOM') return v('showroomProductName').trim();
+    return v('productName').trim();
+}
+function toggleSaleTypeUi(){
+    const saleType = activeSaleType();
+    const shop = document.getElementById('shopSection');
+    const showroom = document.getElementById('showroomSection');
+    const shopAdvanced = document.getElementById('shopAdvancedFields');
+    const pm = document.getElementById('paymentMode');
+    if (!isKduTeaFactory) {
+        shop.style.display = 'block';
+        showroom.style.display = 'none';
+        shopAdvanced.style.display = 'none';
+        pm.innerHTML = `
+            <option value="CASH">Cash</option>
+            <option value="BANK">Bank</option>
+            <option value="CREDIT">Credit</option>
+            <option value="CHEQUE">Cheque</option>
+        `;
+        return;
+    }
+    shop.style.display = saleType === 'SHOP' ? 'block' : 'none';
+    showroom.style.display = saleType === 'SHOWROOM' ? 'block' : 'none';
+    shopAdvanced.style.display = saleType === 'SHOP' ? 'grid' : 'none';
+    if (saleType === 'SHOWROOM') {
+        pm.innerHTML = `
+            <option value="CASH">Cash</option>
+            <option value="CARD">Card</option>
+        `;
+        document.getElementById('dueDate').value = '';
+    } else {
+        pm.innerHTML = `
+            <option value="CASH">Cash</option>
+            <option value="CREDIT">Credit</option>
+        `;
+    }
+}
+async function printSaleDocument(docType, sale) {
+    try {
+        const bid = ManufacturerModule.businessId;
+        const bizSnap = await db.collection('businesses').doc(bid).get();
+        const bizData = bizSnap.exists ? bizSnap.data() : {};
+        const docSettings = bizData.documentSettings || {};
+        const s = docSettings.invoice || docSettings.dispatch_note || {};
+
+        const header = s.header || bizData.name || 'MANUFACTURER SALE';
+        const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+        const footer = s.footer || 'Thank you for your business!';
+        const showLogo = s.showLogo !== false;
+
+        const w = window.open('', '_blank', 'width=420,height=600');
+        if (!w) return alert('Popup blocked. Please allow popups.');
+
+        const title = docType === 'INVOICE' ? 'Sales Invoice' : 'Payment Receipt';
+        const docNo = sale.saleId || '';
+        const dt = ManufacturerModule.formatDate(sale.createdAt || new Date());
+
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>${title} - ${docNo}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 4mm; }
+            body { width: 72mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; line-height: 1.4; color: #000; padding: 10px; width: 72mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 15px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 9px; margin: 4px 0 0; }
+        .receipt-title { font-size: 12px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; border-bottom: 1px dashed #000; padding-bottom: 4px; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 10px; }
+        .meta-label { font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
+        th, td { border: 1px solid #000; padding: 4px; text-align: left; }
+        th { background: #f0f0f0; font-size: 9px; }
+        .tr { text-align: right; }
+        .total-section { margin-top: 10px; border-top: 2px solid #000; padding-top: 6px; }
+        .total-row { display: flex; justify-content: space-between; font-weight: 800; font-size: 13px; }
+        .footer { text-align: center; font-size: 9px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; font-weight: 600; }
+        .softby { text-align: center; font-size: 8px; color: #666; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:40px; margin-bottom:5px;"><br>` : ''}
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">${title}</div>
+    
+    <div class="meta-row"><span class="meta-label">ID:</span><span>${docNo}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${dt}</span></div>
+    <div class="meta-row"><span class="meta-label">Customer:</span><span>${sale.companyName || 'Walk-in Customer'}</span></div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Product</th>
+                <th class="tr">Qty</th>
+                <th class="tr">Price</th>
+                <th class="tr">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>${sale.productName || '-'}</td>
+                <td class="tr">${sale.qty || 0}</td>
+                <td class="tr">${(sale.unitPrice || 0).toFixed(2)}</td>
+                <td class="tr">${(sale.amount || 0).toFixed(2)}</td>
+            </tr>
+        </tbody>
+    </table>
+    
+    <div class="total-section">
+        <div class="total-row">
+            <span>TOTAL AMOUNT</span>
+            <span>Rs. ${(sale.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        </div>
+    </div>
+    
+    <div class="footer">
+        ${footer}
+    </div>
+    <div class="softby">Software by DIGIBIZ - 0713446500</div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    </script>
+</body>
+</html>`;
+
+        w.document.write(html);
+        w.document.close();
+    } catch (e) {
+        console.error(e);
+        alert('Printing failed: ' + e.message);
+    }
+}
+async function refresh(){
+    const bid = ManufacturerModule.businessId;
+    const snap = await db.collection('manufacturer_sales')
+        .where('businessId','==',bid).limit(100).get().catch(()=>({docs:[]}));
+    const rows = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+        .filter((x) => x.isActive !== false)
+        .sort((a, b) => {
+            const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+            const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+            return tb - ta;
+        })
+        .slice(0, 25);
+    document.getElementById('historyRows').innerHTML = rows.map((x)=>{
+        return `<tr>
+            <td>${x.companyName||'-'}</td>
+            <td class="wrap-name">${x.productName||'-'}</td>
+            <td>Rs ${ManufacturerModule.money(x.amount)}</td>
+            <td>${x.paymentMode||'-'} / ${x.paymentStatus||'-'}</td>
+            <td>${ManufacturerModule.formatDate(x.createdAt)}</td>
+            <td>
+                <button type="button" onclick="openEditOutbound('${x.id}')">✏️</button>
+                <button type="button" onclick="deleteOutbound('${x.id}')">🗑️</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+function openEditOutbound(id){
+    editingRowId = id;
+    db.collection('manufacturer_sales').doc(id).get().then((doc) => {
+        const x = doc.exists ? (doc.data() || {}) : {};
+        document.getElementById('editCompanyName').value = x.companyName || '';
+        document.getElementById('editProductName').value = x.productName || '';
+        document.getElementById('editQty').value = Number(x.qty || 0);
+        document.getElementById('editUnitPrice').value = Number(x.unitPrice || 0);
+        document.getElementById('editAmount').value = Number(x.amount || 0);
+        document.getElementById('editPaymentMode').value = x.paymentMode || '';
+        document.getElementById('editDueDate').value = x.dueDate || '';
+        document.getElementById('editChequeClearanceDate').value = x.chequeClearanceDate || '';
+        document.getElementById('editModal').style.display = 'flex';
+    }).catch((e) => alert('Unable to open edit: ' + (e.message || e)));
+}
+function closeEditOutbound(){
+    editingRowId = '';
+    document.getElementById('editModal').style.display = 'none';
+}
+async function saveEditOutbound(){
+    if (!editingRowId) return;
+    await db.collection('manufacturer_sales').doc(editingRowId).update({
+        companyName: v('editCompanyName').trim(),
+        productName: v('editProductName').trim(),
+        qty: Number(v('editQty')) || 0,
+        unitPrice: Number(v('editUnitPrice')) || 0,
+        amount: Number(v('editAmount')) || 0,
+        paymentMode: String(v('editPaymentMode') || '').toUpperCase(),
+        dueDate: v('editDueDate') || null,
+        chequeClearanceDate: v('editChequeClearanceDate') || null,
+        updatedAt: new Date()
+    });
+    closeEditOutbound();
+    await refresh();
+}
+async function deleteOutbound(id){
+    if (!confirm('Are you sure you want to delete this record?')) return;
+    await db.collection('manufacturer_sales').doc(id).update({ isActive: false, deletedAt: new Date() });
+    await refresh();
+}
+window.openEditOutbound = openEditOutbound;
+window.deleteOutbound = deleteOutbound;
+async function loadCategoryOptions(){
+    const cats = await ManufacturerModule.loadCategories('OUTBOUND_SALE');
+    document.getElementById('salesCategoryList').innerHTML = cats.map((c)=>`<option value="${c}"></option>`).join('');
+}
+function buyerDigitsOk(mob){
+    const d = String(mob || '').replace(/\D/g, '');
+    return d.length >= 9;
+}
+function renderBuyerCustomerBanner(){
+    const el = document.getElementById('buyerCustomerBanner');
+    const cid = v('buyerCustomerId');
+    if (!cid) {
+        el.className = 'mfg-customer-banner';
+        el.textContent = '';
+        return;
+    }
+    const c = buyerCustomerById[cid] || {};
+    const mob = String(c.mobile || '').trim();
+    const disp = mob || '(no mobile saved)';
+    if (buyerDigitsOk(mob)) {
+        el.textContent = `SMS will go to ${disp}`;
+        el.className = 'mfg-customer-banner show ok';
+    } else {
+        el.textContent = `Mobile on file: ${disp} — SMS will not queue until a valid number is saved on this customer.`;
+        el.className = 'mfg-customer-banner show warn';
+    }
+}
+async function loadBuyerOptions(){
+    const bid = ManufacturerModule.businessId;
+    if (!bid) return;
+
+    const fetchBuyers = async () => {
+        console.log('[Outbound] Fetching buyers from Firestore...');
+        const snap = await db.collection('customers').where('businessId','==',bid).limit(300).get().catch(()=>({docs:[]}));
+        return snap.docs.map((d) => ({ id: d.id, data: d.data() || {} }));
+    };
+
+    // Use cache if available (TTL 5 mins)
+    const rows = window.DigiBizUI 
+        ? await window.DigiBizUI.withCache(`buyers_${bid}`, fetchBuyers, 300000)
+        : await fetchBuyers();
+
+    Object.keys(buyerCustomerById).forEach((k) => delete buyerCustomerById[k]);
+    const sel = document.getElementById('buyerCustomerId');
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const opt0 = document.createElement('option');
+    opt0.value = '';
+    opt0.textContent = 'Select company / buyer…';
+    sel.appendChild(opt0);
+    
+    rows.forEach(({ id, data: x }) => {
+        buyerCustomerById[id] = x;
+        const o = document.createElement('option');
+        o.value = id;
+        const name = String(x.fullName || x.mobile || id).trim();
+        const mob = String(x.mobile || '').trim();
+        o.textContent = mob ? `${name} — ${mob}` : `${name} (no mobile)`;
+        sel.appendChild(o);
+    });
+    if (prev && buyerCustomerById[prev]) sel.value = prev;
+    renderBuyerCustomerBanner();
+}
+function smsEnqueueNote(res){
+    if (!res) return '';
+    if (res.ok) {
+        if (res.fallback) return ' (sent via fallback gateway)';
+        return '';
+    }
+    if (res.skipped === 'no_mobile') return ' SMS was not queued: customer mobile missing or too short.';
+    if (res.skipped === 'sms_event_disabled') return ' SMS was not queued: Sales SMS is turned off in SMS settings.';
+    if (res.skipped === 'no_credits') return ' SMS not sent: credits finished (7-day trial ended or no paid credits). Add credits under Billing or ask Super Admin.';
+    if (res.skipped === 'permission') return ' SMS not queued: this user role is not allowed to create pending SMS in Firestore. Owner / staff (non-rep) can queue after rules deploy, or ask Business Owner.';
+    if (res.error) return ` SMS queue failed: ${res.error}`;
+    return '';
+}
+async function save(){
+    const bid = ManufacturerModule.businessId;
+    const saleType = activeSaleType();
+    const mode = paymentModeForSaleType(v('paymentMode'), saleType);
+    const cid = v('buyerCustomerId');
+    const msgEl = document.getElementById('msg');
+    msgEl.className = 'mfg-msg';
+    if ((saleType === 'SHOP' || !isKduTeaFactory) && !cid) {
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Please choose a buyer from the customer list so the name and mobile match your directory.';
+        return;
+    }
+
+    let customer = {};
+    let companyName = '';
+    if (saleType === 'SHOP' || !isKduTeaFactory) {
+        customer = buyerCustomerById[cid] || {};
+        if (!customer || !Object.keys(customer).length) {
+            const doc = await db.collection('customers').doc(cid).get().catch(() => null);
+            customer = doc && doc.exists ? (doc.data() || {}) : {};
+            buyerCustomerById[cid] = customer;
+        }
+        companyName = String(customer.fullName || '').trim();
+        if (!companyName) {
+            msgEl.classList.add('err');
+            msgEl.textContent = 'Selected customer has no full name in Firestore; update the customer record first.';
+            return;
+        }
+    } else {
+        companyName = v('walkInCustomer').trim() || 'Walk-in Customer';
+    }
+
+    const productName = getProductNameByType();
+    const salesCategory = v('salesCategory').trim();
+    const amountVal = n('amount');
+    const confirmMsg = `Are you sure you want to record this sale?\n\nProduct: ${productName}\nCompany: ${companyName}\nAmount: Rs. ${ManufacturerModule.money(amountVal)}\nPayment: ${mode}`;
+    
+    if (!confirm(confirmMsg)) return;
+
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Recording...';
+
+    const id = ManufacturerModule.uuid('MFS');
+    const fgKey = normalizeKey(productName);
+    const fgRef = db.collection('manufacturer_finished_products').doc(`${bid}_${fgKey}`);
+    const fgSnap = await fgRef.get().catch(() => null);
+    const fgData = fgSnap && fgSnap.exists ? (fgSnap.data() || {}) : {};
+    const currentStock = Number(fgData.stockQty) || 0;
+    const qty = n('qty');
+    if (qty <= 0) {
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Qty must be greater than zero.';
+        btn.disabled = false;
+        btn.textContent = 'Record Sale';
+        return;
+    }
+    if (currentStock < qty) {
+        msgEl.classList.add('err');
+        msgEl.textContent = `Insufficient finished stock. Available ${currentStock}, required ${qty}.`;
+        btn.disabled = false;
+        btn.textContent = 'Record Sale';
+        return;
+    }
+    const fgUnitCost = Number(fgData.unitCost) || 0;
+    const cogsAmount = Number((qty * fgUnitCost).toFixed(4));
+    const data = {
+        businessId: bid,
+        saleId: id,
+        saleType,
+        companyName,
+        productName,
+        category: salesCategory,
+        qty,
+        unitPrice: n('unitPrice'),
+        amount: amountVal,
+        fgUnitCost,
+        cogsAmount,
+        paymentMode: mode,
+        paymentStatus: payStatus(mode),
+        dueDate: v('dueDate') || null,
+        chequeClearanceDate: v('chequeClearanceDate') || null,
+        deliveryDate: v('deliveryDate') || null,
+        shopContact: v('shopContact').trim(),
+        shopAddress: v('shopAddress').trim(),
+        createdAt: new Date(),
+        flatAccountingSyncedV1: false
+    };
+    data.customerId = cid || null;
+    data.customerMobile = customer.mobile || '';
+    data.customerAddress = customer.address || '';
+    data.customerFirstName = customer.firstName || ManufacturerModule.firstName(customer.fullName || companyName);
+    
+    try {
+        await db.collection('manufacturer_sales').doc(id).set(data);
+        
+        // Save suggestions
+        if (typeof window.saveProductSuggestion === 'function') await window.saveProductSuggestion();
+        if (typeof window.saveCategorySuggestion === 'function') await window.saveCategorySuggestion();
+
+        await db.collection('manufacturer_finished_products').doc(`${bid}_${fgKey}`).set({
+            businessId: bid,
+            name: data.productName,
+            stockQty: firebase.firestore.FieldValue.increment(-Math.abs(data.qty)),
+            unitPrice: data.unitPrice,
+            updatedAt: new Date()
+        }, { merge: true });
+        
+        ManufacturerModule.publishEvent('MANUFACTURING_FINISHED_GOOD_SALE', data);
+        try {
+            await ManufacturerModule.syncFlatAccountingFinishedGoodSale(data);
+            await db.collection('manufacturer_sales').doc(id).update({ flatAccountingSyncedV1: true });
+        } catch (eFlat) {
+            console.warn('[Outbound] Flat accounting mirror failed', eFlat);
+        }
+        if (isKduTeaFactory && saleType === 'SHOP') {
+            printSaleDocument('INVOICE', data);
+        }
+        if (isKduTeaFactory && saleType === 'SHOWROOM') {
+            printSaleDocument('RECEIPT', data);
+        }
+        
+        const smsRes = await ManufacturerModule.enqueueSms('OUTBOUND_SALE', null, {
+            name: data.customerFirstName || data.companyName,
+            mobile: data.customerMobile,
+            productName: data.productName,
+            qty: data.qty,
+            amount: data.amount,
+            paymentStatus: data.paymentStatus,
+            dueDate: data.dueDate
+        });
+        
+        msgEl.textContent = 'Sale recorded and stock adjusted.' + (smsRes && smsRes.ok ? ' SMS queued.' : '') + smsEnqueueNote(smsRes);
+        if (smsRes && !smsRes.ok) msgEl.classList.add(smsRes.skipped ? 'warn' : 'err');
+        
+        // Reset fields
+        document.getElementById('productName').value = '';
+        const showroomName = document.getElementById('showroomProductName');
+        if (showroomName) showroomName.value = '';
+        document.getElementById('qty').value = '';
+        document.getElementById('unitPrice').value = '';
+        document.getElementById('amount').value = '';
+        
+        // Removed redundant loadBuyerOptions() to save quota
+        refresh();
+    } catch (err) {
+        console.error(err);
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Error recording sale: ' + err.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Record Sale';
+    }
+}
+(async function(){
+    await ManufacturerModule.init('outbound');
+    isKduTeaFactory = ManufacturerModule.businessId === KDU_BID;
+    document.getElementById('saleTypeRow').style.display = isKduTeaFactory ? 'grid' : 'none';
+    toggleSaleTypeUi();
+    document.getElementById('saveBtn').onclick = save;
+    document.getElementById('editSaveBtn').onclick = saveEditOutbound;
+    document.getElementById('editCancelBtn').onclick = closeEditOutbound;
+    document.getElementById('saleType').addEventListener('change', toggleSaleTypeUi);
+    document.getElementById('buyerCustomerId').addEventListener('change', renderBuyerCustomerBanner);
+    document.getElementById('qty').addEventListener('input', recalcAmount);
+    document.getElementById('unitPrice').addEventListener('input', recalcAmount);
+    
+    window.saveProductSuggestion = await ManufacturerModule.bindAutocomplete('productName', 'FINISHED_PRODUCT_NAME');
+    window.saveCategorySuggestion = await ManufacturerModule.bindAutocomplete('salesCategory', 'OUTBOUND_SALE_CATEGORY');
+
+    await loadBuyerOptions();
+    recalcAmount();
+    refresh();
+})();
+</script>
+</body>
+</html>

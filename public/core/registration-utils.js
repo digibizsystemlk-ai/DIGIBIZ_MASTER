@@ -26,7 +26,7 @@ window.RegistrationUI = {
             return;
         }
 
-        const types = ['distributor'];
+        const types = ['retail', 'tire_centre', 'attendance_payroll'];
         selectElement.innerHTML = '<option value="" disabled selected>Select your business type...</option>';
 
         const promises = types.map(async (key) => {
@@ -61,9 +61,9 @@ window.RegistrationUI = {
 
         await Promise.all(promises);
 
-        // Select distributor by default if it is available
-        if (selectElement.querySelector('option[value="distributor"]')) {
-            selectElement.value = 'distributor';
+        // Select retail by default if it is available
+        if (selectElement.querySelector('option[value="retail"]')) {
+            selectElement.value = 'retail';
         }
     }
 };

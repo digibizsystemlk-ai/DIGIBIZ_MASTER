@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <link rel="manifest" href="/modules/admin/mobile-advance-manifest.json">
+    <meta name="theme-color" content="#0f3b2c">
+    <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', async function() {
+            try {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                for (let reg of regs) {
+                    if (reg.active && reg.active.scriptURL.includes('/sw.js')) {
+                        await reg.unregister();
+                        console.log('Unregistered root sw.js');
+                    }
+                }
+                await navigator.serviceWorker.register('/modules/admin/sw-advance.js?v=1', { scope: '/modules/admin/mobile-advance' });
+                console.log('Registered dedicated sw-advance.js');
+            } catch (err) { console.log('SW setup error:', err); }
+        });
+    }
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Advance — Digibiz</title>
+    <meta name="description" content="සරල දුරකථන අත්තිකාරම් (Advance) සටහන් පිටුව">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=58"></script>
+    <script src="../../core/auth-roles.js?v=117"></script>
+    <script src="../../core/dashboard-core.js?v=117"></script>
+    <script src="../../core/scrap-vba-core.js?v=117"></script>
+    <style>
+        body { font-family: Inter, Segoe UI, sans-serif; background: #f1f5f9; color: #0f172a; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        .header-bar { background: #0f3b2c; color: #fff; padding: 16px 20px; text-align: center; font-size: 18px; font-weight: 700; box-shadow: 0 4px 12px rgba(15,59,44,0.15); display: flex; justify-content: space-between; align-items: center; }
+        .header-title { margin: 0; font-size: 18px; font-weight: 700; }
+        .status-badge { background: #10b981; color: #fff; font-size: 10px; font-weight: 700; padding: 4px 8px; border-radius: 12px; text-transform: uppercase; }
+        .offline-badge { background: #f59e0b; display: none; }
+        .install-badge { background: #2563eb; color: #fff; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 12px; border: none; cursor: pointer; display: none; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
+        .container { padding: 20px; max-width: 500px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 20px; padding: 24px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01); border: 1px solid #e2e8f0; margin-bottom: 20px; }
+        
+        /* Passcode Screen */
+        #passcodeScreen { display: block; text-align: center; padding-top: 40px; }
+        .lock-icon { font-size: 48px; margin-bottom: 16px; }
+        .passcode-title { font-size: 22px; font-weight: 700; color: #0f3b2c; margin-bottom: 8px; }
+        .passcode-sub { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+        .passcode-input { width: 180px; font-size: 28px; letter-spacing: 12px; text-align: center; padding: 12px; border: 2px solid #cbd5e1; border-radius: 16px; font-weight: 800; color: #0f3b2c; margin-bottom: 20px; background: #f8fafc; transition: all 0.2s; }
+        .passcode-input:focus { border-color: #0f3b2c; outline: none; box-shadow: 0 0 0 4px rgba(15,59,44,0.1); background: #fff; }
+        .passcode-error { color: #ef4444; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
+        .btn-unlock { background: #0f3b2c; color: #fff; border: none; padding: 16px 32px; border-radius: 16px; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; max-width: 220px; box-shadow: 0 4px 12px rgba(15,59,44,0.2); transition: all 0.2s; }
+        .btn-unlock:active { transform: scale(0.97); }
+
+        /* Main Screen */
+        #appScreen { display: none; }
+        
+        /* Mobile Tabs */
+        .mobile-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        .m-tab { padding: 14px; text-align: center; background: #fff; border: 2px solid #e2e8f0; border-radius: 16px; font-size: 15px; font-weight: 700; color: #64748b; cursor: pointer; transition: all 0.2s; }
+        .m-tab.active { background: #0f3b2c; color: #fff; border-color: #0f3b2c; box-shadow: 0 4px 12px rgba(15,59,44,0.15); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        label { display: block; font-size: 12px; font-weight: 700; color: #475569; margin-top: 16px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+        input[type="number"], input[type="text"], select, textarea { width: 100%; padding: 16px; border: 2px solid #cbd5e1; border-radius: 16px; box-sizing: border-box; font-size: 16px; font-weight: 600; color: #0f172a; background: #f8fafc; transition: all 0.2s; }
+        input:focus, select:focus, textarea:focus { border-color: #0f3b2c; background: #fff; outline: none; box-shadow: 0 0 0 4px rgba(15,59,44,0.1); }
+        
+        .btn-submit { background: #0f3b2c; color: #fff; border: none; padding: 18px 24px; border-radius: 16px; font-size: 17px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 28px; box-shadow: 0 6px 20px rgba(15,59,44,0.25); transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-submit:active { transform: scale(0.97); box-shadow: 0 3px 10px rgba(15,59,44,0.15); }
+        .btn-receive { background: #1d4ed8; box-shadow: 0 6px 20px rgba(29,78,216,0.25); }
+        .btn-receive:active { box-shadow: 0 3px 10px rgba(29,78,216,0.15); }
+        .btn-loading { opacity: 0.7; pointer-events: none; background: #64748b !important; }
+
+        /* Existing Balances Box */
+        .existing-bal { background: #fff1f2; border: 2px solid #ffe4e6; color: #9f1239; padding: 16px; border-radius: 16px; font-size: 14px; font-weight: 600; display: none; flex-direction: column; gap: 8px; margin-top: 14px; box-shadow: 0 4px 12px rgba(159,18,57,0.05); animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Toast */
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #0f3b2c; color: #fff; padding: 14px 28px; border-radius: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); display: none; z-index: 10000; font-size: 15px; font-weight: 700; animation: slideUp 0.3s ease-out; white-space: nowrap; }
+        @keyframes slideUp { from { transform: translate(-50%, 100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+        /* Active Balances Table */
+        .adv-summary-box { background: #f0fdf4; padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 2px solid #dcfce7; }
+        .adv-summary-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #166534; margin-bottom: 4px; }
+        .adv-summary-val { font-size: 24px; font-weight: 900; color: #14532d; }
+        
+        .bal-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; background: #f8fafc; border-radius: 14px; margin-bottom: 10px; border: 1px solid #e2e8f0; }
+        .bal-name { font-weight: 700; font-size: 15px; color: #0f172a; }
+        .bal-amount { font-weight: 800; font-size: 16px; color: #2563eb; }
+        .btn-edit { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; padding: 6px 12px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; margin-left: 10px; }
+        .empty-text { font-size: 13px; color: #64748b; text-align: center; padding: 20px 0; }
+    </style>
+</head>
+<body>
+
+<div class="header-bar">
+    <div class="header-title">💰 Mobile Advance</div>
+    <div>
+        <button id="installAppBtn" class="status-badge install-badge" onclick="installApp()">📲 Install App</button>
+        <div id="statusBadge" class="status-badge">Online</div>
+        <div id="offlineBadge" class="status-badge offline-badge">Offline Mode</div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<div class="container">
+    <!-- Passcode Screen -->
+    <div id="passcodeScreen">
+        <div class="lock-icon">🔒</div>
+        <div class="passcode-title">මුරපදය ඇතුළත් කරන්න</div>
+        <div class="passcode-sub">මෙම පිටුවට පිවිසීමට PIN අංකය (Passcode) ඇතුළත් කරන්න.</div>
+        <input type="password" id="passcodeInput" class="passcode-input" pattern="[0-9]*" inputmode="numeric" maxlength="4" placeholder="••••">
+        <div id="passcodeError" class="passcode-error">❌ මුරපදය වැරදියි! නැවත උත්සාහ කරන්න.</div>
+        <button id="unlockBtn" class="btn-unlock">ඇතුළු වන්න (Unlock)</button>
+    </div>
+
+    <!-- Main Application Screen -->
+    <div id="appScreen">
+        <div class="mobile-tabs">
+            <div class="m-tab active" onclick="switchTab('issue')">නිකුත් කිරීම (Issue)</div>
+            <div class="m-tab" onclick="switchTab('receive')">භාරගැනීම (Receive)</div>
+        </div>
+
+        <!-- Issue Advance Tab -->
+        <div id="tab-issue" class="tab-content active">
+            <div class="card">
+                <div style="font-size: 18px; font-weight: 800; color: #0f3b2c; margin-bottom: 6px;">නව අත්තිකාරම් මුදලක් (Issue Advance)</div>
+                <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">සැපයුම්කරු තෝරා ලබාදෙන මුදල ඇතුළත් කරන්න.</div>
+                
+                <label for="supplierName">සැපයුම්කරු (Supplier)</label>
+                <input type="text" id="supplierName" list="supplierList" placeholder="සැපයුම්කරු තෝරන්න" onchange="checkExistingBalance(this.value, false)">
+                <datalist id="supplierList"></datalist>
+
+                <div id="existingAdvanceBal" class="existing-bal"></div>
+
+                <label for="advanceAmount">මුදල (Rs)</label>
+                <input type="number" id="advanceAmount" step="0.01" min="0" placeholder="0.00" inputmode="decimal">
+
+                <label for="issueMethod">ගෙවීමේ ක්‍රමය (Method)</label>
+                <select id="issueMethod">
+                    <option value="CASH">Cash Payment (අතින් ගෙවීම)</option>
+                    <option value="BANK">Bank Transfer (බැංකු හරහා)</option>
+                </select>
+
+                <label for="advanceNote">සටහන (Note)</label>
+                <input type="text" id="advanceNote" placeholder="අතිරේක සටහනක් ඇත්නම් ලියන්න">
+
+                <button type="button" id="issueAdvanceBtn" class="btn-submit">➕ අත්තිකාරම් නිකුත් කරන්න (Issue Now)</button>
+            </div>
+        </div>
+
+        <!-- Receive Advance Tab -->
+        <div id="tab-receive" class="tab-content">
+            <div class="card" style="border-top: 4px solid #1d4ed8;">
+                <div style="font-size: 18px; font-weight: 800; color: #1d4ed8; margin-bottom: 6px;">අත්තිකාරම් මුදල් ආපසු භාරගැනීම</div>
+                <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">ලබාදුන් අත්තිකාරම් මුදලකින් කොටසක් හෝ සම්පූර්ණ මුදලක් ආපසු පද්ධතියට එක්කරන්න.</div>
+                
+                <label for="receiveSupplierName">සැපයුම්කරු (Supplier)</label>
+                <input type="text" id="receiveSupplierName" list="supplierListReceive" placeholder="සැපයුම්කරු තෝරන්න" onchange="checkExistingBalance(this.value, true)">
+                <datalist id="supplierListReceive"></datalist>
+
+                <div id="existingAdvanceBalReceive" class="existing-bal"></div>
+
+                <label for="receiveAmount">ලැබුණු මුදල (Rs)</label>
+                <input type="number" id="receiveAmount" step="0.01" min="0" placeholder="0.00" inputmode="decimal">
+
+                <label for="receiveMethod">ලැබුණු ක්‍රමය (Method)</label>
+                <select id="receiveMethod">
+                    <option value="CASH">Cash Received (අතින් ලැබුණි)</option>
+                    <option value="BANK">Bank Deposit (බැංකු ගිණුමට ලැබුණි)</option>
+                </select>
+
+                <label for="receiveNote">සටහන (Note)</label>
+                <input type="text" id="receiveNote" placeholder="අතිරේක සටහනක් ඇත්නම් ලියන්න">
+
+                <button type="button" id="receiveAdvanceBtn" class="btn-submit btn-receive">📥 මුදල් භාරගන්න (Receive Now)</button>
+            </div>
+        </div>
+
+        <!-- Active Balances List -->
+        <div class="card">
+            <div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 14px;">🟢 සක්‍රීය අත්තිකාරම් (Active Balances)</div>
+            <div class="adv-summary-box">
+                <div class="adv-summary-title">Total Advances (Asset)</div>
+                <div id="advTotal" class="adv-summary-val">Rs 0.00</div>
+            </div>
+            <div id="balanceList">
+                <div class="empty-text">සක්‍රීය අත්තිකාරම් මුදල් නොමැත.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+window.SCRAP_BUSINESS_ID = '';
+let registeredByName = {};
+
+// Passcode handling & INSTANT UI RENDERING ON LOAD (Top Priority)
+const passcodeScreen = document.getElementById('passcodeScreen');
+const appScreen = document.getElementById('appScreen');
+const passcodeInput = document.getElementById('passcodeInput');
+const unlockBtn = document.getElementById('unlockBtn');
+const passcodeError = document.getElementById('passcodeError');
+
+if (sessionStorage.getItem('passcodeUnlocked') === 'true') {
+    passcodeScreen.style.display = 'none';
+    appScreen.style.display = 'block';
+} else {
+    passcodeScreen.style.display = 'block';
+    appScreen.style.display = 'none';
+    if (passcodeInput) passcodeInput.focus();
+}
+
+// Offline Detection
+function updateOnlineStatus() {
+    if (navigator.onLine) {
+        document.getElementById('statusBadge').style.display = 'inline-block';
+        document.getElementById('offlineBadge').style.display = 'none';
+    } else {
+        document.getElementById('statusBadge').style.display = 'none';
+        document.getElementById('offlineBadge').style.display = 'inline-block';
+    }
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
+
+// Enable Firestore Offline Persistence safely
+try {
+    if (typeof db !== 'undefined') {
+        db.enablePersistence({ experimentalTabSynchronization: true })
+            .then(() => console.log("🟢 Firestore Offline Persistence enabled"))
+            .catch(err => console.warn("⚠️ Firestore persistence warning:", err));
+    }
+} catch (persistErr) { console.warn("Persistence try block warning:", persistErr); }
+
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function advId(name) { return `ADV_${window.SCRAP_BUSINESS_ID}_${String(name || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`; }
+
+function showToast(m) {
+    const t = document.getElementById('toast');
+    t.textContent = m;
+    t.style.display = 'block';
+    setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+function switchTab(t) {
+    document.querySelectorAll('.m-tab').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    
+    if (t === 'issue') {
+        document.querySelector('.m-tab[onclick="switchTab(\'issue\')"]').classList.add('active');
+        document.getElementById('tab-issue').classList.add('active');
+    } else {
+        document.querySelector('.m-tab[onclick="switchTab(\'receive\')"]').classList.add('active');
+        document.getElementById('tab-receive').classList.add('active');
+    }
+}
+
+// Load Registered Suppliers
+async function loadRegisteredSuppliers() {
+    if (!window.SCRAP_BUSINESS_ID) return;
+    try {
+        const snap = await db.collection('customers')
+            .where('businessId', '==', window.SCRAP_BUSINESS_ID)
+            .limit(1000)
+            .get();
+
+        const listIssue = document.getElementById('supplierList');
+        const listReceive = document.getElementById('supplierListReceive');
+        registeredByName = {};
+        
+        const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() || {}) }))
+            .filter((r) => r.archived !== true && r.isActive !== false);
+
+        const optionsHtml = rows.map((r) => {
+            const name = String(r.fullName || r.name || '').trim();
+            if (!name) return '';
+            registeredByName[name.toLowerCase()] = r;
+            registeredByName[name] = r;
+            return `<option value="${name.replace(/\"/g, '&quot;')}">`;
+        }).join('');
+
+        if (listIssue) listIssue.innerHTML = optionsHtml;
+        if (listReceive) listReceive.innerHTML = optionsHtml;
+    } catch (e) { console.error("loadRegisteredSuppliers error:", e); }
+}
+
+async function findSupplierPhoneByName(name) {
+    const clean = String(name || '').trim();
+    if (!clean) return '';
+    const reg = registeredByName[clean.toLowerCase()] || registeredByName[clean];
+    if (reg && (reg.mobile || reg.phone)) return String(reg.mobile || reg.phone || '').trim();
+    try {
+        const snap = await db.collection('customers')
+            .where('businessId', '==', window.SCRAP_BUSINESS_ID)
+            .where('fullName', '==', clean)
+            .where('isActive', '!=', false)
+            .limit(1)
+            .get();
+        if (!snap.empty) {
+            const row = snap.docs[0].data() || {};
+            return String(row.mobile || row.phone || '').trim();
+        }
+    } catch(e) {}
+    return '';
+}
+
+// Check Existing Balance & Loans
+async function checkExistingBalance(name, isReceive = false) {
+    const divId = isReceive ? 'existingAdvanceBalReceive' : 'existingAdvanceBal';
+    const balDiv = document.getElementById(divId);
+    if (!balDiv) return;
+
+    if (!name || !window.SCRAP_BUSINESS_ID) {
+        balDiv.style.display = 'none';
+        return;
+    }
+    try {
+        let htmlStr = '';
+        
+        // 1. Advance Balance
+        const docRef = db.collection('scrap_advances').doc(advId(name));
+        const snap = await docRef.get();
+        let advBal = 0;
+        if (snap.exists) {
+            advBal = Number(snap.data().balance) || 0;
+            if (advBal > 0.01) {
+                htmlStr += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px;">
+                    <span style="font-weight:500; color:#475569;">⚠️ Advance Due:</span>
+                    <b style="color:#e11d48; font-weight:700;">${fmt(advBal)}</b>
+                </div>`;
+            }
+        }
+        
+        // 2. Weekly Loans
+        let wArrearsAmt = 0;
+        const targetDateStr = new Date().toISOString().split('T')[0];
+        const wq = await db.collection('weekly_loans')
+            .where('businessId', '==', window.SCRAP_BUSINESS_ID)
+            .where('active', '==', true)
+            .where('customerName', '==', name)
+            .get();
+            
+        wq.forEach(d => {
+            const wl = d.data();
+            const sched = wl.schedule || [];
+            for (const inst of sched) {
+                const amt = Number(inst.amount) - Number(inst.paidAmount);
+                if (amt > 0.01 && (inst.status === 'OVERDUE' || (inst.dueDate && inst.dueDate < targetDateStr))) {
+                    wArrearsAmt += amt;
+                }
+            }
+        });
+        if (wArrearsAmt > 0.01) {
+            htmlStr += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px;">
+                <span style="font-weight:500; color:#475569;">📅 Weekly Loan Arrears:</span>
+                <b style="color:#e11d48; font-weight:700;">${fmt(wArrearsAmt)}</b>
+            </div>`;
+        }
+
+        // 3. Hand Loans
+        let handTotal = 0;
+        const hq = await db.collection('hand_loans').where('businessId', '==', window.SCRAP_BUSINESS_ID).where('type', '==', 'GIVEN').where('active', '==', true).where('customerName', '==', name).get();
+        hq.forEach(d => handTotal += Number(d.data().balance || 0));
+        if (handTotal > 0.01) {
+            htmlStr += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px;">
+                <span style="font-weight:500; color:#475569;">🤝 Hand Loans:</span>
+                <b style="color:#e11d48; font-weight:700;">${fmt(handTotal)}</b>
+            </div>`;
+        }
+
+        // 4. No-interest Loans
+        let niTotal = 0;
+        const nq = await db.collection('loan_no_interest').where('businessId', '==', window.SCRAP_BUSINESS_ID).where('active', '==', true).where('customerName', '==', name).get();
+        nq.forEach(d => niTotal += Number(d.data().balance || 0));
+        if (niTotal > 0.01) {
+            htmlStr += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px;">
+                <span style="font-weight:500; color:#475569;">🟢 No-interest Loans:</span>
+                <b style="color:#e11d48; font-weight:700;">${fmt(niTotal)}</b>
+            </div>`;
+        }
+
+        // 5. Interest Loans
+        let iTotal = 0;
+        const iq = await db.collection('loan_interest_entries').where('businessId', '==', window.SCRAP_BUSINESS_ID).where('active', '==', true).where('customerName', '==', name).get();
+        iq.forEach(d => iTotal += (Number(d.data().principalOutstanding || 0) + Number(d.data().interestOutstanding || 0)));
+        if (iTotal > 0.01) {
+            htmlStr += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px;">
+                <span style="font-weight:500; color:#475569;">📈 Interest Loans (10%):</span>
+                <b style="color:#e11d48; font-weight:700;">${fmt(iTotal)}</b>
+            </div>`;
+        }
+
+        // 6. Daily Loans
+        let dTotal = 0;
+        const dq = await db.collection('loan_daily_entries').where('businessId', '==', window.SCRAP_BUSINESS_ID).where('active', '==', true).where('customerName', '==', name).get();
+        const todayStr = new Date().toISOString().split('T')[0];
+        dq.forEach(d => {
+            let data = d.data();
+            let principal = Number(data.principalOutstanding);
+            let interest = Number(data.interestOutstanding);
+            if (isNaN(principal) || data.principalOutstanding === undefined) {
+                const pAmt = Number(data.principalAmount || 0);
+                const iAmt = Number(data.interestAmount || 0);
+                const totPay = pAmt + iAmt;
+                const paid = Number(data.totalPaid || 0);
+                if (totPay > 0) {
+                    const piRatio = pAmt / totPay;
+                    principal = Math.max(0, pAmt - (paid * piRatio));
+                    interest = Math.max(0, iAmt - (paid * (1 - piRatio)));
+                } else { principal = Number(data.balance || 0); interest = 0; }
+            }
+            const lastCalc = data.lastInterestCalcAt || data.date || todayStr;
+            const d1 = new Date(lastCalc + 'T00:00:00Z');
+            const d2 = new Date(todayStr + 'T00:00:00Z');
+            const diffDays = Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+            if (diffDays > 0 && principal > 0.01) { interest += Math.round((principal * (0.10 / 30) * diffDays) * 100) / 100; }
+            dTotal += Math.round((principal + interest) * 100) / 100;
+        });
+        if (dTotal > 0.01) {
+            htmlStr += `<div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed #fca5a5; padding-bottom:6px;">
+                <span style="font-weight:500; color:#475569;">📅 Daily Loans (10%):</span>
+                <b style="color:#e11d48; font-weight:700;">${fmt(dTotal)}</b>
+            </div>`;
+        }
+
+        const totalOtherLoans = wArrearsAmt + handTotal + niTotal + iTotal + dTotal;
+        const grandTotal = advBal + totalOtherLoans;
+
+        if (totalOtherLoans > 0.01) {
+            htmlStr += `<div style="display:flex; justify-content:space-between; align-items:center; padding-top:4px;">
+                <span style="font-weight:600; color:#334155;">📊 Other Loans Total:</span>
+                <b style="color:#be123c; font-weight:800;">${fmt(totalOtherLoans)}</b>
+            </div>`;
+        }
+        if (advBal > 0.01 && totalOtherLoans > 0.01) {
+            htmlStr += `<div style="display:flex; justify-content:space-between; align-items:center; border-top:2px solid #fda4af; padding-top:8px; margin-top:4px;">
+                <span style="font-weight:700; color:#1e293b;">💰 Grand Total (All):</span>
+                <b style="color:#9f1239; font-weight:850;">${fmt(grandTotal)}</b>
+            </div>`;
+        }
+
+        if (htmlStr) {
+            balDiv.innerHTML = `<div style="width:100%; display:flex; flex-direction:column; gap:6px;">${htmlStr}</div>`;
+            balDiv.style.display = 'flex';
+        } else {
+            balDiv.style.display = 'none';
+        }
+    } catch (e) { console.warn("Balance check error", e); balDiv.style.display = 'none'; }
+}
+
+// Load Active Balances
+async function loadBalances() {
+    if (!window.SCRAP_BUSINESS_ID) return;
+    try {
+        const snap = await db.collection('scrap_advances')
+            .where('businessId', '==', window.SCRAP_BUSINESS_ID)
+            .limit(1200)
+            .get();
+
+        const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }))
+            .filter((r) => r.archived !== true)
+            .map((r) => ({ ...r, supplierName: String(r.supplierName || r.customerName || '').trim() }))
+            .filter((r) => !!r.supplierName && Number(r.balance || 0) > 0)
+            .sort((a, b) => String(a.supplierName || '').localeCompare(String(b.supplierName || '')));
+
+        const total = rows.reduce((s, r) => s + (Number(r.balance) || 0), 0);
+        const totalEl = document.getElementById('advTotal');
+        if (totalEl) totalEl.textContent = fmt(total);
+        
+        const listEl = document.getElementById('balanceList');
+        if (rows.length > 0) {
+            listEl.innerHTML = rows.map((r) => `
+                <div class="bal-item">
+                    <div>
+                        <div class="bal-name">${r.supplierName}</div>
+                        <div style="font-size:11px; color:#64748b; margin-top:2px;">${r.updatedAt?.toDate ? r.updatedAt.toDate().toLocaleDateString() : ''}</div>
+                    </div>
+                    <div style="display:flex; align-items:center;">
+                        <span class="bal-amount">${fmt(r.balance)}</span>
+                        <button class="btn-edit" data-name="${r.supplierName.replace(/\"/g, '&quot;')}" data-bal="${r.balance}">Edit</button>
+                    </div>
+                </div>
+            `).join('');
+
+            // Attach Edit handlers
+            document.querySelectorAll('.btn-edit').forEach((btn) => {
+                btn.addEventListener('click', async () => {
+                    const name = btn.dataset.name;
+                    const prev = Number(btn.dataset.bal) || 0;
+                    const txt = prompt(`Enter new advance balance for ${name}:`, String(prev));
+                    if (txt == null) return;
+                    const next = Number(String(txt).replace(/,/g, ''));
+                    if (!Number.isFinite(next) || next < 0) return alert('Invalid amount.');
+                    const delta = next - prev;
+                    if (!confirm(`Save new balance ${fmt(next)} (change: ${fmt(delta)}) ?`)) return;
+                    
+                    const docRef = db.collection('scrap_advances').doc(advId(name));
+                    await docRef.set({
+                        businessId: window.SCRAP_BUSINESS_ID,
+                        supplierName: name,
+                        balance: next,
+                        adjusted: true,
+                        adjustedAt: new Date().toISOString(),
+                        archived: false,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+                    
+                    await db.collection('scrap_advance_history').add({
+                        businessId: window.SCRAP_BUSINESS_ID,
+                        supplierName: name,
+                        amount: delta,
+                        note: 'Manual balance adjustment [Mobile]',
+                        date: new Date().toISOString(),
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        type: 'ADJUST'
+                    });
+                    
+                    if (window.scrapVbaCore?.postJournalEntry && Math.abs(delta) > 0.0001) {
+                        const entries = delta > 0
+                            ? [
+                                { accountCode: '1-1060-01', accountName: 'Supplier Advances (Scrap)', debit: Math.abs(delta), credit: 0 },
+                                { accountCode: '1-1010-01', accountName: 'Cash - Main', debit: 0, credit: Math.abs(delta) }
+                            ]
+                            : [
+                                { accountCode: '1-1010-01', accountName: 'Cash - Main', debit: Math.abs(delta), credit: 0 },
+                                { accountCode: '1-1060-01', accountName: 'Supplier Advances (Scrap)', debit: 0, credit: Math.abs(delta) }
+                            ];
+                        await window.scrapVbaCore.postJournalEntry(window.SCRAP_BUSINESS_ID, {
+                            description: `Advance balance adjustment - ${name} [Mobile]`,
+                            reference: name,
+                            referenceType: 'SCRAP_ADVANCE_ADJUST',
+                            date: new Date().toISOString(),
+                            entries
+                        });
+                    }
+                    showToast('✅ Balance adjusted successfully!');
+                    await loadBalances();
+                });
+            });
+        } else {
+            listEl.innerHTML = '<div class="empty-text">සක්‍රීය අත්තිකාරම් මුදල් නොමැත.</div>';
+        }
+    } catch (e) { console.warn('Could not fetch balances:', e); }
+}
+
+// Issue Advance
+document.getElementById('issueAdvanceBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('issueAdvanceBtn');
+    if (btn.disabled || !window.SCRAP_BUSINESS_ID) return;
+    
+    const supplierName = String(document.getElementById('supplierName').value || '').trim();
+    const amount = Number(document.getElementById('advanceAmount').value) || 0;
+    const userNote = String(document.getElementById('advanceNote').value || '').trim();
+    const note = `[Mobile] ${userNote}`.trim();
+
+    if (!supplierName || amount <= 0) return alert('කරුණාකර සැපයුම්කරු සහ මුදල ඇතුළත් කරන්න.');
+
+    let pick = registeredByName[supplierName.toLowerCase()] || registeredByName[supplierName];
+    if (!pick) {
+        const search = supplierName.toLowerCase();
+        const foundKey = Object.keys(registeredByName).find(k => k.toLowerCase() === search);
+        if (foundKey) pick = registeredByName[foundKey];
+    }
+    if (!pick) return alert('කරුණාකර ලියාපදිංචි සැපයුම්කරුවෙකු තෝරන්න (Select from dropdown).');
+
+    if (!confirm(`අත්තිකාරම් මුදල ලබා දීම තහවුරු කරන්න?\nConfirm Advance Issue?\n\nSupplier: ${supplierName}\nAmount: ${fmt(amount)}\nNote: ${note || '-'}`)) return;
+
+    btn.disabled = true;
+    const oldTxt = btn.innerHTML;
+    btn.innerHTML = '⏳ Processing...';
+    btn.classList.add('btn-loading');
+
+    try {
+        const ref = db.collection('scrap_advances').doc(advId(supplierName));
+        const snap = await ref.get();
+        const prev = snap.exists ? (Number(snap.data().balance) || 0) : 0;
+        const next = prev + amount;
+
+        await ref.set({
+            businessId: window.SCRAP_BUSINESS_ID,
+            supplierName,
+            supplierMobile: String(pick.mobile || ''),
+            balance: next,
+            note,
+            archived: false,
+            archivedAt: null,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        await db.collection('scrap_advance_history').add({
+            businessId: window.SCRAP_BUSINESS_ID,
+            supplierName,
+            amount,
+            note,
+            date: new Date().toISOString(),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+            const issueMethod = String(document.getElementById('issueMethod')?.value || 'CASH').toUpperCase();
+            const creditLine = issueMethod === 'BANK'
+                ? { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: 0, credit: amount }
+                : { accountCode: '1-1010-01', accountName: 'Cash - Main', debit: 0, credit: amount };
+            
+            await window.scrapVbaCore.postJournalEntry(window.SCRAP_BUSINESS_ID, {
+                description: `Advance issued - ${supplierName} [Mobile]`,
+                reference: supplierName,
+                referenceType: 'SCRAP_ADVANCE_ISSUE',
+                date: new Date().toISOString(),
+                entries: [
+                    { accountCode: '1-1060-01', accountName: 'Supplier Advances (Scrap)', debit: amount, credit: 0 },
+                    creditLine
+                ]
+            });
+        }
+
+        let smsQueued = false;
+        if (window.scrapVbaCore?.enqueuePendingSmsForScrap || window.scrapVbaCore?.enqueuePendingSms) {
+            const enabled = window.scrapVbaCore.isScrapSmsEventEnabled ? await window.scrapVbaCore.isScrapSmsEventEnabled(window.SCRAP_BUSINESS_ID, 'advance') : false;
+            const phone = String(pick.mobile || '') || await findSupplierPhoneByName(supplierName);
+            if (enabled && phone) {
+                const smsSnap = await db.collection('scrap_sms_settings').doc(window.SCRAP_BUSINESS_ID).get().catch(() => null);
+                const sms = smsSnap && smsSnap.exists ? (smsSnap.data() || {}) : {};
+                let tpl = String(sms.tplAdvance || 'Hi {{name}},\nYour Advance Balance Updated.\nAdv due : {{amount}}\nDate: {{date}}');
+
+                if (prev > 0) {
+                    const safeName = encodeURIComponent(supplierName).replace(/%20/g, '+');
+                    tpl = `Adv updated. Due: {{amount}}\nLink: https://digibiz-sys.web.app/a/${safeName}/${window.SCRAP_BUSINESS_ID} `;
+                }
+
+                const msg = window.scrapVbaCore.renderTemplate ? window.scrapVbaCore.renderTemplate(tpl, { name: supplierName, amount: `Rs. ${Math.round(next).toLocaleString()}/=`, date: new Date().toLocaleString() }) : '';
+                if (msg) {
+                    await Promise.race([
+                        (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function' ? window.scrapVbaCore.enqueuePendingSmsForScrap(phone, msg) : window.scrapVbaCore.enqueuePendingSms(window.SCRAP_BUSINESS_ID, phone, msg)),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('SMS Timeout')), 3000))
+                    ]).catch(e => console.warn("[Advance] SMS failed or timed out:", e));
+                    smsQueued = true;
+                }
+            }
+        }
+
+        document.getElementById('advanceAmount').value = '';
+        document.getElementById('advanceNote').value = '';
+        document.getElementById('supplierName').value = '';
+        document.getElementById('existingAdvanceBal').style.display = 'none';
+
+        await loadBalances();
+        showToast(`✅ සාර්ථකයි! ${smsQueued ? 'SMS යවන ලදී.' : ''}`);
+    } catch (e) { console.error(e); alert('Error: ' + e.message); }
+    finally { btn.disabled = false; btn.innerHTML = oldTxt; btn.classList.remove('btn-loading'); }
+});
+
+// Receive Advance Back
+document.getElementById('receiveAdvanceBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('receiveAdvanceBtn');
+    if (btn.disabled || !window.SCRAP_BUSINESS_ID) return;
+
+    const supplierName = String(document.getElementById('receiveSupplierName').value || '').trim();
+    const amount = Number(document.getElementById('receiveAmount').value) || 0;
+    const userNote = String(document.getElementById('receiveNote').value || '').trim();
+    const note = `[Mobile] ${userNote}`.trim();
+
+    if (!supplierName || amount <= 0) return alert('කරුණාකර සැපයුම්කරු සහ මුදල ඇතුළත් කරන්න.');
+
+    const ref = db.collection('scrap_advances').doc(advId(supplierName));
+    const snap = await ref.get();
+    if (!snap.exists) return alert(`සැපයුම්කරු සඳහා අත්තිකාරම් ගිණුමක් හමු නොවීය (${supplierName}).`);
+    const row = snap.data() || {};
+    const prev = Number(row.balance || 0);
+    if (prev <= 0) return alert(`${supplierName} හට පියවීමට අත්තිකාරම් මුදලක් නොමැත.`);
+    if (amount > prev) return alert(`ඇතුළත් කළ මුදල දැනට පවතින අත්තිකාරම් මුදලට වඩා වැඩියි (${fmt(prev)}).`);
+    const next = prev - amount;
+
+    if (!confirm(`අත්තිකාරම් මුදල ආපසු ලබා ගැනීම තහවුරු කරන්න?\nConfirm Receiving Advance Back?\n\nSupplier: ${supplierName}\nReceived: ${fmt(amount)}\nRemaining: ${fmt(next)}`)) return;
+
+    btn.disabled = true;
+    const oldTxt = btn.innerHTML;
+    btn.innerHTML = '⏳ Processing...';
+    btn.classList.add('btn-loading');
+
+    try {
+        await ref.set({ businessId: window.SCRAP_BUSINESS_ID, supplierName, balance: next, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        await db.collection('scrap_advance_history').add({ businessId: window.SCRAP_BUSINESS_ID, supplierName, amount: -Math.abs(amount), note: note || 'Advance received back [Mobile]', date: new Date().toISOString(), createdAt: firebase.firestore.FieldValue.serverTimestamp(), type: 'RECEIVED' });
+        
+        if (window.scrapVbaCore?.postJournalEntry) {
+            const receiveMethod = String(document.getElementById('receiveMethod')?.value || 'CASH').toUpperCase();
+            const debitLine = receiveMethod === 'BANK' ? { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: Math.abs(amount), credit: 0 } : { accountCode: '1-1010-01', accountName: 'Cash - Main', debit: Math.abs(amount), credit: 0 };
+            await window.scrapVbaCore.postJournalEntry(window.SCRAP_BUSINESS_ID, { description: `Advance received back - ${supplierName} [Mobile]`, reference: supplierName, referenceType: 'SCRAP_ADVANCE_RECEIVED', date: new Date().toISOString(), entries: [debitLine, { accountCode: '1-1060-01', accountName: 'Supplier Advances (Scrap)', debit: 0, credit: Math.abs(amount) }] });
+        }
+
+        let smsQueued = false;
+        if (window.scrapVbaCore?.enqueuePendingSmsForScrap || window.scrapVbaCore?.enqueuePendingSms) {
+            const enabled = window.scrapVbaCore.isScrapSmsEventEnabled ? await window.scrapVbaCore.isScrapSmsEventEnabled(window.SCRAP_BUSINESS_ID, 'advance') : false;
+            const phone = await findSupplierPhoneByName(supplierName);
+            if (enabled && phone) {
+                const smsSnap = await db.collection('scrap_sms_settings').doc(window.SCRAP_BUSINESS_ID).get().catch(() => null);
+                const sms = smsSnap && smsSnap.exists ? (smsSnap.data() || {}) : {};
+                let tpl = String(sms.tplAdvance || 'Hi {{name}},\nYour Advance Balance Updated.\nAdv due : {{amount}}\nDate: {{date}}');
+
+                if (next > 0.0001) {
+                    const safeName = encodeURIComponent(supplierName).replace(/%20/g, '+');
+                    tpl = `Adv updated. Due: {{amount}}\nLink: https://digibiz-sys.web.app/a/${safeName}/${window.SCRAP_BUSINESS_ID} `;
+                }
+
+                const msg = window.scrapVbaCore.renderTemplate ? window.scrapVbaCore.renderTemplate(tpl, { name: supplierName, amount: `Rs. ${Math.round(next).toLocaleString()}/=`, date: new Date().toLocaleString() }) : '';
+                if (msg) {
+                    await Promise.race([
+                        (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function' ? window.scrapVbaCore.enqueuePendingSmsForScrap(phone, msg) : window.scrapVbaCore.enqueuePendingSms(window.SCRAP_BUSINESS_ID, phone, msg)),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('SMS Timeout')), 3000))
+                    ]).catch(e => console.warn("[AdvanceReceive] SMS failed or timed out:", e));
+                    smsQueued = true;
+                }
+            }
+        }
+
+        document.getElementById('receiveSupplierName').value = '';
+        document.getElementById('receiveAmount').value = '';
+        document.getElementById('receiveNote').value = '';
+        document.getElementById('existingAdvanceBalReceive').style.display = 'none';
+
+        await loadBalances();
+        showToast(`✅ සාර්ථකව භාරගන්නා ලදී! ${smsQueued ? 'SMS යවන ලදී.' : ''}`);
+    } catch (e) { console.error(e); alert('Error: ' + e.message); }
+    finally { btn.disabled = false; btn.innerHTML = oldTxt; btn.classList.remove('btn-loading'); }
+});
+
+function verifyPasscode() {
+    if (passcodeInput.value === '1977') {
+        sessionStorage.setItem('passcodeUnlocked', 'true');
+        passcodeScreen.style.display = 'none';
+        appScreen.style.display = 'block';
+        if (window.SCRAP_BUSINESS_ID) {
+            loadRegisteredSuppliers();
+            loadBalances();
+        }
+    } else {
+        passcodeError.style.display = 'block';
+        passcodeInput.value = '';
+        passcodeInput.focus();
+    }
+}
+
+unlockBtn.addEventListener('click', verifyPasscode);
+passcodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') verifyPasscode();
+});
+
+// Auth State Check
+auth.onAuthStateChanged(async (user) => {
+    if (!user) {
+        window.location.href = '/';
+        return;
+    }
+    
+    let businessId = user.uid;
+    try {
+        if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+            const ctx = await window.dashboardCore.getContext(user);
+            businessId = String((ctx && ctx.businessId) || user.uid);
+        } else {
+            const userDoc = await db.collection('users').doc(user.uid).get().catch(() => null);
+            if (userDoc && userDoc.exists) {
+                businessId = userDoc.data().businessId || user.uid;
+            }
+        }
+    } catch (e) { console.warn('Business ID fetch error:', e); }
+    
+    window.SCRAP_BUSINESS_ID = businessId;
+
+    if (sessionStorage.getItem('passcodeUnlocked') === 'true') {
+        loadRegisteredSuppliers();
+        loadBalances();
+    }
+});
+
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const installBtn = document.getElementById('installAppBtn');
+    if (installBtn) installBtn.style.display = 'inline-block';
+});
+
+function installApp() {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+            console.log('User accepted the install prompt');
+        } else {
+            console.log('User dismissed the install prompt');
+        }
+        deferredPrompt = null;
+        document.getElementById('installAppBtn').style.display = 'none';
+    });
+}
+</script>
+</body>
+</html>

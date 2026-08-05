@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credit Aging Report - DIGIBIZ Tire Center</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    
+    <script src="../../core/firebase-init.js?v=3"></script>
+    <script src="../../core/event-validation.js?v=3"></script>
+    <script src="../../core/event-bus.js?v=3"></script>
+    <script src="../../core/auth-roles.js?v=3"></script>
+    <script src="../../core/business-types.js?v=4"></script>
+    <script src="../../core/subscription-manager.js?v=3"></script>
+    <script src="../../core/sidebar.js?v=1008"></script>
+    
+    <style>
+        :root {
+            --primary: #10b981;
+            --primary-hover: #059669;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --background: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            
+            /* Aging Colors */
+            --color-current: #10b981;
+            --color-1-30: #84cc16;
+            --color-31-60: #eab308;
+            --color-61-90: #f97316;
+            --color-90-plus: #ef4444;
+        }
+
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Outfit',sans-serif;background:var(--background);color:var(--text-main);}
+        
+        .main-content{padding:30px;min-height:100vh;}
+        @media (max-width:768px){.main-content{padding:20px;}}
+        
+        .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px;flex-wrap:wrap;gap:15px;}
+        .page-header h1{font-size:28px;font-weight:800;color:var(--text-main);}
+        .page-header h1 i{color:var(--primary);margin-right:12px;}
+        
+        /* Stats Grid */
+        .stats-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:15px;margin-bottom:25px;}
+        @media (max-width:1024px){.stats-grid{grid-template-columns:repeat(3,1fr);}}
+        @media (max-width:600px){.stats-grid{grid-template-columns:repeat(2,1fr);}}
+        
+        .stat-card{background:var(--card-bg);border-radius:16px;padding:20px;border:1px solid var(--border);position:relative;overflow:hidden;}
+        .stat-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;}
+        .stat-card.current::before{background:var(--color-current);}
+        .stat-card.bracket1::before{background:var(--color-1-30);}
+        .stat-card.bracket2::before{background:var(--color-31-60);}
+        .stat-card.bracket3::before{background:var(--color-61-90);}
+        .stat-card.bracket4::before{background:var(--color-90-plus);}
+        
+        .stat-card .label{font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;}
+        .stat-card .value{font-size:24px;font-weight:800;}
+        .stat-card.current .value{color:var(--color-current);}
+        .stat-card.bracket1 .value{color:var(--color-1-30);}
+        .stat-card.bracket2 .value{color:var(--color-31-60);}
+        .stat-card.bracket3 .value{color:var(--color-61-90);}
+        .stat-card.bracket4 .value{color:var(--color-90-plus);}
+        
+        /* Visual Aging Bar */
+        .aging-progress-card{background:var(--card-bg);border-radius:20px;border:1px solid var(--border);padding:24px;margin-bottom:25px;}
+        .aging-progress-card h3{font-size:16px;font-weight:700;margin-bottom:15px;display:flex;align-items:center;gap:10px;}
+        
+        .progress-bar-container{height:20px;border-radius:10px;background:#e2e8f0;overflow:hidden;display:flex;margin-bottom:15px;}
+        .progress-segment{height:100%;transition:width 0.3s ease;display:flex;align-items:center;justify-content:center;color:white;font-size:10px;font-weight:700;}
+        .progress-segment.current{background:var(--color-current);}
+        .progress-segment.bracket1{background:var(--color-1-30);}
+        .progress-segment.bracket2{background:var(--color-31-60);}
+        .progress-segment.bracket3{background:var(--color-61-90);}
+        .progress-segment.bracket4{background:var(--color-90-plus);}
+        
+        .progress-legend{display:flex;gap:20px;flex-wrap:wrap;}
+        .legend-item{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--text-muted);}
+        .legend-dot{width:12px;height:12px;border-radius:50%;}
+        .legend-dot.current{background:var(--color-current);}
+        .legend-dot.bracket1{background:var(--color-1-30);}
+        .legend-dot.bracket2{background:var(--color-31-60);}
+        .legend-dot.bracket3{background:var(--color-61-90);}
+        .legend-dot.bracket4{background:var(--color-90-plus);}
+        
+        /* Filter Bar */
+        .filter-card{background:var(--card-bg);border-radius:16px;border:1px solid var(--border);padding:18px 24px;margin-bottom:25px;display:flex;gap:15px;align-items:center;flex-wrap:wrap;}
+        .filter-card input, .filter-card select{padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none;background:var(--background);}
+        .filter-card input{flex:1;min-width:200px;}
+        .filter-card select{min-width:180px;}
+        .filter-card .total-count{font-size:14px;font-weight:700;margin-left:auto;color:var(--text-muted);}
+        
+        /* Table styles */
+        .table-card{background:var(--card-bg);border-radius:20px;border:1px solid var(--border);overflow:hidden;margin-bottom:25px;}
+        .data-table{width:100%;border-collapse:collapse;}
+        .data-table th, .data-table td{padding:16px 20px;text-align:left;border-bottom:1px solid var(--border);font-size:14px;}
+        .data-table th{background:#fafbfc;font-weight:700;color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:0.5px;}
+        .data-table tr:hover{background:#fafbfc;}
+        
+        .badge{padding:4px 8px;border-radius:30px;font-size:11px;font-weight:700;text-transform:uppercase;}
+        .badge-current{background:#d1fae5;color:var(--color-current);}
+        .badge-overdue{background:#fee2e2;color:var(--color-90-plus);}
+        
+        /* Actions */
+        .btn-action{padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:6px;transition:all 0.2s;}
+        .btn-remind{background:#eff6ff;color:#2563eb;}
+        .btn-remind:hover{background:#2563eb;color:white;}
+        .btn-view{background:#f1f5f9;color:var(--text-main);}
+        .btn-view:hover{background:var(--text-main);color:white;}
+        
+        /* Modals */
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:2000;justify-content:center;align-items:center;}
+        .modal-content{background:white;border-radius:24px;padding:32px;width:90%;max-width:650px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);}
+        .modal-content h3{font-size:18px;font-weight:800;margin-bottom:15px;}
+        .modal-buttons{display:flex;gap:12px;justify-content:flex-end;margin-top:20px;}
+        .btn{padding:10px 18px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;border:none;}
+        .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text-muted);}
+        .btn-primary{background:var(--primary);color:white;}
+        
+        .invoice-row{display:flex;justify-content:space-between;padding:12px 15px;border-bottom:1px solid var(--border);font-size:14px;}
+        .invoice-row:last-child{border-bottom:none;}
+        
+        .toast{position:fixed;bottom:30px;right:30px;background:#1a1a2e;color:white;padding:12px 20px;border-radius:10px;z-index:3000;display:none;align-items:center;gap:10px;}
+        .toast.show{display:flex;animation:slideIn 0.3s;}
+        @keyframes slideIn{from{transform:translateX(100%);opacity:0;}to{transform:translateX(0);opacity:1;}}
+        
+        footer{text-align:center;padding:25px;color:var(--text-muted);font-size:12px;}
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="page-header">
+            <h1><i class="fas fa-history"></i> Accounts Receivable Credit Aging</h1>
+        </div>
+        
+        <!-- KPI Cards -->
+        <div class="stats-grid">
+            <div class="stat-card current">
+                <div class="label">Current (0 Days)</div>
+                <div class="value" id="kpiCurrent">Rs. 0.00</div>
+            </div>
+            <div class="stat-card bracket1">
+                <div class="label">1 - 30 Days</div>
+                <div class="value" id="kpi30">Rs. 0.00</div>
+            </div>
+            <div class="stat-card bracket2">
+                <div class="label">31 - 60 Days</div>
+                <div class="value" id="kpi60">Rs. 0.00</div>
+            </div>
+            <div class="stat-card bracket3">
+                <div class="label">61 - 90 Days</div>
+                <div class="value" id="kpi90">Rs. 0.00</div>
+            </div>
+            <div class="stat-card bracket4">
+                <div class="label">90+ Days</div>
+                <div class="value" id="kpiOver90">Rs. 0.00</div>
+            </div>
+        </div>
+        
+        <!-- Progress Bar Card -->
+        <div class="aging-progress-card">
+            <h3><i class="fas fa-chart-pie"></i> Credit Age Distribution</h3>
+            <div class="progress-bar-container" id="progressBar">
+                <!-- Segments will be added here -->
+            </div>
+            <div class="progress-legend">
+                <div class="legend-item"><div class="legend-dot current"></div>Current</div>
+                <div class="legend-item"><div class="legend-dot bracket1"></div>1 - 30 Days</div>
+                <div class="legend-item"><div class="legend-dot bracket2"></div>31 - 60 Days</div>
+                <div class="legend-item"><div class="legend-dot bracket3"></div>61 - 90 Days</div>
+                <div class="legend-item"><div class="legend-dot bracket4"></div>90+ Days</div>
+            </div>
+        </div>
+        
+        <!-- Filters -->
+        <div class="filter-card">
+            <input type="text" id="searchCustomer" placeholder="Search by customer name or phone...">
+            <select id="bracketFilter">
+                <option value="all">All Outstanding</option>
+                <option value="current">Current only</option>
+                <option value="1_30">1 - 30 Days overdue</option>
+                <option value="31_60">31 - 60 Days overdue</option>
+                <option value="61_90">61 - 90 Days overdue</option>
+                <option value="90plus">90+ Days overdue</option>
+            </select>
+            <div class="total-count" id="totalDebtorsCount">0 Debtors</div>
+        </div>
+        
+        <!-- Debtors Listing Table -->
+        <div class="table-card">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Customer</th>
+                        <th style="text-align:right;">Total Balance</th>
+                        <th style="text-align:right;">Current</th>
+                        <th style="text-align:right;">1-30 Days</th>
+                        <th style="text-align:right;">31-60 Days</th>
+                        <th style="text-align:right;">61-90 Days</th>
+                        <th style="text-align:right;">90+ Days</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="debtorsList">
+                    <tr><td colspan="8" style="text-align:center;padding:45px;">Loading aging details...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- View Invoices Modal -->
+        <div id="invoicesModal" class="modal">
+            <div class="modal-content">
+                <h3 id="modalTitle">Customer Invoices</h3>
+                <div style="font-weight:bold; padding: 10px 15px; background:#f1f5f9; display:flex; justify-content:space-between; border-radius:8px; margin-bottom:10px;">
+                    <span>Invoice / Date</span>
+                    <span>Overdue / Balance Due</span>
+                </div>
+                <div id="invoicesList" style="max-height: 300px; overflow-y:auto; border: 1px solid var(--border); border-radius:10px;">
+                    <!-- Rows go here -->
+                </div>
+                <div class="modal-buttons">
+                    <button class="btn btn-outline" onclick="closeModal('invoicesModal')">Close</button>
+                </div>
+            </div>
+        </div>
+        
+        <footer><p>© 2026 DIGIBIZ - Credit Aging Terminal</p></footer>
+    </div>
+    
+    <div id="toast" class="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
+    
+    <script>
+        let currentBusinessId = null;
+        let debtorsData = {};
+        
+        const formatCurrency = (amt) => 'Rs. ' + (amt || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').textContent = msg;
+            toast.style.background = isError ? '#ef4444' : '#10b981';
+            toast.className = 'toast show';
+            setTimeout(() => { toast.className = 'toast'; }, 3000);
+        }
+        
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+        
+        async function loadCreditAging() {
+            if (!currentBusinessId) return;
+            
+            try {
+                // Fetch unpaid credit invoices
+                const snapshot = await db.collection('orders').doc(currentBusinessId).collection('list')
+                    .where('status', '==', 'unpaid')
+                    .get();
+                    
+                debtorsData = {};
+                
+                let kpiCur = 0, kpi30Amt = 0, kpi60Amt = 0, kpi90Amt = 0, kpiOverAmt = 0;
+                
+                snapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    const balanceDue = Number(data.balanceDue || 0);
+                    if (balanceDue <= 0) return;
+                    
+                    const cId = data.customerId || data.customerPhone || data.customerName || 'walk_in';
+                    const name = data.customerName || 'Walk-in Customer';
+                    const phone = data.customerPhone || '';
+                    
+                    let orderDate = new Date();
+                    if (data.createdAt && data.createdAt.toDate) {
+                        orderDate = data.createdAt.toDate();
+                    } else if (data.date) {
+                        orderDate = new Date(data.date);
+                    }
+                    
+                    // Diff in days
+                    const diffTime = Math.abs(new Date() - orderDate);
+                    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                    
+                    if (!debtorsData[cId]) {
+                        debtorsData[cId] = {
+                            id: cId,
+                            name: name,
+                            phone: phone,
+                            totalOutstanding: 0,
+                            current: 0,
+                            bracket1_30: 0,
+                            bracket31_60: 0,
+                            bracket61_90: 0,
+                            bracket90plus: 0,
+                            invoices: []
+                        };
+                    }
+                    
+                    debtorsData[cId].totalOutstanding += balanceDue;
+                    debtorsData[cId].invoices.push({
+                        invoiceNo: data.invoiceNo || doc.id,
+                        date: orderDate.toLocaleDateString(),
+                        total: data.total,
+                        balanceDue: balanceDue,
+                        days: diffDays
+                    });
+                    
+                    if (diffDays <= 0) {
+                        debtorsData[cId].current += balanceDue;
+                        kpiCur += balanceDue;
+                    } else if (diffDays <= 30) {
+                        debtorsData[cId].bracket1_30 += balanceDue;
+                        kpi30Amt += balanceDue;
+                    } else if (diffDays <= 60) {
+                        debtorsData[cId].bracket31_60 += balanceDue;
+                        kpi60Amt += balanceDue;
+                    } else if (diffDays <= 90) {
+                        debtorsData[cId].bracket61_90 += balanceDue;
+                        kpi90Amt += balanceDue;
+                    } else {
+                        debtorsData[cId].bracket90plus += balanceDue;
+                        kpiOverAmt += balanceDue;
+                    }
+                });
+                
+                // Update KPI Cards
+                document.getElementById('kpiCurrent').textContent = formatCurrency(kpiCur);
+                document.getElementById('kpi30').textContent = formatCurrency(kpi30Amt);
+                document.getElementById('kpi60').textContent = formatCurrency(kpi60Amt);
+                document.getElementById('kpi90').textContent = formatCurrency(kpi90Amt);
+                document.getElementById('kpiOver90').textContent = formatCurrency(kpiOverAmt);
+                
+                // Render Visual Age progress bar
+                const grandTotal = kpiCur + kpi30Amt + kpi60Amt + kpi90Amt + kpiOverAmt;
+                renderProgressBar(grandTotal, kpiCur, kpi30Amt, kpi60Amt, kpi90Amt, kpiOverAmt);
+                
+                renderDebtorsTable();
+                
+            } catch (err) {
+                console.error(err);
+                showToast('Failed to load credit aging data', true);
+            }
+        }
+        
+        function renderProgressBar(total, cur, b1, b2, b3, b4) {
+            const bar = document.getElementById('progressBar');
+            if (total === 0) {
+                bar.innerHTML = '<div style="width:100%; text-align:center; color:#64748b; font-size:12px; line-height:20px;">No Outstanding Debts</div>';
+                return;
+            }
+            
+            const pCur = ((cur/total)*100).toFixed(1);
+            const pB1 = ((b1/total)*100).toFixed(1);
+            const pB2 = ((b2/total)*100).toFixed(1);
+            const pB3 = ((b3/total)*100).toFixed(1);
+            const pB4 = ((b4/total)*100).toFixed(1);
+            
+            let html = '';
+            if(cur > 0) html += `<div class="progress-segment current" style="width:${pCur}%" title="Current: ${pCur}%">${pCur > 5 ? pCur+'%' : ''}</div>`;
+            if(b1 > 0) html += `<div class="progress-segment bracket1" style="width:${pB1}%" title="1-30 Days: ${pB1}%">${pB1 > 5 ? pB1+'%' : ''}</div>`;
+            if(b2 > 0) html += `<div class="progress-segment bracket2" style="width:${pB2}%" title="31-60 Days: ${pB2}%">${pB2 > 5 ? pB2+'%' : ''}</div>`;
+            if(b3 > 0) html += `<div class="progress-segment bracket3" style="width:${pB3}%" title="61-90 Days: ${pB3}%">${pB3 > 5 ? pB3+'%' : ''}</div>`;
+            if(b4 > 0) html += `<div class="progress-segment bracket4" style="width:${pB4}%" title="90+ Days: ${pB4}%">${pB4 > 5 ? pB4+'%' : ''}</div>`;
+            
+            bar.innerHTML = html;
+        }
+        
+        function renderDebtorsTable() {
+            const tbody = document.getElementById('debtorsList');
+            const searchVal = document.getElementById('searchCustomer').value.toLowerCase().trim();
+            const filterBracket = document.getElementById('bracketFilter').value;
+            
+            const list = Object.values(debtorsData).filter(d => {
+                // Search filter
+                const matchesSearch = d.name.toLowerCase().includes(searchVal) || d.phone.includes(searchVal);
+                
+                // Bracket filter
+                let matchesBracket = true;
+                if (filterBracket === 'current') matchesBracket = d.current > 0;
+                else if (filterBracket === '1_30') matchesBracket = d.bracket1_30 > 0;
+                else if (filterBracket === '31_60') matchesBracket = d.bracket31_60 > 0;
+                else if (filterBracket === '61_90') matchesBracket = d.bracket61_90 > 0;
+                else if (filterBracket === '90plus') matchesBracket = d.bracket90plus > 0;
+                
+                return matchesSearch && matchesBracket;
+            });
+            
+            document.getElementById('totalDebtorsCount').textContent = `${list.length} Debtors`;
+            
+            if (list.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:45px;color:#64748b;">No debtors match the selected filters.</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = list.map(d => {
+                return `<tr>
+                    <td>
+                        <div style="font-weight:700;">${d.name}</div>
+                        <div style="font-size:12px; color:var(--text-muted);">${d.phone || '-'}</div>
+                    </td>
+                    <td style="text-align:right; font-weight:800;">${formatCurrency(d.totalOutstanding)}</td>
+                    <td style="text-align:right; color:var(--color-current); font-weight:700;">${d.current > 0 ? formatCurrency(d.current) : '-'}</td>
+                    <td style="text-align:right; color:var(--color-1-30); font-weight:700;">${d.bracket1_30 > 0 ? formatCurrency(d.bracket1_30) : '-'}</td>
+                    <td style="text-align:right; color:var(--color-31-60); font-weight:700;">${d.bracket31_60 > 0 ? formatCurrency(d.bracket31_60) : '-'}</td>
+                    <td style="text-align:right; color:var(--color-61-90); font-weight:700;">${d.bracket61_90 > 0 ? formatCurrency(d.bracket61_90) : '-'}</td>
+                    <td style="text-align:right; color:var(--color-90-plus); font-weight:700;">${d.bracket90plus > 0 ? formatCurrency(d.bracket90plus) : '-'}</td>
+                    <td>
+                        <button class="btn-action btn-remind" onclick="sendReminder('${d.id}')"><i class="fas fa-bell"></i> Remind</button>
+                        <button class="btn-action btn-view" onclick="viewInvoices('${d.id}')"><i class="fas fa-file-invoice"></i> Details</button>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+        
+        window.viewInvoices = (cId) => {
+            const debtor = debtorsData[cId];
+            if (!debtor) return;
+            
+            document.getElementById('modalTitle').textContent = `Outstanding Invoices: ${debtor.name}`;
+            const list = document.getElementById('invoicesList');
+            
+            list.innerHTML = debtor.invoices.map(inv => {
+                const ageLabel = inv.days <= 0 ? 'Current' : `${inv.days} Days overdue`;
+                const isOverdue = inv.days > 0;
+                return `<div class="invoice-row">
+                    <div>
+                        <div style="font-weight:700;">Invoice: ${inv.invoiceNo}</div>
+                        <div style="font-size:12px; color:var(--text-muted);">Date: ${inv.date}</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-weight:800;">${formatCurrency(inv.balanceDue)}</div>
+                        <span class="badge ${isOverdue ? 'badge-overdue' : 'badge-current'}">${ageLabel}</span>
+                    </div>
+                </div>`;
+            }).join('');
+            
+            document.getElementById('invoicesModal').style.display = 'flex';
+        };
+        
+        window.sendReminder = async (cId) => {
+            const debtor = debtorsData[cId];
+            if (!debtor) return;
+            
+            const msg = `Dear ${debtor.name}, this is a friendly reminder that you have an outstanding balance of ${formatCurrency(debtor.totalOutstanding)} with us. Please settle it at your earliest convenience. Thank you!`;
+            
+            // Check if SMS API client is available or simulate SMS
+            try {
+                if (typeof window.smsClient === 'object' && window.smsClient.sendSms) {
+                    await window.smsClient.sendSms(debtor.phone, msg);
+                    showToast('SMS Reminder sent successfully!');
+                } else {
+                    // Simulating SMS Reminder
+                    console.log(`[SMS Reminder Sent] To: ${debtor.phone || 'N/A'}\nMessage: ${msg}`);
+                    showToast('SMS Reminder sent (Simulated)!');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Failed to send SMS reminder', true);
+            }
+        };
+        
+        // Listen to filters
+        document.getElementById('searchCustomer').oninput = renderDebtorsTable;
+        document.getElementById('bracketFilter').onchange = renderDebtorsTable;
+        
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) { window.location.href = '/'; return; }
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            currentBusinessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+            await loadCreditAging();
+        });
+    </script>
+</body>
+</html>

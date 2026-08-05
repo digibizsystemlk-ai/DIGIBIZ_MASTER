@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DIGIBIZ Scan">
+    <title>DIGIBIZ QR Mobile Attendance</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3595/3595568.png">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    
+    <script src="../../core/firebase-init.js?v=3"></script>
+
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+        body{font-family:'Inter',sans-serif;background:#0f172a;color:#f8fafc;min-height:100vh;display:flex;flex-direction:column;justify-content:space-between;padding:20px;overflow-x:hidden;}
+        
+        .header-bar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.1);margin-bottom:20px;}
+        .brand-title{font-family:'Outfit',sans-serif;font-size:18px;font-weight:900;color:#60a5fa;letter-spacing:0.5px;}
+        .header-actions{display:flex;gap:8px;align-items:center;}
+        .user-chip{font-size:12px;font-weight:800;background:rgba(16,185,129,0.2);color:#34d399;padding:6px 12px;border-radius:30px;border:1px solid rgba(52,211,153,0.3);cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+        .btn-install-pwa{font-size:11.5px;font-weight:800;background:#8b5cf6;color:white;padding:6px 12px;border-radius:30px;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:4px;box-shadow:0 4px 10px rgba(139,92,246,0.3);}
+
+        .scan-card{background:rgba(30,41,59,0.8);backdrop-filter:blur(16px);border-radius:24px;border:1px solid rgba(255,255,255,0.1);padding:24px;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,0.4);margin-bottom:20px;}
+        .scan-card h2{font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;color:#fff;margin-bottom:6px;}
+        .scan-card p{font-size:13px;color:#94a3b8;margin-bottom:20px;}
+
+        .auto-mode-banner{background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);color:#93c5fd;padding:12px 14px;border-radius:14px;font-size:13px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;justify-content:center;gap:8px;}
+
+        /* Scanner Frame */
+        #reader{width:100%;max-width:320px;margin:0 auto;border-radius:20px;overflow:hidden;border:3px solid #3b82f6;box-shadow:0 0 25px rgba(59,130,246,0.3);}
+        #reader video{object-fit:cover;border-radius:16px;}
+
+        .mode-toggle{display:grid;grid-template-columns:1fr;gap:10px;margin-top:20px;background:rgba(15,23,42,0.8);padding:6px;border-radius:16px;border:1px solid rgba(255,255,255,0.05);}
+        .mode-btn{padding:16px;border-radius:12px;border:none;font-weight:800;font-size:15px;cursor:pointer;transition:all 0.2s;color:white;width:100%;display:flex;align-items:center;justify-content:center;gap:8px;}
+        .mode-btn.active-in{background:#10b981;box-shadow:0 4px 16px rgba(16,185,129,0.4);}
+        .mode-btn.active-out{background:#ef4444;box-shadow:0 4px 16px rgba(239,68,68,0.4);}
+
+        /* Overlays */
+        .overlay-screen{display:flex;position:fixed;inset:0;background:rgba(15,23,42,0.98);z-index:99999;flex-direction:column;justify-content:center;align-items:center;padding:24px;backdrop-filter:blur(12px);}
+        .overlay-card{background:rgba(30,41,59,0.95);border-radius:24px;border:1px solid rgba(255,255,255,0.15);padding:32px 24px;width:100%;max-width:380px;text-align:center;box-shadow:0 25px 50px rgba(0,0,0,0.5);}
+        .overlay-card i{font-size:48px;margin-bottom:16px;}
+        .overlay-card h2{font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;color:white;margin-bottom:10px;}
+        .overlay-card p{font-size:13px;color:#94a3b8;margin-bottom:24px;line-height:1.6;}
+        
+        .input-phone{width:100%;padding:14px;background:rgba(15,23,42,0.8);border:1.5px solid #3b82f6;border-radius:12px;color:white;font-size:16px;font-weight:700;text-align:center;margin-bottom:20px;letter-spacing:1px;}
+        .btn-login{width:100%;background:#3b82f6;color:white;border:none;padding:14px;border-radius:12px;font-weight:700;font-size:15px;cursor:pointer;box-shadow:0 4px 12px rgba(59,130,246,0.3);}
+        
+        /* Success Overlay */
+        .success-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,0.95);z-index:9999;flex-direction:column;justify-content:center;align-items:center;padding:30px;backdrop-filter:blur(10px);}
+        .success-icon{font-size:72px;color:#10b981;margin-bottom:20px;animation:pulse 1s infinite;}
+        .success-overlay h3{font-family:'Outfit',sans-serif;font-size:26px;font-weight:900;color:white;margin-bottom:8px;}
+        .success-overlay p{font-size:14px;color:#94a3b8;margin-bottom:24px;text-align:center;}
+        .btn-done{background:#3b82f6;color:white;border:none;padding:14px 32px;border-radius:14px;font-weight:700;font-size:15px;cursor:pointer;}
+
+        .geo-status{font-size:11.5px;color:#64748b;margin-top:15px;display:flex;align-items:center;justify-content:center;gap:6px;}
+        .geo-dot{width:8px;height:8px;border-radius:50%;background:#10b981;}
+
+        @keyframes pulse{0%{transform:scale(1);}50%{transform:scale(1.1);}100%{transform:scale(1);}}
+    </style>
+</head>
+<body>
+    <div>
+        <div class="header-bar">
+            <div class="brand-title"><i class="fa-solid fa-qrcode"></i> DIGIBIZ SCAN</div>
+            <div class="header-actions">
+                <button class="btn-install-pwa" id="pwaInstallBtn" onclick="installPWA()" style="display:none;"><i class="fa-solid fa-download"></i> Install App</button>
+                <div class="user-chip" id="empChip" onclick="logoutEmp()"><i class="fa-solid fa-user"></i> Logged In</div>
+            </div>
+        </div>
+
+        <div class="scan-card">
+            <h2 id="mainEmpHeader">Scan Workplace QR Code</h2>
+            <p id="subEmpTitle">ආයතන පරිශ්‍රයේ ඇති QR Code එක කැමරාවට පෙන්වන්න</p>
+
+            <!-- Smart Auto Mode Status Banner -->
+            <div class="auto-mode-banner" id="autoModeBanner">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> <span id="autoModeText">Auto Detecting Shift Status...</span>
+            </div>
+
+            <!-- Single Exclusive Mode Button -->
+            <div class="mode-toggle">
+                <button class="mode-btn active-in" id="btnModeIn" onclick="setScanMode('IN')">☀️ CHECK IN (පැමිණීම සටහන් කරන්න)</button>
+                <button class="mode-btn active-out" id="btnModeOut" onclick="setScanMode('OUT')" style="display:none;">🌙 CHECK OUT (පිටවීම සටහන් කරන්න)</button>
+            </div>
+
+            <div style="margin-top:20px;">
+                <div id="reader"></div>
+            </div>
+            <div style="margin-top:15px;">
+                <a href="javascript:void(0)" onclick="resetEmployeeTestLogs()" style="font-size:12px;color:#94a3b8;text-decoration:none;font-weight:600;"><i class="fa-solid fa-rotate-left"></i> 🔄 Reset Test Logs (පැමිණීම මුල සිට ආරම්භ කරන්න)</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generic Access Blocked Screen -->
+    <div class="overlay-screen" id="blockedOverlay" style="display:none;">
+        <div class="overlay-card">
+            <i class="fa-solid fa-triangle-exclamation" style="color:#ef4444;"></i>
+            <h2>Invalid / Direct Access Link</h2>
+            <p style="color:#f87171;font-weight:600;">⚠️ මෙම Mobile Attendance PWA එක වෙත සෘජුව (Direct URL) පිවිසිය නොහැක.</p>
+            <p>මෙහි අනන්‍යතාවයක් නොමැති නිසා, කරුණාකර ඔබගේ <strong>පෞද්ගලික Unique PWA Link එක</strong> (HR/Manager මගින්) ලබාගෙන පිවිසෙන්න.</p>
+        </div>
+    </div>
+
+    <!-- Employee Security Login Verification Screen -->
+    <div class="overlay-screen" id="loginOverlay" style="display:none;">
+        <div class="overlay-card">
+            <i class="fa-solid fa-shield-halved" style="color:#60a5fa;"></i>
+            <h2>Employee Login</h2>
+            <p id="loginTargetEmp">Employee Identity Verification</p>
+            <input type="tel" class="input-phone" id="loginPhone" placeholder="Enter Registered Phone" autofocus>
+            <button class="btn-login" onclick="verifyEmpPhone()"><i class="fa-solid fa-right-to-bracket"></i> Confirm Identity & Login</button>
+        </div>
+    </div>
+
+    <!-- Success Result Screen -->
+    <div class="success-overlay" id="successOverlay">
+        <i class="fa-solid fa-circle-check success-icon"></i>
+        <h3 id="resultTitle">ATTENDANCE MARKED!</h3>
+        <p id="resultSub">2026-08-04 | Check-In Successful<br>Location: Workplace Verified</p>
+        <button class="btn-done" onclick="closeSuccess()">Scan Again / Done</button>
+    </div>
+
+    <script>
+        let scanMode = 'IN';
+        let html5QrCode = null;
+        let isProcessing = false;
+        let deferredPrompt = null;
+
+        let urlEmpId = '';
+        let urlPhone = '';
+        let urlName = '';
+        let activeEmp = null;
+
+        // PWA Install Event Listener
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const btn = document.getElementById('pwaInstallBtn');
+            if (btn) btn.style.display = 'inline-flex';
+        });
+
+        function installPWA() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        document.getElementById('pwaInstallBtn').style.display = 'none';
+                    }
+                    deferredPrompt = null;
+                });
+            } else {
+                alert('📱 To install this App on your phone:\n\n1. Open browser menu (3 dots or share button)\n2. Tap "Add to Home Screen" or "Install App"');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            checkEmpAuth();
+        });
+
+        function getRegisteredEmployees() {
+            let list = [];
+            try {
+                const stored = localStorage.getItem('digibiz_registered_employees');
+                if (stored) list = JSON.parse(stored);
+            } catch(e) {}
+            if (!list || list.length === 0) {
+                list = [
+                    { empId: 'EMP-001', name: 'K. A. Perera', phone: '0771234567' },
+                    { empId: 'EMP-002', name: 'S. D. Silva', phone: '0719876543' },
+                    { empId: 'EMP-003', name: 'M. N. Fernando', phone: '0755551212' }
+                ];
+            }
+            return list;
+        }
+
+        function checkEmpAuth() {
+            const urlParams = new URLSearchParams(window.location.search);
+            urlEmpId = urlParams.get('empId') || '';
+            urlPhone = (urlParams.get('phone') || '').replace(/[^0-9]/g, '');
+            urlName = urlParams.get('name') ? decodeURIComponent(urlParams.get('name')) : '';
+
+            // Check stored session
+            const storedSession = localStorage.getItem('digibiz_emp_session');
+            if (storedSession) {
+                try {
+                    activeEmp = JSON.parse(storedSession);
+                } catch (e) {}
+            }
+
+            // Case 1: Generic direct access without parameters AND no active session -> BLOCK!
+            if (!urlEmpId && !urlPhone && (!activeEmp || !activeEmp.phone)) {
+                document.getElementById('blockedOverlay').style.display = 'flex';
+                document.getElementById('loginOverlay').style.display = 'none';
+                return;
+            }
+
+            // If session exists and matches URL params OR if already authenticated for this exact registered phone
+            if (activeEmp && activeEmp.phone && (!urlPhone || activeEmp.phone === urlPhone)) {
+                unlockScannerScreen(activeEmp);
+                return;
+            }
+
+            // Case 2: Opened with unique URL parameters -> Show Security Verification Screen!
+            document.getElementById('blockedOverlay').style.display = 'none';
+            document.getElementById('loginOverlay').style.display = 'flex';
+            
+            const displayTitle = urlName ? `<strong>${urlName}</strong> (${urlEmpId})` : `<strong>${urlEmpId}</strong>`;
+            document.getElementById('loginTargetEmp').innerHTML = `Identity Verification for:<br>${displayTitle}<br><span style="font-size:11.5px;color:#94a3b8;">ලියාපදිංචි දුරකථන අංකය ඇතුළත් කරන්න:</span>`;
+        }
+
+        function verifyEmpPhone() {
+            const inputPhoneRaw = document.getElementById('loginPhone').value.trim();
+            const inputPhone = inputPhoneRaw.replace(/[^0-9]/g, '');
+
+            if (!inputPhone || inputPhone.length < 8) {
+                alert('කරුණාකර නිවැරදි දුරකථන අංකය ඇතුළත් කරන්න.');
+                return;
+            }
+
+            const regList = getRegisteredEmployees();
+            const matchedEmp = regList.find(e => e.phone.replace(/[^0-9]/g, '') === inputPhone);
+
+            // Strict Validation Rule: Must exist in registered Employee Directory!
+            if (!matchedEmp) {
+                alert(`❌ Access Denied (ප්‍රවේශය අකැපයි):\n\n'${inputPhoneRaw}' අංකය මෙම ආයතනයේ (Employee Directory) ලියාපදිංචි සේවක ගිණුමක් නොවේ.\n\nලියාපදිංචි නොකළ අංක මගින් PWA එකට Log විය නොහැක. කරුණාකර HR මගින් ඔබගේ නම සහ අංකය ඇතුළත් කර ගන්න.`);
+                return;
+            }
+
+            // Also check URL parameters if present
+            if (urlPhone && inputPhone !== urlPhone) {
+                alert(`❌ Link Verification Error:\n\nඇතුළත් කළ අංකය මෙම සේවක PWA Link එක (Identity) හා නොගැලපේ.`);
+                return;
+            }
+
+            activeEmp = {
+                empId: matchedEmp.empId,
+                phone: matchedEmp.phone,
+                name: matchedEmp.name,
+                isLogged: true,
+                loggedAt: Date.now()
+            };
+
+            localStorage.setItem('digibiz_emp_session', JSON.stringify(activeEmp));
+            document.getElementById('loginOverlay').style.display = 'none';
+            unlockScannerScreen(activeEmp);
+        }
+
+        function unlockScannerScreen(emp) {
+            document.getElementById('empChip').innerHTML = `<i class="fa-solid fa-user-check"></i> ${emp.name}`;
+            document.getElementById('mainEmpHeader').textContent = `Welcome, ${emp.name}`;
+            document.getElementById('subEmpTitle').innerHTML = `Emp ID: <strong>${emp.empId}</strong> | Phone: <strong>${emp.phone}</strong>`;
+            
+            autoDetectScanMode(emp);
+            initScanner();
+        }
+
+        function autoDetectScanMode(emp) {
+            let logs = [];
+            try {
+                const stored = localStorage.getItem('digibiz_attendance_logs');
+                if (stored) logs = JSON.parse(stored);
+            } catch(e) {}
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            const empLogsToday = logs.filter(l => (l.empId === emp.empId || l.phone === emp.phone) && l.date === todayStr);
+
+            const lastLog = empLogsToday.length > 0 ? empLogsToday[0] : null;
+
+            const btnIn = document.getElementById('btnModeIn');
+            const btnOut = document.getElementById('btnModeOut');
+
+            if (!lastLog || lastLog.mode === 'OUT') {
+                // Next action is CHECK IN -> Hide Check Out completely!
+                scanMode = 'IN';
+                btnIn.style.display = 'flex';
+                btnOut.style.display = 'none';
+                document.getElementById('autoModeText').innerHTML = `Status: 🔴 Off-Duty (👉 ඊළඟ පියවර: <strong>☀️ CHECK IN / පැමිණීම</strong>)`;
+            } else {
+                // Checked In already today, next action is CHECK OUT -> Hide Check In completely!
+                scanMode = 'OUT';
+                btnIn.style.display = 'none';
+                btnOut.style.display = 'flex';
+                document.getElementById('autoModeText').innerHTML = `Status: 🟢 Checked In at <strong>${lastLog.inTime || lastLog.time}</strong> (👉 ඊළඟ පියවර: <strong>🌙 CHECK OUT / පිටවීම</strong>)`;
+            }
+        }
+
+        function logoutEmp() {
+            if (confirm(`ඔබට (${activeEmp ? activeEmp.name : 'ගිණුමෙන්'}) Logout වී පරීක්ෂණ දත්ත Reset කිරීමට අවශ්‍ය බව තහවුරු කරන්න?`)) {
+                localStorage.removeItem('digibiz_emp_session');
+                localStorage.removeItem('digibiz_attendance_logs');
+                window.location.href = window.location.pathname + (urlEmpId ? `?empId=${urlEmpId}&phone=${urlPhone}&name=${encodeURIComponent(urlName)}` : '');
+            }
+        }
+
+        function resetEmployeeTestLogs() {
+            if (confirm('M. N. Fernando ගේ සියලුම පරීක්ෂණ පැමිණීම් (Check-In) අවලංගු කර මුල සිට ආරම්භ කිරීමට අවශ්‍යද?')) {
+                localStorage.removeItem('digibiz_attendance_logs');
+                if (activeEmp) autoDetectScanMode(activeEmp);
+                alert('✅ පැමිණීමේ දත්ත සාර්ථකව අවලංගු කරන ලදී! දැන් "☀️ CHECK IN (පැමිණීම)" දර්ශනය වේ.');
+            }
+        }
+
+        function setScanMode(mode) {
+            scanMode = mode;
+        }
+
+        function initGeolocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    document.getElementById('geoText').textContent = `GPS Verified (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`;
+                }, (err) => {
+                    document.getElementById('geoText').textContent = 'GPS Active (Location Saved)';
+                });
+            }
+        }
+
+        function initScanner() {
+            if (html5QrCode) return;
+            html5QrCode = new Html5Qrcode("reader");
+            const config = { fps: 10, qrbox: { width: 220, height: 220 } };
+
+            html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess)
+                .catch(err => {
+                    console.warn("Camera start fallback to user camera:", err);
+                    html5QrCode.start({ facingMode: "user" }, config, onScanSuccess).catch(e => {
+                        alert("Camera access required for QR scanning.");
+                    });
+                });
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            // Haptic Vibration & Audio Feedback
+            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const dateStr = now.toISOString().split('T')[0];
+            const empId = activeEmp ? activeEmp.empId : 'EMP-001';
+            const empName = activeEmp ? activeEmp.name : 'Employee';
+            const empPhone = activeEmp ? activeEmp.phone : '';
+
+            let logs = [];
+            try {
+                const stored = localStorage.getItem('digibiz_attendance_logs');
+                if (stored) logs = JSON.parse(stored);
+            } catch(e) {}
+
+            let targetLog = null;
+            const isOut = scanMode === 'OUT';
+
+            if (isOut) {
+                // Find existing open IN log today for this employee
+                const openLogIndex = logs.findIndex(l => (l.empId === empId || l.phone === empPhone) && l.date === dateStr && (l.inTime && l.inTime !== '--:--') && (!l.outTime || l.outTime === '--:--'));
+                if (openLogIndex !== -1) {
+                    targetLog = logs[openLogIndex];
+                    targetLog.outTime = timeStr;
+                    targetLog.mode = 'OUT';
+                    targetLog.status = 'Shift Completed';
+                    targetLog.timestamp = Date.now();
+                }
+            }
+
+            if (!targetLog) {
+                targetLog = {
+                    id: 'LOG-' + Date.now(),
+                    empId: empId,
+                    empName: empName,
+                    phone: empPhone,
+                    date: dateStr,
+                    time: timeStr,
+                    inTime: !isOut ? timeStr : '--:--',
+                    outTime: isOut ? timeStr : '--:--',
+                    workHours: !isOut ? 'In Progress' : '0.3 hrs',
+                    ot: '0.0 Hours',
+                    timestamp: Date.now(),
+                    shift: '12h Day Shift',
+                    mode: scanMode,
+                    method: 'Mobile QR Scan',
+                    status: !isOut ? 'Present (Checked In)' : 'Shift Completed'
+                };
+                logs.unshift(targetLog);
+            }
+
+            localStorage.setItem('digibiz_attendance_logs', JSON.stringify(logs));
+
+            // Firestore Cloud Sync (Both Top-Level and Tenant Sub-Collection)
+            const targetBid = (activeEmp && activeEmp.bid) ? activeEmp.bid : (localStorage.getItem('currentBusinessId') || 'ATTENDANCE_BIZ_001');
+            const firestoreDb = window.db || (window.firebase && window.firebase.firestore ? window.firebase.firestore() : null);
+            if (firestoreDb) {
+                firestoreDb.collection('attendance_logs').doc(targetLog.id).set(targetLog, { merge: true }).catch(e => console.warn('Top-level Firestore save err:', e));
+                firestoreDb.collection('businesses').doc(targetBid).collection('attendance_logs').doc(targetLog.id).set(targetLog, { merge: true }).catch(e => console.warn('Sub-collection Firestore save err:', e));
+            }
+
+            document.getElementById('resultTitle').textContent = scanMode === 'IN' ? 'CHECK-IN SUCCESSFUL!' : 'CHECK-OUT SUCCESSFUL!';
+            document.getElementById('resultSub').innerHTML = `Employee: <strong>${empName}</strong> (${empPhone})<br>Time: <strong>${timeStr}</strong> (${dateStr})<br>Mode: <strong>${scanMode === 'IN' ? '☀️ Check In' : '🌙 Check Out'}</strong><br>Method: Verified Unique PWA Scanner`;
+
+            document.getElementById('successOverlay').style.display = 'flex';
+            
+            if (activeEmp) autoDetectScanMode(activeEmp);
+        }
+
+        function closeSuccess() {
+            document.getElementById('successOverlay').style.display = 'none';
+            isProcessing = false;
+        }
+    </script>
+</body>
+</html>

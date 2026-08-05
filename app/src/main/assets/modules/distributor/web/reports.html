@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=34"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/auth-roles.js?v=47"></script>
+    <script src="/core/business-types.js?v=34"></script>
+    <script src="/core/dashboard-core.js?v=34"></script>
+    <script src="/core/subscription-manager.js?v=2"></script>
+    <script src="/core/distributor-inventory.js?v=34"></script>
+    <script src="/core/sidebar.js?v=1008"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #f3f4f6;
+        }
+        .main-content {
+            padding: 24px;
+            min-height: 100vh;
+        }
+        .page-header {
+            margin-bottom: 24px;
+        }
+        .page-header h1 {
+            font-size: 24px;
+            color: #111827;
+        }
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .tab {
+            padding: 8px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            background: #f3f4f6;
+        }
+        .tab.active {
+            background: #10b981;
+            color: white;
+        }
+        .date-range, .filter-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        .date-range input, .filter-row input, .filter-row select {
+            padding: 8px 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+        .filter-field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 140px;
+        }
+        .filter-field label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #64748b;
+        }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            background: #10b981;
+            color: white;
+        }
+        .report-card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .report-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            overflow-x: auto;
+            display: block;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        th {
+            background: #f9fafb;
+            font-weight: 600;
+        }
+        .total-row {
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 2px solid #e5e7eb;
+            font-weight: 600;
+            text-align: right;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #9ca3af;
+        }
+        @media (max-width: 768px) {
+            .main-content {
+                padding: 16px;
+            }
+            th, td {
+                padding: 8px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="page-header">
+            <h1>📊 Reports</h1>
+            <p>Sales reports, free items analysis, and returns reports</p>
+        </div>
+
+        <div class="date-range">
+            <div class="filter-field">
+                <label for="startDate">From</label>
+                <input type="date" id="startDate">
+            </div>
+            <div class="filter-field">
+                <label for="endDate">To</label>
+                <input type="date" id="endDate">
+            </div>
+            <button class="btn" onclick="loadReports()">🔍 Generate Report</button>
+        </div>
+        <div class="filter-row">
+            <div class="filter-field" style="min-width:200px;flex:1;">
+                <label for="reportSearchName">Name / order #</label>
+                <input type="text" id="reportSearchName" placeholder="Shop, rep, order number…">
+            </div>
+            <div class="filter-field">
+                <label for="reportBrandFilter">Brand</label>
+                <select id="reportBrandFilter"><option value="ALL">All brands</option></select>
+            </div>
+            <div class="filter-field">
+                <label for="reportRepFilter">Rep</label>
+                <select id="reportRepFilter"><option value="ALL">All reps</option></select>
+            </div>
+            <div class="filter-field">
+                <label for="reportStatusFilter">Order status</label>
+                <select id="reportStatusFilter">
+                    <option value="ALL">All statuses</option>
+                    <option value="pending">Pending (in queue only)</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="dispatched">Dispatched</option>
+                    <option value="delivered">Delivered</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-report="sales" onclick="switchReport('sales')">📈 Sales Report</div>
+            <div class="tab" data-report="stock" onclick="switchReport('stock')">📦 Stock by Brand</div>
+            <div class="tab" data-report="free" onclick="switchReport('free')">🎁 Free Items Report</div>
+            <div class="tab" data-report="returns" onclick="switchReport('returns')">↩️ Returns Report</div>
+            <div class="tab" data-report="rep" onclick="switchReport('rep')">👥 Rep Performance</div>
+        </div>
+
+        <div id="reportContainer" class="loading">Select date range and generate report...</div>
+    </div>
+
+    <script>
+        let currentBusinessId = null;
+        let currentReport = 'sales';
+        const BDK_EMAIL = 'bdkariyapperuma@gmail.com';
+        let currentUserEmail = '';
+        window.__digibizOrdersEnriched = [];
+        window.__digibizPendingEnriched = [];
+
+        function escapeReportHtml(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function escapeReportAttr(s) {
+            return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        }
+
+        function lineAmountFromOrderItem(item) {
+            const rate = Number(item.unitPrice) || 0;
+            const oq = Number(item.orderedQty) || 0;
+            const fq = Number(item.freeQty) || 0;
+            const rq = Number(item.returnQty) || 0;
+            if (item.totalPrice != null && !Number.isNaN(Number(item.totalPrice))) return Number(item.totalPrice);
+            return oq * rate + fq * rate - rq * rate;
+        }
+
+        function switchReport(report) {
+            currentReport = report;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            const tab = document.querySelector(`.tab[data-report="${report}"]`);
+            if (tab) tab.classList.add('active');
+            loadReports();
+        }
+
+        async function enrichOrderDoc(doc, forcedStatus) {
+            const order = doc.data();
+            let repName = order.repId;
+            try {
+                const repDoc = await db.collection('reps').doc(order.repId).get();
+                if (repDoc.exists) repName = repDoc.data().name;
+            } catch (e) { /* ignore */ }
+            let shopName = order.shopId;
+            try {
+                const shopDoc = await db.collection('shops').doc(order.shopId).get();
+                if (shopDoc.exists) shopName = shopDoc.data().name;
+            } catch (e2) { /* ignore */ }
+            const st = forcedStatus != null ? forcedStatus : String(order.status || '').toLowerCase();
+            return {
+                ...order,
+                id: doc.id,
+                status: st,
+                repName,
+                shopName,
+                orderDate: order.orderDate?.toDate ? order.orderDate.toDate() : null
+            };
+        }
+
+        function populateReportFilterSelects(combined) {
+            const brandEl = document.getElementById('reportBrandFilter');
+            const repEl = document.getElementById('reportRepFilter');
+            if (!brandEl || !repEl) return;
+            const prevB = brandEl.value || 'ALL';
+            const prevR = repEl.value || 'ALL';
+            const brands = new Set();
+            const reps = new Set();
+            combined.forEach((o) => {
+                if (o.repName) reps.add(String(o.repName));
+                (o.items || []).forEach((it) => {
+                    brands.add((String(it.productBrand || '').trim()) || 'Unbranded');
+                });
+            });
+            brandEl.innerHTML = '<option value="ALL">All brands</option>' +
+                [...brands].sort((a, b) => a.localeCompare(b)).map((b) =>
+                    `<option value="${escapeReportAttr(b)}">${escapeReportHtml(b)}</option>`).join('');
+            repEl.innerHTML = '<option value="ALL">All reps</option>' +
+                [...reps].sort((a, b) => a.localeCompare(b)).map((r) =>
+                    `<option value="${escapeReportAttr(r)}">${escapeReportHtml(r)}</option>`).join('');
+            brandEl.value = brands.has(prevB) ? prevB : 'ALL';
+            repEl.value = reps.has(prevR) ? prevR : 'ALL';
+        }
+
+        function applyReportFilters() {
+            const status = document.getElementById('reportStatusFilter').value;
+            const brand = document.getElementById('reportBrandFilter').value;
+            const rep = document.getElementById('reportRepFilter').value;
+            const q = (document.getElementById('reportSearchName').value || '').trim().toLowerCase();
+            let pool = [];
+            if (status === 'ALL') {
+                pool = [...window.__digibizPendingEnriched, ...window.__digibizOrdersEnriched];
+            } else if (status === 'pending') {
+                pool = [...window.__digibizPendingEnriched];
+            } else {
+                pool = window.__digibizOrdersEnriched.filter((o) => String(o.status || '').toLowerCase() === status);
+            }
+            return pool.filter((o) => {
+                if (rep !== 'ALL' && String(o.repName || '') !== rep) return false;
+                if (brand !== 'ALL' && !(o.items || []).some((it) => (((String(it.productBrand || '').trim()) || 'Unbranded') === brand))) return false;
+                if (q) {
+                    const hay = [o.shopName, o.repName, o.orderNumber, o.id].map((x) => String(x || '').toLowerCase()).join(' ');
+                    if (!hay.includes(q)) return false;
+                }
+                return true;
+            });
+        }
+
+        function refreshReportView() {
+            const filtered = applyReportFilters();
+            if (currentReport === 'sales') {
+                displaySalesReport(filtered);
+            } else if (currentReport === 'free') {
+                displayFreeItemsReport(filtered);
+            } else if (currentReport === 'returns') {
+                displayReturnsReport(filtered);
+            } else if (currentReport === 'rep') {
+                displayRepPerformance(filtered);
+            } else if (currentReport === 'accounting') {
+                displayAccountingReport();
+            }
+        }
+
+        function bindReportFilterEventsOnce() {
+            if (window.__digibizReportFiltersBound) return;
+            window.__digibizReportFiltersBound = true;
+            ['reportBrandFilter', 'reportRepFilter', 'reportStatusFilter'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('change', () => refreshReportView());
+            });
+            const nameEl = document.getElementById('reportSearchName');
+            if (nameEl) {
+                nameEl.addEventListener('input', () => {
+                    clearTimeout(window.__digibizReportSearchDebounce);
+                    window.__digibizReportSearchDebounce = setTimeout(() => refreshReportView(), 220);
+                });
+            }
+        }
+
+        async function loadReports() {
+            let startDate = document.getElementById('startDate').value;
+            let endDate = document.getElementById('endDate').value;
+            
+            if (!startDate || !endDate) {
+                const today = new Date();
+                const lastMonth = new Date();
+                lastMonth.setMonth(lastMonth.getMonth() - 1);
+                
+                if (!startDate) document.getElementById('startDate').value = lastMonth.toISOString().split('T')[0];
+                if (!endDate) document.getElementById('endDate').value = today.toISOString().split('T')[0];
+                
+                startDate = document.getElementById('startDate').value;
+                endDate = document.getElementById('endDate').value;
+            }
+            
+            const start = new Date(startDate);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            
+            const container = document.getElementById('reportContainer');
+            container.innerHTML = '<div class="loading">Loading report...</div>';
+            
+            try {
+                if (currentReport === 'stock') {
+                    const productsSnap = await db.collection('products')
+                        .where('businessId', '==', currentBusinessId)
+                        .get();
+                    displayStockByBrandReport(container, productsSnap);
+                    return;
+                }
+                if (currentReport === 'accounting') {
+                    await displayAccountingReport();
+                    return;
+                }
+
+                const [ordersSnap, pendingSnap] = await Promise.all([
+                    db.collection('orders')
+                        .where('businessId', '==', currentBusinessId)
+                        .where('orderDate', '>=', start)
+                        .where('orderDate', '<=', end)
+                        .get(),
+                    db.collection('pendingOrders')
+                        .where('businessId', '==', currentBusinessId)
+                        .where('orderDate', '>=', start)
+                        .where('orderDate', '<=', end)
+                        .get()
+                ]);
+
+                const ordersEnriched = await Promise.all(ordersSnap.docs.map((d) => enrichOrderDoc(d)));
+                const pendingEnriched = await Promise.all(pendingSnap.docs.map((d) => enrichOrderDoc(d, 'pending')));
+                window.__digibizOrdersEnriched = ordersEnriched;
+                window.__digibizPendingEnriched = pendingEnriched;
+                populateReportFilterSelects([...pendingEnriched, ...ordersEnriched]);
+                bindReportFilterEventsOnce();
+                refreshReportView();
+                
+            } catch (error) {
+                console.error('Error:', error);
+                container.innerHTML = '<div class="loading">Error loading report</div>';
+            }
+        }
+
+        function displaySalesReport(orders) {
+            const container = document.getElementById('reportContainer');
+            const filteredOrders = orders;
+
+            const totalSales = filteredOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+            const totalOrders = filteredOrders.length;
+
+            const byRep = {};
+            filteredOrders.forEach(order => {
+                if (!byRep[order.repName]) byRep[order.repName] = { count: 0, amount: 0 };
+                byRep[order.repName].count++;
+                byRep[order.repName].amount += order.totalAmount || 0;
+            });
+
+            const byDay = {};
+            filteredOrders.forEach(order => {
+                const day = order.orderDate?.toLocaleDateString();
+                if (day) {
+                    if (!byDay[day]) byDay[day] = { count: 0, amount: 0 };
+                    byDay[day].count++;
+                    byDay[day].amount += order.totalAmount || 0;
+                }
+            });
+
+            const salesByBrand = {};
+            filteredOrders.forEach(order => {
+                (order.items || []).forEach(item => {
+                    const b = (item.productBrand || '').trim() || 'Unbranded';
+                    const amt = lineAmountFromOrderItem(item);
+                    if (!salesByBrand[b]) salesByBrand[b] = { amount: 0, units: 0 };
+                    salesByBrand[b].amount += amt;
+                    salesByBrand[b].units += (Number(item.orderedQty) || 0) + (Number(item.freeQty) || 0);
+                });
+            });
+            const brandRows = Object.entries(salesByBrand).sort((a, b) => b[1].amount - a[1].amount);
+
+            container.innerHTML = `
+                <div class="report-card">
+                    <div class="report-title">📈 Sales Summary</div>
+                    <p style="font-size:12px;color:#64748b;margin-bottom:12px;">Filters above apply together: date range, name/order search, brand, rep, and order status (including pending queue).</p>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
+                        <div>
+                            <div style="font-size: 12px; color: #6b7280;">Total Orders</div>
+                            <div style="font-size: 28px; font-weight: bold;">${totalOrders}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #6b7280;">Total Sales</div>
+                            <div style="font-size: 28px; font-weight: bold; color: #10b981;">Rs ${totalSales.toLocaleString()}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #6b7280;">Average Order Value</div>
+                            <div style="font-size: 28px; font-weight: bold;">Rs ${totalOrders ? Math.round(totalSales / totalOrders).toLocaleString() : 0}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="report-card">
+                    <div class="report-title">🏷️ Sales by brand (line totals)</div>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead><tr><th>Brand</th><th>Line units (ordered + free)</th><th>Line revenue (Rs)</th></tr></thead>
+                            <tbody>
+                                ${brandRows.map(([brand, data]) => `
+                                    <tr><td>${escapeReportHtml(brand)}</td><td>${data.units}</td><td>Rs ${Math.round(data.amount).toLocaleString()}</td></tr>
+                                `).join('') || '<tr><td colspan="3">No line items in range</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="report-card">
+                    <div class="report-title">👥 Sales by Rep</div>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead><tr><th>Rep</th><th>Orders</th><th>Total Sales</th></tr></thead>
+                            <tbody>
+                                ${Object.entries(byRep).map(([rep, data]) => `
+                                    <tr><td>${escapeReportHtml(rep)}</td><td>${data.count}</td><td>Rs ${data.amount.toLocaleString()}</td></tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="report-card">
+                    <div class="report-title">📅 Daily Sales</div>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead><tr><th>Date</th><th>Orders</th><th>Sales</th></tr></thead>
+                            <tbody>
+                                ${Object.entries(byDay).map(([day, data]) => `
+                                    <tr><td>${escapeReportHtml(day)}</td><td>${data.count}</td><td>Rs ${data.amount.toLocaleString()}</td></tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function displayStockByBrandReport(container, productsSnap) {
+            const inv = window.DigiBizDistributorInventory;
+            const byBrand = {};
+            productsSnap.docs.forEach(doc => {
+                const d = doc.data();
+                const b = (d.brand || '').trim() || 'Unbranded';
+                const q = inv ? inv.numericStock(d) : (Number(d.currentStock != null ? d.currentStock : d.stock) || 0);
+                if (!byBrand[b]) byBrand[b] = { skus: 0, units: 0 };
+                byBrand[b].skus++;
+                byBrand[b].units += q;
+            });
+            const rows = Object.entries(byBrand).sort((a, b) => b[1].units - a[1].units);
+            container.innerHTML = `
+                <div class="report-card">
+                    <div class="report-title">📦 Stock by brand (current snapshot)</div>
+                    <p style="font-size:12px;color:#64748b;margin-bottom:12px;">Totals current stock quantities from your product list. The date range above does not apply to this tab.</p>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead><tr><th>Brand</th><th>SKUs</th><th>Total units in stock</th></tr></thead>
+                            <tbody>
+                                ${rows.map(([brand, data]) => `
+                                    <tr><td>${escapeReportHtml(brand)}</td><td>${data.skus}</td><td>${data.units}</td></tr>
+                                `).join('') || '<tr><td colspan="3">No products</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function displayFreeItemsReport(orders) {
+            const container = document.getElementById('reportContainer');
+            
+            const freeItems = [];
+            orders.forEach(order => {
+                (order.items || []).forEach(item => {
+                    if (item.freeQty && item.freeQty > 0) {
+                        freeItems.push({
+                            orderId: order.orderNumber || order.id.slice(-8),
+                            date: order.orderDate,
+                            rep: order.repName,
+                            shop: order.shopName,
+                            product: item.productName,
+                            brand: (item.productBrand || '').trim() || '—',
+                            freeQty: item.freeQty,
+                            reason: item.freeReason || 'No reason'
+                        });
+                    }
+                });
+            });
+            
+            const totalFreeQty = freeItems.reduce((sum, i) => sum + i.freeQty, 0);
+            
+            const byRep = {};
+            freeItems.forEach(item => {
+                if (!byRep[item.rep]) byRep[item.rep] = { qty: 0 };
+                byRep[item.rep].qty += item.freeQty;
+            });
+            
+            container.innerHTML = `
+                <div class="report-card">
+                    <div class="report-title">🎁 Free Items Summary</div>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 24px;">
+                        <div>
+                            <div style="font-size: 12px; color: #6b7280;">Total Free Items Given</div>
+                            <div style="font-size: 28px; font-weight: bold;">${totalFreeQty} units</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #6b7280;">Free Items Transactions</div>
+                            <div style="font-size: 28px; font-weight: bold;">${freeItems.length}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="report-card">
+                    <div class="report-title">👥 Free Items by Rep</div>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead><tr><th>Rep</th><th>Free Qty</th></tr></thead>
+                            <tbody>
+                                ${Object.entries(byRep).map(([rep, data]) => `
+                                    <tr><td>${rep}</td><td>${data.qty} units</td></tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="report-card">
+                    <div class="report-title">📋 Free Items Details</div>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead><tr><th>Order</th><th>Date</th><th>Rep</th><th>Shop</th><th>Product</th><th>Brand</th><th>Free Qty</th><th>Reason</th></tr></thead>
+                            <tbody>
+                                ${freeItems.slice(0, 50).map(item => `
+                                    <tr>
+                                        <td>${item.orderId}</td>
+                                        <td>${item.date?.toDate ? new Date(item.date.toDate()).toLocaleDateString() : '-'}</td>
+                                        <td>${item.rep}</td>
+                                        <td>${item.shop}</td>
+                                        <td>${item.product}</td>
+                                        <td>${escapeReportHtml(item.brand)}</td>
+                                        <td>${item.freeQty}</td>
+                                        <td>${item.reason}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function formatReportDate(d) {
+            if (!d) return '-';
+            if (d instanceof Date) return d.toLocaleDateString();
+            if (typeof d.toDate === 'function') return d.toDate().toLocaleDateString();
+            return '-';
+        }
+
+        function itemHasReturnCoverage(item, productName, productId) {
+            const same = (item.productName === productName) || (productId && item.productId === productId);
+            if (!same) return false;
+            const rc = Number(item.returnCompanyQty) || 0;
+            const rr = Number(item.returnResellQty) || 0;
+            const hasSplit = item.returnResellQty != null || item.returnCompanyQty != null;
+            const leg = Number(item.returnQty) || 0;
+            return rc > 0 || rr > 0 || (!hasSplit && leg > 0);
+        }
+
+        function collectReturnDetailRows(orders) {
+            const rows = [];
+            orders.forEach(order => {
+                const orderId = order.orderNumber || (order.id && order.id.slice ? order.id.slice(-8) : '');
+                const base = { orderId, date: order.orderDate, rep: order.repName, shop: order.shopName };
+                (order.items || []).forEach(item => {
+                    const rc = Number(item.returnCompanyQty) || 0;
+                    const rr = Number(item.returnResellQty) || 0;
+                    const hasSplit = item.returnResellQty != null || item.returnCompanyQty != null;
+                    const leg = Number(item.returnQty) || 0;
+                    const label = item.productName || item.name || '-';
+                    if (rc > 0 || rr > 0) {
+                        rows.push({ ...base, product: label, toCompany: rc, toResell: rr, reason: item.returnReason || '' });
+                    } else if (!hasSplit && leg > 0) {
+                        rows.push({ ...base, product: label, toCompany: 0, toResell: leg, reason: item.returnReason || '' });
+                    }
+                });
+                (order.returns || []).forEach(ret => {
+                    const pname = ret.productName || '-';
+                    const pid = ret.productId || '';
+                    const covered = (order.items || []).some(it => itemHasReturnCoverage(it, pname, pid));
+                    if (covered) return;
+                    rows.push({
+                        ...base,
+                        product: pname,
+                        toCompany: 0,
+                        toResell: Number(ret.returnQty) || 0,
+                        reason: ret.reason || ''
+                    });
+                });
+            });
+            return rows;
+        }
+
+        function displayReturnsReport(orders) {
+            const container = document.getElementById('reportContainer');
+            const returns = collectReturnDetailRows(orders);
+            const totalToCompany = returns.reduce((sum, r) => sum + r.toCompany, 0);
+            const totalToResell = returns.reduce((sum, r) => sum + r.toResell, 0);
+            const totalReturns = totalToCompany + totalToResell;
+            
+            container.innerHTML = `
+                <div class="report-card">
+                    <div class="report-title">↩️ Returns Summary</div>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 24px;">
+                        <div>
+                            <div style="font-size: 12px; color: #6b7280;">Total units (all returns)</div>
+                            <div style="font-size: 28px; font-weight: bold; color: #ef4444;">${totalReturns}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #6b7280;">Line items</div>
+                            <div style="font-size: 28px; font-weight: bold;">${returns.length}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #6b7280;">Return to company (Cat 1)</div>
+                            <div style="font-size: 22px; font-weight: bold; color: #b45309;">${totalToCompany} units</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 12px; color: #6b7280;">Return to resell (Cat 2)</div>
+                            <div style="font-size: 22px; font-weight: bold; color: #059669;">${totalToResell} units</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="report-card">
+                    <div class="report-title">📋 Returns Details</div>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead><tr><th>Order</th><th>Date</th><th>Rep</th><th>Shop</th><th>Product</th><th>To company</th><th>To resell</th><th>Reason</th></tr></thead>
+                            <tbody>
+                                ${returns.slice(0, 50).map(ret => `
+                                    <tr>
+                                        <td>${ret.orderId}</td>
+                                        <td>${formatReportDate(ret.date)}</td>
+                                        <td>${ret.rep}</td>
+                                        <td>${ret.shop}</td>
+                                        <td>${ret.product}</td>
+                                        <td>${ret.toCompany}</td>
+                                        <td>${ret.toResell}</td>
+                                        <td>${ret.reason || '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function displayRepPerformance(orders) {
+            const container = document.getElementById('reportContainer');
+            
+            const repStats = {};
+            const returnRows = collectReturnDetailRows(orders);
+            const returnsByRep = {};
+            returnRows.forEach(r => {
+                if (!returnsByRep[r.rep]) returnsByRep[r.rep] = { toCompany: 0, toResell: 0 };
+                returnsByRep[r.rep].toCompany += r.toCompany;
+                returnsByRep[r.rep].toResell += r.toResell;
+            });
+            orders.forEach(order => {
+                const rep = order.repName;
+                if (!repStats[rep]) {
+                    repStats[rep] = { orders: 0, sales: 0, freeGiven: 0, returnToCompany: 0, returnToResell: 0 };
+                }
+                repStats[rep].orders++;
+                repStats[rep].sales += order.totalAmount || 0;
+                
+                (order.items || []).forEach(item => {
+                    if (item.freeQty) repStats[rep].freeGiven += item.freeQty;
+                });
+            });
+            Object.keys(repStats).forEach(rep => {
+                const agg = returnsByRep[rep];
+                if (agg) {
+                    repStats[rep].returnToCompany = agg.toCompany;
+                    repStats[rep].returnToResell = agg.toResell;
+                }
+            });
+            
+            container.innerHTML = `
+                <div class="report-card">
+                    <div class="report-title">👥 Rep Performance Report</div>
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Rep</th>
+                                    <th>Orders</th>
+                                    <th>Total Sales</th>
+                                    <th>Free Items Given</th>
+                                    <th>Returns → company</th>
+                                    <th>Returns → resell</th>
+                                    <th>Avg Order Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${Object.entries(repStats).map(([rep, stats]) => `
+                                    <tr>
+                                        <td>${rep}</td>
+                                        <td>${stats.orders}</td>
+                                        <td>Rs ${stats.sales.toLocaleString()}</td>
+                                        <td>${stats.freeGiven} units</td>
+                                        <td>${stats.returnToCompany} units</td>
+                                        <td>${stats.returnToResell} units</td>
+                                        <td>Rs ${stats.orders ? Math.round(stats.sales / stats.orders).toLocaleString() : '0'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function parseDateKey(v) {
+            if (!v) return null;
+            if (typeof v.toDate === 'function') {
+                const d0 = v.toDate();
+                if (isNaN(d0.getTime())) return null;
+                return d0.toISOString().slice(0, 10);
+            }
+            const d = new Date(v);
+            if (isNaN(d.getTime())) return null;
+            return d.toISOString().slice(0, 10);
+        }
+
+        async function displayAccountingReport() {
+            const container = document.getElementById('reportContainer');
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const from = startDate ? new Date(startDate) : null;
+            const to = endDate ? new Date(endDate) : null;
+            if (from) from.setHours(0, 0, 0, 0);
+            if (to) to.setHours(23, 59, 59, 999);
+            container.innerHTML = '<div class="loading">Loading accounting report...</div>';
+            try {
+                const [supplierLedgerSnap, purchasesSnap] = await Promise.all([
+                    db.collection('supplier_ledger')
+                        .where('businessId', '==', currentBusinessId)
+                        .get(),
+                    db.collection('journal_entries')
+                        .where('businessId', '==', currentBusinessId)
+                        .where('account', '==', 'Purchases')
+                        .get()
+                ]);
+                const supplierOutstandingMap = {};
+                const purchaseRows = [];
+                supplierLedgerSnap.forEach((doc) => {
+                    const x = doc.data() || {};
+                    const dt = new Date(parseDateKey(x.date || x.createdAt) || '');
+                    if (from && dt < from) return;
+                    if (to && dt > to) return;
+                    const sname = String(x.supplierName || x.supplierId || 'Unknown');
+                    const amt = Number(x.amount) || 0;
+                    const sign = String(x.type || '').toLowerCase() === 'debit' ? -1 : 1;
+                    supplierOutstandingMap[sname] = (supplierOutstandingMap[sname] || 0) + (sign * amt);
+                });
+                purchasesSnap.forEach((doc) => {
+                    const x = doc.data() || {};
+                    const dtKey = parseDateKey(x.date || x.createdAt);
+                    const dt = dtKey ? new Date(dtKey) : null;
+                    if (from && dt && dt < from) return;
+                    if (to && dt && dt > to) return;
+                    purchaseRows.push({
+                        date: dtKey || '-',
+                        reference: x.reference || doc.id,
+                        amount: Number(x.amount) || 0
+                    });
+                });
+                purchaseRows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+                const supplierRows = Object.entries(supplierOutstandingMap).sort((a, b) => b[1] - a[1]);
+                const totalPurchases = purchaseRows.reduce((s, r) => s + r.amount, 0);
+                const totalOutstanding = supplierRows.reduce((s, r) => s + (Number(r[1]) || 0), 0);
+                container.innerHTML = `
+                    <div class="report-card">
+                        <div class="report-title">📒 Accounting Summary</div>
+                        <div style="display:grid;grid-template-columns:repeat(2, minmax(240px, 1fr));gap:16px;">
+                            <div><div style="font-size:12px;color:#6b7280;">Total Purchases</div><div style="font-size:26px;font-weight:700;color:#10b981;">Rs ${totalPurchases.toLocaleString()}</div></div>
+                            <div><div style="font-size:12px;color:#6b7280;">Supplier Outstanding</div><div style="font-size:26px;font-weight:700;">Rs ${totalOutstanding.toLocaleString()}</div></div>
+                        </div>
+                    </div>
+                    <div class="report-card">
+                        <div class="report-title">🏪 Supplier Outstanding Report</div>
+                        <table>
+                            <thead><tr><th>Supplier</th><th>Outstanding (Rs)</th></tr></thead>
+                            <tbody>
+                                ${supplierRows.map(([name, amount]) => `<tr><td>${escapeReportHtml(name)}</td><td>Rs ${(Number(amount) || 0).toLocaleString()}</td></tr>`).join('') || '<tr><td colspan="2">No supplier ledger rows in range</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="report-card">
+                        <div class="report-title">🧾 Purchase Ledger Report</div>
+                        <table>
+                            <thead><tr><th>Date</th><th>Reference</th><th>Amount (Rs)</th></tr></thead>
+                            <tbody>
+                                ${purchaseRows.map((r) => `<tr><td>${escapeReportHtml(r.date)}</td><td>${escapeReportHtml(r.reference)}</td><td>Rs ${r.amount.toLocaleString()}</td></tr>`).join('') || '<tr><td colspan="3">No purchase ledger rows in range</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } catch (e) {
+                console.error('Accounting report load failed', e);
+                container.innerHTML = '<div class="loading">Error loading accounting report</div>';
+            }
+        }
+
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (user) {
+                currentUserEmail = String(user.email || '').trim().toLowerCase();
+                currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                if (!currentBusinessId) {
+                    const context = window.dashboardCore ? await window.dashboardCore.getContext(user) : null;
+                    currentBusinessId = context ? context.businessId : null;
+                }
+                if (!currentBusinessId) {
+                    alert('Please select a business first');
+                    window.location.href = '/modules/core/dashboard.html';
+                    return;
+                }
+                localStorage.setItem('currentBusinessId', currentBusinessId);
+                sessionStorage.setItem('currentBusinessId', currentBusinessId);
+
+                try {
+                    const bizSnap = await db.collection('businesses').doc(currentBusinessId).get();
+                    const btype = bizSnap.exists ? String(bizSnap.data().businessType || '').toLowerCase() : '';
+                    if (btype === 'distributor' && window.DigibizDistributorPermissions) {
+                        const roleInfo = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
+                        let roleStr = String(roleInfo && roleInfo.role || '');
+                        const bu = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(user.uid).get();
+                        if (bu.exists && bu.data().role) roleStr = String(bu.data().role);
+                        const p = window.DigibizDistributorPermissions.permissionsForRole(roleStr);
+                        if (!p.canViewReportsFull) {
+                            alert('Reports are not available for your role.');
+                            window.location.href = '/modules/core/dashboard.html';
+                            return;
+                        }
+                    }
+                } catch (gateErr) {
+                    console.warn('Distributor reports gate:', gateErr);
+                }
+                
+                const today = new Date();
+                const lastMonth = new Date();
+                lastMonth.setMonth(lastMonth.getMonth() - 1);
+                document.getElementById('startDate').value = lastMonth.toISOString().split('T')[0];
+                document.getElementById('endDate').value = today.toISOString().split('T')[0];
+                if (currentUserEmail === BDK_EMAIL) {
+                    const tabHost = document.querySelector('.tabs');
+                    if (tabHost && !document.querySelector('.tab[data-report="accounting"]')) {
+                        const acc = document.createElement('div');
+                        acc.className = 'tab';
+                        acc.setAttribute('data-report', 'accounting');
+                        acc.textContent = '📒 Accounting';
+                        acc.onclick = function () { switchReport('accounting'); };
+                        tabHost.appendChild(acc);
+                    }
+                    try {
+                        const sp = new URLSearchParams(window.location.search);
+                        if ((sp.get('report') || '').toLowerCase() === 'accounting') currentReport = 'accounting';
+                    } catch (eQ) { /* ignore */ }
+                }
+                document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+                const activeTab = document.querySelector(`.tab[data-report="${currentReport}"]`);
+                if (activeTab) activeTab.classList.add('active');
+                
+                await loadReports();
+            } else {
+                window.location.href = '/';
+            }
+        });
+    </script>
+</body>
+</html>

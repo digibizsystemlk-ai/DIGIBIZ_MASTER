@@ -10,12 +10,26 @@ const BUSINESS_TYPES = {
         menus: [
             { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "CASHIER", "VIEWER"] },
             { icon: "🛒", name: "Point of Sale", link: "/modules/retail/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "CASHIER"] },
-            { icon: "📦", name: "Inventory", link: "/modules/retail/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
-            { icon: "📥", name: "Purchases", link: "/modules/retail/purchases.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
-            { icon: "👥", name: "Customers", link: "/modules/core/customers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
-            { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📁", name: "Accounting", link: "/modules/accounts/accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
-            { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
+            { icon: "📦", name: "Stock", link: "/modules/retail/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
+            { icon: "📥", name: "GRN", link: "/modules/retail/grn.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] }
+        ],
+        dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
+        isReady: true
+    },
+    
+    tire_centre: {
+        id: "tire_centre",
+        name: "Tire Center",
+        icon: "🛞",
+        description: "POS, Inventory, Sales, and Appointment Services",
+        menus: [
+            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "CASHIER", "VIEWER"] },
+            { icon: "🛒", name: "Point of Sale", link: "/modules/tire_centre/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "CASHIER"] },
+            { icon: "📦", name: "Stock", link: "/modules/tire_centre/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
+            { icon: "🛠️", name: "Services", link: "/modules/tire_centre/services.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STAFF"] },
+            { icon: "📅", name: "Appointments", link: "/modules/tire_centre/appointments.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STAFF"] },
+            { icon: "📥", name: "GRN", link: "/modules/tire_centre/grn.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
+            { icon: "🏛️", name: "Banking", link: "/modules/tire_centre/banking.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] }
         ],
         dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
         isReady: true
@@ -33,7 +47,7 @@ const BUSINESS_TYPES = {
             { icon: "⚠️", name: "Expiry Alerts", link: "/modules/pharmacy/expiry.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
             { icon: "📥", name: "Purchases", link: "/modules/pharmacy/purchases.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
             { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📁", name: "Accounting", link: "/modules/accounts/accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
             { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
         ],
         dashboardComponents: ["sales", "expiryAlerts", "drugCategories", "prescriptionQueue", "recentSales"],
@@ -58,7 +72,7 @@ const BUSINESS_TYPES = {
             { icon: "👨‍🍳", name: "Kitchen Display", link: "/modules/restaurant/kitchen.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "KITCHEN"] },
             { icon: "📦", name: "Inventory", link: "/modules/restaurant/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
             { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📁", name: "Accounting", link: "/modules/accounts/accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
             { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
         ],
         dashboardComponents: ["todayOrders", "tableStatus", "topItems", "sales"]
@@ -76,7 +90,7 @@ const BUSINESS_TYPES = {
             { icon: "🎨", name: "Variants", link: "/modules/garment/variants.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
             { icon: "📥", name: "Purchases", link: "/modules/garment/purchases.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
             { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📁", name: "Accounting", link: "/modules/accounts/accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
             { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
         ],
         dashboardComponents: ["sales", "inventory", "topVariants", "recentSales"]
@@ -94,7 +108,7 @@ const BUSINESS_TYPES = {
             { icon: "⚖️", name: "Bulk Items", link: "/modules/hardware/bulk.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
             { icon: "📥", name: "Purchases", link: "/modules/hardware/purchases.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
             { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📁", name: "Accounting", link: "/modules/accounts/accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
             { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
         ],
         dashboardComponents: ["sales", "inventory", "bulkItems", "unitConversions", "weightPricing", "recentSales"],
@@ -119,7 +133,7 @@ const BUSINESS_TYPES = {
             { icon: "🧾", name: "Service Billing", link: "/modules/service/billing.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STAFF"] },
             { icon: "📋", name: "Services", link: "/modules/service/services.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
             { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📁", name: "Accounting", link: "/modules/accounts/accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
             { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
         ],
         dashboardComponents: ["todayAppointments", "upcoming", "serviceRevenue", "serviceBills", "utilization", "clients"],
@@ -156,7 +170,7 @@ const BUSINESS_TYPES = {
             
             // Common Menus
             { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER"] },
-            { icon: "📁", name: "Accounting", link: "/modules/accounts/accounting-dashboard.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "ACCOUNTANT"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "ACCOUNTANT"] },
             { icon: "⚙️", name: "Settings", link: "/modules/company/settings.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER"] },
             { icon: "🔔", name: "Notifications", link: "/modules/company/notifications.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR", "WAREHOUSE_MANAGER", "DELIVERY_MANAGER", "REP"] },
             { icon: "📜", name: "Activity Log", link: "/modules/company/activity-log.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER"] },
@@ -192,16 +206,15 @@ const BUSINESS_TYPES = {
         icon: "🏭",
         description: "Raw materials, production planning, cost tracking and profitability",
         menus: [
-            { icon: "📥", name: "Inbound", link: "/modules/manufacturer/inbound.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
-            { icon: "🛍️", name: "Sales", link: "/modules/manufacturer/sales.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
-            { icon: "📤", name: "Outbound", link: "/modules/manufacturer/outbound.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
-            { icon: "📦", name: "Stock 360", link: "/modules/manufacturer/stock.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
-            { icon: "🧾", name: "Expenses", link: "/modules/manufacturer/expenses.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
-            { icon: "💳", name: "Finance", link: "/modules/core/finance-ledger.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
-            { icon: "📁", name: "Account", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
-            { icon: "📚", name: "History", link: "/modules/manufacturer/history.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
-            { icon: "📈", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] },
-            { icon: "👥", name: "Customers", link: "/modules/core/customers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER"] }
+            { icon: "🧱", name: "Raw Materials", link: "/modules/manufacturer/inbound.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER", "VIEWER"] },
+            { icon: "🏭", name: "Production / Manufacturing", link: "/modules/manufacturer/outbound.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER", "VIEWER"] },
+            { icon: "📦", name: "Finished Goods / Stock", link: "/modules/manufacturer/stock.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER", "VIEWER"] },
+            { icon: "🛍️", name: "Sales", link: "/modules/manufacturer/sales.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER", "VIEWER"] },
+            { icon: "🧾", name: "Expenses", link: "/modules/manufacturer/expenses.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER", "VIEWER"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER", "VIEWER"] },
+            { icon: "📚", name: "History", link: "/modules/manufacturer/history.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER", "VIEWER"] },
+            { icon: "📈", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER", "VIEWER"] },
+            { icon: "👥", name: "Customers", link: "/modules/core/customers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "MANAGER", "VIEWER"] }
         ],
         dashboardComponents: [
             "rmStockValue", "fgStockValue", "productionRuns", "rmPurchaseMonth",
@@ -239,6 +252,37 @@ const BUSINESS_TYPES = {
             { icon: "📈", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] }
         ],
         dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
+        isReady: true
+    },
+
+    attendance_payroll: {
+        id: "attendance_payroll",
+        name: "Attendance & Payroll",
+        icon: "⏱️",
+        description: "Employee attendance, shifts, OT, allowances & payroll management",
+        menus: [
+            { icon: "📊", name: "Dashboard", link: "/modules/attendance_payroll/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
+            { icon: "⏱️", name: "Attendance Log", link: "/modules/attendance_payroll/attendance.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
+            { icon: "📱", name: "QR Mobile Scanner", link: "/modules/attendance_payroll/mobile-scan.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
+            { icon: "🔄", name: "Shift Roster", link: "/modules/attendance_payroll/shifts.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
+            { icon: "👥", name: "Employees", link: "/modules/attendance_payroll/employees.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
+            { icon: "💵", name: "Payroll & Payslips", link: "/modules/attendance_payroll/payroll.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
+            { icon: "💸", name: "Advances & Loans", link: "/modules/attendance_payroll/loans.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
+            { icon: "📑", name: "Reports & Summaries", link: "/modules/attendance_payroll/reports.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
+            { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
+            { icon: "⚙️", name: "Settings", link: "/modules/company/settings.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] }
+        ],
+        dashboardComponents: ["employeeCount", "todayAttendance", "pendingPayslips", "monthlyPayrollCost", "recentAttendance"],
+        features: {
+            fingerprintSync: true,
+            mobileAttendance: true,
+            rotationalShifts: true,
+            shift24hOvertime: true,
+            nightShiftAllowance: true,
+            epfEtfCalculations: true,
+            payslipGeneration: true,
+            bankSummaryExport: true
+        },
         isReady: true
     }
 };
@@ -321,6 +365,7 @@ function getMobileConfig(businessType) {
 
 // Export to window
 window.BUSINESS_TYPES = BUSINESS_TYPES;
+window.COMMON_MENUS = COMMON_MENUS;
 window.getMenusForBusinessType = getMenusForBusinessType;
 window.getBusinessTypeDetails = getBusinessTypeDetails;
 window.getAllBusinessTypes = getAllBusinessTypes;

@@ -18,7 +18,7 @@
     <script src="../../core/business-types.js?v=58"></script>
     <script src="../../core/dashboard-core.js?v=58"></script>
     <script src="../../core/subscription-manager.js?v=58"></script>
-    <script src="../../core/sidebar.js?v=64"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
     <script src="../../core/sms-wallet-core.js?v=4"></script>
     <script src="../../core/scrap-vba-core.js?v=78"></script>
     <style>
@@ -72,6 +72,12 @@
             cursor: pointer;
             user-select: none;
         }
+        .stock-qty-span.black-box-style {
+            background: #000 !important;
+            color: #fff !important;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -89,6 +95,7 @@
 let SCRAP_BUSINESS_ID = '';
 let isBulkEditMode = false;
 let isReorderMode = false;
+let isDeleteMode = false;
 let currentUser = null;
 
 function escHtml(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -171,6 +178,80 @@ async function renderSTOCK(body) {
         if (b.sortOrder !== undefined) return 1;
         return String(a.itemName||'').localeCompare(String(b.itemName||''));
     });
+
+    const convertToSinglish = (name) => {
+        const clean = String(name || '').trim();
+        const mapping = {
+            'යකඩ': 'Yakada',
+            'තබ': 'Thaba',
+            'තබ කොර්': 'Thaba Core',
+            'පිත්තල': 'Piththala',
+            'ඇලුමිනියම්': 'Aluminium',
+            'ඇලුමිනියම් කොර්': 'Aluminium Core',
+            'ඊයම්': 'Eeyam',
+            'බැරල්': 'Baral',
+            'පොල්කටු': 'Polkatu',
+            'පොත්': 'Poth',
+            'පුටු': 'Putu',
+            'බේසම්': 'Besam',
+            'පොඩි බැටරි': 'Podi Battery',
+            'ලොකු බැටරි': 'Loku Battery',
+            'තහඩු': 'Thahadu',
+            'PVC': 'PVC',
+            'කෑන්': 'Can',
+            'බියර් ටින්': 'Beer Tin',
+            'චට්ටි': 'Chatti',
+            'ෆිටින්ස්': 'Fittins',
+            'මෝටර්': 'Motor',
+            'එන්ජින්': 'Engine',
+            'ෆිල්ටර් සහ දැල්': 'Filter saha Dal',
+            'කොළ': 'Kola',
+            'හාර්ඩ් ඩිස්ක්': 'Hard Disk',
+            'ලැප්ටොප්': 'Laptop',
+            'ලයිනර්': 'Liner',
+            'පොඩි TV': 'Podi TV',
+            'රැම්': 'Ram',
+            'ප්‍රොසෙසර්': 'Processor',
+            'පවර් සෆ්ලයි': 'Power Supply',
+            'ෆෝන් බෝර්ඩ්': 'Phone Board',
+            'VGA බෝර්ඩ්': 'VGA Board',
+            'සර්කිට් / TV බෝර්ඩ්': 'Circuit / TV Board',
+            'අඩි': 'Adi'
+        };
+        return mapping[clean] || clean;
+    };
+
+    const triggerPriceChangeWhatsapp = async (row, newPrice, oldPrice) => {
+        if (!row) return;
+        const name = String(row.itemName || '').trim();
+        if (name.toUpperCase().startsWith("S-")) {
+            console.log(`[WhatsApp-Skip] Skipped S- item: ${name}`);
+            return;
+        }
+
+        const userApproved = confirm(`මිල වෙනස් විය. මෙම මිල වෙනස් වීම WhatsApp හරහා Share කිරීමට අවශ්‍යද?`);
+        if (!userApproved) {
+            console.log(`[WhatsApp-Cancel] User cancelled WhatsApp sharing for ${name} at LKR ${newPrice}`);
+            return;
+        }
+        
+        try {
+            const fp = Number(newPrice).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            const prevPrice = oldPrice !== undefined && oldPrice !== null ? Number(oldPrice) : (Number(row.growingPrice) || 0);
+            const oldPriceStr = prevPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            const diff = newPrice - prevPrice;
+            const diffStr = Number(Math.abs(diff)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            const dir = diff >= 0 ? 'වැඩි' : 'අඩු';
+            
+            const msg = `${name} - මිල Rs ${oldPriceStr}/= සිට, Rs ${fp}/= දක්වා Rs ${diffStr}/= කින් ${dir} විය.`;
+            const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+            window.open(waUrl, '_blank');
+            console.log(`[WhatsApp-Redirect] Opened sharing link for: "${msg}"`);
+        } catch (e) {
+            console.error("Error triggering WhatsApp redirect:", e);
+        }
+    };
+
     const unitCost = (r) => {
         const cp = Number(r.costPrice);
         if (Number.isFinite(cp) && cp > 0) return cp;
@@ -199,7 +280,7 @@ async function renderSTOCK(body) {
       ${isBulkEditMode ? '<button id="saveBulkBtn" style="background:#16a34a;">Save All Changes</button>' : ''}
       ${isReorderMode ? '<button id="saveOrderBtn" style="background:#16a34a;">Save New Order</button>' : ''}
     </div>
-    <table><thead><tr><th>Item Name</th><th>Current Stock</th><th>Growing Price</th><th>Buying Price</th><th>Down Buying Price / ඩවුන් මිල</th><th>Profit</th><th>Sell Price</th><th>Action</th></tr></thead><tbody>${
+    <table><thead><tr><th>Item Name</th><th>Current Stock</th><th>Special Price</th><th>Growing Price</th><th>Buying Price</th><th>Down Buying Price / ඩවුන් මිල</th><th>Profit</th><th>Sell Price</th><th>Action</th></tr></thead><tbody>${
         rows.map(r => {
             const isIndika = r.indikaSelected === true;
             const highlightClass = isIndika ? 'indika-highlight' : '';
@@ -207,7 +288,8 @@ async function renderSTOCK(body) {
                 const buy = (Number(r.sellingPrice)||0) - (Number(r.profit)||0);
                 return `<tr>
                     <td class="stock-name-cell ${highlightClass}" data-id="${r.id}"><input data-bulk-name="${r.id}" value="${escHtml(r.itemName)}" style="width:100%;box-sizing:border-box;padding:4px;"></td>
-                    <td>${Number(r.currentStock||0).toFixed(1)}</td>
+                    <td><span class="stock-qty-span" style="cursor:pointer; user-select:none;">${Number(r.currentStock||0).toFixed(1)}</span></td>
+                    <td>${r.specialPrice !== undefined && r.specialPrice !== null ? Number(r.specialPrice) : '-'}</td>
                     <td>${r.growingPrice !== undefined && r.growingPrice !== null ? Number(r.growingPrice) : '-'}</td>
                     <td data-bulk-buy-display="${r.id}">${buy.toFixed(2)}</td>
                     <td>${r.downBuyingPrice !== undefined && r.downBuyingPrice !== null ? Number(r.downBuyingPrice) : '-'}</td>
@@ -219,7 +301,8 @@ async function renderSTOCK(body) {
             if (isReorderMode) {
                 return `<tr>
                     <td class="stock-name-cell ${highlightClass}" data-id="${r.id}">${escHtml(r.itemName)}</td>
-                    <td>${Number(r.currentStock||0).toFixed(1)}</td>
+                    <td><span class="stock-qty-span" style="cursor:pointer; user-select:none;">${Number(r.currentStock||0).toFixed(1)}</span></td>
+                    <td>${r.specialPrice !== undefined && r.specialPrice !== null ? Number(r.specialPrice) : '-'}</td>
                     <td>${r.growingPrice !== undefined && r.growingPrice !== null ? Number(r.growingPrice) : '-'}</td>
                     <td>${Number(unitCost(r) || 0)}</td>
                     <td>${r.downBuyingPrice !== undefined && r.downBuyingPrice !== null ? Number(r.downBuyingPrice) : '-'}</td>
@@ -232,6 +315,13 @@ async function renderSTOCK(body) {
                 </tr>`;
             }
             
+            let specialPriceHtml = '';
+            if (r.specialPrice !== undefined && r.specialPrice !== null) {
+                specialPriceHtml = `<span class="special-price-text" data-id="${r.id}" style="cursor: pointer; display: inline-block; min-width: 60px; min-height: 20px; font-weight: bold; color: #1d4ed8;">${r.specialPrice}</span>`;
+            } else {
+                specialPriceHtml = `<input type="number" step="0.01" placeholder="Add Special" class="special-price-input" data-id="${r.id}" style="width: 80px; padding: 4px;">`;
+            }
+
             let growingPriceHtml = '';
             if (r.growingPrice !== undefined && r.growingPrice !== null) {
                 growingPriceHtml = `<span class="growing-price-text" data-id="${r.id}" style="cursor: pointer; display: inline-block; min-width: 60px; min-height: 20px; font-weight: bold; color: #059669;">${r.growingPrice}</span>`;
@@ -248,7 +338,8 @@ async function renderSTOCK(body) {
             
             return `<tr>
                 <td class="stock-name-cell ${highlightClass}" data-id="${r.id}">${r.itemName||'-'}</td>
-                <td>${Number(r.currentStock||0).toFixed(1)}</td>
+                <td><span class="stock-qty-span" style="cursor:pointer; user-select:none;">${Number(r.currentStock||0).toFixed(1)}</span></td>
+                <td>${specialPriceHtml}</td>
                 <td>${growingPriceHtml}</td>
                 <td>${Number(unitCost(r) || 0)}</td>
                 <td>${downBuyHtml}</td>
@@ -256,8 +347,15 @@ async function renderSTOCK(body) {
                 <td>${Number(r.sellingPrice||0)}</td>
                 <td><button data-edit="${r.id}" style="padding:4px 8px;">Edit</button></td>
             </tr>`;
-        }).join('') || '<tr><td colspan="7">No items</td></tr>'
+        }).join('') || '<tr><td colspan="9">No items</td></tr>'
     }</tbody></table>`;
+
+    body.querySelector('tbody').addEventListener('click', (e) => {
+        if (e.target.classList.contains('stock-qty-span') && e.detail === 3) {
+            e.target.classList.toggle('black-box-style');
+        }
+    });
+
     document.getElementById('stockAddBtn').addEventListener('click', async () => {
         const itemName = String(document.getElementById('stockNewName').value || '').trim();
         const currentStock = Number(document.getElementById('stockNewQty').value) || 0;
@@ -410,7 +508,7 @@ async function renderSTOCK(body) {
             const tbody = body.querySelector('tbody');
             tbody.innerHTML = rows.map((r, idx) => `<tr draggable="true" data-index="${idx}" style="cursor:move;">
                 <td>${escHtml(r.itemName)}</td>
-                <td>${Number(r.currentStock||0).toFixed(1)}</td>
+                <td><span class="stock-qty-span" style="cursor:pointer; user-select:none;">${Number(r.currentStock||0).toFixed(1)}</span></td>
                 <td>${r.growingPrice !== undefined && r.growingPrice !== null ? Number(r.growingPrice) : '-'}</td>
                 <td>${Number(unitCost(r) || 0)}</td>
                 <td>${r.downBuyingPrice !== undefined && r.downBuyingPrice !== null ? Number(r.downBuyingPrice) : '-'}</td>
@@ -474,10 +572,21 @@ async function renderSTOCK(body) {
                 <h3 style="margin-bottom:8px;">Edit Item</h3>
                 <div class="small" style="margin-bottom:4px;">${escHtml(row.itemName || '-')}</div>
                 <div class="small" style="margin-bottom:8px;color:#0369a1;">Buying Price: <b id="mBuyDisp">${(Number(row.sellingPrice||0) - Number(row.profit||0)).toFixed(2)}</b></div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;">
+                <div style="display:grid;grid-template-columns:repeat(6, 1fr);gap:8px;">
                     <div><label class="small">Stock</label><input id="mQty" type="number" step="0.01" value="${Number(row.currentStock) || 0}" style="width:100%;"></div>
-                    <div><label class="small">Profit</label><input id="mProfit" type="number" step="0.01" value="${Number(row.profit) || 0}" style="width:100%;"></div>
+                    <div>
+                        <label class="small" style="display:flex; justify-content:space-between; align-items:center;">
+                            <span>Profit</span>
+                            <select id="mProfitType" style="padding:2px; font-size:10px; border-radius:4px; margin-left:4px; height:18px; width:45px;">
+                                <option value="fixed">Rs</option>
+                                <option value="percent">%</option>
+                            </select>
+                        </label>
+                        <input id="mProfit" type="number" step="0.01" value="${Number(row.profit) || 0}" style="width:100%;">
+                    </div>
                     <div><label class="small">Sell Price</label><input id="mSell" type="number" step="0.01" value="${Number(row.sellingPrice) || 0}" style="width:100%;"></div>
+                    <div><label class="small">Growing Price</label><input id="mGrowing" type="number" step="0.01" value="${row.growingPrice !== undefined && row.growingPrice !== null ? Number(row.growingPrice) : ''}" placeholder="None" style="width:100%;"></div>
+                    <div><label class="small">Special Price</label><input id="mSpecial" type="number" step="0.01" value="${row.specialPrice !== undefined && row.specialPrice !== null ? Number(row.specialPrice) : ''}" placeholder="None" style="width:100%;"></div>
                     <div><label class="small">Down Price</label><input id="mDown" type="number" step="0.01" value="${row.downBuyingPrice !== undefined && row.downBuyingPrice !== null ? Number(row.downBuyingPrice) : ''}" placeholder="None" style="width:100%;"></div>
                 </div>
                 <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end;">
@@ -487,24 +596,101 @@ async function renderSTOCK(body) {
                 </div>
             </div>`;
             document.body.appendChild(wrap);
+            
             const mUpdateBuy = () => {
+                const type = wrap.querySelector('#mProfitType').value;
                 const p = Number(wrap.querySelector('#mProfit').value) || 0;
                 const s = Number(wrap.querySelector('#mSell').value) || 0;
-                wrap.querySelector('#mBuyDisp').textContent = (s - p).toFixed(2);
+                
+                let buyPrice = 0;
+                if (type === 'percent') {
+                    buyPrice = (1 + p / 100 > 0) ? s / (1 + p / 100) : 0;
+                } else {
+                    buyPrice = s - p;
+                }
+                wrap.querySelector('#mBuyDisp').textContent = buyPrice.toFixed(2);
             };
+
+            wrap.querySelector('#mProfitType').addEventListener('change', (e) => {
+                const type = e.target.value;
+                const pInput = wrap.querySelector('#mProfit');
+                const p = Number(pInput.value) || 0;
+                const s = Number(wrap.querySelector('#mSell').value) || 0;
+                
+                if (type === 'percent') {
+                    const buy = s - p;
+                    const pct = buy > 0 ? (p / buy) * 100 : 0;
+                    pInput.value = pct.toFixed(2);
+                } else {
+                    const divisor = 1 + p / 100;
+                    const buy = divisor > 0 ? s / divisor : 0;
+                    const absProfit = s - buy;
+                    pInput.value = absProfit.toFixed(2);
+                }
+                mUpdateBuy();
+            });
+
             wrap.querySelector('#mProfit').addEventListener('input', mUpdateBuy);
             wrap.querySelector('#mSell').addEventListener('input', mUpdateBuy);
             wrap.querySelector('#mClose').addEventListener('click', () => wrap.remove());
             wrap.querySelector('#mSave').addEventListener('click', async () => {
                 const currentStock = Number(wrap.querySelector('#mQty').value) || 0;
-                const profit = Number(wrap.querySelector('#mProfit').value) || 0;
                 const sellingPrice = Number(wrap.querySelector('#mSell').value) || 0;
+                const pVal = Number(wrap.querySelector('#mProfit').value) || 0;
+                const pType = wrap.querySelector('#mProfitType').value;
+                const growingVal = wrap.querySelector('#mGrowing').value.trim();
+                const specialVal = wrap.querySelector('#mSpecial').value.trim();
                 const downVal = wrap.querySelector('#mDown').value.trim();
+
+                let profit = 0;
+                if (pType === 'percent') {
+                    const divisor = 1 + pVal / 100;
+                    const buy = divisor > 0 ? sellingPrice / divisor : 0;
+                    profit = sellingPrice - buy;
+                } else {
+                    profit = pVal;
+                }
+
                 const updateData = {
-                    currentStock, profit, sellingPrice,
-                    costPrice: sellingPrice - profit,
+                    currentStock, 
+                    profit: Number(profit.toFixed(2)), 
+                    sellingPrice,
+                    costPrice: Number((sellingPrice - profit).toFixed(2)),
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
+
+                const oldGrowing = row.growingPrice;
+                let growingChanged = false;
+                let newGrowingVal = 0;
+
+                if (growingVal === '') {
+                    if (oldGrowing !== undefined && oldGrowing !== null) {
+                        growingChanged = true;
+                    }
+                    updateData.growingPrice = firebase.firestore.FieldValue.delete();
+                } else {
+                    const growingPrice = Number(growingVal);
+                    if (isNaN(growingPrice) || growingPrice < 0) {
+                        alert('Please enter a valid positive number for Growing Price');
+                        return;
+                    }
+                    if (oldGrowing !== growingPrice) {
+                        growingChanged = true;
+                        newGrowingVal = growingPrice;
+                    }
+                    updateData.growingPrice = growingPrice;
+                }
+
+                if (specialVal === '') {
+                    updateData.specialPrice = firebase.firestore.FieldValue.delete();
+                } else {
+                    const specialPrice = Number(specialVal);
+                    if (isNaN(specialPrice) || specialPrice < 0) {
+                        alert('Please enter a valid positive number for Special Price');
+                        return;
+                    }
+                    updateData.specialPrice = specialPrice;
+                }
                 if (downVal === '') {
                     updateData.downBuyingPrice = firebase.firestore.FieldValue.delete();
                 } else {
@@ -515,10 +701,49 @@ async function renderSTOCK(body) {
                     }
                     updateData.downBuyingPrice = downPrice;
                 }
+
+                const oldCostPrice = Number(row.costPrice) || 0;
+                const newCostPrice = Number((sellingPrice - profit).toFixed(2));
+                const costPriceChanged = (oldCostPrice !== newCostPrice);
+
                 await db.collection('scrap_items').doc(id).update(updateData);
                 if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
                     await window.scrapVbaCore.syncInventoryAssetWithStock(SCRAP_BUSINESS_ID);
                 }
+
+                // WhatsApp Sharing
+                const name = String(row.itemName || '').trim();
+                if (!name.toUpperCase().startsWith("S-")) {
+                    const shareTexts = [];
+                    
+                    if (growingChanged && newGrowingVal > 0) {
+                        const fp = Number(newGrowingVal).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const prevPrice = Number(oldGrowing) || 0;
+                        const oldPriceStr = prevPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const diff = newGrowingVal - prevPrice;
+                        const diffStr = Number(Math.abs(diff)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const dir = diff >= 0 ? 'වැඩි' : 'අඩු';
+                        shareTexts.push(`${name} - මිල Rs ${oldPriceStr}/= සිට, Rs ${fp}/= දක්වා Rs ${diffStr}/= කින් ${dir} විය.`);
+                    }
+                    if (costPriceChanged && newCostPrice > 0) {
+                        const fp = Number(newCostPrice).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const prevPrice = Number(oldCostPrice) || 0;
+                        const oldPriceStr = prevPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const diff = newCostPrice - prevPrice;
+                        const diffStr = Number(Math.abs(diff)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const dir = diff >= 0 ? 'වැඩි' : 'අඩු';
+                        shareTexts.push(`${name} - මිල Rs ${oldPriceStr}/= සිට, Rs ${fp}/= දක්වා Rs ${diffStr}/= කින් ${dir} විය.`);
+                    }
+                    
+                    if (shareTexts.length > 0) {
+                        if (confirm('මිල වෙනස් විය. මෙම මිල වෙනස් වීම් WhatsApp හරහා Share කිරීමට අවශ්‍යද?')) {
+                            const finalMsg = shareTexts.join('\n');
+                            const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(finalMsg)}`;
+                            window.open(waUrl, '_blank');
+                        }
+                    }
+                }
+
                 wrap.remove();
                 await renderSTOCK(body);
             });
@@ -639,6 +864,85 @@ async function renderSTOCK(body) {
         });
     });
 
+    // Inline edit listeners for Special Price
+    body.querySelectorAll('.special-price-input').forEach((input) => {
+        input.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                const itemId = input.dataset.id;
+                const valStr = input.value.trim();
+                showLoading(true);
+                try {
+                    if (valStr === '') {
+                        await db.collection('scrap_items').doc(itemId).update({
+                            specialPrice: firebase.firestore.FieldValue.delete(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    } else {
+                        const specialPrice = Number(valStr);
+                        if (isNaN(specialPrice) || specialPrice < 0) {
+                            alert('Please enter a valid positive number');
+                            return;
+                        }
+                        await db.collection('scrap_items').doc(itemId).update({
+                            specialPrice: specialPrice,
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                    await renderSTOCK(body);
+                } catch(err) {
+                    alert('Error updating special price: ' + err.message);
+                } finally {
+                    showLoading(false);
+                }
+            }
+        });
+    });
+
+    body.querySelectorAll('.special-price-text').forEach((span) => {
+        span.addEventListener('dblclick', (e) => {
+            const itemId = span.dataset.id;
+            const currentVal = span.textContent;
+            const parent = span.parentNode;
+            parent.innerHTML = `<input type="number" step="0.01" value="${currentVal}" class="special-price-input" data-id="${itemId}" style="width: 80px; padding: 4px;" autofocus>`;
+            const input = parent.querySelector('.special-price-input');
+            input.focus();
+            input.addEventListener('keypress', async (evt) => {
+                if (evt.key === 'Enter') {
+                    const valStr = input.value.trim();
+                    showLoading(true);
+                    try {
+                        if (valStr === '') {
+                            await db.collection('scrap_items').doc(itemId).update({
+                                specialPrice: firebase.firestore.FieldValue.delete(),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        } else {
+                            const specialPrice = Number(valStr);
+                            if (isNaN(specialPrice) || specialPrice < 0) {
+                                alert('Please enter a valid positive number');
+                                return;
+                            }
+                            await db.collection('scrap_items').doc(itemId).update({
+                                specialPrice: specialPrice,
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                        await renderSTOCK(body);
+                    } catch(err) {
+                        alert('Error updating special price: ' + err.message);
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+            });
+            input.addEventListener('keydown', (evt) => {
+                if (evt.key === 'Escape') {
+                    renderSTOCK(body);
+                }
+            });
+        });
+    });
+
     // Inline edit listeners for Growing Price
     body.querySelectorAll('.growing-price-input').forEach((input) => {
         input.addEventListener('keypress', async (e) => {
@@ -647,7 +951,15 @@ async function renderSTOCK(body) {
                 const valStr = input.value.trim();
                 showLoading(true);
                 try {
+                    const row = rows.find(r => r.id === itemId);
+                    const oldPrice = row ? row.growingPrice : null;
+                    let hasChanged = false;
+                    let newPriceVal = 0;
+
                     if (valStr === '') {
+                        if (oldPrice !== undefined && oldPrice !== null) {
+                            hasChanged = true;
+                        }
                         await db.collection('scrap_items').doc(itemId).update({
                             growingPrice: firebase.firestore.FieldValue.delete(),
                             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -658,10 +970,17 @@ async function renderSTOCK(body) {
                             alert('Please enter a valid positive number');
                             return;
                         }
+                        if (oldPrice !== growingPrice) {
+                            hasChanged = true;
+                            newPriceVal = growingPrice;
+                        }
                         await db.collection('scrap_items').doc(itemId).update({
                             growingPrice: growingPrice,
                             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                         });
+                    }
+                    if (hasChanged && newPriceVal > 0) {
+                        triggerPriceChangeWhatsapp(row, newPriceVal, oldPrice).catch(err => console.error("WhatsApp failed:", err));
                     }
                     await renderSTOCK(body);
                 } catch(err) {
@@ -686,7 +1005,15 @@ async function renderSTOCK(body) {
                     const valStr = input.value.trim();
                     showLoading(true);
                     try {
+                        const row = rows.find(r => r.id === itemId);
+                        const oldPrice = row ? row.growingPrice : null;
+                        let hasChanged = false;
+                        let newPriceVal = 0;
+
                         if (valStr === '') {
+                            if (oldPrice !== undefined && oldPrice !== null) {
+                                hasChanged = true;
+                            }
                             await db.collection('scrap_items').doc(itemId).update({
                                 growingPrice: firebase.firestore.FieldValue.delete(),
                                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -697,10 +1024,17 @@ async function renderSTOCK(body) {
                                 alert('Please enter a valid positive number');
                                 return;
                             }
+                            if (oldPrice !== growingPrice) {
+                                hasChanged = true;
+                                newPriceVal = growingPrice;
+                            }
                             await db.collection('scrap_items').doc(itemId).update({
                                 growingPrice: growingPrice,
                                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                             });
+                        }
+                        if (hasChanged && newPriceVal > 0) {
+                            triggerPriceChangeWhatsapp(row, newPriceVal, oldPrice).catch(err => console.error("WhatsApp failed:", err));
                         }
                         await renderSTOCK(body);
                     } catch(err) {
@@ -719,140 +1053,506 @@ async function renderSTOCK(body) {
     });
 }
 
-async function renderBUY(body) {
-    const [buySnap, itemSnap] = await Promise.all([
-        db.collection('buying_history').where('businessId', '==', SCRAP_BUSINESS_ID).get(),
-        db.collection('scrap_items').where('businessId', '==', SCRAP_BUSINESS_ID).get()
-    ]);
-    const itemNames = itemSnap.docs.map((d) => String(d.data().itemName || '').trim()).filter(Boolean).sort((a, b) => a.localeCompare(b));
-    const rows = buySnap.docs.map((d) => {
-        const data = d.data();
-        return { id: d.id, ...data };
-    }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-
-    body.innerHTML = `
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;background:#fff;padding:12px;border:1px solid #dbe4ee;border-radius:10px;">
-        <div style="display:flex;flex-direction:column;gap:4px;">
-            <label class="small" style="font-weight:700;">Supplier Name / නම</label>
-            <input id="buySearchName" placeholder="Search by name..." style="min-width:220px;padding:8px;font-size:13px;">
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px;">
-            <label class="small" style="font-weight:700;">From Date / ආරම්භක දිනය</label>
-            <input id="buySearchFrom" type="date" style="padding:8px;font-size:13px;">
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px;">
-            <label class="small" style="font-weight:700;">To Date / අවසාන දිනය</label>
-            <input id="buySearchTo" type="date" style="padding:8px;font-size:13px;">
-        </div>
-        <div style="display:flex;align-items:flex-end;height:100%;margin-top:18px;">
-            <button id="buySearchReset" style="background:#64748b;font-weight:700;padding:9px 15px;">Reset / පැහැදිලි කරන්න</button>
-        </div>
-        <div style="margin-left:auto;text-align:right;align-self:flex-end;margin-top:18px;">
-            <span class="small" style="font-weight:700;">Records / ගනුදෙනු ගණන: <b id="buyFilteredCount" style="color:#0f3b2c;font-size:14px;">0</b></span>
-        </div>
-      </div>
-      <div style="overflow:auto;border:1px solid #e2e8f0;border-radius:10px;">
-        <table style="min-width:${Math.max(1200, 750 + (itemNames.length * 110))}px;">
-          <thead>
-            <tr>
-              <th>Date</th><th>Name</th><th>Total Weight</th><th>Total Amount</th>
-              ${itemNames.map((n) => `<th>${n}</th>`).join('')}
-            </tr>
-          </thead>
-          <tbody id="buyTableBody"></tbody>
-        </table>
-      </div>`;
-
-    const nameInput = document.getElementById('buySearchName');
-    const fromInput = document.getElementById('buySearchFrom');
-    const toInput = document.getElementById('buySearchTo');
-    const resetBtn = document.getElementById('buySearchReset');
-    const tbody = document.getElementById('buyTableBody');
-    const countEl = document.getElementById('buyFilteredCount');
-
-    const formatDate = (isoStr) => {
-        if (!isoStr) return '';
-        const d = new Date(isoStr);
-        if (isNaN(d.getTime())) return '';
-        return d.toLocaleDateString('en-CA'); // YYYY-MM-DD
-    };
-
-    function applyFilters() {
-        const nameVal = nameInput.value.trim().toLowerCase();
-        const fromVal = fromInput.value;
-        const toVal = toInput.value;
-
-        const filtered = rows.filter((r) => {
-            // Name match
-            if (nameVal) {
-                const supplierName = String(r.supplierName || '').toLowerCase();
-                const walkInName = String(r.walkInName || '').toLowerCase();
-                if (!supplierName.includes(nameVal) && !walkInName.includes(nameVal)) {
-                    return false;
+async function deleteSelectedPurchases(selectedIds) {
+    if (!selectedIds || selectedIds.length === 0) return;
+    showLoading(true);
+    try {
+        for (const id of selectedIds) {
+            const docRef = db.collection('buying_history').doc(id);
+            const snap = await docRef.get();
+            if (!snap.exists) continue;
+            const purchase = snap.data();
+            const supplierName = purchase.supplierName;
+            
+            // 1. Stock Reversal
+            const items = Array.isArray(purchase.items) ? purchase.items : [];
+            for (const line of items) {
+                if (!line.itemId) continue;
+                const itemRef = db.collection('scrap_items').doc(line.itemId);
+                const itemSnap = await itemRef.get();
+                if (itemSnap.exists) {
+                    const itemData = itemSnap.data();
+                    const currentStock = Number(itemData.currentStock) || 0;
+                    const nextStock = Math.max(0, currentStock - (Number(line.weight) || 0));
+                    
+                    const s = nextStock;
+                    const sp = Number(itemData.sellingPrice) || 0;
+                    const pf = Number(itemData.profit) || 0;
+                    const cpInput = Number(itemData.costPrice);
+                    const cp = Number.isFinite(cpInput) && cpInput > 0 ? cpInput : 0;
+                    const totalBuyingValue = s * cp;
+                    const totalSellingValue = s * sp;
+                    const potentialProfitValue = s * pf;
+                    
+                    await itemRef.update({
+                        currentStock: nextStock,
+                        totalBuyingValue,
+                        totalSellingValue,
+                        potentialProfitValue,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
                 }
             }
-
-            // Date match
-            if (fromVal || toVal) {
-                const dateStr = r.date || r.billDateTime || '';
-                const rowDate = formatDate(dateStr);
-                if (!rowDate) return false;
-                if (fromVal && rowDate < fromVal) return false;
-                if (toVal && rowDate > toVal) return false;
+            
+            // 2. Revert Advances
+            const advanceApplied = Number(purchase.advanceApplied) || 0;
+            if (advanceApplied > 0.01) {
+                const advRef = db.collection('scrap_advances').doc(advId(supplierName));
+                await advRef.set({
+                    businessId: SCRAP_BUSINESS_ID,
+                    supplierName,
+                    balance: firebase.firestore.FieldValue.increment(advanceApplied),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+                
+                const advHistSnap = await db.collection('scrap_advance_history')
+                    .where('businessId', '==', SCRAP_BUSINESS_ID)
+                    .where('supplierName', '==', supplierName)
+                    .where('type', '==', 'APPLIED_IN_BILL')
+                    .get();
+                for (const d of advHistSnap.docs) {
+                    const dData = d.data();
+                    if (Math.abs((Number(dData.amount) || 0) + advanceApplied) < 0.01) {
+                        await d.ref.delete();
+                        break;
+                    }
+                }
             }
+            
+            // 3. Revert Revenue & Profit Pool
+            let totalPotentialProfit = 0;
+            for (const line of items) {
+                const itemSnap = await db.collection('scrap_items').doc(line.itemId).get();
+                if (itemSnap.exists) {
+                    const itData = itemSnap.data();
+                    const bp = Number(line.rate) || 0;
+                    const sp = Number(itData.sellingPrice) || 0;
+                    const margin = sp > 0 ? (sp - bp) : 0;
+                    totalPotentialProfit += margin * (Number(line.weight) || 0);
+                }
+            }
+            
+            const vehicleHireApplied = Number(purchase.vehicleHireApplied) || 0;
+            const pDate = purchase.date || purchase.billDateTime || new Date().toISOString();
+            const purchaseDateStr = pDate.split('T')[0];
+            const revHistSnap = await db.collection('scrap_revenue_history')
+                .where('businessId', '==', SCRAP_BUSINESS_ID)
+                .where('supplierName', '==', supplierName)
+                .where('date', '==', purchaseDateStr)
+                .get();
+            for (const d of revHistSnap.docs) {
+                const dData = d.data();
+                const type = dData.type;
+                const amount = Number(dData.amount) || 0;
+                
+                let shouldDelete = false;
+                if (type === 'POTENTIAL_PROFIT' && Math.abs(amount - totalPotentialProfit) < 0.05) {
+                    shouldDelete = true;
+                } else if (type === 'VEHICLE_HIRE' && Math.abs(amount - vehicleHireApplied) < 0.05) {
+                    shouldDelete = true;
+                }
+                
+                if (shouldDelete) {
+                    await d.ref.delete();
+                }
+            }
+            
+            if (window.scrapVbaCore && typeof window.scrapVbaCore.updateProfitPool === 'function') {
+                const totalPoolImpact = -(totalPotentialProfit + vehicleHireApplied);
+                await window.scrapVbaCore.updateProfitPool(SCRAP_BUSINESS_ID, totalPoolImpact, 'PURCHASE_REVERSED', `Reversed purchase from ${supplierName} (Bill #${purchase.billNo || ''})`);
+            }
+            
+            // 4. Reverse Loan Allocations
+            const loanAllocations = Array.isArray(purchase.loanAllocations) ? purchase.loanAllocations : [];
+            for (const row of loanAllocations) {
+                const amt = Number(row.amount) || 0;
+                if (amt <= 0.0001) continue;
+                const src = row.sourceCollection || 'scrap_loans';
+                
+                if (src === 'hand_loans') {
+                    const ref = db.collection('hand_loans').doc(row.id);
+                    await ref.update({
+                        balance: firebase.firestore.FieldValue.increment(amt),
+                        active: true,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } else if (src === 'loan_no_interest') {
+                    const ref = db.collection('loan_no_interest').doc(row.id);
+                    await ref.update({
+                        balance: firebase.firestore.FieldValue.increment(amt),
+                        principalOutstanding: firebase.firestore.FieldValue.increment(amt),
+                        active: true,
+                        pendingRemovalAt: firebase.firestore.FieldValue.delete(),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } else if (src === 'loan_interest_entries') {
+                    let principalPaid = amt;
+                    let intPaid = 0;
+                    const histSnap = await db.collection('loan_interest_history')
+                        .where('businessId', '==', SCRAP_BUSINESS_ID)
+                        .where('loanId', '==', row.id)
+                        .get();
+                    for (const hDoc of histSnap.docs) {
+                        const hData = hDoc.data();
+                        if (hData.note && hData.note.includes(purchase.billNo)) {
+                            principalPaid = Math.abs(hData.principalChange || 0);
+                            intPaid = Math.abs(hData.interestChange || 0);
+                            await hDoc.ref.delete();
+                            break;
+                        }
+                    }
+                    
+                    const ref = db.collection('loan_interest_entries').doc(row.id);
+                    await ref.update({
+                        balance: firebase.firestore.FieldValue.increment(amt),
+                        principalOutstanding: firebase.firestore.FieldValue.increment(principalPaid),
+                        interestOutstanding: firebase.firestore.FieldValue.increment(intPaid),
+                        active: true,
+                        pendingRemovalAt: firebase.firestore.FieldValue.delete(),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } else if (src === 'loan_advanced_entries') {
+                    const ref = db.collection('loan_advanced_entries').doc(row.id);
+                    const lSnap = await ref.get();
+                    if (lSnap.exists) {
+                        const r = lSnap.data();
+                        const restorePr = Math.min(amt, Number(r.collectedPrincipal) || 0);
+                        const restoreIn = Math.min(amt - restorePr, Number(r.collectedInterest) || 0);
+                        
+                        const pNew = (Number(r.principalOutstanding) || 0) + restorePr;
+                        const iNew = (Number(r.interestOutstanding) || 0) + restoreIn;
+                        
+                        await ref.update({
+                            principalOutstanding: pNew,
+                            balance: pNew,
+                            interestOutstanding: iNew,
+                            collectedPrincipal: Math.max(0, (Number(r.collectedPrincipal) || 0) - restorePr),
+                            collectedInterest: Math.max(0, (Number(r.collectedInterest) || 0) - restoreIn),
+                            principalDueToInvestor: Math.max(0, (Number(r.principalDueToInvestor) || 0) - restorePr),
+                            interestDueToInvestor: Math.max(0, (Number(r.interestDueToInvestor) || 0) - restoreIn),
+                            active: (pNew + iNew) > 0.0001,
+                            pendingRemovalAt: firebase.firestore.FieldValue.delete(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                } else if (src === 'loan_daily_entries') {
+                    const ref = db.collection('loan_daily_entries').doc(row.id);
+                    const lSnap = await ref.get();
+                    if (lSnap.exists) {
+                        const r = lSnap.data();
+                        const restorePr = Number(row.principalPaid || 0);
+                        const restoreIn = Number(row.interestPaid || 0);
+                        
+                        const pNew = (Number(r.principalOutstanding) || 0) + restorePr;
+                        const iNew = (Number(r.interestOutstanding) || 0) + restoreIn;
+                        
+                        await ref.update({
+                            principalOutstanding: pNew,
+                            interestOutstanding: iNew,
+                            balance: pNew + iNew,
+                            active: (pNew + iNew) > 0.0001,
+                            pendingRemovalAt: firebase.firestore.FieldValue.delete(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
 
-            return true;
-        });
+                        if (restoreIn > 0.01 && window.scrapVbaCore && typeof window.scrapVbaCore.updateProfitPool === 'function') {
+                            await window.scrapVbaCore.updateProfitPool(SCRAP_BUSINESS_ID, -restoreIn, 'DAILY_LOAN_REV_REV', `Reversal of Daily Loan Interest from ${supplierName} (Bill #${purchase.billNo || ''})`);
+                        }
+                    }
+                } else if (src === 'scrap_loans') {
+                    const ref = db.collection('scrap_loans').doc(row.id);
+                    await ref.update({
+                        balance: firebase.firestore.FieldValue.increment(amt),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+            }
+            
+            // 5. Reverse Weekly Loans
+            const weeklyDeduct = Number(purchase.weeklyLoanDeduction || (purchase.loanApplyBreakdown && purchase.loanApplyBreakdown.WEEKLY) || 0);
+            if (weeklyDeduct > 0.01) {
+                const wSnap = await db.collection('weekly_loans')
+                    .where('businessId', '==', SCRAP_BUSINESS_ID)
+                    .where('customerName', '==', supplierName)
+                    .get();
+                
+                let remainingToUndo = weeklyDeduct;
+                const wDocs = wSnap.docs.map(d => ({ id: d.id, data: d.data() }))
+                    .sort((a, b) => String(b.data.date || '').localeCompare(String(a.data.date || '')));
+                
+                const todayStr = new Date().toISOString().split('T')[0];
+                for (const wRow of wDocs) {
+                    if (remainingToUndo <= 0.01) break;
+                    const wData = wRow.data;
+                    const schedule = wData.schedule || [];
+                    
+                    for (let i = schedule.length - 1; i >= 0; i--) {
+                        if (remainingToUndo <= 0.01) break;
+                        const inst = schedule[i];
+                        const paid = Number(inst.paidAmount) || 0;
+                        if (paid > 0) {
+                            const undoAmt = Math.min(paid, remainingToUndo);
+                            inst.paidAmount = paid - undoAmt;
+                            if (inst.paidAmount < inst.amount - 0.01) {
+                                inst.status = inst.dueDate < todayStr ? 'OVERDUE' : 'PENDING';
+                            }
+                            remainingToUndo -= undoAmt;
+                        }
+                    }
+                    
+                    if (window.WeeklyLoanCore) {
+                        window.WeeklyLoanCore.refreshScheduleStatus(wData);
+                    }
+                    
+                    const scheduleActive = wData.schedule.some(inst => inst.status !== 'PAID');
+                    await db.collection('weekly_loans').doc(wRow.id).update({
+                        schedule: wData.schedule,
+                        active: scheduleActive,
+                        totalOverdueInterest: wData.totalOverdueInterest || 0,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+            }
+            
+            // 6. Delete Journal Entries
+            const journalSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
+                .where('reference', '==', id)
+                .where('referenceType', '==', 'SCRAP_BUYING')
+                .get();
+            for (const d of journalSnap.docs) {
+                await d.ref.delete();
+            }
+            
+            // 7. Delete scrap_buying_sessions
+            const sessionSnap = await db.collection('scrap_buying_sessions')
+                .where('businessId', '==', SCRAP_BUSINESS_ID)
+                .where('billNo', '==', purchase.billNo || '')
+                .get();
+            for (const d of sessionSnap.docs) {
+                await d.ref.delete();
+            }
+            
+            // 8. Delete the purchase itself
+            await docRef.delete();
+        }
+    } finally {
+        showLoading(false);
+    }
+}
 
-        countEl.textContent = filtered.length;
+async function renderBUY(body) {
+    showLoading(true);
+    try {
+        const [buySnap, itemSnap] = await Promise.all([
+            db.collection('buying_history').where('businessId', '==', SCRAP_BUSINESS_ID).get(),
+            db.collection('scrap_items').where('businessId', '==', SCRAP_BUSINESS_ID).get()
+        ]);
+        const itemNames = itemSnap.docs.map((d) => String(d.data().itemName || '').trim()).filter(Boolean).sort((a, b) => a.localeCompare(b));
+        const rows = buySnap.docs.map((d) => {
+            const data = d.data();
+            return { id: d.id, ...data };
+        }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
-        const todayIso = new Date().toLocaleDateString('en-CA');
-        const yesterdayIso = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
+        body.innerHTML = `
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;background:#fff;padding:12px;border:1px solid #dbe4ee;border-radius:10px;">
+            <div style="display:flex;flex-direction:column;gap:4px;">
+                <label class="small" style="font-weight:700;">Supplier Name / නම</label>
+                <input id="buySearchName" placeholder="Search by name..." style="min-width:220px;padding:8px;font-size:13px;">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+                <label class="small" style="font-weight:700;">From Date / ආරම්භක දිනය</label>
+                <input id="buySearchFrom" type="date" style="padding:8px;font-size:13px;">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+                <label class="small" style="font-weight:700;">To Date / අවසාන දිනය</label>
+                <input id="buySearchTo" type="date" style="padding:8px;font-size:13px;">
+            </div>
+            <div style="display:flex;align-items:flex-end;height:100%;margin-top:18px;gap:8px;">
+                <button id="buySearchReset" style="background:#64748b;font-weight:700;padding:9px 15px;">Reset / පැහැදිලි කරන්න</button>
+            </div>
+            <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-end;margin-top:18px;">
+                <button id="buyToggleDeleteBtn" style="background:${isDeleteMode ? '#64748b' : '#dc2626'};color:#fff;font-weight:700;padding:9px 15px;border:none;border-radius:6px;cursor:pointer;">${isDeleteMode ? 'Cancel / අවලංගු කරන්න' : 'Delete Mode / මකන්න'}</button>
+                <button id="buyPermanentDeleteBtn" style="background:#b91c1c;color:#fff;font-weight:700;padding:9px 15px;border:none;border-radius:6px;cursor:pointer;display:none;">Permanent Delete / ස්ථිරවම මකන්න</button>
+                <span class="small" style="font-weight:700;align-self:center;margin-left:8px;">Records / ගනුදෙනු ගණන: <b id="buyFilteredCount" style="color:#0f3b2c;font-size:14px;">0</b></span>
+            </div>
+          </div>
+          <div style="overflow:auto;border:1px solid #e2e8f0;border-radius:10px;">
+            <table style="min-width:${Math.max(1200, 750 + (itemNames.length * 110))}px;">
+              <thead>
+                <tr>
+                  ${isDeleteMode ? '<th style="width:50px;text-align:center;">Select</th>' : ''}
+                  <th>Date</th><th>Name</th><th>Total Weight</th><th>Total Amount</th>
+                  ${itemNames.map((n) => `<th>${n}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody id="buyTableBody"></tbody>
+            </table>
+          </div>`;
 
-        tbody.innerHTML = filtered.map((r) => {
-            const weights = {};
-            (Array.isArray(r.items) ? r.items : []).forEach((line) => {
-                weights[String(line.itemName || '').trim()] = Number(line.weight) || 0;
+        const nameInput = document.getElementById('buySearchName');
+        const fromInput = document.getElementById('buySearchFrom');
+        const toInput = document.getElementById('buySearchTo');
+        const resetBtn = document.getElementById('buySearchReset');
+        const tbody = document.getElementById('buyTableBody');
+        const countEl = document.getElementById('buyFilteredCount');
+
+        const formatDate = (isoStr) => {
+            if (!isoStr) return '';
+            const d = new Date(isoStr);
+            if (isNaN(d.getTime())) return '';
+            return d.toLocaleDateString('en-CA'); // YYYY-MM-DD
+        };
+
+        function applyFilters() {
+            const nameVal = nameInput.value.trim().toLowerCase();
+            const fromVal = fromInput.value;
+            const toVal = toInput.value;
+
+            const filtered = rows.filter((r) => {
+                if (nameVal) {
+                    const supplierName = String(r.supplierName || '').toLowerCase();
+                    const walkInName = String(r.walkInName || '').toLowerCase();
+                    if (!supplierName.includes(nameVal) && !walkInName.includes(nameVal)) {
+                        return false;
+                    }
+                }
+
+                if (fromVal || toVal) {
+                    const dateStr = r.date || r.billDateTime || '';
+                    const rowDate = formatDate(dateStr);
+                    if (!rowDate) return false;
+                    if (fromVal && rowDate < fromVal) return false;
+                    if (toVal && rowDate > toVal) return false;
+                }
+
+                return true;
             });
 
-            let dateHtml = '-';
-            if (r.date) {
-                const rDateObj = new Date(r.date);
-                const rIso = rDateObj.toLocaleDateString('en-CA');
-                const timeStr = rDateObj.toLocaleString();
-                
-                if (rIso === todayIso) {
-                    dateHtml = `<span style="color:#16a34a; font-weight:700;">${timeStr}</span>`;
-                } else if (rIso === yesterdayIso) {
-                    dateHtml = `<span style="color:#a16207; font-weight:700;">${timeStr}</span>`;
-                } else {
-                    dateHtml = timeStr;
+            countEl.textContent = filtered.length;
+
+            const todayIso = new Date().toLocaleDateString('en-CA');
+            const yesterdayIso = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
+
+            tbody.innerHTML = filtered.map((r) => {
+                const weights = {};
+                (Array.isArray(r.items) ? r.items : []).forEach((line) => {
+                    weights[String(line.itemName || '').trim()] = Number(line.weight) || 0;
+                });
+
+                let dateHtml = '-';
+                let isLastTwoDays = false;
+                if (r.date) {
+                    const rDateObj = new Date(r.date);
+                    const rIso = rDateObj.toLocaleDateString('en-CA');
+                    const timeStr = rDateObj.toLocaleString();
+                    isLastTwoDays = (rIso === todayIso || rIso === yesterdayIso);
+                    
+                    if (rIso === todayIso) {
+                        dateHtml = `<span style="color:#16a34a; font-weight:700;">${timeStr}</span>`;
+                    } else if (rIso === yesterdayIso) {
+                        dateHtml = `<span style="color:#a16207; font-weight:700;">${timeStr}</span>`;
+                    } else {
+                        dateHtml = timeStr;
+                    }
+                }
+
+                let chkHtml = '';
+                if (isDeleteMode) {
+                    if (isLastTwoDays) {
+                        chkHtml = `<td style="text-align:center;"><input type="checkbox" class="buy-delete-chk" data-id="${r.id}" style="width:18px;height:18px;cursor:pointer;"></td>`;
+                    } else {
+                        chkHtml = `<td></td>`;
+                    }
+                }
+
+                return `<tr>
+                  ${chkHtml}
+                  <td>${dateHtml}</td>
+                  <td><a href="#" onclick="viewFullBill('${r.id || ''}', ${JSON.stringify(r).replace(/"/g, '&quot;')}); return false;" style="color:#0ea5e9; font-weight:700; text-decoration:none;">${r.supplierName || '-'}</a></td>
+                  <td>${(Number(r.totalWeight) || 0).toFixed(2)}</td>
+                  <td>${fmt(r.totalAmount || 0)}</td>
+                  ${itemNames.map((name) => `<td>${(weights[name] || 0).toFixed(2)}</td>`).join('')}
+                </tr>`;
+            }).join('') || `<tr><td colspan="${(isDeleteMode ? 5 : 4) + itemNames.length}" style="text-align:center;padding:20px;color:#64748b;">No matching records found / ගැලපෙන ගනුදෙනු සොයාගත නොහැක</td></tr>`;
+
+            if (isDeleteMode) {
+                const chks = tbody.querySelectorAll('.buy-delete-chk');
+                chks.forEach(chk => {
+                    chk.addEventListener('change', () => {
+                        const checkedCount = tbody.querySelectorAll('.buy-delete-chk:checked').length;
+                        const permBtn = document.getElementById('buyPermanentDeleteBtn');
+                        if (permBtn) {
+                            permBtn.style.display = checkedCount > 0 ? 'inline-block' : 'none';
+                        }
+                    });
+                });
+            }
+        }
+
+        // Event listeners
+        nameInput.addEventListener('input', applyFilters);
+        fromInput.addEventListener('change', applyFilters);
+        toInput.addEventListener('change', applyFilters);
+        resetBtn.addEventListener('click', () => {
+            nameInput.value = '';
+            fromInput.value = '';
+            toInput.value = '';
+            applyFilters();
+        });
+
+        const toggleDeleteBtn = document.getElementById('buyToggleDeleteBtn');
+        const permDeleteBtn = document.getElementById('buyPermanentDeleteBtn');
+        
+        toggleDeleteBtn.addEventListener('click', () => {
+            if (!isDeleteMode) {
+                const todayIso = new Date().toLocaleDateString('en-CA');
+                const yesterdayIso = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
+                const eligibleCount = rows.filter((r) => {
+                    const dateStr = r.date || r.billDateTime || '';
+                    const rDateObj = new Date(dateStr);
+                    const rIso = rDateObj.toLocaleDateString('en-CA');
+                    return (rIso === todayIso || rIso === yesterdayIso);
+                }).length;
+
+                if (eligibleCount === 0) {
+                    alert("මකා දැමිය හැකි අවසන් දින දෙකේ මිලදී ගැනීම් කිසිවක් නොමැත.");
+                    return;
                 }
             }
+            isDeleteMode = !isDeleteMode;
+            renderBUY(body);
+        });
 
-            return `<tr>
-              <td>${dateHtml}</td>
-              <td><a href="#" onclick="viewFullBill('${r.id || ''}', ${JSON.stringify(r).replace(/"/g, '&quot;')}); return false;" style="color:#0ea5e9; font-weight:700; text-decoration:none;">${r.supplierName || '-'}</a></td>
-              <td>${(Number(r.totalWeight) || 0).toFixed(2)}</td>
-              <td>${fmt(r.totalAmount || 0)}</td>
-              ${itemNames.map((name) => `<td>${(weights[name] || 0).toFixed(2)}</td>`).join('')}
-            </tr>`;
-        }).join('') || `<tr><td colspan="${4 + itemNames.length}" style="text-align:center;padding:20px;color:#64748b;">No matching records found / ගැලපෙන ගනුදෙනු සොයාගත නොහැක</td></tr>`;
-    }
+        permDeleteBtn.addEventListener('click', async () => {
+            const checkedChks = tbody.querySelectorAll('.buy-delete-chk:checked');
+            const selectedIds = Array.from(checkedChks).map(chk => chk.dataset.id);
+            if (selectedIds.length === 0) return;
+            
+            const confirmMsg = `මීට අදාළ මුදල් ගනුදෙනු සහ ස්ටොක් තත්ත්වය ආපස්සට හැරවීම සමඟින් තෝරාගත් මිලදී ගැනීම් ${selectedIds.length} ක් ස්ථිරවම මකා දැමීමට අවශ්‍යද?`;
+            if (confirm(confirmMsg)) {
+                try {
+                    await deleteSelectedPurchases(selectedIds);
+                    alert('තෝරාගත් මිලදී ගැනීම් සාර්ථකව මකා දමන ලදී.');
+                    isDeleteMode = false;
+                    renderBUY(body);
+                } catch (err) {
+                    console.error(err);
+                    alert('මකා දැමීම අසාර්ථක විය: ' + err.message);
+                }
+            }
+        });
 
-    // Event listeners
-    nameInput.addEventListener('input', applyFilters);
-    fromInput.addEventListener('change', applyFilters);
-    toInput.addEventListener('change', applyFilters);
-    resetBtn.addEventListener('click', () => {
-        nameInput.value = '';
-        fromInput.value = '';
-        toInput.value = '';
+        // Initial render
         applyFilters();
-    });
-
-    // Initial render
-    applyFilters();
+    } catch (err) {
+        console.error("renderBUY error:", err);
+        body.innerHTML = `<div style="padding:20px;color:#b91c1c;background:#fee2e2;border:1px solid #fca5a5;border-radius:12px;">
+            <h4 style="margin:0 0 8px;">Failed to load purchases</h4>
+            <div class="small">${err.message}</div>
+        </div>`;
+    } finally {
+        showLoading(false);
+    }
 }
 
 async function renderDAILYTR(body) {
@@ -1252,6 +1952,10 @@ async function renderDAILYTR(body) {
             const batch = db.batch();
             const num = (v) => Number(v) || 0;
             
+            let poolDelta = 0;
+            let poolType = null;
+            let poolNote = "";
+            
             if (type === 'EVENT') {
                 batch.delete(db.collection('scrap_event_log').doc(id));
             } else if (type === 'BUY') {
@@ -1273,6 +1977,25 @@ async function renderDAILYTR(body) {
                 }
                 // 3. Delete Buy Record
                 batch.delete(doc.ref);
+                
+                // Calculate Profit Pool impact for reversal
+                let totalPotentialProfit = 0;
+                if (Array.isArray(data.items)) {
+                    for (const line of data.items) {
+                        const itemSnap = await db.collection('scrap_items').doc(line.itemId || line.id).get();
+                        if (itemSnap.exists) {
+                            const itData = itemSnap.data();
+                            const bp = Number(line.buyingPrice || line.rate) || 0;
+                            const sp = Number(itData.sellingPrice) || 0;
+                            const margin = sp > 0 ? (sp - bp) : 0;
+                            totalPotentialProfit += margin * (Number(line.weight) || 0);
+                        }
+                    }
+                }
+                const vehicleHireApplied = Number(data.vehicleHireApplied) || 0;
+                poolDelta = -(totalPotentialProfit + vehicleHireApplied);
+                poolType = 'PURCHASE_REVERSED';
+                poolNote = `Reversed purchase from ${data.supplierName} (Bill #${data.billNo || ''}) via Daily Transactions`;
                 
                 // 4. Delete associated Journal Entries and decrement ledger
                 const jSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
@@ -1391,6 +2114,16 @@ async function renderDAILYTR(body) {
                     }
                 }
                 batch.delete(doc.ref);
+                
+                // Calculate Profit Pool impact for reversal
+                const totalRealizedProfit = Number(data.realizedProfit) || 0;
+                const totalExpectedProfitSold = Array.isArray(data.items)
+                    ? data.items.reduce((s, item) => s + (Number(item.expectedProfitPart) || 0), 0)
+                    : 0;
+                const poolAdjustment = totalRealizedProfit - totalExpectedProfitSold;
+                poolDelta = -poolAdjustment;
+                poolType = 'SALE_REVERSED';
+                poolNote = `Reversed sale to ${data.buyerName || '-'} via Daily Transactions`;
 
                 // Delete associated Journal Entries
                 const jSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
@@ -1437,6 +2170,11 @@ async function renderDAILYTR(body) {
                 if (!doc.exists) throw new Error("Expense record not found.");
                 const data = doc.data();
                 batch.delete(doc.ref);
+                
+                // Calculate Profit Pool impact for reversal (add back the expense amount)
+                poolDelta = Number(data.amount) || 0;
+                poolType = 'EXPENSE_REVERSED';
+                poolNote = `Reversed expense: ${data.expenseType || ''} (${data.details || ''}) via Daily Transactions`;
 
                 const jSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
                     .where('referenceType', '==', 'SCRAP_EXPENSE')
@@ -1464,6 +2202,16 @@ async function renderDAILYTR(body) {
             }
             
             await batch.commit();
+            
+            // Execute Profit Pool update after successful batch commit
+            if (poolType && window.scrapVbaCore && typeof window.scrapVbaCore.updateProfitPool === 'function') {
+                try {
+                    await window.scrapVbaCore.updateProfitPool(SCRAP_BUSINESS_ID, poolDelta, poolType, poolNote);
+                } catch (poolErr) {
+                    console.error("Profit Pool update failed during transaction reversal:", poolErr);
+                }
+            }
+            
             alert("Transaction deleted and ledger adjusted successfully.");
             location.reload();
         } catch (e) {
@@ -2150,6 +2898,7 @@ async function renderLOAN(body) {
 
 async function renderView(view) {
     try {
+        isDeleteMode = false;
         const meta = VIEW_META[view] || VIEW_META.STOCK;
         document.getElementById('viewTitle').textContent = meta.title;
         document.getElementById('viewDesc').textContent = meta.desc;

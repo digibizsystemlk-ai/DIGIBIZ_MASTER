@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accounting - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=60"></script>
+    <script src="/core/dashboard-core.js?v=60"></script>
+    <script src="/core/auth-roles.js?v=61"></script>
+    <script src="/core/sidebar.js?v=1008"></script>
+    <style>
+        *{box-sizing:border-box}
+        body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f3f4f6;color:#111827}
+        .wrap{padding:22px;max-width:1200px}
+        .card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px;box-shadow:0 6px 20px rgba(0,0,0,.05);margin-bottom:14px}
+        h1{margin:0;font-size:24px}
+        .sub{margin:8px 0 0;color:#64748b;font-size:13px}
+        .filters{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:12px}
+        .fld{display:flex;flex-direction:column;gap:4px;min-width:160px}
+        label{font-size:11px;font-weight:700;color:#64748b}
+        input{border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:14px}
+        button{border:none;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer}
+        .btn{background:#10b981;color:#fff}
+        .btn-lite{background:#eef2ff;color:#1e3a8a}
+        .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:10px}
+        .kpi{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f9fafb}
+        .kpi .k{font-size:12px;color:#6b7280}
+        .kpi .v{font-size:23px;font-weight:800;margin-top:2px}
+        .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+        .tab{padding:8px 14px;border-radius:999px;background:#e5e7eb;color:#111827;font-size:13px;font-weight:700;cursor:pointer}
+        .tab.active{background:#10b981;color:#fff}
+        .tab-panel{display:none}
+        .tab-panel.active{display:block}
+        table{width:100%;border-collapse:collapse;min-width:720px}
+        .table-wrap{overflow:auto;border:1px solid #e5e7eb;border-radius:10px}
+        th,td{padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;text-align:left}
+        th{background:#f9fafb;font-weight:700;color:#374151}
+        td.num{text-align:right}
+        .meta{margin:8px 0 0;font-size:12px;color:#6b7280}
+        .loading{font-size:13px;color:#6b7280}
+        .err{background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:10px;border-radius:10px}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="card">
+        <h1>Accounting</h1>
+        <p class="sub">Supplier outstanding, purchase ledger, and account balances summary.</p>
+        <div id="gateMsg" class="meta loading">Checking access...</div>
+    </div>
+
+    <div id="accountingRoot" style="display:none;">
+        <div class="card">
+            <div class="tabs" id="accTabs">
+                <button type="button" class="tab active" data-tab="overview">Overview</button>
+                <button type="button" class="tab" data-tab="trial">Trial Balance</button>
+                <button type="button" class="tab" data-tab="ledger">Ledger View</button>
+                <button type="button" class="tab" data-tab="income">Income Statement</button>
+                <button type="button" class="tab" data-tab="balance">Balance Sheet</button>
+            </div>
+        </div>
+
+        <div id="tab-overview" class="tab-panel active">
+            <div class="card">
+                <h2 style="margin:0;font-size:19px;">Account Balances Summary</h2>
+                <div class="summary-grid">
+                    <div class="kpi"><div class="k">Total Purchases</div><div id="kpiPurchases" class="v">Rs 0.00</div></div>
+                    <div class="kpi"><div class="k">Inventory Value</div><div id="kpiInventory" class="v">Rs 0.00</div></div>
+                    <div class="kpi"><div class="k">Supplier Outstanding</div><div id="kpiSupplierOutstanding" class="v">Rs 0.00</div></div>
+                    <div class="kpi"><div class="k">Stock Value</div><div id="kpiStockValue" class="v">Rs 0.00</div></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 style="margin:0;font-size:19px;">Supplier Outstanding Report</h2>
+                <p id="supplierOutstandingMeta" class="meta">Loading...</p>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Supplier</th><th class="num">Outstanding (Rs)</th></tr></thead>
+                        <tbody id="supplier-outstanding-body">
+                            <tr><td colspan="2" class="loading">Loading suppliers...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 style="margin:0;font-size:19px;">Purchase Ledger</h2>
+                <div class="filters">
+                    <div class="fld">
+                        <label for="fromDate">From</label>
+                        <input id="fromDate" type="date">
+                    </div>
+                    <div class="fld">
+                        <label for="toDate">To</label>
+                        <input id="toDate" type="date">
+                    </div>
+                    <button id="applyBtn" class="btn" type="button">Apply Filter</button>
+                    <button id="clearBtn" class="btn-lite" type="button">Clear</button>
+                </div>
+                <p id="purchaseMeta" class="meta">Loading...</p>
+                <div class="table-wrap" style="margin-top:10px;">
+                    <table>
+                        <thead><tr><th>Date</th><th>Reference</th><th class="num">Amount (Rs)</th></tr></thead>
+                        <tbody id="purchase-ledger-body">
+                            <tr><td colspan="3" class="loading">Loading purchases...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-trial" class="tab-panel">
+            <div class="card">
+                <h2 style="margin:0;font-size:19px;">Trial Balance</h2>
+                <p id="trialMeta" class="meta">Loading...</p>
+                <div class="table-wrap" style="margin-top:10px;">
+                    <table>
+                        <thead><tr><th>Account</th><th class="num">Debit (Rs)</th><th class="num">Credit (Rs)</th></tr></thead>
+                        <tbody id="trialBody"><tr><td colspan="3" class="loading">Loading trial balance...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-ledger" class="tab-panel">
+            <div class="card">
+                <h2 style="margin:0;font-size:19px;">Ledger View</h2>
+                <div class="filters">
+                    <div class="fld">
+                        <label for="ledgerAccountSelect">Account</label>
+                        <select id="ledgerAccountSelect" style="border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font-size:14px;"></select>
+                    </div>
+                </div>
+                <p id="ledgerMeta" class="meta">Loading...</p>
+                <div class="table-wrap" style="margin-top:10px;">
+                    <table>
+                        <thead><tr><th>Date</th><th>Reference</th><th>Type</th><th class="num">Amount (Rs)</th></tr></thead>
+                        <tbody id="ledgerBody"><tr><td colspan="4" class="loading">Loading ledger...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-income" class="tab-panel">
+            <div class="card">
+                <h2 style="margin:0;font-size:19px;">Income Statement</h2>
+                <p id="incomeMeta" class="meta">Loading...</p>
+                <div class="summary-grid">
+                    <div class="kpi"><div class="k">Revenue</div><div id="incomeRevenue" class="v">Rs 0.00</div></div>
+                    <div class="kpi"><div class="k">Expenses</div><div id="incomeExpenses" class="v">Rs 0.00</div></div>
+                    <div class="kpi"><div class="k">Net Profit</div><div id="incomeProfit" class="v">Rs 0.00</div></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-balance" class="tab-panel">
+            <div class="card">
+                <h2 style="margin:0;font-size:19px;">Balance Sheet</h2>
+                <p id="balanceMeta" class="meta">Loading...</p>
+                <div class="summary-grid">
+                    <div class="kpi"><div class="k">Assets</div><div id="bsAssets" class="v">Rs 0.00</div></div>
+                    <div class="kpi"><div class="k">Liabilities</div><div id="bsLiabilities" class="v">Rs 0.00</div></div>
+                    <div class="kpi"><div class="k">Equity</div><div id="bsEquity" class="v">Rs 0.00</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var currentBusinessId = '';
+    var currentUser = null;
+    var purchaseRowsRaw = [];
+    var grnRowsRaw = [];
+    var accountBalancesMap = {};
+    var journalEntriesRaw = [];
+    var authRedirectTimer = null;
+
+    function money(v) {
+        return 'Rs ' + (Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function esc(v) {
+        return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    }
+    function setGateMsg(txt, isErr) {
+        var el = document.getElementById('gateMsg');
+        if (!el) return;
+        el.className = isErr ? 'meta err' : 'meta loading';
+        el.textContent = txt || '';
+    }
+    function dateKeyFromValue(v) {
+        if (!v) return '';
+        if (typeof v.toDate === 'function') {
+            var d0 = v.toDate();
+            if (!isNaN(d0.getTime())) return d0.toISOString().slice(0, 10);
+        }
+        var d = new Date(v);
+        if (isNaN(d.getTime())) return '';
+        return d.toISOString().slice(0, 10);
+    }
+    function parseDateStart(s) {
+        if (!s) return null;
+        var d = new Date(s);
+        if (isNaN(d.getTime())) return null;
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }
+    function parseDateEnd(s) {
+        if (!s) return null;
+        var d = new Date(s);
+        if (isNaN(d.getTime())) return null;
+        d.setHours(23, 59, 59, 999);
+        return d;
+    }
+    function refKey(v) {
+        return String(v || '').trim().toUpperCase();
+    }
+    function classifyAccount(accountName) {
+        var a = String(accountName || '').toLowerCase();
+        if (a.indexOf('inventory') !== -1 || a.indexOf('stock') !== -1 || a.indexOf('asset') !== -1 || a.indexOf('cash') !== -1 || a.indexOf('bank') !== -1) return 'asset';
+        if (a.indexOf('payable') !== -1 || a.indexOf('supplier') !== -1 || a.indexOf('liabil') !== -1 || a.indexOf('loan') !== -1) return 'liability';
+        if (a.indexOf('equity') !== -1 || a.indexOf('capital') !== -1 || a.indexOf('retained') !== -1) return 'equity';
+        if (a.indexOf('sales') !== -1 || a.indexOf('revenue') !== -1 || a.indexOf('income') !== -1) return 'revenue';
+        if (a.indexOf('purchase') !== -1 || a.indexOf('expense') !== -1 || a.indexOf('cost') !== -1) return 'expense';
+        return 'other';
+    }
+    function openTab(tabId) {
+        document.querySelectorAll('#accTabs .tab').forEach(function (b) {
+            b.classList.toggle('active', b.getAttribute('data-tab') === tabId);
+        });
+        document.querySelectorAll('.tab-panel').forEach(function (p) {
+            p.classList.toggle('active', p.id === ('tab-' + tabId));
+        });
+    }
+
+    async function updateAccountBalancesSummary() {
+        var snap = await db.collection('account_balances')
+            .where('businessId', '==', currentBusinessId)
+            .get();
+        var m = {};
+        snap.forEach(function (doc) {
+            var x = doc.data() || {};
+            m[String(x.account || '').toLowerCase()] = Number(x.balance) || 0;
+        });
+        accountBalancesMap = m;
+        document.getElementById('kpiPurchases').textContent = money(m.purchases || 0);
+        document.getElementById('kpiInventory').textContent = money(m.inventory || 0);
+        document.getElementById('kpiSupplierOutstanding').textContent = money(m.supplieroutstanding || 0);
+        document.getElementById('kpiStockValue').textContent = money(m.stockvalue || 0);
+    }
+
+    async function renderSupplierOutstanding() {
+        var ledgerSnap = await db.collection('supplier_ledger')
+            .where('businessId', '==', currentBusinessId)
+            .get();
+        var bySupplier = {};
+        var creditedRefSet = {};
+        ledgerSnap.forEach(function (doc) {
+            var x = doc.data() || {};
+            var nm = String(x.supplierName || x.supplierId || 'Unknown Supplier').trim() || 'Unknown Supplier';
+            var amt = Number(x.amount) || 0;
+            var t = String(x.type || '').toLowerCase();
+            bySupplier[nm] = (bySupplier[nm] || 0) + (t === 'debit' ? -amt : amt);
+            if (t === 'credit' && x.reference) creditedRefSet[refKey(x.reference)] = true;
+        });
+        // Fallback: include GRNs that still do not have supplier_ledger credits.
+        grnRowsRaw.forEach(function (g) {
+            var key = refKey(g.reference);
+            if (key && creditedRefSet[key]) return;
+            var nm = String(g.supplier || g.supplierName || 'Unknown Supplier').trim() || 'Unknown Supplier';
+            bySupplier[nm] = (bySupplier[nm] || 0) + (Number(g.amount) || 0);
+        });
+        var rows = Object.keys(bySupplier)
+            .map(function (name) { return { name: name, outstanding: bySupplier[name] }; })
+            .filter(function (r) { return Math.abs(r.outstanding) > 0.0001; })
+            .sort(function (a, b) { return b.outstanding - a.outstanding; });
+        var total = rows.reduce(function (s, r) { return s + r.outstanding; }, 0);
+        document.getElementById('supplierOutstandingMeta').textContent = 'Suppliers: ' + rows.length + ' | Total Outstanding: ' + money(total);
+        var body = document.getElementById('supplier-outstanding-body');
+        if (!rows.length) {
+            body.innerHTML = '<tr><td colspan="2" class="loading">No outstanding suppliers.</td></tr>';
+            return;
+        }
+        body.innerHTML = rows.map(function (r) {
+            return '<tr><td>' + esc(r.name) + '</td><td class="num">' + money(r.outstanding) + '</td></tr>';
+        }).join('');
+    }
+
+    async function loadPurchaseLedgerRaw() {
+        var journalSnap = await db.collection('journal_entries')
+            .where('businessId', '==', currentBusinessId)
+            .where('account', '==', 'Purchases')
+            .get();
+        var purchaseMap = {};
+        journalSnap.docs.forEach(function (doc) {
+            var x = doc.data() || {};
+            var dk = dateKeyFromValue(x.date || x.createdAt);
+            var row = {
+                id: doc.id,
+                dateKey: dk,
+                dateObj: dk ? new Date(dk + 'T00:00:00') : null,
+                reference: String(x.reference || doc.id),
+                amount: Number(x.amount) || 0,
+                source: 'journal'
+            };
+            purchaseMap[refKey(row.reference)] = row;
+        });
+        // Fallback: include GRN rows missing in journal_entries.
+        grnRowsRaw.forEach(function (g) {
+            var k = refKey(g.reference);
+            if (k && purchaseMap[k]) return;
+            purchaseMap[k || ('GRN_' + String(g.id || ''))] = {
+                id: String(g.id || ''),
+                dateKey: g.dateKey || '',
+                dateObj: g.dateObj || null,
+                reference: String(g.reference || ('GRN/' + (g.grnId || g.id || ''))),
+                amount: Number(g.amount) || 0,
+                source: 'grn_history'
+            };
+        });
+        purchaseRowsRaw = Object.keys(purchaseMap).map(function (k) { return purchaseMap[k]; });
+        purchaseRowsRaw.sort(function (a, b) {
+            return String(b.dateKey || '').localeCompare(String(a.dateKey || ''));
+        });
+    }
+
+    async function loadJournalEntriesRaw() {
+        var snap = await db.collection('journal_entries')
+            .where('businessId', '==', currentBusinessId)
+            .get();
+        journalEntriesRaw = snap.docs.map(function (doc) {
+            var x = doc.data() || {};
+            var dk = dateKeyFromValue(x.date || x.createdAt);
+            return {
+                id: doc.id,
+                account: String(x.account || '').trim(),
+                reference: String(x.reference || doc.id),
+                dateKey: dk,
+                dateObj: dk ? new Date(dk + 'T00:00:00') : null,
+                amount: Number(x.amount) || 0,
+                entryType: String(x.entryType || '').toLowerCase() || 'debit',
+                referenceType: String(x.referenceType || '').toUpperCase()
+            };
+        });
+    }
+
+    function renderTrialBalance() {
+        var tbody = document.getElementById('trialBody');
+        var byAcc = {};
+        Object.keys(accountBalancesMap).forEach(function (k) {
+            byAcc[k] = Number(accountBalancesMap[k]) || 0;
+        });
+        journalEntriesRaw.forEach(function (r) {
+            var key = String(r.account || '').toLowerCase();
+            if (!key) return;
+            if (byAcc[key] == null) byAcc[key] = 0;
+            byAcc[key] += r.entryType === 'credit' ? -r.amount : r.amount;
+        });
+        var rows = Object.keys(byAcc).sort().map(function (k) {
+            var bal = Number(byAcc[k]) || 0;
+            return { account: k, debit: bal > 0 ? bal : 0, credit: bal < 0 ? Math.abs(bal) : 0 };
+        });
+        var totalDr = rows.reduce(function (s, r) { return s + r.debit; }, 0);
+        var totalCr = rows.reduce(function (s, r) { return s + r.credit; }, 0);
+        document.getElementById('trialMeta').textContent = 'Accounts: ' + rows.length + ' | Debit: ' + money(totalDr) + ' | Credit: ' + money(totalCr);
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="3" class="loading">No trial balance rows.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(function (r) {
+            return '<tr><td>' + esc(r.account) + '</td><td class="num">' + (r.debit ? money(r.debit) : '-') + '</td><td class="num">' + (r.credit ? money(r.credit) : '-') + '</td></tr>';
+        }).join('');
+    }
+
+    function populateLedgerAccounts() {
+        var sel = document.getElementById('ledgerAccountSelect');
+        var seen = {};
+        journalEntriesRaw.forEach(function (r) {
+            var k = String(r.account || '').trim();
+            if (!k) return;
+            seen[k] = true;
+        });
+        var keys = Object.keys(seen).sort(function (a, b) { return a.localeCompare(b); });
+        sel.innerHTML = '<option value="ALL">All Accounts</option>' + keys.map(function (k) {
+            return '<option value="' + esc(k) + '">' + esc(k) + '</option>';
+        }).join('');
+    }
+
+    function renderLedgerView() {
+        var sel = document.getElementById('ledgerAccountSelect');
+        var chosen = sel ? String(sel.value || 'ALL') : 'ALL';
+        var rows = journalEntriesRaw.slice();
+        if (chosen !== 'ALL') rows = rows.filter(function (r) { return r.account === chosen; });
+        rows.sort(function (a, b) { return String(b.dateKey || '').localeCompare(String(a.dateKey || '')); });
+        document.getElementById('ledgerMeta').textContent = 'Entries: ' + rows.length + (chosen !== 'ALL' ? ' | Account: ' + chosen : '');
+        var body = document.getElementById('ledgerBody');
+        if (!rows.length) {
+            body.innerHTML = '<tr><td colspan="4" class="loading">No ledger entries.</td></tr>';
+            return;
+        }
+        body.innerHTML = rows.map(function (r) {
+            return '<tr><td>' + esc(r.dateKey || '-') + '</td><td>' + esc(r.reference) + '</td><td>' + esc(r.entryType || 'debit') + '</td><td class="num">' + money(r.amount) + '</td></tr>';
+        }).join('');
+    }
+
+    function renderIncomeStatement() {
+        var revenue = 0;
+        var expenses = 0;
+        journalEntriesRaw.forEach(function (r) {
+            // Free items are informational only; do not reduce accounting profit.
+            if (String(r.referenceType || '').toUpperCase() === 'FREE_ISSUES') return;
+            var c = classifyAccount(r.account);
+            if (c === 'revenue') revenue += (r.entryType === 'credit' ? r.amount : -r.amount);
+            if (c === 'expense') expenses += (r.entryType === 'debit' ? r.amount : -r.amount);
+        });
+        var profit = revenue - expenses;
+        document.getElementById('incomeRevenue').textContent = money(revenue);
+        document.getElementById('incomeExpenses').textContent = money(expenses);
+        document.getElementById('incomeProfit').textContent = money(profit);
+        document.getElementById('incomeMeta').textContent = 'Net Profit = Revenue - Expenses';
+    }
+
+    function renderBalanceSheet() {
+        var assets = 0;
+        var liabilities = 0;
+        var equity = 0;
+        Object.keys(accountBalancesMap).forEach(function (k) {
+            var bal = Number(accountBalancesMap[k]) || 0;
+            var cls = classifyAccount(k);
+            if (cls === 'asset') assets += bal;
+            else if (cls === 'liability') liabilities += Math.abs(bal);
+            else if (cls === 'equity') equity += Math.abs(bal);
+        });
+        // Carry current period net profit into equity if income/expense present in journal.
+        var revenue = 0;
+        var expenses = 0;
+        journalEntriesRaw.forEach(function (r) {
+            if (String(r.referenceType || '').toUpperCase() === 'FREE_ISSUES') return;
+            var c = classifyAccount(r.account);
+            if (c === 'revenue') revenue += (r.entryType === 'credit' ? r.amount : -r.amount);
+            if (c === 'expense') expenses += (r.entryType === 'debit' ? r.amount : -r.amount);
+        });
+        equity += (revenue - expenses);
+        document.getElementById('bsAssets').textContent = money(assets);
+        document.getElementById('bsLiabilities').textContent = money(liabilities);
+        document.getElementById('bsEquity').textContent = money(equity);
+        document.getElementById('balanceMeta').textContent = 'Assets = Liabilities + Equity (classification by account name)';
+    }
+
+    async function loadGrnHistoryRaw() {
+        var snap = await db.collection('grn_history')
+            .where('businessId', '==', currentBusinessId)
+            .get();
+        grnRowsRaw = snap.docs.map(function (doc) {
+            var x = doc.data() || {};
+            var id = String(x.grnId || doc.id || '').trim();
+            var ref = String(x.reference || ('GRN/' + id));
+            var dk = dateKeyFromValue(x.date || x.dateText || x.createdAt);
+            return {
+                id: doc.id,
+                grnId: id,
+                supplier: String(x.supplier || x.supplierName || '').trim(),
+                supplierName: String(x.supplierName || x.supplier || '').trim(),
+                amount: Number(x.total != null ? x.total : x.lineTotal) || 0,
+                reference: ref,
+                dateKey: dk,
+                dateObj: dk ? new Date(dk + 'T00:00:00') : null
+            };
+        }).filter(function (r) { return r.amount > 0; });
+    }
+
+    function renderPurchaseLedger() {
+        var from = parseDateStart(document.getElementById('fromDate').value);
+        var to = parseDateEnd(document.getElementById('toDate').value);
+        var filtered = purchaseRowsRaw.filter(function (r) {
+            if (!r.dateObj) return (!from && !to);
+            if (from && r.dateObj < from) return false;
+            if (to && r.dateObj > to) return false;
+            return true;
+        });
+        var total = filtered.reduce(function (s, r) { return s + (Number(r.amount) || 0); }, 0);
+        document.getElementById('purchaseMeta').textContent = 'Transactions: ' + filtered.length + ' | Total: ' + money(total);
+        var body = document.getElementById('purchase-ledger-body');
+        if (!filtered.length) {
+            body.innerHTML = '<tr><td colspan="3" class="loading">No purchases for selected range.</td></tr>';
+            return;
+        }
+        body.innerHTML = filtered.map(function (r) {
+            return '<tr><td>' + esc(r.dateKey || '-') + '</td><td>' + esc(r.reference) + '</td><td class="num">' + money(r.amount) + '</td></tr>';
+        }).join('');
+    }
+
+    async function loadPage() {
+        await loadGrnHistoryRaw();
+        await Promise.all([updateAccountBalancesSummary(), renderSupplierOutstanding(), loadPurchaseLedgerRaw(), loadJournalEntriesRaw()]);
+        renderPurchaseLedger();
+        renderTrialBalance();
+        populateLedgerAccounts();
+        renderLedgerView();
+        renderIncomeStatement();
+        renderBalanceSheet();
+    }
+
+    firebase.auth().onAuthStateChanged(async function (user) {
+        if (!user) {
+            if (authRedirectTimer) clearTimeout(authRedirectTimer);
+            authRedirectTimer = setTimeout(function () {
+                var nowUser = firebase.auth && firebase.auth().currentUser;
+                if (!nowUser) window.location.href = '/';
+            }, 900);
+            return;
+        }
+        if (authRedirectTimer) {
+            clearTimeout(authRedirectTimer);
+            authRedirectTimer = null;
+        }
+        currentUser = user;
+        try {
+            if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+                var ctx = await window.dashboardCore.getContext(user);
+                currentBusinessId = ctx && ctx.businessId ? ctx.businessId : '';
+                var userRole = ctx && ctx.userRole ? ctx.userRole : '';
+                
+                // Permission Check instead of Email Check
+                if (window.DigibizDistributorPermissions) {
+                    var perms = window.DigibizDistributorPermissions.permissionsForRole(userRole, currentBusinessId);
+                    if (!perms.canViewAccounting) {
+                        setGateMsg('Access denied. You do not have permission to view accounting data.', true);
+                        return;
+                    }
+                }
+            }
+            if (!currentBusinessId) {
+                currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '';
+            }
+            if (!currentBusinessId) {
+                setGateMsg('No business selected. Open dashboard and select business first.', true);
+                return;
+            }
+            localStorage.setItem('currentBusinessId', currentBusinessId);
+            sessionStorage.setItem('currentBusinessId', currentBusinessId);
+            document.getElementById('accountingRoot').style.display = '';
+            setGateMsg('');
+            await loadPage();
+        } catch (e) {
+            console.error(e);
+            setGateMsg('Failed to load accounting data: ' + (e.message || String(e)), true);
+        }
+    });
+
+    document.getElementById('applyBtn').addEventListener('click', function () {
+        renderSupplierOutstanding();
+        renderPurchaseLedger();
+        updateAccountBalancesSummary();
+        renderTrialBalance();
+        renderLedgerView();
+        renderIncomeStatement();
+        renderBalanceSheet();
+    });
+    document.getElementById('clearBtn').addEventListener('click', function () {
+        document.getElementById('fromDate').value = '';
+        document.getElementById('toDate').value = '';
+        renderSupplierOutstanding();
+        renderPurchaseLedger();
+        updateAccountBalancesSummary();
+        renderTrialBalance();
+        renderLedgerView();
+        renderIncomeStatement();
+        renderBalanceSheet();
+    });
+    document.getElementById('accTabs').addEventListener('click', function (ev) {
+        var btn = ev.target && ev.target.closest ? ev.target.closest('.tab[data-tab]') : null;
+        if (!btn) return;
+        openTab(btn.getAttribute('data-tab'));
+    });
+    document.getElementById('ledgerAccountSelect').addEventListener('change', renderLedgerView);
+})();
+</script>
+</body>
+</html>

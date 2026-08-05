@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Receivables & Hand Loans Given - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    
+    <script src="../../core/firebase-init.js?v=3"></script>
+    <script src="../../core/event-validation.js?v=3"></script>
+    <script src="../../core/event-bus.js?v=3"></script>
+    <script src="../../core/accounts-core.js?v=3"></script>
+    <script src="../../core/auth-roles.js?v=3"></script>
+    <script src="../../core/business-types.js?v=3"></script>
+    <script src="../../core/dashboard-core.js?v=3"></script>
+    <script src="../../core/subscription-manager.js?v=3"></script>
+    <script src="/core/sidebar.js?v=1008"></script>
+    
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter',sans-serif;background:#f5f6fa;color:#1a1a2e;}
+        .main-content{padding:30px 35px;min-height:100vh;}
+        @media (max-width:768px){.main-content{padding:20px;}}
+        .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px;flex-wrap:wrap;gap:15px;}
+        .page-header h1{font-size:26px;font-weight:700;color:#0f3b2c;}
+        .page-header h1 i{color:#10b981;margin-right:12px;}
+        
+        .stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-bottom:25px;}
+        @media (max-width:768px){.stats-row{grid-template-columns:1fr;}}
+        .stat-card{background:white;border-radius:16px;padding:20px;border:1px solid #e9ecef;box-shadow:0 4px 6px rgba(0,0,0,0.02);}
+        .stat-card .label{font-size:12px;color:#64748b;margin-bottom:5px;text-transform:uppercase;font-weight:600;}
+        .stat-card .value{font-size:28px;font-weight:700;color:#1a1a2e;}
+        
+        .tabs{display:flex;gap:10px;margin-bottom:20px;border-bottom:2px solid #e9ecef;}
+        .tab-btn{background:none;border:none;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;color:#64748b;transition:all 0.2s;}
+        .tab-btn.active{color:#10b981;border-bottom:2px solid #10b981;}
+        .tab-pane{display:none;}
+        .tab-pane.active{display:block;}
+        
+        .card{background:white;border-radius:20px;border:1px solid #e9ecef;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.03);margin-bottom:25px;}
+        .card-header{padding:18px 22px;border-bottom:1px solid #e9ecef;background:#fafbfc;display:flex;justify-content:space-between;align-items:center;}
+        .card-header h3{font-size:16px;font-weight:600;color:#0f3b2c;}
+        .card-body{padding:0;overflow-x:auto;}
+        
+        .data-table{width:100%;border-collapse:collapse;}
+        .data-table th,.data-table td{padding:14px 18px;text-align:left;border-bottom:1px solid #e9ecef;font-size:13px;}
+        .data-table th{background:#fafbfc;font-weight:600;color:#64748b;}
+        .data-table tr:hover{background:#f8f9fa;}
+        
+        .btn-primary{background:#10b981;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;display:inline-flex;align-items:center;gap:6px;transition:background 0.2s;}
+        .btn-primary:hover{background:#059669;}
+        .btn-outline{background:transparent;border:1px solid #10b981;color:#10b981;padding:8px 14px;border-radius:8px;cursor:pointer;font-weight:600;font-size:12px;transition:all 0.2s;}
+        .btn-outline:hover{background:#10b981;color:white;}
+        .badge{padding:4px 10px;border-radius:30px;font-size:11px;font-weight:700;}
+        .badge-unpaid{background:#fee2e2;color:#ef4444;}
+        .badge-paid{background:#d1fae5;color:#10b981;}
+        
+        .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(3px);}
+        .modal-content{background:white;border-radius:20px;padding:30px;width:100%;max-width:500px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);}
+        .modal-content h3{font-size:18px;margin-bottom:15px;color:#0f3b2c;}
+        .modal-content label{display:block;font-size:12px;font-weight:600;color:#64748b;margin-bottom:6px;text-transform:uppercase;}
+        .modal-content input, .modal-content select, .modal-content textarea{width:100%;padding:10px 14px;margin-bottom:15px;border:1px solid #e9ecef;border-radius:8px;font-family:inherit;}
+        .modal-buttons{display:flex;gap:12px;justify-content:flex-end;margin-top:10px;}
+        .btn-cancel{background:#f1f5f9;color:#475569;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600;}
+        
+        .toast{position:fixed;bottom:30px;right:30px;background:#1a1a2e;color:white;padding:12px 20px;border-radius:10px;z-index:3000;display:none;align-items:center;gap:10px;box-shadow:0 10px 15px rgba(0,0,0,0.1);}
+        .toast.show{display:flex;animation:slideIn 0.3s;}
+        @keyframes slideIn{from{transform:translateX(100%);opacity:0;}to{transform:translateX(0);opacity:1;}}
+        .numeric{text-align:right;font-weight:600;}
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="page-header">
+            <h1 data-i18n="Receivables & Loans Given"><i class="fas fa-wallet"></i> Receivables & Loans Given</h1>
+            <button class="btn-primary" id="addLoanBtn"><i class="fas fa-plus"></i> <span data-i18n="Record Hand Loan Given">Record Hand Loan Given</span></button>
+        </div>
+        
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="label" data-i18n="Customer Outstandings">Customer Outstandings</div>
+                <div class="value" id="statCustomerCredit">Rs. 0.00</div>
+            </div>
+            <div class="stat-card">
+                <div class="label" data-i18n="Hand Loans Given">Hand Loans Given</div>
+                <div class="value" id="statHandLoans">Rs. 0.00</div>
+            </div>
+            <div class="stat-card" style="border-left: 4px solid #10b981;">
+                <div class="label" data-i18n="Total Receivables">Total Receivables</div>
+                <div class="value" style="color: #0f9669;" id="statTotalReceivables">Rs. 0.00</div>
+            </div>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="customers"><i class="fas fa-users"></i> <span data-i18n="Customer Debts Tab">Customer Debts</span></button>
+            <button class="tab-btn" data-tab="loans"><i class="fas fa-handshake"></i> <span data-i18n="Hand Loans Given Tab">Hand Loans Given</span></button>
+        </div>
+        
+        <!-- Customers Tab -->
+        <div id="tab-customers" class="tab-pane active">
+            <div class="card">
+                <div class="card-header"><h3 data-i18n="Customer Debts List Title">Customer Debts List</h3></div>
+                <div class="card-body">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="Invoice No">Invoice No</th>
+                                <th data-i18n="Customer Name">Customer Name</th>
+                                <th data-i18n="Phone Number">Phone Number</th>
+                                <th class="numeric" data-i18n="Total Amount">Total Amount</th>
+                                <th class="numeric" data-i18n="Paid Amount">Paid Amount</th>
+                                <th class="numeric" data-i18n="Outstanding">Outstanding</th>
+                                <th data-i18n="Due Date">Due Date</th>
+                                <th style="text-align: center;" data-i18n="Actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="customerCreditList">
+                            <tr><td colspan="8" style="text-align:center;padding:30px;" data-i18n="Loading...">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Hand Loans Tab -->
+        <div id="tab-loans" class="tab-pane">
+            <div class="card">
+                <div class="card-header"><h3 data-i18n="Hand Loans Given List Title">Hand Loans Given List</h3></div>
+                <div class="card-body">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="Date">Date</th>
+                                <th data-i18n="Person Name">Name of Person</th>
+                                <th data-i18n="Description">Description</th>
+                                <th class="numeric" data-i18n="Amount">Amount</th>
+                                <th data-i18n="Payment Method">Payment Method</th>
+                                <th data-i18n="Status">Status</th>
+                                <th style="text-align: center;" data-i18n="Actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="handLoansList">
+                            <tr><td colspan="7" style="text-align:center;padding:30px;" data-i18n="Loading...">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Payment Modal -->
+    <div id="paymentModal" class="modal">
+        <div class="modal-content">
+            <h3 data-i18n="Receive Payment Modal Title">Receive Payment</h3>
+            <form id="paymentForm">
+                <input type="hidden" id="modalOrderId">
+                <div style="margin-bottom:12px;">
+                    <label data-i18n="Outstanding Balance">Outstanding Balance</label>
+                    <div id="modalOutstandingDisplay" style="font-size:18px;font-weight:700;color:#ef4444;">Rs. 0.00</div>
+                </div>
+                <div>
+                    <label data-i18n="Amount Received">Amount Received</label>
+                    <input id="paymentAmount" type="number" step="0.01" required>
+                </div>
+                <div>
+                    <label data-i18n="Payment Method Label">Payment Method</label>
+                    <select id="paymentMethod" required>
+                        <option value="CASH">Cash</option>
+                        <option value="BANK">Bank / Card</option>
+                    </select>
+                </div>
+                <div class="modal-buttons">
+                    <button type="button" class="btn-cancel" onclick="closeModal('paymentModal')" data-i18n="Cancel">Cancel</button>
+                    <button type="submit" class="btn-primary" data-i18n="Save Payment">Save Payment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Add Loan Modal -->
+    <div id="loanModal" class="modal">
+        <div class="modal-content">
+            <h3 data-i18n="Add Hand Loan Given Title">Add Hand Loan Given</h3>
+            <form id="loanForm">
+                <div>
+                    <label data-i18n="Person Name Label">Person Name</label>
+                    <input id="loanPersonName" type="text" required placeholder="Kamal Perera">
+                </div>
+                <div>
+                    <label data-i18n="Amount Label">Amount Rs.</label>
+                    <input id="loanAmount" type="number" step="0.01" required placeholder="0.00">
+                </div>
+                <div>
+                    <label data-i18n="Date Label">Date</label>
+                    <input id="loanDate" type="date" required>
+                </div>
+                <div>
+                    <label data-i18n="Payment Method Label">Payment Method</label>
+                    <select id="loanMethod" required>
+                        <option value="CASH">Cash</option>
+                        <option value="BANK">Bank</option>
+                    </select>
+                </div>
+                <div>
+                    <label data-i18n="Description Label">Description</label>
+                    <textarea id="loanDescription" rows="2" placeholder="Brief details..."></textarea>
+                </div>
+                <div class="modal-buttons">
+                    <button type="button" class="btn-cancel" onclick="closeModal('loanModal')" data-i18n="Cancel">Cancel</button>
+                    <button type="submit" class="btn-primary" data-i18n="Confirm & Save">Confirm & Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div id="toast" class="toast"><i class="fas fa-check-circle" style="color:#10b981;"></i> <span id="toastMsg"></span></div>
+    
+    <script>
+        let currentBusinessId = null;
+        const ACCOUNT_CODES = {
+            CASH: 'AC-10100',
+            BANK: 'AC-10200',
+            ACCOUNTS_RECEIVABLE: 'AC-10500'
+        };
+        
+        function translatePage() {
+            if (typeof window.i18n === 'function') {
+                document.querySelectorAll('[data-i18n]').forEach(el => {
+                    const key = el.getAttribute('data-i18n');
+                    el.textContent = window.i18n(key);
+                });
+            }
+        }
+        
+        function showToast(msgKey) {
+            const toast = document.getElementById('toast');
+            const resolvedMsg = window.i18n ? window.i18n(msgKey) : msgKey;
+            document.getElementById('toastMsg').textContent = resolvedMsg;
+            toast.className = 'toast show';
+            setTimeout(() => { toast.className = 'toast'; }, 3000);
+        }
+        
+        function openModal(id) {
+            document.getElementById(id).style.display = 'flex';
+        }
+        
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+        
+        const formatCurrency = (amt) => 'Rs. ' + (amt || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        
+        // Tab functionality
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+            };
+        });
+        
+        async function getBusinessContext() {
+            const user = firebase.auth().currentUser;
+            if (!user) return null;
+            if (window.dashboardCore) return await window.dashboardCore.getContext(user);
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            return { businessId: userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid };
+        }
+        
+        async function loadData() {
+            if (!currentBusinessId) return;
+            
+            // 1. Fetch customer unpaid credit sales (orders)
+            const ordersSnap = await db.collection('orders').doc(currentBusinessId).collection('list')
+                .where('status', '==', 'unpaid')
+                .get();
+                
+            let customerTotal = 0;
+            const creditList = document.getElementById('customerCreditList');
+            if (ordersSnap.empty) {
+                creditList.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:30px;">${window.i18n('No customer credit')}</td></tr>`;
+            } else {
+                let html = '';
+                ordersSnap.docs.forEach(doc => {
+                    const data = doc.data();
+                    const outstanding = Number(data.balanceDue || 0);
+                    customerTotal += outstanding;
+                    
+                    const actionBtnText = window.i18n('Receive Payment Button');
+                    
+                    html += `<tr>
+                        <td style="font-family:monospace;font-weight:700;">${data.invoiceNo || 'N/A'}</td>
+                        <td>${data.customer ? (data.customer.name || 'Walk-in Customer') : 'Walk-in Customer'}</td>
+                        <td>${data.customer ? (data.customer.phone || '-') : '-'}</td>
+                        <td class="numeric">${formatCurrency(data.items.reduce((s,i) => s + (i.price*i.quantity), 0))}</td>
+                        <td class="numeric">${formatCurrency(data.amountPaid)}</td>
+                        <td class="numeric" style="color:#ef4444;">${formatCurrency(outstanding)}</td>
+                        <td>${data.dueDate || '-'}</td>
+                        <td style="text-align:center;">
+                            <button class="btn-outline" onclick="triggerReceivePayment('${doc.id}', ${outstanding})">${actionBtnText}</button>
+                        </td>
+                    </tr>`;
+                });
+                creditList.innerHTML = html;
+            }
+            
+            // 2. Fetch Hand Loans Given
+            const loansSnap = await db.collection('hand_loans').doc(currentBusinessId).collection('list')
+                .where('type', '==', 'GIVEN')
+                .where('status', '==', 'unpaid')
+                .get();
+                
+            let loansTotal = 0;
+            const loansList = document.getElementById('handLoansList');
+            if (loansSnap.empty) {
+                loansList.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;">${window.i18n('No hand loans given')}</td></tr>`;
+            } else {
+                let html = '';
+                loansSnap.docs.forEach(doc => {
+                    const data = doc.data();
+                    const amount = Number(data.amount || 0);
+                    loansTotal += amount;
+                    
+                    const badgeText = window.i18n('Unpaid Badge');
+                    const actionBtnText = window.i18n('Settle Loan Button');
+                    
+                    html += `<tr>
+                        <td>${data.date || '-'}</td>
+                        <td style="font-weight:600;">${data.personName}</td>
+                        <td>${data.description || '-'}</td>
+                        <td class="numeric" style="color:#ef4444;">${formatCurrency(amount)}</td>
+                        <td>${data.paymentMethod || 'CASH'}</td>
+                        <td><span class="badge badge-unpaid">${badgeText}</span></td>
+                        <td style="text-align:center;">
+                            <button class="btn-outline" onclick="settleHandLoan('${doc.id}', '${data.personName}', ${amount}, '${data.paymentMethod || 'CASH'}')">${actionBtnText}</button>
+                        </td>
+                    </tr>`;
+                });
+                loansList.innerHTML = html;
+            }
+            
+            // Calculate totals
+            document.getElementById('statCustomerCredit').textContent = formatCurrency(customerTotal);
+            document.getElementById('statHandLoans').textContent = formatCurrency(loansTotal);
+            document.getElementById('statTotalReceivables').textContent = formatCurrency(customerTotal + loansTotal);
+        }
+        
+        window.triggerReceivePayment = (orderId, outstanding) => {
+            document.getElementById('modalOrderId').value = orderId;
+            document.getElementById('modalOutstandingDisplay').textContent = formatCurrency(outstanding);
+            document.getElementById('paymentAmount').value = outstanding;
+            openModal('paymentModal');
+        };
+        
+        document.getElementById('paymentForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const orderId = document.getElementById('modalOrderId').value;
+            const amountReceived = parseFloat(document.getElementById('paymentAmount').value);
+            const method = document.getElementById('paymentMethod').value;
+            
+            if (isNaN(amountReceived) || amountReceived <= 0) return;
+            
+            try {
+                const orderRef = db.collection('orders').doc(currentBusinessId).collection('list').doc(orderId);
+                const orderDoc = await orderRef.get();
+                if (!orderDoc.exists) return;
+                const orderData = orderDoc.data();
+                
+                const currentOutstanding = Number(orderData.balanceDue || 0);
+                const newAmountPaid = Number(orderData.amountPaid || 0) + amountReceived;
+                const newBalanceDue = Math.max(0, currentOutstanding - amountReceived);
+                const newStatus = newBalanceDue === 0 ? 'completed' : 'unpaid';
+                
+                await orderRef.update({
+                    amountPaid: newAmountPaid,
+                    balanceDue: newBalanceDue,
+                    status: newStatus,
+                    updatedAt: new Date()
+                });
+                
+                // Write Journal Entry to Accounting
+                const debitAccount = method === 'BANK' ? ACCOUNT_CODES.BANK : ACCOUNT_CODES.CASH;
+                const journalEntry = {
+                    date: new Date(),
+                    memo: `Debt Payment Received from ${orderData.customer?.name || 'Customer'}. Invoice: ${orderData.invoiceNo || 'N/A'}`,
+                    entries: [
+                        { accountId: debitAccount, amount: amountReceived, type: 'debit' },
+                        { accountId: ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, amount: amountReceived, type: 'credit' }
+                    ],
+                    ref: `orders/${orderId}`,
+                    refType: 'DEBT_PAYMENT',
+                    businessId: currentBusinessId,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('journal').doc(currentBusinessId).collection('entries').add(journalEntry);
+                
+                closeModal('paymentModal');
+                showToast('Payment saved successfully!');
+                await loadData();
+            } catch (err) {
+                console.error(err);
+                showToast('Error: ' + err.message);
+            }
+        };
+        
+        document.getElementById('addLoanBtn').onclick = () => {
+            document.getElementById('loanDate').value = new Date().toISOString().slice(0, 10);
+            openModal('loanModal');
+        };
+        
+        document.getElementById('loanForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const personName = document.getElementById('loanPersonName').value.trim();
+            const amount = parseFloat(document.getElementById('loanAmount').value);
+            const date = document.getElementById('loanDate').value;
+            const method = document.getElementById('loanMethod').value;
+            const description = document.getElementById('loanDescription').value.trim();
+            
+            if (!personName || isNaN(amount) || amount <= 0) return;
+            
+            try {
+                const loanData = {
+                    type: 'GIVEN',
+                    personName: personName,
+                    amount: amount,
+                    date: date,
+                    paymentMethod: method,
+                    description: description,
+                    status: 'unpaid',
+                    createdAt: new Date()
+                };
+                
+                const docRef = await db.collection('hand_loans').doc(currentBusinessId).collection('list').add(loanData);
+                
+                // Create accounting journal entry
+                const creditAccount = method === 'BANK' ? ACCOUNT_CODES.BANK : ACCOUNT_CODES.CASH;
+                const journalEntry = {
+                    date: new Date(date),
+                    memo: `Hand Loan Given to ${personName} - ${description}`,
+                    entries: [
+                        { accountId: ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, amount: amount, type: 'debit' },
+                        { accountId: creditAccount, amount: amount, type: 'credit' }
+                    ],
+                    ref: `hand_loans/${docRef.id}`,
+                    refType: 'HAND_LOAN_GIVEN',
+                    businessId: currentBusinessId,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('journal').doc(currentBusinessId).collection('entries').add(journalEntry);
+                
+                closeModal('loanModal');
+                document.getElementById('loanForm').reset();
+                showToast('Hand loan recorded successfully!');
+                await loadData();
+            } catch (err) {
+                console.error(err);
+                showToast('Error: ' + err.message);
+            }
+        };
+        
+        window.settleHandLoan = async (loanId, personName, amount, method) => {
+            if (!confirm(`Confirm settlement of Rs. ${amount.toLocaleString()} from ${personName}?`)) return;
+            
+            try {
+                await db.collection('hand_loans').doc(currentBusinessId).collection('list').doc(loanId).update({
+                    status: 'paid',
+                    settledAt: new Date()
+                });
+                
+                // Create journal entry for settlement
+                const debitAccount = method === 'BANK' ? ACCOUNT_CODES.BANK : ACCOUNT_CODES.CASH;
+                const journalEntry = {
+                    date: new Date(),
+                    memo: `Hand Loan Settled from ${personName}`,
+                    entries: [
+                        { accountId: debitAccount, amount: amount, type: 'debit' },
+                        { accountId: ACCOUNT_CODES.ACCOUNTS_RECEIVABLE, amount: amount, type: 'credit' }
+                    ],
+                    ref: `hand_loans/${loanId}`,
+                    refType: 'HAND_LOAN_SETTLEMENT',
+                    businessId: currentBusinessId,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('journal').doc(currentBusinessId).collection('entries').add(journalEntry);
+                
+                showToast('Hand loan settled successfully!');
+                await loadData();
+            } catch (err) {
+                console.error(err);
+                showToast('Error: ' + err.message);
+            }
+        };
+        
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (!user) { window.location.href = '/'; return; }
+            const ctx = await getBusinessContext();
+            currentBusinessId = ctx.businessId;
+            translatePage();
+            await loadData();
+        });
+    </script>
+</body>
+</html>

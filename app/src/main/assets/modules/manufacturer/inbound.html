@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manufacturer Inbound - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/auth-roles.js?v=49"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=70"></script>
+    <script src="/core/sidebar.js?v=1008"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="/core/sms-wallet-core.js?v=4"></script>
+    <script src="/core/ui-helpers.js?v=1"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=9"></script>
+    <style id="mfgStyle"></style>
+</head>
+<body>
+<div class="mfg-wrap">
+    <div class="mfg-head">
+        <h2>Inbound Purchases</h2>
+        <p id="mfgBusinessCtx"></p>
+    </div>
+    <div class="mfg-grid">
+        <div class="mfg-card">
+            <h3>Raw Material Purchase</h3>
+            <div class="mfg-row">
+                <div><label>Material Name</label><input id="materialName"></div>
+                <div>
+                    <label>Supplier (from Suppliers list)</label>
+                    <select id="supplierCustomerId" class="mfg-select-customer">
+                        <option value="">Select Supplier…</option>
+                    </select>
+                    <div id="supplierCustomerBanner" class="mfg-customer-banner" role="status"></div>
+                </div>
+            </div>
+            <div class="mfg-row" style="margin-top:8px;">
+                <div>
+                    <label>Purchase Category (learn-as-you-go)</label>
+                    <input id="purchaseCategory" list="purchaseCategoryList" placeholder="Type category or select">
+                    <datalist id="purchaseCategoryList"></datalist>
+                </div>
+                <div></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Qty (Kg/Unit)</label><input type="number" id="qty" min="0" step="0.01"></div>
+                <div><label>Unit Price</label><input type="number" id="unitPrice" min="0" step="0.01"></div>
+                <div><label>Total Amount</label><input type="number" id="amount" min="0" step="0.01"></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Payment Mode</label>
+                    <select id="paymentMode">
+                        <option value="CASH">Cash</option>
+                        <option value="BANK">Bank</option>
+                        <option value="CREDIT">Credit</option>
+                        <option value="CHEQUE">Cheque</option>
+                    </select>
+                </div>
+                <div><label>Due Date (Credit)</label><input type="date" id="dueDate"></div>
+                <div><label>Cheque Clearance Date</label><input type="date" id="chequeClearanceDate"></div>
+            </div>
+            <button id="saveBtn" style="margin-top:10px;">Save Purchase</button>
+            <div id="msg" class="mfg-msg"></div>
+        </div>
+        <div class="mfg-card">
+            <h3>Latest Inbound Entries</h3>
+            <div id="kubukaExportBar" style="display:none;margin-bottom:8px;gap:8px;align-items:end;flex-wrap:wrap;">
+                <div>
+                    <label for="filterFromDate">From Date</label>
+                    <input type="date" id="filterFromDate">
+                </div>
+                <div>
+                    <label for="filterToDate">To Date</label>
+                    <input type="date" id="filterToDate">
+                </div>
+                <div>
+                    <button type="button" id="applyFilterBtn">Apply</button>
+                </div>
+                <div>
+                    <button type="button" id="exportInboundBtn">Export</button>
+                </div>
+            </div>
+            <table>
+                <thead><tr><th>Material</th><th>Supplier</th><th>Amount</th><th>Payment</th><th>Date</th><th>Invoice No</th><th>Actions</th></tr></thead>
+                <tbody id="historyRows"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<div id="editModal" class="mfg-modal" style="display:none;">
+    <div class="mfg-modal-box">
+        <h3>Edit Inbound Purchase</h3>
+        <div class="mfg-row">
+            <div><label>Material Name</label><input id="editMaterialName"></div>
+            <div><label>Supplier Name</label><input id="editSupplierName"></div>
+        </div>
+        <div class="mfg-row3" style="margin-top:8px;">
+            <div><label>Qty</label><input type="number" id="editQty" min="0" step="0.01"></div>
+            <div><label>Unit Cost</label><input type="number" id="editUnitCost" min="0" step="0.01"></div>
+            <div><label>Amount</label><input type="number" id="editAmount" min="0" step="0.01"></div>
+        </div>
+        <div class="mfg-row3" style="margin-top:8px;">
+            <div><label>Payment Mode</label>
+                <select id="editPaymentMode">
+                    <option value="CASH">Cash</option>
+                    <option value="BANK">Bank</option>
+                    <option value="CREDIT">Credit</option>
+                    <option value="CHEQUE">Cheque</option>
+                </select>
+            </div>
+            <div><label>Due Date</label><input type="date" id="editDueDate"></div>
+            <div><label>Cheque Clearance Date</label><input type="date" id="editChequeClearanceDate"></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+            <button id="editCancelBtn" type="button">Cancel</button>
+            <button id="editSaveBtn" type="button">Update</button>
+        </div>
+    </div>
+</div>
+<script>
+document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
+const modalStyle = document.createElement('style');
+modalStyle.textContent = `.mfg-modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:12000;padding:14px}.mfg-modal-box{max-width:760px;width:100%;background:#fff;border-radius:12px;padding:14px}`;
+document.head.appendChild(modalStyle);
+const supplierCustomerById = {};
+let editingRowId = '';
+const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+const KDKUMBUKA_EMAIL = 'kdkumbukaagro@gmail.com';
+let inboundAccessRole = 'VIEWER';
+let inboundRowsCache = [];
+function v(id){ return document.getElementById(id).value; }
+function n(id){ return Number(v(id)) || 0; }
+function payStatus(mode){ return mode === 'CREDIT' ? 'PENDING' : (mode === 'CHEQUE' ? 'PENDING_CLEARANCE' : 'PAID'); }
+function isKubuka(){ return ManufacturerModule.businessId === KUBUKA_BID; }
+function normRole(raw){
+    return String(raw || '').trim().toUpperCase().replace(/\s+/g, '_');
+}
+function isKdkumbukaTenantUser(){
+    const user = (window.auth && window.auth.currentUser) || firebase.auth().currentUser;
+    const email = String((user && user.email) || '').trim().toLowerCase();
+    return email === KDKUMBUKA_EMAIL && ManufacturerModule.businessId === KUBUKA_BID;
+}
+async function resolveInboundRole(){
+    const user = (window.auth && window.auth.currentUser) || firebase.auth().currentUser;
+    if (!user) return 'VIEWER';
+    const emailNorm = String(user.email || '').trim().toLowerCase();
+    const isKdkumbuka = emailNorm === KDKUMBUKA_EMAIL && ManufacturerModule.businessId === KUBUKA_BID;
+    if (emailNorm === KDKUMBUKA_EMAIL) return 'BUSINESS_OWNER';
+    if (!isKdkumbuka) return 'BUSINESS_OWNER';
+    try {
+        const roleInfo = window.getUserRole ? await window.getUserRole(user.uid, ManufacturerModule.businessId) : null;
+        const roleNorm = normRole(roleInfo && roleInfo.role);
+        if (roleNorm && roleNorm !== 'VIEWER') return roleNorm;
+    } catch (e) {
+        console.warn('[Inbound] getUserRole failed:', e?.message || e);
+    }
+    try {
+        const bizUser = await db.collection('businesses').doc(ManufacturerModule.businessId).collection('users').doc(user.uid).get();
+        if (bizUser.exists) {
+            const roleNorm = normRole((bizUser.data() || {}).role);
+            if (roleNorm) return roleNorm;
+        }
+    } catch (e) {
+        console.warn('[Inbound] business role fallback failed:', e?.message || e);
+    }
+    try {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        if (userDoc.exists) {
+            const roleNorm = normRole((userDoc.data() || {}).role);
+            if (roleNorm) return roleNorm;
+        }
+    } catch (e) {
+        console.warn('[Inbound] users role fallback failed:', e?.message || e);
+    }
+    return 'BUSINESS_OWNER';
+}
+function canOperateInbound(roleNorm){
+    if (!isKdkumbukaTenantUser()) return true;
+    const allowed = new Set(['BUSINESS_OWNER', 'SUPER_ADMIN', 'ADMIN', 'TEA_LEAFER']);
+    return allowed.has(roleNorm);
+}
+function enforceInboundAccess(roleNorm){
+    const ok = canOperateInbound(roleNorm);
+    const saveBtn = document.getElementById('saveBtn');
+    if (saveBtn) saveBtn.disabled = !ok;
+    if (!ok) {
+        const msgEl = document.getElementById('msg');
+        msgEl.className = 'mfg-msg err';
+        msgEl.textContent = 'You do not have access to Raw Material Buying.';
+    }
+    return ok;
+}
+function guardInboundActionOrWarn(){
+    const ok = canOperateInbound(inboundAccessRole);
+    if (!ok) {
+        const msgEl = document.getElementById('msg');
+        msgEl.className = 'mfg-msg err';
+        msgEl.textContent = 'You do not have access to Raw Material Buying actions.';
+        return false;
+    }
+    return true;
+}
+function escPrint(v){
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+async function saveInvoiceDoc(invoice){
+    if (!isKubuka()) return null;
+    const id = invoice.invoiceNo || (`INV-${Date.now()}`);
+    await db.collection('invoices').doc(id).set({
+        ...invoice,
+        businessId: ManufacturerModule.businessId,
+        printHistory: [{ printedAt: new Date(), channel: 'browser-print' }],
+        createdAt: new Date(),
+        isActive: true
+    }, { merge: true });
+    return id;
+}
+async function printThermalPurchaseInvoice(invoice) {
+    try {
+        const bid = ManufacturerModule.businessId;
+        const bizSnap = await db.collection('businesses').doc(bid).get();
+        const bizData = bizSnap.exists ? bizSnap.data() : {};
+        const docSettings = bizData.documentSettings || {};
+        const s = docSettings.grn || docSettings.invoice || {};
+
+        const header = s.header || bizData.name || 'GOODS RECEIVED NOTE';
+        const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+        const footer = s.footer || 'Thank you for your supply!';
+        const showLogo = s.showLogo !== false;
+
+        const w = window.open('', '_blank', 'width=420,height=600');
+        if (!w) return alert('Popup blocked. Please allow popups.');
+
+        const totalAmount = Number(invoice.totalAmount || 0);
+        const paidAmount = Number(invoice.paidAmount || 0);
+        const balanceDue = Number(invoice.balanceDue || Math.max(0, totalAmount - paidAmount));
+        const previousBalance = Number(invoice.previousBalance || 0);
+        const totalDue = Number(invoice.totalDue || (balanceDue + previousBalance));
+
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>GRN ${invoice.invoiceNo}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 4mm; }
+            body { width: 72mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; line-height: 1.4; color: #000; padding: 10px; width: 72mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 15px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 9px; margin: 4px 0 0; }
+        .receipt-title { font-size: 12px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; border-bottom: 1px dashed #000; padding-bottom: 4px; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 10px; }
+        .meta-label { font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
+        th, td { border: 1px solid #000; padding: 4px; text-align: left; }
+        th { background: #f0f0f0; font-size: 9px; }
+        .tr { text-align: right; }
+        .total-section { margin-top: 10px; border-top: 2px solid #000; padding-top: 6px; }
+        .total-row { display: flex; justify-content: space-between; font-weight: 800; font-size: 13px; }
+        .footer { text-align: center; font-size: 9px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; font-weight: 600; }
+        .softby { text-align: center; font-size: 8px; color: #666; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:40px; margin-bottom:5px;"><br>` : ''}
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Goods Received Note (GRN)</div>
+    
+    <div class="meta-row"><span class="meta-label">GRN No:</span><span>${invoice.invoiceNo}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${invoice.date}</span></div>
+    <div class="meta-row"><span class="meta-label">Supplier:</span><span>${escPrint(invoice.supplierName || '-')}</span></div>
+    <div class="meta-row"><span class="meta-label">Created By:</span><span>${escPrint(invoice.salePerson || '-')}</span></div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th class="tr">Qty</th>
+                <th class="tr">Price</th>
+                <th class="tr">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>${escPrint(invoice.materialName || '-')}</td>
+                <td class="tr">${Number(invoice.qty || 0)}</td>
+                <td class="tr">${(invoice.unitPrice || 0).toFixed(2)}</td>
+                <td class="tr">${(totalAmount).toFixed(2)}</td>
+            </tr>
+        </tbody>
+    </table>
+    
+    <div class="total-section">
+        <div class="total-row"><span>Total:</span><span>Rs. ${totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+        <div class="total-row"><span>Paid:</span><span>Rs. ${paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+        <div class="total-row"><span>Balance Due:</span><span>Rs. ${balanceDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+        ${previousBalance > 0 ? `<div class="total-row"><span>Prev. Balance:</span><span>Rs. ${previousBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>` : ''}
+        <div class="total-row" style="border-top:1px solid #000;margin-top:2px;"><span>TOTAL DUE:</span><span>Rs. ${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+    </div>
+    
+    <div class="footer">
+        ${footer}
+    </div>
+    <div class="softby">Software by DIGIBIZ - 0713446500</div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    </script>
+</body>
+</html>`;
+
+        w.document.write(html);
+        w.document.close();
+    } catch (e) {
+        console.error(e);
+        alert('Printing failed: ' + e.message);
+    }
+}
+function recalcAmount(){
+    const qty = Number(document.getElementById('qty').value || 0);
+    const unitPrice = Number(document.getElementById('unitPrice').value || 0);
+    const total = Number.isFinite(qty * unitPrice) ? (qty * unitPrice) : 0;
+    document.getElementById('amount').value = total.toFixed(2);
+}
+async function refresh(){
+    const bid = ManufacturerModule.businessId;
+    const snap = await db.collection('manufacturer_raw_material_history')
+        .where('businessId','==',bid).limit(100).get().catch(()=>({docs:[]}));
+    const rows = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+        .filter((x) => x.isActive !== false)
+        .sort((a, b) => {
+            const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+            const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+            return tb - ta;
+        });
+    inboundRowsCache = rows.slice();
+    const from = v('filterFromDate');
+    const to = v('filterToDate');
+    const fromMs = from ? new Date(from + 'T00:00:00').getTime() : null;
+    const toMs = to ? new Date(to + 'T23:59:59').getTime() : null;
+    const filtered = rows.filter((x) => {
+        const t = x.createdAt?.toDate ? x.createdAt.toDate().getTime() : new Date(x.createdAt || 0).getTime();
+        if (isNaN(t)) return false;
+        if (fromMs != null && t < fromMs) return false;
+        if (toMs != null && t > toMs) return false;
+        return true;
+    }).slice(0, 100);
+    document.getElementById('historyRows').innerHTML = filtered.map((x)=>{
+        return `<tr>
+            <td class="wrap-name">${x.materialName||'-'}</td>
+            <td>${x.supplierName||'-'}</td>
+            <td>Rs ${ManufacturerModule.money(x.amount)}</td>
+            <td>${x.paymentMode||'-'} / ${x.paymentStatus||'-'}</td>
+            <td>${ManufacturerModule.formatDate(x.createdAt)}</td>
+            <td>${x.invoiceNo || '-'}</td>
+            <td>
+                <button type="button" onclick="openEditInbound('${x.id}')">✏️</button>
+                <button type="button" onclick="deleteInbound('${x.id}')">🗑️</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+function exportInboundRowsCsv(){
+    if (!isKubuka()) return;
+    const from = v('filterFromDate');
+    const to = v('filterToDate');
+    const fromMs = from ? new Date(from + 'T00:00:00').getTime() : null;
+    const toMs = to ? new Date(to + 'T23:59:59').getTime() : null;
+    const rows = inboundRowsCache.filter((x) => {
+        const t = x.createdAt?.toDate ? x.createdAt.toDate().getTime() : new Date(x.createdAt || 0).getTime();
+        if (isNaN(t)) return false;
+        if (fromMs != null && t < fromMs) return false;
+        if (toMs != null && t > toMs) return false;
+        return true;
+    });
+    const esc = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+    const header = ['Date','Supplier','Product','Quantity','Unit Price','Total','Invoice Number'];
+    const lines = [header.map(esc).join(',')];
+    rows.forEach((x) => {
+        const dt = x.createdAt?.toDate ? x.createdAt.toDate().toISOString().slice(0, 10) : '';
+        lines.push([
+            dt,
+            x.supplierName || '',
+            x.materialName || '',
+            Number(x.qty || 0),
+            Number(x.unitCost || 0).toFixed(2),
+            Number(x.amount || 0).toFixed(2),
+            x.invoiceNo || ''
+        ].map(esc).join(','));
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'kubuka_raw_materials_export.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+}
+function openEditInbound(id){
+    if (!guardInboundActionOrWarn()) return;
+    editingRowId = id;
+    db.collection('manufacturer_raw_material_history').doc(id).get().then((doc) => {
+        const x = doc.exists ? (doc.data() || {}) : {};
+        document.getElementById('editMaterialName').value = x.materialName || '';
+        document.getElementById('editSupplierName').value = x.supplierName || '';
+        document.getElementById('editQty').value = Number(x.qty || 0);
+        document.getElementById('editUnitCost').value = Number(x.unitCost || 0);
+        document.getElementById('editAmount').value = Number(x.amount || 0);
+        document.getElementById('editPaymentMode').value = x.paymentMode || 'CASH';
+        document.getElementById('editDueDate').value = x.dueDate || '';
+        document.getElementById('editChequeClearanceDate').value = x.chequeClearanceDate || '';
+        document.getElementById('editModal').style.display = 'flex';
+    }).catch((e) => {
+        alert('Unable to open edit: ' + (e.message || e));
+    });
+}
+function closeEditInbound(){
+    editingRowId = '';
+    document.getElementById('editModal').style.display = 'none';
+}
+async function saveEditInbound(){
+    if (!guardInboundActionOrWarn()) return;
+    if (!editingRowId) return;
+    const updatePayload = {
+        materialName: v('editMaterialName').trim(),
+        supplierName: v('editSupplierName').trim(),
+        qty: Number(v('editQty')) || 0,
+        unitCost: Number(v('editUnitCost')) || 0,
+        amount: Number(v('editAmount')) || 0,
+        paymentMode: v('editPaymentMode'),
+        paymentStatus: payStatus(v('editPaymentMode')),
+        dueDate: v('editDueDate') || null,
+        chequeClearanceDate: v('editChequeClearanceDate') || null,
+        updatedAt: new Date()
+    };
+    await db.collection('manufacturer_raw_material_history').doc(editingRowId).update(updatePayload);
+    closeEditInbound();
+    await refresh();
+}
+async function deleteInbound(id){
+    if (!guardInboundActionOrWarn()) return;
+    if (!confirm('Are you sure you want to delete this record?')) return;
+    await db.collection('manufacturer_raw_material_history').doc(id).update({
+        isActive: false,
+        deletedAt: new Date()
+    });
+    await refresh();
+}
+window.openEditInbound = openEditInbound;
+window.deleteInbound = deleteInbound;
+async function loadCategoryOptions(){
+    const cats = await ManufacturerModule.loadCategories('INBOUND_PURCHASE');
+    document.getElementById('purchaseCategoryList').innerHTML = cats.map((c)=>`<option value="${c}"></option>`).join('');
+}
+function supplierDigitsOk(mob){
+    const d = String(mob || '').replace(/\D/g, '');
+    return d.length >= 9;
+}
+function renderSupplierCustomerBanner(){
+    const el = document.getElementById('supplierCustomerBanner');
+    const cid = v('supplierCustomerId');
+    if (!cid) {
+        el.className = 'mfg-customer-banner';
+        el.textContent = '';
+        return;
+    }
+    const c = supplierCustomerById[cid] || {};
+    const mob = String(c.mobile || '').trim();
+    const disp = mob || '(no mobile saved)';
+    if (supplierDigitsOk(mob)) {
+        el.textContent = `SMS will go to ${disp}`;
+        el.className = 'mfg-customer-banner show ok';
+    } else {
+        el.textContent = `Mobile on file: ${disp} — SMS will not queue until a valid number is saved on this customer.`;
+        el.className = 'mfg-customer-banner show warn';
+    }
+}
+async function loadSupplierOptions(){
+    const bid = ManufacturerModule.businessId;
+    if (!bid) return;
+
+    const fetchSuppliers = async () => {
+        console.log('[Inbound] Fetching suppliers from Firestore...');
+        let query = db.collection('customers').where('businessId','==',bid);
+        if (bid !== KUBUKA_BID) {
+            query = query.where('type','==','supplier');
+        }
+        const snap = await query.limit(300).get().catch(()=>({docs:[]}));
+        return snap.docs.map((d) => ({ id: d.id, data: d.data() || {} }));
+    };
+
+    // Use cache if available (TTL 5 mins)
+    const rows = window.DigiBizUI 
+        ? await window.DigiBizUI.withCache(`suppliers_${bid}`, fetchSuppliers, 300000)
+        : await fetchSuppliers();
+
+    Object.keys(supplierCustomerById).forEach((k) => delete supplierCustomerById[k]);
+    const sel = document.getElementById('supplierCustomerId');
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const opt0 = document.createElement('option');
+    opt0.value = '';
+    opt0.textContent = 'Select supplier…';
+    sel.appendChild(opt0);
+    
+    const filteredRows = rows
+        .sort((a, b) => String(a.data.fullName || '').localeCompare(String(b.data.fullName || ''), undefined, { sensitivity: 'base' }));
+    
+    filteredRows.forEach(({ id, data: x }) => {
+        supplierCustomerById[id] = x;
+        const o = document.createElement('option');
+        o.value = id;
+        const name = String(x.fullName || x.mobile || id).trim();
+        const mob = String(x.mobile || '').trim();
+        o.textContent = mob ? `${name} — ${mob}` : `${name} (no mobile)`;
+        sel.appendChild(o);
+    });
+    if (prev && supplierCustomerById[prev]) sel.value = prev;
+    renderSupplierCustomerBanner();
+}
+function smsEnqueueNote(res){
+    if (!res) return '';
+    if (res.ok) {
+        if (res.fallback) return ' (sent via fallback gateway)';
+        return '';
+    }
+    if (res.skipped === 'no_mobile') return ' SMS was not queued: customer mobile missing or too short.';
+    if (res.skipped === 'sms_event_disabled') return ' SMS was not queued: Payment SMS is turned off in SMS settings.';
+    if (res.skipped === 'no_credits') return ' SMS not sent: credits finished (7-day trial ended or no paid credits). Add credits under Billing or ask Super Admin.';
+    if (res.skipped === 'permission') return ' SMS not queued: this user role is not allowed to create pending SMS in Firestore. Owner / staff (non-rep) can queue after rules deploy, or ask Business Owner.';
+    if (res.error) return ` SMS queue failed: ${res.error}`;
+    return '';
+}
+async function save(){
+    if (!enforceInboundAccess(inboundAccessRole)) return;
+    const bid = ManufacturerModule.businessId;
+    const mode = v('paymentMode');
+    const cid = v('supplierCustomerId');
+    const msgEl = document.getElementById('msg');
+    msgEl.className = 'mfg-msg';
+    if (!cid) {
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Please choose a supplier / customer from the list so the name and mobile match your directory.';
+        return;
+    }
+
+    let customer = supplierCustomerById[cid] || {};
+    if (!customer || !Object.keys(customer).length) {
+        const doc = await db.collection('customers').doc(cid).get().catch(() => null);
+        customer = doc && doc.exists ? (doc.data() || {}) : {};
+        supplierCustomerById[cid] = customer;
+    }
+
+    const supplierName = String(customer.fullName || '').trim();
+    if (!supplierName) {
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Selected customer has no full name in Firestore; update the customer record first.';
+        return;
+    }
+
+    const materialName = v('materialName').trim();
+    const purchaseCategory = v('purchaseCategory').trim();
+    const amountVal = n('amount');
+    const confirmMsg = `Are you sure you want to save this purchase?\n\nMaterial: ${materialName}\nSupplier: ${supplierName}\nAmount: Rs. ${ManufacturerModule.money(amountVal)}\nPayment: ${mode}`;
+    
+    if (!confirm(confirmMsg)) return;
+
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const id = ManufacturerModule.uuid('RMP');
+    const data = {
+        businessId: bid,
+        purchaseId: id,
+        materialName,
+        supplierName,
+        category: purchaseCategory,
+        qty: n('qty'),
+        unitCost: n('unitPrice'),
+        amount: amountVal,
+        paymentMode: mode,
+        paymentStatus: payStatus(mode),
+        dueDate: v('dueDate') || null,
+        chequeClearanceDate: v('chequeClearanceDate') || null,
+        createdAt: new Date(),
+        flatAccountingSyncedV1: false
+    };
+    data.customerId = cid;
+    data.customerMobile = customer.mobile || '';
+    data.customerAddress = customer.address || '';
+    data.customerFirstName = customer.firstName || ManufacturerModule.firstName(customer.fullName || supplierName);
+    
+    try {
+        await db.collection('manufacturer_raw_material_history').doc(id).set(data);
+        if (isKubuka()) {
+            await db.collection('procurement_kdkumbuka').doc(id).set({
+                ...data,
+                procurementId: id,
+                processingStatus: 'PENDING_SHIFTING',
+                shiftingAcceptedAt: null,
+                ratioUsed: null,
+                madeTeaQty: null,
+                madeTeaUnitCost: null,
+                madeTeaTotalValue: null,
+                readyForProductionId: null,
+                updatedAt: new Date()
+            }, { merge: true });
+        }
+        
+        // Save suggestions
+        if (typeof window.saveMaterialSuggestion === 'function') await window.saveMaterialSuggestion();
+        if (typeof window.saveCategorySuggestion === 'function') await window.saveCategorySuggestion();
+
+        const rmKey = (data.materialName || 'MATERIAL').toUpperCase();
+        await db.collection('manufacturer_raw_materials').doc(`${bid}_${rmKey}`).set({
+            businessId: bid,
+            name: data.materialName,
+            stockQty: firebase.firestore.FieldValue.increment(data.qty),
+            lastUnitCost: data.unitCost,
+            lastSupplier: data.supplierName,
+            updatedAt: new Date()
+        }, { merge: true });
+        
+        ManufacturerModule.publishEvent('MANUFACTURING_RAW_MATERIAL_PURCHASED', data);
+        try {
+            await ManufacturerModule.syncFlatAccountingRawMaterialPurchase(data);
+            await db.collection('manufacturer_raw_material_history').doc(id).update({ flatAccountingSyncedV1: true });
+        } catch (eFlat) {
+            console.warn('[Inbound] Flat accounting mirror failed', eFlat);
+        }
+
+        const smsRes = await ManufacturerModule.enqueueSms('INBOUND_PURCHASE', null, {
+            name: data.customerFirstName || data.supplierName,
+            mobile: data.customerMobile,
+            materialName: data.materialName,
+            qty: data.qty,
+            amount: data.amount,
+            paymentStatus: data.paymentStatus,
+            dueDate: data.dueDate
+        });
+        
+        msgEl.textContent = 'Purchase saved and stock updated.' + (smsRes && smsRes.ok ? ' SMS queued.' : '') + smsEnqueueNote(smsRes);
+        if (smsRes && !smsRes.ok) msgEl.classList.add(smsRes.skipped ? 'warn' : 'err');
+        if (isKubuka()) {
+            const paidAmount = data.paymentMode === 'CASH' || data.paymentMode === 'BANK' ? Number(data.amount || 0) : 0;
+            const balanceDue = Math.max(0, Number(data.amount || 0) - paidAmount);
+            const user = (window.auth && window.auth.currentUser) || null;
+            const invoiceNo = `PINV-${Date.now()}`;
+            const invoice = {
+                invoiceNo,
+                invoiceType: 'PURCHASE_INVOICE',
+                referenceId: data.purchaseId,
+                supplierName: data.supplierName,
+                materialName: data.materialName,
+                qty: data.qty,
+                unitPrice: data.unitCost,
+                totalAmount: data.amount,
+                paymentMethod: data.paymentMode,
+                dueDate: data.dueDate || null,
+                date: new Date().toISOString().slice(0, 10),
+                salePerson: (user && (user.displayName || user.email)) || 'System',
+                paidAmount,
+                balanceDue,
+                previousBalance: 0,
+                totalDue: balanceDue,
+                remarks: `Payment Method: ${data.paymentMode || '-'}`
+            };
+            await saveInvoiceDoc(invoice);
+            await db.collection('manufacturer_raw_material_history').doc(id).set({ invoiceNo }, { merge: true });
+            printThermalPurchaseInvoice(invoice);
+        }
+        
+        // Reset fields
+        document.getElementById('materialName').value = '';
+        document.getElementById('qty').value = '';
+        document.getElementById('unitPrice').value = '';
+        document.getElementById('amount').value = '';
+        
+        // Removed redundant loadSupplierOptions() to save quota
+        refresh();
+    } catch (err) {
+        console.error(err);
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Error saving purchase: ' + err.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Purchase';
+    }
+}
+(async function(){
+    await ManufacturerModule.init('inbound');
+    inboundAccessRole = await resolveInboundRole();
+    enforceInboundAccess(inboundAccessRole);
+    document.getElementById('saveBtn').onclick = save;
+    document.getElementById('editSaveBtn').onclick = saveEditInbound;
+    document.getElementById('editCancelBtn').onclick = closeEditInbound;
+    document.getElementById('supplierCustomerId').addEventListener('change', renderSupplierCustomerBanner);
+    document.getElementById('qty').addEventListener('input', recalcAmount);
+    document.getElementById('unitPrice').addEventListener('input', recalcAmount);
+    
+    window.saveMaterialSuggestion = await ManufacturerModule.bindAutocomplete('materialName', 'RAW_MATERIAL_NAME');
+    window.saveCategorySuggestion = await ManufacturerModule.bindAutocomplete('purchaseCategory', 'INBOUND_PURCHASE_CATEGORY');
+    if (isKubuka()) {
+        const bar = document.getElementById('kubukaExportBar');
+        if (bar) bar.style.display = 'flex';
+        document.getElementById('applyFilterBtn').addEventListener('click', refresh);
+        document.getElementById('exportInboundBtn').addEventListener('click', exportInboundRowsCsv);
+    }
+
+    await loadSupplierOptions();
+    recalcAmount();
+    refresh();
+})();
+</script>
+</body>
+</html>

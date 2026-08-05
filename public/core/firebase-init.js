@@ -41,6 +41,12 @@ if (!firebase.apps.length) {
 
 window.db = firebase.firestore();
 window.auth = firebase.auth();
+
+try {
+    firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function(e) {
+        console.warn('[DigiBiz] Auth persistence error:', e);
+    });
+} catch(e) {}
 try {
     if (typeof firebase.storage === 'function') {
         window.storage = firebase.storage();
@@ -54,16 +60,30 @@ try {
 const db = window.db;
 const auth = window.auth;
 
-// Conditional Offline Persistence for Scrap Module
+// Conditional Offline Persistence for Scrap & Retail Modules
 (function() {
     const isScrapContext = window.location.pathname.includes('/scrap-') || 
                           localStorage.getItem('currentBusinessType') === 'scrap_collection_center' ||
                           sessionStorage.getItem('currentBusinessType') === 'scrap_collection_center';
     
+    const isRetailContext = window.location.pathname.includes('/retail/') ||
+                           window.location.pathname.includes('/reports/') ||
+                           window.location.pathname.includes('/core/') ||
+                           window.location.pathname.includes('/accounts/') ||
+                           window.location.pathname.includes('pos.html') ||
+                           window.location.pathname.includes('purchases.html') ||
+                           window.location.pathname.includes('grn.html') ||
+                           window.location.pathname.includes('inventory.html') ||
+                           window.location.pathname.includes('receivables.html') ||
+                           window.location.pathname.includes('payables.html') ||
+                           window.location.pathname.includes('credit-aging.html') ||
+                           localStorage.getItem('currentBusinessType') === 'retail' ||
+                           sessionStorage.getItem('currentBusinessType') === 'retail';
+
     const isStaging = window.location.hostname.includes('digibiz-test');
-    if (isScrapContext && !isStaging) {
+    if ((isScrapContext || isRetailContext) && !isStaging) {
         firebase.firestore().enablePersistence({ synchronizeTabs: true })
-            .then(() => console.info('[DigiBiz] Scrap module offline persistence enabled.'))
+            .then(() => console.info('[DigiBiz] Offline persistence enabled.'))
             .catch((err) => {
                 if (err.code === 'failed-precondition') {
                     console.warn('[DigiBiz] Persistence failed: Multiple tabs open.');
@@ -223,6 +243,36 @@ const auth = window.auth;
             } catch (e) { /* ignore */ }
             return;
         }
+
+        // Automatic user access heartbeat tracking (records page visit/access on master user doc and sub-user doc)
+        try {
+            if (window.db && user && user.uid) {
+                const now = new Date();
+                const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                
+                // 1. Update master users/{uid} document
+                window.db.collection('users').doc(user.uid).set({
+                    lastActiveAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    activeDates: firebase.firestore.FieldValue.arrayUnion(todayKey),
+                    email: user.email || '',
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true }).catch(() => {});
+
+                // 2. Update business membership doc if businessId exists
+                const storedBid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                if (storedBid) {
+                    window.db.collection('businesses').doc(storedBid).collection('users').doc(user.uid).set({
+                        lastActiveAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        activeDates: firebase.firestore.FieldValue.arrayUnion(todayKey),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true }).catch(() => {});
+                }
+            }
+        } catch (eActive) {
+            console.warn('[DigiBiz] Active heartbeat log warn:', eActive);
+        }
+
         const email = String(user.email || '').trim().toLowerCase();
         try { window.ensureDefaultTestBusinessProfile(); } catch (e) { /* ignore */ }
         const storedBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
@@ -259,7 +309,7 @@ const auth = window.auth;
                 localStorage.setItem('selectedBusinessId', KUBUKA_BUSINESS_ID);
                 sessionStorage.setItem('selectedBusinessId', KUBUKA_BUSINESS_ID);
             } catch (e) { /* ignore */ }
-        } else if (email === 'biz.sirimal@gmail.com') {
+        } else if (email === 'biz.sirimal@gmail.com' || email === '2biz.sirimal@gmail.com') {
             // No longer forcing a test business ID. 
             // The user is now linked to their real mirrored business in the Testing project.
             console.info('[DigiBiz] Sirimal email identified. Using Firestore linked business.');

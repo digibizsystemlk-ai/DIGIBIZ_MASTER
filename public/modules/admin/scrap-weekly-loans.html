@@ -17,7 +17,7 @@
     
     <script src="../../core/firebase-init.js?v=102"></script>
     <script src="../../core/dashboard-core.js?v=102"></script>
-    <script src="../../core/sidebar.js?v=201"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
     <script src="../../core/scrap-vba-core.js?v=102"></script>
     <script src="../../core/scrap-weekly-loans.js?v=2"></script>
 
@@ -123,7 +123,13 @@
         </div>
 
         <div class="card">
-            <h3>Active Weekly Loans</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 12px; gap: 8px;">
+                <h3 style="margin:0;">Active Weekly Loans</h3>
+                <div id="filterNotice" style="display:none; font-size: 13px; color: #0284c7; font-weight: 600; background: #f0f9ff; border: 1px solid #e0f2fe; padding: 6px 12px; border-radius: 8px; align-items: center; gap: 8px;">
+                    Showing results for: <span id="filterCustomerName" style="font-weight: 800;"></span> 
+                    <button onclick="clearFilter()" style="margin-left: 8px; padding: 2px 8px; font-size: 11px; background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; color: #475569;">Clear</button>
+                </div>
+            </div>
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -414,11 +420,30 @@
                     data.id = d.id;
                     return window.WeeklyLoanCore.refreshScheduleStatus(data);
                 });
+
+                const urlParams = new URLSearchParams(window.location.search);
+                const searchFilter = urlParams.get('customer') || urlParams.get('search');
+                if (searchFilter) {
+                    loans = loans.filter(l => String(l.customerName || '').toLowerCase().includes(searchFilter.toLowerCase()));
+                    document.getElementById('filterCustomerName').textContent = searchFilter;
+                    document.getElementById('filterNotice').style.display = 'inline-flex';
+                } else {
+                    document.getElementById('filterNotice').style.display = 'none';
+                }
+
                 renderMainTable();
             } catch (e) {
                 console.error("[loadData] Error loading loans:", e);
             }
         }
+
+        window.clearFilter = function() {
+            const url = new URL(window.location);
+            url.searchParams.delete('customer');
+            url.searchParams.delete('search');
+            window.history.replaceState({}, '', url);
+            loadData();
+        };
 
         function refreshPreview() {
             const p = Number(document.getElementById('loanAmount').value) || 0;
@@ -529,6 +554,9 @@
                 }
 
                 closeModal('newLoanModal');
+                if (window.scrapVbaCore && typeof window.scrapVbaCore.recordTotalLoanHistory === 'function') {
+                    await window.scrapVbaCore.recordTotalLoanHistory(bizId, name);
+                }
                 alert('ණය සාර්ථකව නිකුත් කරන ලදී.');
                 location.reload();
             } catch (e) { 
@@ -614,7 +642,11 @@
                         Rs. ${penaltyVal.toLocaleString()}
                         ${i.daysOverdue ? `<br><small style="color:var(--text-muted); font-size:10px; display:block; margin-top:2px;">(${i.daysOverdue} days, 10%/mo compounded daily)</small>` : ''}
                     </td>
-                    <td>Rs. ${i.paidAmount}</td>
+                    <td>
+                        Rs. ${Number(i.paidAmount || 0).toLocaleString()}
+                        ${i.paidPenalty ? `<br><small style="color:var(--warning); font-weight:700; font-size:10px;">Penalty Paid: Rs. ${Number(i.paidPenalty).toLocaleString()}</small>` : ''}
+                        ${i.paymentDate ? `<br><small style="color:var(--success); font-weight:700; font-size:10px;">Paid Date: ${i.paymentDate}</small>` : ''}
+                    </td>
                     <td><span class="status-badge status-${i.status.toLowerCase()}">${i.status}</span></td>
                     <td>${i.status !== 'PAID' ? `<button class="btn btn-success" style="padding:4px 8px; font-size:10px;" onclick="payInst(${i.installmentNo})">Pay</button>` : '✅'}</td>
                 </tr>
@@ -678,12 +710,16 @@
             const due = activeInst.amount - (activeInst.paidAmount || 0);
             const total = due + penalty;
 
+            const totalPaidSoFar = activeLoan.schedule.reduce((s, i) => s + (i.paidAmount || 0), 0);
+            const maxRemaining = Math.round((activeLoan.totalPayable - totalPaidSoFar) + activeLoan.totalOverdueInterest);
+
             document.getElementById('payDetails').innerHTML = `
                 <b>Customer:</b> ${activeLoan.customerName}<br>
                 <b>Installment:</b> #${no}<br>
                 <b>Due:</b> Rs. ${due.toLocaleString()}<br>
                 <b>Penalty:</b> Rs. ${penalty.toLocaleString()}<br>
-                <b style="color: var(--accent);">Total Outstanding: Rs. ${total.toLocaleString()}</b>
+                <b>Installment Outstanding: Rs. ${total.toLocaleString()}</b><br>
+                <b style="color: var(--success);">Total Loan Outstanding: Rs. ${maxRemaining.toLocaleString()}</b>
             `;
             document.getElementById('payAmountInput').value = total;
             openModal('payInstModal');
@@ -695,30 +731,69 @@
             const sourceName = document.getElementById('paySource').options[document.getElementById('paySource').selectedIndex].text.split('(')[0].trim();
 
             if (!amt || amt <= 0) return;
-            const inst = activeInst;
-            const penalty = Math.round(inst.overdueInterest || 0);
-            const due = inst.amount - (inst.paidAmount || 0);
+
+            // Calculate total outstanding remaining on the entire loan
+            const totalPaidSoFar = activeLoan.schedule.reduce((s, i) => s + (i.paidAmount || 0), 0);
+            const maxRemaining = Math.round((activeLoan.totalPayable - totalPaidSoFar) + activeLoan.totalOverdueInterest);
+            
+            if (amt > maxRemaining + 0.01) {
+                alert(`ඇතුළත් කළ හැකි උපරිම මුදල රු. ${maxRemaining.toLocaleString()} වේ.`);
+                return;
+            }
 
             closeModal('payInstModal');
             showSync(true);
             try {
                 let rem = amt;
-                const pPaid = Math.min(penalty, rem);
-                rem -= pPaid;
-                const iPaid = Math.min(due, rem);
+                let totalPrincipalPaid = 0;
+                let totalInterestPaid = 0;
+                let totalPenaltyPaid = 0;
                 
-                // P/I Split logic
+                const todayStr = new Date().toISOString().split('T')[0];
                 const piRatio = activeLoan.principal / activeLoan.totalPayable;
                 const interestRatio = activeLoan.totalInterest / activeLoan.totalPayable;
-                
-                const principalPortion = Math.round((iPaid * piRatio) * 100) / 100;
-                const interestPortion = Math.round((iPaid * interestRatio) * 100) / 100;
 
-                inst.paidAmount += iPaid;
-                if (inst.paidAmount >= inst.amount - 0.01) {
-                    inst.status = 'PAID';
-                    inst.overdueInterest = 0;
+                // Chronologically distribute payment starting from the oldest unpaid installment
+                for (let idx = 0; idx < activeLoan.schedule.length; idx++) {
+                    if (rem <= 0.01) break;
+                    
+                    const inst = activeLoan.schedule[idx];
+                    if (inst.status === 'PAID') continue;
+                    
+                    const penaltyVal = Math.round(inst.overdueInterest || 0);
+                    const dueVal = inst.amount - (inst.paidAmount || 0);
+                    
+                    // 1. Pay penalty first
+                    const penaltyPaid = Math.min(penaltyVal, rem);
+                    rem -= penaltyPaid;
+                    totalPenaltyPaid += penaltyPaid;
+                    if (penaltyPaid > 0) {
+                        inst.paidPenalty = Math.round(((inst.paidPenalty || 0) + penaltyPaid) * 100) / 100;
+                    }
+                    
+                    // 2. Pay installment principal/interest
+                    const installmentPaid = Math.min(dueVal, rem);
+                    rem -= installmentPaid;
+                    
+                    const pPortion = installmentPaid * piRatio;
+                    const iPortion = installmentPaid * interestRatio;
+                    totalPrincipalPaid += pPortion;
+                    totalInterestPaid += iPortion;
+                    
+                    inst.paidAmount = Math.round((inst.paidAmount + installmentPaid) * 100) / 100;
+                    
+                    if (inst.paidAmount >= inst.amount - 0.01) {
+                        inst.status = 'PAID';
+                        inst.overdueInterest = 0;
+                        inst.paymentDate = todayStr;
+                    } else {
+                        inst.paymentDate = todayStr;
+                    }
                 }
+
+                const principalPortion = Math.round(totalPrincipalPaid * 100) / 100;
+                const interestPortion = Math.round(totalInterestPaid * 100) / 100;
+                const pPaid = Math.round(totalPenaltyPaid * 100) / 100;
 
                 // Ledger
                 if (window.scrapVbaCore) {
@@ -734,8 +809,8 @@
                     });
                     
                     // Update Profit Pool for both interest and penalties
-                    if (interestPortion > 0) await window.scrapVbaCore.updateProfitPool(bizId, interestPortion, 'LOAN_INTEREST', `Interest from ${activeLoan.customerName}`);
-                    if (pPaid > 0) await window.scrapVbaCore.updateProfitPool(bizId, pPaid, 'LOAN_PENALTY', `Penalty from ${activeLoan.customerName}`);
+                    if (interestPortion > 0.01) await window.scrapVbaCore.updateProfitPool(bizId, interestPortion, 'LOAN_INTEREST', `Interest from ${activeLoan.customerName}`);
+                    if (pPaid > 0.01) await window.scrapVbaCore.updateProfitPool(bizId, pPaid, 'LOAN_PENALTY', `Penalty from ${activeLoan.customerName}`);
                 }
 
                 await db.collection('weekly_loans').doc(activeLoan.id).update({
@@ -759,6 +834,9 @@
                     } catch (e) { console.warn("SMS Timeout/Error", e); }
                 }
 
+                if (window.scrapVbaCore && typeof window.scrapVbaCore.recordTotalLoanHistory === 'function') {
+                    await window.scrapVbaCore.recordTotalLoanHistory(bizId, activeLoan.customerName);
+                }
                 alert('ගෙවීම සාර්ථකයි.');
                 location.reload();
             } catch (e) { 

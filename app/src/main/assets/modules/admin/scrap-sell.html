@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Sell</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=58"></script>
+    <script src="../../core/event-validation.js?v=58"></script>
+    <script src="../../core/event-bus.js?v=58"></script>
+    <script src="../../core/accounts-core.js?v=58"></script>
+    <script src="../../core/auth-roles.js?v=58"></script>
+    <script src="../../core/business-types.js?v=58"></script>
+    <script src="../../core/dashboard-core.js?v=58"></script>
+    <script src="../../core/subscription-manager.js?v=58"></script>
+    <script src="../../core/sidebar.js?v=1008"></script>
+    <script src="../../core/sms-wallet-core.js?v=4"></script>
+    <script src="../../core/scrap-vba-core.js?v=74"></script>
+    <style>
+        body{font-family:Inter,Segoe UI,sans-serif;background:#f5f7fb;color:#0f172a;margin:0;}
+        .page{padding:20px;max-width:1100px;margin:0 auto;}
+        .card{background:#fff;border:1px solid #dbe4ee;border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.05);}
+        .head{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end;}
+        input,select,button{padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;}
+        button{background:#0f3b2c;color:#fff;border:none;cursor:pointer;font-weight:600;transition:opacity 0.2s;}
+        button:disabled{opacity:0.6;cursor:not-allowed;}
+        table{width:100%;border-collapse:collapse;font-size:13px;}
+        th,td{padding:12px 8px;border-bottom:1px solid #eef2f7;text-align:left;}
+        th{background:#f8fafc;position:sticky;top:0;font-weight:700;color:#64748b;text-transform:uppercase;font-size:11px;letter-spacing:0.05em;}
+        .num{text-align:right;}
+        h1{font-size:24px;margin:0;color:#0f172a;}
+        @media (max-width:768px){
+            .head{grid-template-columns:1fr;gap:12px;}
+            .page{padding:10px;}
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+            <div>
+                <h1>Sell</h1>
+                <p style="margin:4px 0 0;color:#64748b;font-size:13px;">Buyer-focused sell sheet with automated Profit Pool settlement.</p>
+            </div>
+            <div id="profitPoolStatus" style="font-weight:700;padding:8px 15px;border-radius:20px;font-size:13px;">Pool: Loading...</div>
+        </div>
+        <div class="head">
+            <div>
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:4px;">BUYER NAME</label>
+                <input id="buyerName" list="buyerList" placeholder="Select or type buyer name..." style="width:100%;box-sizing:border-box;">
+                <datalist id="buyerList"></datalist>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:4px;">PAYMENT MODE</label>
+                <select id="paymentMode" style="width:100%;"><option value="CASH">Cash</option><option value="BANK">Bank</option><option value="AR">Accounts Receivable</option></select>
+            </div>
+            <div>
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:4px;">DATE & TIME</label>
+                <input id="sellDateTime" type="datetime-local" style="width:100%;box-sizing:border-box;">
+            </div>
+            <button id="saveSellBtn" style="height:42px;padding:0 25px;">Save Sell</button>
+        </div>
+        <div style="margin-top:15px;display:flex;justify-content:space-between;align-items:center;padding-top:15px;border-top:1px solid #f1f5f9;">
+            <div id="sellSummary" style="font-weight:800;font-size:18px;color:#0f3b2c;">Total: LKR 0.00</div>
+            <div id="smsDebugBadge" style="display:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;"></div>
+        </div>
+    </div>
+    <div class="card" style="max-height:70vh;overflow:auto;padding:0;">
+        <table style="margin:0;">
+            <thead><tr><th>Item</th><th class="num">Stock</th><th class="num">Sell Price</th><th class="num">Qty (kg)</th><th class="num">Subtotal</th></tr></thead>
+            <tbody id="sellBody"><tr><td colspan="5" style="text-align:center;padding:40px;color:#94a3b8;">Loading items...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+<script>
+let SCRAP_BUSINESS_ID = '';
+const state = { items: [], qty: {}, prices: {} };
+const buyersByName = {};
+const fmt = (v) => `LKR ${(Number(v)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+
+function updateSellSummary() {
+    const total = state.items.reduce((s, item) => {
+        const qty = Number(state.qty[item.id]) || 0;
+        const price = state.prices[item.id] != null ? Number(state.prices[item.id]) : (Number(item.sellingPrice)||0);
+        return s + (qty * price);
+    }, 0);
+    const sum = document.getElementById('sellSummary');
+    if (sum) sum.textContent = `Total: ${fmt(total)}`;
+}
+
+async function refreshProfitPool() {
+    if (!SCRAP_BUSINESS_ID || !window.scrapVbaCore?.getProfitPool) return;
+    const bal = await window.scrapVbaCore.getProfitPool(SCRAP_BUSINESS_ID);
+    const el = document.getElementById('profitPoolStatus');
+    if (el) {
+        el.textContent = `Pool: ${fmt(bal)}`;
+        el.style.background = bal < 0 ? '#fee2e2' : '#dcfce7';
+        el.style.color = bal < 0 ? '#991b1b' : '#166534';
+    }
+}
+
+function render() {
+    const body = document.getElementById('sellBody');
+    if (!body) return;
+    body.innerHTML = state.items.map((item, idx) => {
+        const qty = Number(state.qty[item.id]) || 0;
+        const price = state.prices[item.id] != null ? Number(state.prices[item.id]) : (Number(item.sellingPrice)||0);
+        return `<tr>
+            <td style="font-weight:600;">${item.itemName||'-'}</td>
+            <td class="num" style="color:#64748b;">${window.scrapVbaCore && window.scrapVbaCore.formatWeight ? window.scrapVbaCore.formatWeight(item.currentStock) : (Number(item.currentStock)||0)}</td>
+            <td class="num"><input data-p="${item.id}" type="number" step="0.01" value="${price}" style="width:90px;text-align:right;"></td>
+            <td class="num"><input data-q="${item.id}" data-idx="${idx}" type="number" step="0.01" value="${qty||''}" style="width:90px;text-align:right;font-weight:700;border-color:#0ea5e9;"></td>
+            <td class="num" style="font-weight:700;color:#0f3b2c;">${fmt(qty * price)}</td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="5">No items found</td></tr>';
+
+    body.querySelectorAll('input[data-p]').forEach((el) => el.addEventListener('input', ()=>{ 
+        state.prices[el.dataset.p] = Number(el.value)||0; 
+        updateSellSummary();
+        const rowTotal = el.closest('tr').querySelector('td:last-child');
+        const q = Number(state.qty[el.dataset.p]) || 0;
+        if(rowTotal) rowTotal.textContent = fmt(q * (Number(el.value)||0));
+    }));
+    body.querySelectorAll('input[data-q]').forEach((el) => {
+        el.addEventListener('input', ()=>{ 
+            state.qty[el.dataset.q] = Number(el.value)||0; 
+            updateSellSummary();
+            const rowTotal = el.closest('tr').querySelector('td:last-child');
+            const p = state.prices[el.dataset.q] != null ? Number(state.prices[el.dataset.q]) : (Number(state.items.find(it=>it.id===el.dataset.q).sellingPrice)||0);
+            if(rowTotal) rowTotal.textContent = fmt((Number(el.value)||0) * p);
+        });
+        el.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); const nx = body.querySelector(`input[data-q][data-idx="${Number(el.dataset.idx)+1}"]`); if(nx) nx.focus(); }});
+    });
+    updateSellSummary();
+}
+
+async function loadItems() {
+    if (!SCRAP_BUSINESS_ID) return;
+    const snap = await db.collection('scrap_items').where('businessId','==',SCRAP_BUSINESS_ID).get();
+    state.items = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+            if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
+            return String(a.itemName || '').localeCompare(String(b.itemName || ''));
+        });
+    render();
+}
+
+async function loadBuyers() {
+    if (!SCRAP_BUSINESS_ID) return;
+    const snap = await db.collection('customers').where('businessId','==',SCRAP_BUSINESS_ID).limit(700).get().catch(()=>({docs:[]}));
+    const list = document.getElementById('buyerList');
+    if (!list) return;
+    list.innerHTML = '';
+    snap.docs.forEach((d) => {
+        const row = d.data() || {};
+        const type = String(row.type || row.context || '').toLowerCase();
+        if (!type.includes('buyer')) return;
+        const name = String(row.fullName || '').trim();
+        if (!name) return;
+        buyersByName[name.toLowerCase()] = row;
+        const opt = document.createElement('option');
+        opt.value = name;
+        list.appendChild(opt);
+    });
+}
+
+function showSmsDebug(result, extraReason) {
+    const el = document.getElementById('smsDebugBadge');
+    if (!el) return;
+    el.style.display = 'block';
+    if (result && result.ok) {
+        el.style.background = '#dcfce7'; el.style.color = '#14532d'; el.textContent = 'SMS Queued';
+    } else {
+        el.style.background = '#fee2e2'; el.style.color = '#7f1d1d'; el.textContent = extraReason || 'SMS Skipped';
+    }
+}
+
+document.getElementById('saveSellBtn').addEventListener('click', async () => {
+    if (!SCRAP_BUSINESS_ID) return;
+    const buyerName = document.getElementById('buyerName').value.trim();
+    if (!buyerName) return alert('Buyer name required.');
+    const dateInput = document.getElementById('sellDateTime').value;
+    const paymentMode = document.getElementById('paymentMode').value;
+
+    const sellBtn = document.getElementById('saveSellBtn');
+    sellBtn.disabled = true;
+    sellBtn.textContent = 'Saving...';
+
+    try {
+        const lines = [];
+        let totalRealizedProfit = 0;
+        let totalExpectedProfitSold = 0;
+
+        for (const item of state.items) {
+            const q = Number(state.qty[item.id]) || 0;
+            if (q <= 0) continue;
+            
+            const p = state.prices[item.id] != null ? Number(state.prices[item.id]) : (Number(item.sellingPrice)||0);
+            const cp = Number(item.costPrice || 0);
+            const expectedProfitUnit = Number(item.profit || 0);
+
+            const lineCogs = q * cp;
+            const lineRevenue = q * p;
+            const lineRealizedProfit = lineRevenue - lineCogs;
+            const lineExpectedProfit = q * expectedProfitUnit;
+
+            totalRealizedProfit += lineRealizedProfit;
+            totalExpectedProfitSold += lineExpectedProfit;
+
+            lines.push({
+                itemId: item.id,
+                itemName: item.itemName,
+                qty: q,
+                weight: q,
+                sellingPrice: p,
+                amount: lineRevenue,
+                costPrice: cp,
+                cogs: lineCogs,
+                realizedProfit: lineRealizedProfit,
+                expectedProfitPart: lineExpectedProfit
+            });
+
+            // Update Stock
+            const itemRef = db.collection('scrap_items').doc(item.id);
+            const nextStock = (Number(item.currentStock) || 0) - q;
+            await itemRef.update({
+                currentStock: nextStock,
+                totalBuyingValue: nextStock * cp,
+                totalSellingValue: nextStock * (Number(item.sellingPrice)||0),
+                potentialProfitValue: nextStock * expectedProfitUnit,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        if (!lines.length) throw new Error("No items selected.");
+
+        const totalAmount = lines.reduce((s, r) => s + r.amount, 0);
+        const totalWeight = lines.reduce((s, r) => s + r.qty, 0);
+        const totalCogs = lines.reduce((s, r) => s + r.cogs, 0);
+        const sellIso = dateInput ? new Date(dateInput).toISOString() : new Date().toISOString();
+
+        const sellRef = await db.collection('selling_history').add({
+            businessId: SCRAP_BUSINESS_ID,
+            buyerName,
+            paymentMode,
+            date: sellIso,
+            items: lines,
+            qty: totalWeight,
+            totalWeight,
+            totalAmount,
+            cogsAmount: totalCogs,
+            realizedProfit: totalRealizedProfit,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Profit Pool Adjustment
+        const poolAdjustment = totalRealizedProfit - totalExpectedProfitSold;
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.updateProfitPool === 'function') {
+            await window.scrapVbaCore.updateProfitPool(SCRAP_BUSINESS_ID, poolAdjustment, 'SALE_REALIZED', `Sale to ${buyerName}. Adj: ${poolAdjustment.toFixed(2)}`);
+        }
+
+        if (window.scrapVbaCore?.postJournalEntry) {
+            const receivableLine = paymentMode === 'AR'
+                ? { accountCode: '1-1030-01', accountName: 'Accounts Receivable', debit: totalAmount, credit: 0 }
+                : (paymentMode === 'BANK'
+                    ? { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: totalAmount, credit: 0 }
+                    : { accountCode: '1-1010-01', accountName: 'Cash - Main', debit: totalAmount, credit: 0 });
+
+            await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+                description: `Scrap Sell - ${buyerName}`, reference: sellRef.id, referenceType: 'SCRAP_SELL',
+                date: sellIso, entries: [receivableLine, { accountCode: '4-4010-01', accountName: 'Scrap Sales Revenue', debit: 0, credit: totalAmount }]
+            });
+            await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+                description: `Scrap Sell COGS - ${buyerName}`, reference: sellRef.id, referenceType: 'SCRAP_SELL_COGS',
+                date: sellIso,
+                entries: [{ accountCode: '5-5010-01', accountName: 'Cost of Goods Sold', debit: totalCogs, credit: 0 }, { accountCode: '1-1030-01', accountName: 'Scrap Inventory', debit: 0, credit: totalCogs }]
+            });
+            if (window.scrapVbaCore.syncInventoryAssetWithStock) await window.scrapVbaCore.syncInventoryAssetWithStock(SCRAP_BUSINESS_ID);
+        }
+
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.enqueuePendingSms === 'function') {
+            const enabled = await window.scrapVbaCore.isScrapSmsEventEnabled(SCRAP_BUSINESS_ID, 'selling');
+            const buyer = buyersByName[buyerName.toLowerCase()] || {};
+            const phone = String(buyer.mobile || buyer.phone || '').trim();
+            if (enabled && phone) {
+                const msg = `Dear ${buyerName}, Sell recorded. Total: ${fmt(totalAmount)}. Date: ${new Date(sellIso).toLocaleString()}`;
+                const smsRes = await window.scrapVbaCore.enqueuePendingSms(SCRAP_BUSINESS_ID, phone, msg);
+                showSmsDebug(smsRes);
+            } else {
+                showSmsDebug(null, enabled ? 'no_phone' : 'event_disabled');
+            }
+        }
+
+        alert('Sale saved successfully.');
+        window.location.reload();
+
+    } catch (err) {
+        console.error("Sale error:", err);
+        alert("Error: " + err.message);
+    } finally {
+        sellBtn.disabled = false;
+        sellBtn.textContent = 'Save Sell';
+    }
+});
+
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '/'; return; }
+    
+    let businessId = user.uid;
+    if (window.dashboardCore?.getContext) {
+        const ctx = await window.dashboardCore.getContext(user);
+        businessId = String((ctx && ctx.businessId) || user.uid);
+    }
+    
+    const bizDoc = await db.collection('businesses').doc(businessId).get();
+    const type = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
+    
+    if (type !== 'scrap_collection_center') {
+        window.location.href = '/modules/core/dashboard.html'; return;
+    }
+    
+    SCRAP_BUSINESS_ID = businessId;
+    const n = new Date();
+    document.getElementById('sellDateTime').value = new Date(n.getTime() - n.getTimezoneOffset()*60000).toISOString().slice(0,16);
+    await loadItems();
+    await loadBuyers();
+    await refreshProfitPool();
+});
+</script>
+</body>
+</html>

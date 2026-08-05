@@ -1,5 +1,121 @@
 // Dynamic Sidebar Component - Retail Navbar Layout
 
+// TWA (Android App) Environment Detection
+if (window.location.search.includes('platform=android') || document.referrer.startsWith('android-app://') || sessionStorage.getItem('is_android_app') === 'true') {
+    sessionStorage.setItem('is_android_app', 'true');
+}
+
+window.i18n = function(key) {
+    const isApp = sessionStorage.getItem('is_android_app') === 'true';
+    const lang = isApp ? 'en' : (localStorage.getItem('preferredLanguage') || 'en');
+    const translations = {
+        si: {
+            "Dashboard": "Dashboard (ප්‍රධාන පුවරුව)",
+            "Point of Sale": "Point of Sale (විකුණුම් පර්යන්තය)",
+            "Stock purchases": "Stock purchases (මිලදී ගැනීම්)",
+            "Stock": "Stock (තොගය)",
+            "Customers": "Customers (පාරිභෝගිකයින්)",
+            "Finance": "Finance (මූල්‍ය)",
+            "Accounting": "Accounting (ගිණුම්කරණය)",
+            "Reports": "Reports (වාර්තා)",
+            "Settings": "Settings (සැකසුම්)",
+            "අපිට එන්න තියන ණය": "අපිට එන්න තියන ණය",
+            "අපි ගෙවන්න තියන ණය": "අපි ගෙවන්න තියන ණය",
+            
+            // Receivables & Payables Pages
+            "Receivables & Loans Given": "අපිට එන්න තියන ණය (Receivables & Loans Given)",
+            "Payables & Loans Received": "අපි ගෙවන්න තියන ණය (Payables & Loans Received)",
+            "Record Hand Loan Given": "අතමාරු ණයක් සටහන් කරන්න",
+            "Record Hand Loan Received": "අතමාරු ණයක් ලබාගන්න",
+            "Customer Outstandings": "මුළු පාරිභෝගික ණය (Customer Outstandings)",
+            "Hand Loans Given": "මුළු අතමාරු ණය (Hand Loans Given)",
+            "Total Receivables": "මුළු ලැබීමට ඇති ණය (Total Receivables)",
+            "Supplier Outstandings": "සැපයුම්කරුවන්ගේ ණය (Supplier Outstandings)",
+            "Hand Loans Received": "ලබාගත් අතමාරු ණය (Hand Loans Received)",
+            "Total Payables": "මුළු ගෙවීමට ඇති ණය (Total Payables)",
+            "Customer Debts Tab": "පාරිභෝගික ණය (Customer Debts)",
+            "Hand Loans Given Tab": "අතමාරු ණය දීම් (Hand Loans Given)",
+            "Supplier Debts Tab": "සැපයුම්කරුවන්ගේ ණය (Supplier Debts)",
+            "Hand Loans Received Tab": "ලබාගත් අතමාරු ණය (Hand Loans Received)",
+            "Customer Debts List Title": "පාරිභෝගික ණය ලැයිස්තුව",
+            "Supplier Debts List Title": "සැපයුම්කරුවන්ගේ ණය ඇණවුම් ලැයිස්තුව",
+            "Hand Loans Given List Title": "අප විසින් ලබා දුන් අතමාරු ණය ලැයිස්තුව",
+            "Hand Loans Received List Title": "ලබාගත් අතමාරු ණය ලැයිස්තුව",
+            
+            // Tables
+            "Invoice No": "Invoice No",
+            "PO No": "PO No",
+            "Customer Name": "පාරිභෝගිකයාගේ නම",
+            "Supplier Name": "සැපයුම්කරුගේ නම",
+            "Phone Number": "දුරකථන අංකය",
+            "Total Amount": "මුළු මුදල",
+            "Paid Amount": "ගෙවූ මුදල",
+            "Outstanding": "ණය මුදල",
+            "Due Date": "ගෙවිය යුතු දිනය",
+            "Actions": "ක්‍රියාකාරකම්",
+            "Date": "දිනය",
+            "Person Name": "පුද්ගලයාගේ නම",
+            "Description": "විස්තරය",
+            "Amount": "මුදල",
+            "Payment Method": "ගෙවීම් ක්‍රමය",
+            "Status": "තත්ත්වය",
+            "Receive Payment Button": "මුදල් ලබාගන්න",
+            "Pay Supplier Button": "මුදල් ගෙවන්න",
+            "Settle Loan Button": "ණය පියවන්න",
+            
+            // Modals
+            "Receive Payment Modal Title": "මුදල් අයකර ගැනීම (Receive Payment)",
+            "Pay Supplier Modal Title": "සැපයුම්කරුට මුදල් ගෙවීම (Pay Supplier)",
+            "Add Hand Loan Given Title": "අතමාරු ණයක් සටහන් කිරීම (Add Hand Loan Given)",
+            "Add Hand Loan Received Title": "අතමාරු ණයක් සටහන් කිරීම (Add Hand Loan Received)",
+            "Outstanding Balance": "ණය මුදල (Outstanding Balance)",
+            "Outstanding Amount": "ගෙවීමට ඇති මුදල (Outstanding Amount)",
+            "Amount Received": "ලැබුණු මුදල (Amount Received)",
+            "Amount Paid": "ගෙවන මුදල (Amount Paid)",
+            "Person Name Label": "පුද්ගලයාගේ නම (Person Name)",
+            "Amount Label": "මුදල (Amount Rs.)",
+            "Date Label": "දිනය (Date)",
+            "Payment Method Label": "ගෙවීම් ක්‍රමය (Payment Method)",
+            "Description Label": "විස්තරය (Description)",
+            "Cancel": "Cancel",
+            "Save Payment": "Save Payment",
+            "Settle Payment": "Settle Payment",
+            "Confirm & Save": "Confirm & Save",
+            
+            // Statuses & Empty States
+            "Unpaid Badge": "ණය පියවා නැත",
+            "Paid Badge": "පියවා ඇත",
+            "Loading...": "පූරණය වෙමින්...",
+            "No customer credit": "ලැබීමට ඇති පාරිභෝගික ණය කිසිවක් නැත. (No customer credit)",
+            "No hand loans given": "ලබාදුන් අතමාරු ණය කිසිවක් නැත. (No hand loans given)",
+            "No supplier payables": "ගෙවීමට ඇති සැපයුම්කරුවන්ගේ ණය කිසිවක් නැත. (No supplier payables)",
+            "No hand loans received": "ලබාගත් අතමාරු ණය කිසිවක් නැත. (No hand loans received)",
+            
+            // Toasts & Alerts
+            "Payment saved successfully!": "ගෙවීම සාර්ථකව සටහන් කරගන්නා ලදී!",
+            "Hand loan recorded successfully!": "අතමාරු ණය සාර්ථකව සටහන් කරන ලදී!",
+            "Hand loan settled successfully!": "අතමාරු ණය පියවීම සාර්ථකව සටහන් කරන ලදී!",
+            "Configure Selling Unit": "විකුණුම් ඒකකය තෝරන්න (Configure Selling Unit)",
+            "Select default unit description": "මෙම භාණ්ඩය විකුණන පෙරනිමි ආකාරය තෝරන්න:",
+            "Confirm unit change description": "මෙම භාණ්ඩය සඳහා තෝරාගත් පෙරනිමි ඒකකය සුරැකීමට තහවුරු කරන්න?",
+            "Pcs Unit Option": "ගණන් කර (Pcs)",
+            "Weight Unit Option": "කිරා මැන (Kg/g)",
+            "Double click to change default unit": "පෙරනිමි ඒකකය වෙනස් කිරීමට ඩබල් ක්ලික් කරන්න"
+        }
+    };
+    if (lang === 'si' && translations.si[key]) {
+        return translations.si[key];
+    }
+    const englishNames = {
+        "අපිට එන්න තියන ණය": "Debts to be received by us",
+        "අපි ගෙවන්න තියන ණය": "Debts to be paid by us"
+    };
+    if (lang === 'en' && englishNames[key]) {
+        return englishNames[key];
+    }
+    return key;
+};
+
 const SIDEBAR_WIDTH = 260;
 const DIGIBIZ_UPDATE_VERSION = '2026.04.17.2';
 /** Open primary nav links in a new tab (product default). */
@@ -25,6 +141,7 @@ const DISTRIBUTOR_MENU_POOL = [
     { id: 'orders', permissionId: 'canOrderWorkflowApprove', icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
     { id: 'order_history', permissionId: 'canSalesView', icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
     { id: 'sales', permissionId: 'canSalesView', icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
+    { id: 'product_sales_history', permissionId: 'canSalesView', icon: '📊', name: 'Product Sales History', link: '/modules/distributor/web/sales-history.html' },
     { id: 'invoices', permissionId: 'canInvoiceCreateEdit', icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
     { id: 'grn', permissionId: 'canStockEdit', icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
     { id: 'products', permissionId: 'canProductView', icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
@@ -39,6 +156,7 @@ const DISTRIBUTOR_MENU_POOL = [
     { id: 'rep_commission', permissionId: 'canRepCommissionView', icon: '💸', name: 'Rep Commission', link: '/modules/distributor/web/rep-commission-report.html' },
     { id: 'distributor_reports', permissionId: 'canViewReportsFull', icon: '📊', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' },
     { id: 'customers', permissionId: 'canCustomerView', icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
+    { id: 'distributor_revenue', permissionId: 'canViewFinancialsProfit', icon: '📈', name: 'Revenue', link: '/modules/distributor/web/revenue.html' },
     { id: 'finance', permissionId: 'canViewFinancialsProfit', icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
     { id: 'accounting', permissionId: 'canViewAccounting', icon: '📁', name: 'Accounting', link: '/modules/accounts/advanced-accounting-dashboard.html' },
     { id: 'reports', permissionId: 'canViewReportsFull', icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
@@ -116,18 +234,19 @@ function ensureSidebarStyles() {
         .sidebar-business-logo-icon{font-size:38px;line-height:1;display:none;}
         .sidebar-business-logo-icon.is-visible{display:block;}
         .sidebar-business-name{font-size:13px;font-weight:800;text-align:center;color:#e5f3ff;margin:0 0 14px;text-transform:uppercase !important;letter-spacing:.4px;min-height:18px;display:block !important;visibility:visible !important;}
-        .user-info-sidebar{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.1);padding:12px 14px;border-radius:12px;}
-        .user-avatar-sidebar{font-size:30px;}
-        .user-name-sidebar{font-size:14px;font-weight:600;}
-        .user-role-sidebar{font-size:10px;padding:2px 8px;border-radius:20px;background:rgba(0,0,0,.3);display:inline-block;}
+        .user-info-sidebar{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:rgba(255,255,255,.1);padding:14px 12px 28px 12px;border-radius:12px;position:relative;overflow:hidden;width:100%;box-sizing:border-box;}
+        .connection-status-sidebar{position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:9px;font-weight:800;letter-spacing:.6px;}
+        .user-avatar-sidebar{display:none;}
+        .user-name-sidebar{font-size:14px;font-weight:700;color:#fff;margin-bottom:4px;word-break:break-word;text-align:center;}
+        .user-role-sidebar{font-size:8.5px;padding:3px 10px;border-radius:20px;background:rgba(0,0,0,.35);display:inline-block;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;letter-spacing:0.2px;box-sizing:border-box;}
         .sidebar-subscription-status{margin-top:8px;font-size:11px;color:#fde68a;}
         .nav-links{flex:1;padding:16px 0;}
         .menu-section-label{padding:8px 24px;font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:rgba(255,255,255,.6);font-weight:700;}
-        .menu-item{padding:12px 24px;display:flex;align-items:center;gap:14px;color:rgba(255,255,255,.85);text-decoration:none;font-size:14px;transition:all .2s;}
+        .menu-item{padding:12px 24px;display:flex;align-items:center;gap:14px;color:rgba(255,255,255,.85);text-decoration:none;font-size:14px;transition:all .2s;border-left:3px solid transparent;}
         .menu-item:hover,.menu-item.active{background:rgba(255,255,255,.12);color:#ffd966;border-left:3px solid #ffd966;}
         .menu-badge-new{background:#10b981;color:#fff;font-size:9px;font-weight:900;padding:2px 6px;border-radius:6px;margin-left:auto;text-transform:uppercase;animation:pulseGreen 2s infinite;}
         @keyframes pulseGreen{0%{box-shadow:0 0 0 0 rgba(16,185,129,0.7);}70%{box-shadow:0 0 0 6px rgba(16,185,129,0);}100%{box-shadow:0 0 0 0 rgba(16,185,129,0);}}
-        .menu-dropdown-toggle{width:100%;text-align:left;background:transparent;border:none;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:14px;color:rgba(255,255,255,.85);font-size:14px;cursor:pointer;}
+        .menu-dropdown-toggle{width:100%;text-align:left;background:transparent;border:none;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:14px;color:rgba(255,255,255,.85);font-size:14px;cursor:pointer;border-left:3px solid transparent;}
         .menu-dropdown-toggle:hover{background:rgba(255,255,255,.12);color:#ffd966;border-left:3px solid #ffd966;}
         .menu-dropdown-items{display:none;background:rgba(255,255,255,.06);}
         .menu-dropdown.open .menu-dropdown-items{display:block;}
@@ -136,6 +255,10 @@ function ensureSidebarStyles() {
         .sidebar-footer{padding:20px;}
         .logout-sidebar-btn{background:rgba(220,38,38,.8);border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;width:100%;font-size:14px;}
         .logout-sidebar-btn:hover{background:#dc2626;}
+        .ledger-section-title{padding:8px 24px 4px 24px;font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:#38bdf8;font-weight:700;}
+        .ledger-sub-item{padding:10px 24px 10px 52px;display:flex;align-items:center;justify-content:space-between;color:rgba(255,255,255,.75);text-decoration:none;font-size:13px;transition:all .2s;border-left:3px solid transparent;}
+        .ledger-sub-item:hover{background:rgba(255,255,255,.1);color:#ffd966;}
+        .ledger-balance-badge{font-size:11px;font-weight:700;}
         @media (max-width:768px){html.digibiz-mobile-toggle-space body{padding-top:72px;} .digibiz-mobile-menu-toggle{display:flex;} .digibiz-mobile-topbar{display:flex;} .retail-navbar{transform:translateX(-100%);transition:transform .2s ease;} .retail-navbar .sidebar-business-name{display:block !important;visibility:hidden !important;} html.digibiz-sidebar-open .retail-navbar{transform:translateX(0);}}
     `;
     document.head.appendChild(style);
@@ -212,14 +335,12 @@ class Sidebar {
         this.superAdmin = false;
         this.businessLogoUrl = '';
         this.sidebarConfig = null; // Stores array of menu IDs and visibility Base
-        /* 
-         * Disable instant cached boot for multi-tenant staff to prevent stale ghost menus 
-         * during normal refreshes. Forced to wait for fresh sync.
-         */
-        // if (SHOULD_RESERVE_SIDEBAR_SPACE) {
-        //     this.bootCachedSidebarNow();
-        // }
+        // Instant cached boot to render connection status instantly offline
+        this.bootCachedSidebarNow();
         this.init();
+        window.addEventListener('online', () => this.updateConnectionStatusText());
+        window.addEventListener('offline', () => this.updateConnectionStatusText());
+        setInterval(() => this.updateConnectionStatusText(), 1500); // Polling status check every 1.5 seconds
 
         // ULTIMATE CACHE BUSTER: Clear all permission caches on every load/refresh for staff sync
         try {
@@ -248,6 +369,8 @@ class Sidebar {
         if (compact === 'pharmacy') return 'pharmacy';
         if (compact === 'hardware') return 'hardware';
         if (compact === 'service') return 'service';
+        if (compact === 'attendancepayroll') return 'attendance_payroll';
+        if (compact === 'attendance_payroll') return 'attendance_payroll';
         if (compact === 'retail') return 'retail';
         return raw;
     }
@@ -325,10 +448,21 @@ class Sidebar {
                     }
                 } catch (e) { }
 
-                await this.loadUserData(user.uid);
-                await this.refreshBusinessNameFromProfile();
+                // Paint sidebar immediately to prevent any load delay
                 this.render();
                 this.attachEvents();
+
+                // Load database profile details asynchronously in the background
+                (async () => {
+                    try {
+                        await this.loadUserData(user.uid);
+                        await this.refreshBusinessNameFromProfile();
+                        this.render();
+                        this.attachEvents();
+                    } catch (e) {
+                        console.warn('[Sidebar] Async background load failed:', e);
+                    }
+                })();
                 try {
                     const token = await user.getIdTokenResult(true);
                     this.superAdmin = !!(token && token.claims && (token.claims.admin === true || token.claims.superAdmin === true));
@@ -363,9 +497,530 @@ class Sidebar {
                         ? await window.subscriptionManager.initializeForUser(user, this.currentRole, this.businessId || user.uid)
                         : null;
                     this.updateUserInfo();
+                    this.checkOnboardingStatus(user);
                 }).catch(() => { });
             }
         });
+    }
+
+    injectOnboardingStyles() {
+        if (document.getElementById('onboardingStyles')) return;
+        const style = document.createElement('style');
+        style.id = 'onboardingStyles';
+        style.textContent = `
+            #onboardingBanner {
+                background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
+                color: #f8fafc;
+                padding: 12px 24px;
+                font-family: 'Inter', sans-serif;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                position: sticky;
+                top: 0;
+                z-index: 9999;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+                border-bottom: 2px solid #10b981;
+            }
+            #onboardingBanner .progress-wrap {
+                display: flex;
+                align-items: center;
+                gap: 15px;
+            }
+            #onboardingBanner .progress-bar-bg {
+                background: #475569;
+                border-radius: 8px;
+                width: 150px;
+                height: 8px;
+                overflow: hidden;
+            }
+            #onboardingBanner .progress-bar-fill {
+                background: #10b981;
+                height: 100%;
+                width: 20%;
+                transition: width 0.3s ease;
+            }
+            #onboardingBanner .btn-setup {
+                background: #10b981;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 8px;
+                font-weight: 700;
+                cursor: pointer;
+                font-size: 13px;
+                transition: all 0.2s;
+            }
+            #onboardingBanner .btn-setup:hover {
+                background: #059669;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    async checkOnboardingStatus(user) {
+        if (!user) return;
+        const bizType = localStorage.getItem('currentBusinessType') || '';
+        const isRetail = bizType === 'retail' || window.location.pathname.includes('/retail/') || window.location.pathname.includes('pos.html') || window.location.pathname.includes('inventory.html') || window.location.pathname.includes('purchases.html') || window.location.pathname.includes('grn.html') || window.location.pathname.includes('credit-aging.html');
+        if (!isRetail) return;
+
+        try {
+            const opt = navigator.onLine ? {} : { source: 'cache' };
+            const bizDoc = await db.collection('businesses').doc(this.businessId || user.uid).get(opt);
+            if (!bizDoc.exists) return;
+            const bizData = bizDoc.data();
+            
+            // Check if user registered after July 10, 2026
+            let isNewUser = false;
+            if (bizData.createdAt) {
+                const createdDate = bizData.createdAt.toDate ? bizData.createdAt.toDate() : new Date(bizData.createdAt);
+                if (createdDate >= new Date('2026-07-10')) {
+                    isNewUser = true;
+                }
+            }
+
+            // Show setup to anyone who has not completed onboarding and is registered after July 10, 2026
+            if (bizData.onboardingCompleted !== true && isNewUser) {
+                this.injectOnboardingStyles();
+                this.showOnboardingBanner(user, bizData);
+            }
+        } catch (e) {
+            console.error('[Onboarding] Error checking status:', e);
+        }
+    }
+
+    showOnboardingBanner(user, bizData) {
+        if (document.getElementById('onboardingBanner')) return;
+        
+        const completed = bizData.onboardingStepsCompleted || {};
+        let completedCount = 0;
+        if (completed.cash) completedCount++;
+        if (completed.bank) completedCount++;
+        if (completed.receivables) completedCount++;
+        if (completed.payables) completedCount++;
+        const pct = Math.round((completedCount / 4) * 100);
+        
+        const lang = localStorage.getItem('preferredLanguage') || 'en';
+        const bannerText = lang === 'si' ? "ව්‍යාපාර ආරම්භක සැකසුම් (Shop Initial Setup):" : "Shop Initial Setup:";
+        const btnText = lang === 'si' ? "සැකසුම් මෙනුව →" : "Setup Menu →";
+        
+        const banner = document.createElement('div');
+        banner.id = 'onboardingBanner';
+        banner.innerHTML = `
+            <div class="progress-wrap">
+                <span style="font-weight:700; font-size:14px; letter-spacing:0.02em;">🔧 ${bannerText}</span>
+                <div class="progress-bar-bg"><div class="progress-bar-fill" id="bannerProgressFill" style="width: ${pct}%;"></div></div>
+                <span style="font-size:12px; font-weight:700; color:#10b981;" id="bannerProgressPct">${pct}%</span>
+            </div>
+            <button class="btn-setup" onclick="window.sidebar.openOnboardingWizard()">${btnText}</button>
+        `;
+        
+        document.body.prepend(banner);
+    }
+
+    openOnboardingWizard(user = null) {
+        if (!user) user = firebase.auth().currentUser;
+        const businessId = this.businessId || (user ? user.uid : localStorage.getItem('currentBusinessId'));
+        let modal = document.getElementById('onboardingWizardModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'onboardingWizardModal';
+            modal.className = 'modal';
+            modal.style.cssText = "display:none; position:fixed; inset:0; background:rgba(15,23,42,0.6); z-index:100000; align-items:center; justify-content:center; padding:16px; backdrop-filter:blur(4px);";
+            
+            modal.innerHTML = `
+                <div class="modal-content" style="background:white; border-radius:24px; padding:30px; width:100%; max-width:480px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+                    <h3 id="wizardTitle" style="font-family:'Outfit', sans-serif; font-size:20px; font-weight:800; color:#0f3b2c; margin-bottom:12px;">Initial Shop Setup</h3>
+                    
+                    <div style="background:#f1f5f9; border-radius:10px; height:6px; overflow:hidden; margin-bottom:20px; position:relative;">
+                        <div id="wizardProgressFill" style="background:#10b981; height:100%; width:0%; transition:width 0.3s;"></div>
+                    </div>
+                    
+                    <div id="wizardStepContent" style="margin-bottom:24px; font-size:14px; color:#334155; line-height:1.6; min-height:150px;"></div>
+                    
+                    <div class="modal-buttons" style="display:flex; justify-content:space-between; align-items:center; margin-top:20px;" id="wizardButtonsArea">
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+        
+        modal.style.display = 'flex';
+        
+        let wizardState = {
+            onboardingBalances: { cash: 0, bank: 0, receivables: 0, payables: 0 },
+            onboardingStepsCompleted: { cash: false, bank: false, receivables: false, payables: false }
+        };
+        
+        const lang = localStorage.getItem('preferredLanguage') || 'en';
+        
+        const loadStateAndRender = async () => {
+            try {
+                const opt = navigator.onLine ? {} : { source: 'cache' };
+                const doc = await db.collection('businesses').doc(businessId).get(opt);
+                if (doc.exists) {
+                    const data = doc.data();
+                    wizardState.onboardingBalances = data.onboardingBalances || { cash: 0, bank: 0, receivables: 0, payables: 0 };
+                    wizardState.onboardingStepsCompleted = data.onboardingStepsCompleted || { cash: false, bank: false, receivables: false, payables: false };
+                }
+            } catch (e) {
+                console.error(e);
+            }
+            renderMenu();
+        };
+
+        const renderMenu = () => {
+            const titleH = document.getElementById('wizardTitle');
+            const contentDiv = document.getElementById('wizardStepContent');
+            const progressFill = document.getElementById('wizardProgressFill');
+            const buttonsArea = document.getElementById('wizardButtonsArea');
+            
+            titleH.textContent = lang === 'si' ? "ආරම්භක සැකසුම් මෙනුව" : "Initial Shop Setup";
+            
+            const completed = wizardState.onboardingStepsCompleted || {};
+            let completedCount = 0;
+            if (completed.cash) completedCount++;
+            if (completed.bank) completedCount++;
+            if (completed.receivables) completedCount++;
+            if (completed.payables) completedCount++;
+            
+            const pct = Math.round((completedCount / 4) * 100);
+            progressFill.style.width = `${pct}%`;
+            
+            const bannerFill = document.getElementById('bannerProgressFill');
+            const bannerPct = document.getElementById('bannerProgressPct');
+            if (bannerFill) bannerFill.style.width = `${pct}%`;
+            if (bannerPct) bannerPct.style.width = `${pct}%`;
+            
+            const formatLkr = (val) => 'Rs. ' + Number(val).toLocaleString('en-LK', { minimumFractionDigits: 2 });
+            
+            const getStatusBadge = (isDone, val) => {
+                if (isDone) {
+                    return `<span style="background:#d1fae5; color:#059669; font-weight:700; font-size:11px; padding:2px 8px; border-radius:30px;">✓ ${formatLkr(val)}</span>`;
+                } else {
+                    return `<span style="background:#f1f5f9; color:#64748b; font-weight:700; font-size:11px; padding:2px 8px; border-radius:30px;">${lang === 'si' ? 'අසම්පූර්ණයි' : 'Pending'}</span>`;
+                }
+            };
+            
+            const allCompleted = completed.cash && completed.bank && completed.receivables && completed.payables;
+            const noticeHtml = allCompleted 
+                ? '' 
+                : `<div style="background:#fff1f2; border:1px solid #ffe4e6; color:#b91c1c; border-radius:10px; padding:10px; font-size:12px; font-weight:600; margin-bottom:12px; line-height:1.4;">
+                      ⚠️ ${lang === 'si' ? 'සියලුම පියවර සම්පූර්ණ කිරීම අනිවාර්ය වේ. ඔබ සතුව ආරම්භක ශේෂයන් (මුදල්/ණය) නොමැති නම්, එම පියවරට ගොස් 0 ඇතුළත් කර සුරකින්න.' : 'All steps are mandatory. If you have no starting balance for a step, enter 0 and save.'}
+                   </div>`;
+
+            contentDiv.innerHTML = `
+                ${noticeHtml}
+                <p style="margin-bottom:15px; font-weight:500;">${lang === 'si' ? 'කරුණාකර පහත පියවර තෝරා ආරම්භක මුදල් සහ ණය ප්‍රමාණයන් සටහන් කරන්න:' : 'Please configure each parameter below. You can complete them in any order:'}</p>
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;">
+                        <div>
+                            <strong style="display:block;">${lang === 'si' ? 'පියවර 1: අත ඇති මුදල' : 'Step 1: Cash in Hand'}</strong>
+                            ${getStatusBadge(completed.cash, wizardState.onboardingBalances.cash)}
+                        </div>
+                        <button class="btn-setup" style="padding:6px 12px; font-size:12px;" onclick="window.sidebar.enterSetupStep('cash')">${lang === 'si' ? 'සකසන්න' : 'Configure'}</button>
+                    </div>
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;">
+                        <div>
+                            <strong style="display:block;">${lang === 'si' ? 'පියවර 2: බැංකු මුදල්' : 'Step 2: Bank Balance'}</strong>
+                            ${getStatusBadge(completed.bank, wizardState.onboardingBalances.bank)}
+                        </div>
+                        <button class="btn-setup" style="padding:6px 12px; font-size:12px;" onclick="window.sidebar.enterSetupStep('bank')">${lang === 'si' ? 'සකසන්න' : 'Configure'}</button>
+                    </div>
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;">
+                        <div>
+                            <strong style="display:block;">${lang === 'si' ? 'පියවර 3: ලැබීමට ඇති ණය' : 'Step 3: Receivables'}</strong>
+                            ${getStatusBadge(completed.receivables, wizardState.onboardingBalances.receivables)}
+                        </div>
+                        <button class="btn-setup" style="padding:6px 12px; font-size:12px;" onclick="window.sidebar.enterSetupStep('receivables')">${lang === 'si' ? 'සකසන්න' : 'Configure'}</button>
+                    </div>
+                    
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;">
+                        <div>
+                            <strong style="display:block;">${lang === 'si' ? 'පියවර 4: ගෙවීමට ඇති ණය' : 'Step 4: Payables'}</strong>
+                            ${getStatusBadge(completed.payables, wizardState.onboardingBalances.payables)}
+                        </div>
+                        <button class="btn-setup" style="padding:6px 12px; font-size:12px;" onclick="window.sidebar.enterSetupStep('payables')">${lang === 'si' ? 'සකසන්න' : 'Configure'}</button>
+                    </div>
+                </div>
+            `;
+            
+            if (allCompleted) {
+                buttonsArea.innerHTML = `
+                    <button class="btn-cancel" onclick="window.sidebar.closeOnboardingWizard()" style="padding:10px 20px; border-radius:10px; cursor:pointer;">${lang === 'si' ? 'පසුව කරන්න' : 'Setup Later'}</button>
+                    <button class="btn-setup" onclick="window.sidebar.completeOnboardingSetup()" style="padding:10px 20px; border-radius:10px; cursor:pointer;">${lang === 'si' ? 'සැකසුම අවසන් කරන්න' : 'Finish Setup'}</button>
+                `;
+            } else {
+                const alertMsg = lang === 'si' 
+                    ? 'කරුණාකර සියලුම පියවර සම්පූර්ණ කරන්න. ඔබ සතුව ආරම්භක ශේෂයන් නොමැති නම්, එම පියවරට ගොස් 0 ඇතුළත් කර සුරකින්න.' 
+                    : 'Please complete all steps. If you have no initial balances, go to each step, enter 0 and save.';
+                buttonsArea.innerHTML = `
+                    <button class="btn-cancel" onclick="window.sidebar.closeOnboardingWizard()" style="padding:10px 20px; border-radius:10px; cursor:pointer;">${lang === 'si' ? 'පසුව කරන්න' : 'Setup Later'}</button>
+                    <button class="btn-setup" style="padding:10px 20px; border-radius:10px; cursor:not-allowed; opacity:0.5;" onclick="alert('${alertMsg}')">${lang === 'si' ? 'සැකසුම අවසන් කරන්න' : 'Finish Setup'}</button>
+                `;
+            }
+        };
+        
+        window.sidebar.enterSetupStep = (stepKey) => {
+            const titleH = document.getElementById('wizardTitle');
+            const contentDiv = document.getElementById('wizardStepContent');
+            const buttonsArea = document.getElementById('wizardButtonsArea');
+            
+            let label = '', desc = '';
+            if (stepKey === 'cash') {
+                label = lang === 'si' ? "අත ඇති මුදල (Cash in Hand)" : "Cash in Hand";
+                desc = lang === 'si' ? "ව්‍යාපාරය ආරම්භ කරන විට ලාච්චුවේ හෝ අතේ ඇති මුළු මුදල ඇතුළත් කරන්න:" : "Enter the initial cash amount in your drawer or hand:";
+            } else if (stepKey === 'bank') {
+                label = lang === 'si' ? "බැංකු මුදල් (Bank Balance)" : "Bank Balance";
+                desc = lang === 'si' ? "ව්‍යාපාරික බැංකු ගිණුමේ ඇති මුදල ඇතුළත් කරන්න:" : "Enter your business bank account balance:";
+            } else if (stepKey === 'receivables') {
+                label = lang === 'si' ? "පිටින් ලැබීමට ඇති ණය (Receivables)" : "Receivables Balance";
+                desc = lang === 'si' ? "ලැබීමට ඇති ණය වෙන වෙනම ඇතුළත් කරන්න. (නැතහොත් 0 දමා සුරකින්න):" : "Enter individual outstanding balances others owe you (or leave empty & save):";
+            } else if (stepKey === 'payables') {
+                label = lang === 'si' ? "අප විසින් පිටට ගෙවීමට ඇති ණය (Payables)" : "Payables Balance";
+                desc = lang === 'si' ? "ගෙවීමට ඇති ණය වෙන වෙනම ඇතුළත් කරන්න. (නැතහොත් 0 දමා සුරකින්න):" : "Enter individual outstanding debts you owe (or leave empty & save):";
+            }
+            
+            titleH.textContent = label;
+            
+            if (stepKey === 'cash' || stepKey === 'bank') {
+                contentDiv.innerHTML = `
+                    <p style="margin-bottom:12px;">${desc}</p>
+                    <label style="display:block; font-size:12px; font-weight:700; color:#64748b; margin-bottom:6px;">LKR Amount</label>
+                    <input type="number" id="wizardInputVal" value="${wizardState.onboardingBalances[stepKey] || 0}" style="width:100%; padding:10px 14px; border:1.5px solid #e2e8f0; border-radius:10px; font-size:16px; font-weight:700;" min="0">
+                `;
+            } else {
+                this.wizardTempRows = [{ name: '', amount: '' }];
+                const btnLabel = stepKey === 'receivables' 
+                    ? (lang === 'si' ? "+ පාරිභෝගිකයෙකු එක් කරන්න" : "+ Add Customer")
+                    : (lang === 'si' ? "+ සැපයුම්කරුවෙකු එක් කරන්න" : "+ Add Supplier");
+                
+                contentDiv.innerHTML = `
+                    <p style="margin-bottom:12px;">${desc}</p>
+                    <div style="max-height: 200px; overflow-y: auto; margin-bottom: 12px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 5px; background: #f8fafc;">
+                        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                            <thead>
+                                <tr style="border-bottom:1px solid #cbd5e1; text-align:left; color:#64748b; font-weight:700;">
+                                    <th style="padding:6px 4px;">Name</th>
+                                    <th style="padding:6px 4px; text-align:right;">Amount (Rs.)</th>
+                                    <th style="padding:6px 4px; text-align:center;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="wizardTableRows">
+                            </tbody>
+                        </table>
+                    </div>
+                    <button type="button" onclick="window.sidebar.addWizardTableRow()" style="background:#0f3b2c; color:white; border:none; padding:8px 14px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer;">
+                        ${btnLabel}
+                    </button>
+                `;
+                
+                window.sidebar.addWizardTableRow = () => {
+                    this.wizardTempRows.push({ name: '', amount: '' });
+                    this.renderWizardTableRows();
+                };
+                window.sidebar.removeWizardTableRow = (idx) => {
+                    this.wizardTempRows.splice(idx, 1);
+                    this.renderWizardTableRows();
+                };
+                window.sidebar.updateWizardRow = (idx, key, val) => {
+                    this.wizardTempRows[idx][key] = val;
+                };
+                
+                this.renderWizardTableRows = () => {
+                    const body = document.getElementById('wizardTableRows');
+                    if (!body) return;
+                    if (this.wizardTempRows.length === 0) {
+                        body.innerHTML = `<tr><td colspan="3" style="text-align:center; padding:15px; color:#94a3b8;">No rows added yet. (සියල්ල 0 ලෙස සලකා සුරැකේ)</td></tr>`;
+                        return;
+                    }
+                    body.innerHTML = this.wizardTempRows.map((row, idx) => {
+                        return `
+                            <tr>
+                                <td style="padding:4px;"><input type="text" value="${row.name}" oninput="window.sidebar.updateWizardRow(${idx}, 'name', this.value)" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px;" placeholder="Name"></td>
+                                <td style="padding:4px;"><input type="number" value="${row.amount}" oninput="window.sidebar.updateWizardRow(${idx}, 'amount', this.value)" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; text-align:right;" placeholder="0.00" min="0"></td>
+                                <td style="padding:4px; text-align:center;"><button type="button" onclick="window.sidebar.removeWizardTableRow(${idx})" style="background:#fee2e2; color:#ef4444; border:none; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:700;">X</button></td>
+                            </tr>
+                        `;
+                    }).join('');
+                };
+                
+                this.renderWizardTableRows();
+            }
+            
+            buttonsArea.innerHTML = `
+                <button class="btn-cancel" onclick="window.sidebar.returnToWizardMenu()" style="padding:10px 20px; border-radius:10px; cursor:pointer;">${lang === 'si' ? 'පසුපසට' : 'Back'}</button>
+                <button class="btn-setup" id="saveStepBtn" onclick="window.sidebar.saveSetupStepValue('${stepKey}')" style="padding:10px 20px; border-radius:10px; cursor:pointer;">${lang === 'si' ? 'සුරකින්න' : 'Save Balance'}</button>
+            `;
+        };
+        
+        window.sidebar.returnToWizardMenu = () => {
+            renderMenu();
+        };
+        
+        window.sidebar.saveSetupStepValue = async (stepKey) => {
+            const btn = document.getElementById('saveStepBtn');
+            btn.disabled = true;
+            btn.textContent = lang === 'si' ? "සුරකිමින්..." : "Saving...";
+            
+            try {
+                let val = 0;
+                let rows = [];
+                
+                if (stepKey === 'cash' || stepKey === 'bank') {
+                    const input = document.getElementById('wizardInputVal');
+                    val = Math.max(0, parseFloat(input.value) || 0);
+                } else {
+                    rows = (this.wizardTempRows || []).filter(r => r.name.trim() !== '' && parseFloat(r.amount) > 0);
+                    val = rows.reduce((sum, r) => sum + parseFloat(r.amount), 0);
+                }
+                
+                const updatePayload = {};
+                updatePayload[`onboardingBalances.${stepKey}`] = val;
+                updatePayload[`onboardingStepsCompleted.${stepKey}`] = true;
+                
+                await db.collection('businesses').doc(businessId).update(updatePayload);
+                
+                // Clear existing onboarding entries for this step
+                const entriesRef = db.collection('journal').doc(businessId).collection('entries');
+                const snap = await entriesRef.where('refType', '==', 'ONBOARDING').get();
+                const batch = db.batch();
+                snap.forEach(doc => {
+                    const ref = doc.data().ref || '';
+                    if (ref === `onboarding_${stepKey}` || ref.startsWith(`onboarding_${stepKey}_`)) {
+                        batch.delete(doc.ref);
+                    }
+                });
+                await batch.commit();
+                
+                if (stepKey === 'cash' || stepKey === 'bank') {
+                    if (val > 0) {
+                        let journalEntries = [];
+                        if (stepKey === 'cash') {
+                            journalEntries = [
+                                { accountId: '1-1010-01', amount: val, type: 'debit' },
+                                { accountId: '3-3010-01', amount: val, type: 'credit' }
+                            ];
+                        } else {
+                            journalEntries = [
+                                { accountId: '1-1020-01', amount: val, type: 'debit' },
+                                { accountId: '3-3010-01', amount: val, type: 'credit' }
+                            ];
+                        }
+                        
+                        const journalDoc = {
+                            date: new Date(),
+                            memo: `Opening Balance Initialization - ${stepKey.toUpperCase()}`,
+                            entries: journalEntries,
+                            ref: `onboarding_${stepKey}`,
+                            refType: 'ONBOARDING',
+                            businessId: businessId,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        await entriesRef.add(journalDoc);
+                    }
+                } else if (stepKey === 'receivables') {
+                    // Loop debtors and save
+                    for (const r of rows) {
+                        const amt = parseFloat(r.amount);
+                        const custRef = await db.collection('customers').add({
+                            businessId: businessId,
+                            fullName: r.name.trim(),
+                            mobile: '0700000000',
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                        
+                        const journalDoc = {
+                            date: new Date(),
+                            memo: `Opening Balance Customer - ${r.name.trim()}`,
+                            entries: [
+                                { accountId: '1-1030-01', amount: amt, type: 'debit' },
+                                { accountId: '3-3010-01', amount: amt, type: 'credit' }
+                            ],
+                            ref: `onboarding_receivables_${custRef.id}`,
+                            refType: 'ONBOARDING',
+                            businessId: businessId,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        await entriesRef.add(journalDoc);
+                    }
+                } else if (stepKey === 'payables') {
+                    // Loop creditors and save
+                    for (const r of rows) {
+                        const amt = parseFloat(r.amount);
+                        const supplierRef = db.collection('suppliers').doc(businessId).collection('list').doc();
+                        await supplierRef.set({
+                            id: supplierRef.id,
+                            name: r.name.trim(),
+                            mobile: '0700000000',
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                        
+                        const journalDoc = {
+                            date: new Date(),
+                            memo: `Opening Balance Supplier - ${r.name.trim()}`,
+                            entries: [
+                                { accountId: '3-3010-01', amount: amt, type: 'debit' },
+                                { accountId: '2-2010-01', amount: amt, type: 'credit' }
+                            ],
+                            ref: `onboarding_payables_${supplierRef.id}`,
+                            refType: 'ONBOARDING',
+                            businessId: businessId,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        await entriesRef.add(journalDoc);
+                    }
+                }
+                
+                wizardState.onboardingBalances[stepKey] = val;
+                wizardState.onboardingStepsCompleted[stepKey] = true;
+                
+                const noticeMsg = lang === 'si'
+                    ? `ආරම්භක ශේෂයන් සාර්ථකව සුරැකුණා!\n\n(සටහන: ඔබට මෙම ආරම්භක ගනුදෙනු මකා දැමීමට හෝ වෙනස් කිරීමට අවශ්‍ය වුවහොත්, "Daily Transactions (දෛනික ගනුදෙනු)" පිටුවට ගොස් ඒවා මකා දැමිය හැක.)`
+                    : `Starting balance saved successfully!\n\n(Note: If you need to remove or change this starting balance, you can go to the "Daily Transactions" page, select the transaction, and delete/reverse it.)`;
+                alert(noticeMsg);
+                
+                renderMenu();
+            } catch (err) {
+                console.error(err);
+                alert('Error saving step: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = lang === 'si' ? "සුරකින්න" : "Save Balance";
+            }
+        };
+        
+        window.sidebar.closeOnboardingWizard = () => {
+            const modal = document.getElementById('onboardingWizardModal');
+            if (modal) modal.style.display = 'none';
+        };
+        
+        window.sidebar.completeOnboardingSetup = async () => {
+            const btn = document.querySelector('button[onclick="window.sidebar.completeOnboardingSetup()"]');
+            btn.disabled = true;
+            btn.textContent = lang === 'si' ? "අවසන් කරමින්..." : "Completing...";
+            
+            try {
+                await db.collection('businesses').doc(businessId).update({
+                    onboardingCompleted: true
+                });
+                
+                modal.style.display = 'none';
+                const banner = document.getElementById('onboardingBanner');
+                if (banner) banner.remove();
+                
+                alert(lang === 'si' ? "ආරම්භක සැකසුම් සාර්ථකව නිම කරන ලදී!" : "Onboarding setup completed successfully!");
+                window.location.reload();
+            } catch (err) {
+                console.error(err);
+                alert('Error completing setup: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = lang === 'si' ? "සැකසුම අවසන් කරන්න" : "Finish Setup";
+            }
+        };
+
+        loadStateAndRender();
     }
 
     parseVersion(v) {
@@ -471,6 +1126,7 @@ class Sidebar {
     }
 
     async maybeShowUpdateAnnouncement(user) {
+        return; // Disabled update announcement popup as requested
         if (!user) return;
         const lsKey = `digibiz_last_seen_update_${user.uid}`;
         const localSeen = localStorage.getItem(lsKey) || '0';
@@ -531,7 +1187,8 @@ class Sidebar {
         const storedType = this.getStoredBusinessType();
         try {
             this.currentUserId = userId;
-            const userDoc = await db.collection('users').doc(userId).get();
+            const opt = navigator.onLine ? {} : { source: 'cache' };
+            const userDoc = await db.collection('users').doc(userId).get(opt);
             const userData = userDoc.exists ? (userDoc.data() || {}) : {};
         if (!firebase.auth().currentUser) {
             await new Promise(resolve => {
@@ -551,13 +1208,14 @@ class Sidebar {
         const currentBid = localStorage.getItem('currentBusinessId');
         const isSirimal = (userId === 'oDhSDYHQ2dV1DP33koysmZAqaY13' || 
                            userEmail === 'biz.sirimal@gmail.com' ||
+                           userEmail === '2biz.sirimal@gmail.com' ||
                            userEmail === 'scrap@chinthaka.com' ||
                            (isStaging && (currentBid === 'STAGING_TEST_SCRAP_BIZ' || currentBid === '8KlnS39HmqYwtcNzM0NZMkq6om63')));
         this.currentRole = isSirimal ? 'SUPER_ADMIN' : (userData.role || 'VIEWER');
             this.currentUserEmail = String((userData.email || (firebase.auth().currentUser && firebase.auth().currentUser.email) || '')).trim().toLowerCase();
             this.ownerName = userData.ownerName || userData.name || '';
             const mustChangePassword = userData.mustChangePassword === true;
-            if (userEmail === 'biz.sirimal@gmail.com' || userEmail === 'scrap@chinthaka.com') {
+            if (userEmail === 'biz.sirimal@gmail.com' || userEmail === '2biz.sirimal@gmail.com' || userEmail === 'scrap@chinthaka.com') {
                 this.businessId = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
                 this.businessType = 'scrap_collection_center';
                 localStorage.setItem('currentBusinessId', 'oDhSDYHQ2dV1DP33koysmZAqaY13');
@@ -574,7 +1232,8 @@ class Sidebar {
                 } catch (ctxErr) { /* ignore */ }
             }
             if (this.businessId && String(this.businessId).trim()) {
-                const businessDoc = await db.collection('businesses').doc(String(this.businessId).trim()).get();
+                const opt = navigator.onLine ? {} : { source: 'cache' };
+                const businessDoc = await db.collection('businesses').doc(String(this.businessId).trim()).get(opt);
                 if (businessDoc.exists) {
                     const bData = businessDoc.data() || {};
                     this.businessType = this.normalizeBusinessType(bData.businessType || bData.type || userData.businessType || userData.type || 'retail');
@@ -654,7 +1313,8 @@ class Sidebar {
         this.businessNavRole = String(this.currentRole || '').toUpperCase();
         if (this.businessId && userId) {
             try {
-                const bizUser = await db.collection('businesses').doc(this.businessId).collection('users').doc(userId).get();
+                const opt = navigator.onLine ? {} : { source: 'cache' };
+                const bizUser = await db.collection('businesses').doc(this.businessId).collection('users').doc(userId).get(opt);
                 if (bizUser.exists && bizUser.data().role) {
                     this.businessNavRole = String(bizUser.data().role).toUpperCase();
                 }
@@ -666,7 +1326,8 @@ class Sidebar {
         this.smsLowBalanceAlert = null;
         if (this.businessId) {
             try {
-                const settingsDoc = await db.collection('settings').doc(this.businessId).get();
+                const opt = navigator.onLine ? {} : { source: 'cache' };
+                const settingsDoc = await db.collection('settings').doc(this.businessId).get(opt);
                 const smsWallet = settingsDoc.exists ? ((settingsDoc.data() || {}).smsWallet || {}) : {};
                 const bal = digibizSmsEffectiveTotal(smsWallet);
                 const threshold = Number(smsWallet.lowBalanceThreshold || 50);
@@ -795,14 +1456,38 @@ class Sidebar {
     getDistributorPermissionProfile() {
         const P = window.DigibizDistributorPermissions;
         const roleRaw = this.businessNavRole || this.currentRole || '';
-        if (!P) {
+        const roleNorm = String(roleRaw).toUpperCase().replace(/\s+/g, '_');
+        
+        const isOwnerOrAdmin = !roleNorm || ['OWNER', 'BUSINESS_OWNER', 'DISTRIBUTOR_OWNER', 'SUPER_ADMIN', 'ADMIN', 'MANAGER', 'BUSINESS_STAFF'].includes(roleNorm) || (roleNorm !== 'REP');
+
+        if (isOwnerOrAdmin || !P) {
             return {
-                canViewDashboard: false,
-                canViewAccounting: false,
-                canViewReportsFull: false,
-                canViewFinancialsProfit: false,
-                canInvoiceCreateEdit: false,
-                canManageRepsWeb: false
+                canViewDashboard: true,
+                canViewAccounting: true,
+                canViewReportsFull: true,
+                canViewFinancialsProfit: true,
+                canInvoiceCreateEdit: true,
+                canManageRepsWeb: true,
+                canCustomerView: true,
+                canOrderWorkflowApprove: true,
+                canSalesView: true,
+                canStockEdit: true,
+                canProductView: true,
+                canStockView: true,
+                canDeliveriesManage: true,
+                canChequesManage: true,
+                canCreditAgingView: true,
+                canSettingsChange: true,
+                canRepCommissionView: true,
+                canScrapBillCreate: true,
+                canScrapRevenueView: true,
+                canScrapExpensesManage: true,
+                canScrapSellCreate: true,
+                canScrapStockView: true,
+                canScrapBuyingHistoryView: true,
+                canScrapSellingHistoryView: true,
+                canScrapAdvanceManage: true,
+                canScrapLoansManage: true
             };
         }
         return P.permissionsForRole(roleRaw, this.businessId);
@@ -814,6 +1499,7 @@ class Sidebar {
             { icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
             { icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
             { icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
+            { icon: '📊', name: 'Product Sales History', link: '/modules/distributor/web/sales-history.html' },
             { icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
             { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
             { icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
@@ -823,7 +1509,8 @@ class Sidebar {
             { icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
             { icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
             { icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
-            { icon: '📈', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' }
+            { icon: '📈', name: 'Revenue', link: '/modules/distributor/web/revenue.html' },
+            { icon: '📊', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' }
         ];
         if (this.isBdkAccountingTenant()) {
             base.splice(base.length - 1, 0, { icon: '📊', name: 'Accounting', link: '/modules/distributor/web/accounting.html' });
@@ -891,9 +1578,20 @@ class Sidebar {
         const accountingLink = this.isBdkAccountingTenant()
             ? '/modules/distributor/web/accounting.html'
             : '/modules/accounts/advanced-accounting-dashboard.html';
+        const expensesLink = this.businessType === 'tire_centre' ? '/modules/tire_centre/expenses.html' : (this.businessType === 'manufacturer' ? '/modules/manufacturer/expenses.html' : '/modules/retail/expenses.html');
+        const revenueLink = this.businessType === 'tire_centre' ? '/modules/tire_centre/revenue.html' : (this.businessType === 'manufacturer' ? '/modules/manufacturer/sales.html' : '/modules/retail/revenue.html');
+        const workbenchLink = this.businessType === 'tire_centre' ? '/modules/tire_centre/workbench.html' : (this.businessType === 'manufacturer' ? '/modules/manufacturer/history.html' : '/modules/retail/workbench.html');
+        const isCoreBusinessWithFullSuite = this.businessType === 'retail' || this.businessType === 'tire_centre' || this.businessType === 'manufacturer';
+        
         const menus = [
             { icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
-            { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+            ...(isCoreBusinessWithFullSuite ? [
+                { icon: '💸', name: 'Expenses', link: expensesLink },
+                { icon: '📖', name: 'Ledger', link: '/modules/core/ledgers.html' },
+                { icon: '💰', name: 'Revenue', link: revenueLink },
+                { icon: '📋', name: 'Daily Transactions', link: workbenchLink }
+            ] : []),
+            ...(isCoreBusinessWithFullSuite ? [] : [{ icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' }]),
             { icon: '📁', name: 'Accounting', link: accountingLink },
             { icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
         ];
@@ -930,16 +1628,33 @@ class Sidebar {
         const seenLinks = new Set();
         const out = [];
         (menuItems || []).forEach((m) => {
-            const k = `${String((m && m.name) || '')}|${String((m && m.link) || '')}`;
+            if (!m || !m.link) return;
+            const name = String(m.name || '').trim();
+            const link = String(m.link || '').trim();
+            const k = `${name}|${link}`;
             if (seen.has(k)) return;
-            // KUBUKA manufacturer: keep only first menu per canonical link (prevents duplicate Raw Materials/inbound entry).
-            if (this.businessId === this.kduTeaBusinessId) {
-                const canonicalLink = String((m && m.link) || '').split('?')[0].replace(/\/+/g, '');
-                if (canonicalLink) {
-                    if (seenLinks.has(canonicalLink)) return;
-                    seenLinks.add(canonicalLink);
+
+            // Keep only first menu per canonical URL link (prevents multiple active menu highlights for same page)
+            let canonicalLink = link.split('#')[0].replace(/\/+/g, '');
+            if (link.includes('?')) {
+                const parts = link.split('?');
+                const path = parts[0].replace(/\/+/g, '');
+                const query = parts[1] || '';
+                // If it contains a view= parameter, include it in the canonical check to avoid merging different views of the same page
+                if (query.includes('view=')) {
+                    const match = query.match(/view=([^&]+)/);
+                    if (match) {
+                        canonicalLink = `${path}?view=${match[1]}`;
+                    }
+                } else {
+                    canonicalLink = path;
                 }
             }
+            if (canonicalLink) {
+                if (seenLinks.has(canonicalLink)) return;
+                seenLinks.add(canonicalLink);
+            }
+
             seen.add(k);
             out.push(m);
         });
@@ -981,13 +1696,15 @@ class Sidebar {
 
         if (this.isScrapSuiteContext()) {
             const scrapPool = [
-                { id: 'scrap_bill', permissionId: 'canScrapBillCreate', icon: '🧾', name: 'Bill', link: '/modules/admin/scrap-buying.html?v=99' },
+                { id: 'scrap_bill', permissionId: 'canScrapBillCreate', icon: '🧾', name: 'Bill', link: '/modules/admin/scrap-buying.html?v=102' },
                 { id: 'scrap_leads', icon: '📍', name: 'DUST TO CASH', link: '/modules/admin/scrap-leads.html' },
                 { id: 'scrap_revenue', permissionId: 'canScrapRevenueView', icon: '📈', name: 'Revenue', link: '/modules/admin/scrap-revenue.html' },
+                { id: 'scrap_revenue_mgmt', permissionId: 'canScrapRevenueView', icon: '🗓️', name: 'Revenue Mgmt', link: '/modules/admin/scrap-revenue-management.html' },
                 { id: 'scrap_expenses', permissionId: 'canScrapExpensesManage', icon: '📉', name: 'Expenses', link: '/modules/admin/scrap-expenses.html' },
                 { id: 'scrap_banking', permissionId: 'canViewAccounting', icon: '🏛️', name: 'Banking', link: '/modules/admin/scrap-banking.html' },
                 { id: 'scrap_income', permissionId: 'canViewFinancialsProfit', icon: '💰', name: 'Income', link: '/modules/admin/scrap-income.html' },
                 { id: 'scrap_sell', permissionId: 'canScrapSellCreate', icon: '💸', name: 'Sell', link: '/modules/admin/scrap-sell.html' },
+                { id: 'mobile_sell', permissionId: 'canScrapSellCreate', icon: '📱', name: 'Mobile Sell', link: '/modules/admin/mobile-sell.html' },
                 { id: 'scrap_sms', permissionId: 'canSettingsChange', icon: '📲', name: 'Scrap SMS', link: '/modules/admin/scrap-sms-settings.html' },
                 { id: 'scrap_stock', permissionId: 'canScrapStockView', icon: '📦', name: 'Stock', link: '/modules/admin/scrap-workbench.html?view=STOCK' },
                 { id: 'scrap_buy', permissionId: 'canScrapBuyingHistoryView', icon: '📚', name: 'Buying History', link: '/modules/admin/scrap-workbench.html?view=BUY' },
@@ -1008,6 +1725,10 @@ class Sidebar {
                     if (typeof item === 'string') configMap.set(item, { visible: true, order: index });
                     else if (item && item.id) configMap.set(item.id, { visible: item.visible !== false, order: index });
                 });
+
+                if (!configMap.has('scrap_revenue_mgmt') && configMap.has('scrap_revenue')) {
+                    configMap.set('scrap_revenue_mgmt', { visible: true, order: configMap.get('scrap_revenue').order + 0.5 });
+                }
 
                 const perms = this.getDistributorPermissionProfile();
                 const ordered = [];
@@ -1071,62 +1792,21 @@ class Sidebar {
 
 
         if (!onManufacturerModule && (this.isMwTradingContext() || normalizedBusinessType === 'distributor')) {
-            // Apply new dynamic pool logic for Distributor
             const pool = DISTRIBUTOR_MENU_POOL;
             const perms = this.getDistributorPermissionProfile();
-            console.log('[Sidebar RBAC] Active Role:', this.currentRole);
-            console.log('[Sidebar RBAC] Permission Profile:', perms);
-
             const isMobile = this.isMobileView();
 
-            // Filter pool by hard permissions first (RBAC safety)
             const availableMenus = pool.filter(m => {
-                // RULE: Hide mobile-specific links on desktop unless it is a mobile view
                 if (!isMobile && String(m.link || '').includes('/mobile/')) {
                     return false;
                 }
-
                 if (m.permissionId) {
-                    const hasPerm = !!perms[m.permissionId];
-                    return hasPerm;
+                    return !!perms[m.permissionId];
                 }
                 return true;
             });
 
-            // If user has no custom config, return all available standard menus in pool order
-            if (!this.sidebarConfig || !Array.isArray(this.sidebarConfig)) {
-                return availableMenus;
-            }
-
-            // Apply custom config: sort and filter by visibility
-            // sidebarConfig is expected to be an array of objects: { id, visible } or just strings of visible IDs
-            const configMap = new Map();
-            this.sidebarConfig.forEach((item, index) => {
-                if (typeof item === 'string') {
-                    configMap.set(item, { visible: true, order: index });
-                } else if (item && item.id) {
-                    configMap.set(item.id, { visible: item.visible !== false, order: index });
-                }
-            });
-
-            // New menus added to the pool that are NOT in the config yet should be "FORCED" at the end (with NEW badge)
-            const result = [];
-            const newMenuItems = [];
-
-            availableMenus.forEach(m => {
-                if (configMap.has(m.id)) {
-                    const cfg = configMap.get(m.id);
-                    if (cfg.visible) {
-                        result.push({ ...m, order: cfg.order });
-                    }
-                } else {
-                    // This is a NEW menu not yet in user's config
-                    newMenuItems.push({ ...m, isNew: true, order: 9999 });
-                }
-            });
-
-            result.sort((a, b) => a.order - b.order);
-            return [...result, ...newMenuItems];
+            return availableMenus;
         }
 
         // 1. Try dynamic configuration from BUSINESS_TYPES
@@ -1134,9 +1814,16 @@ class Sidebar {
         if (dynamicConfig && dynamicConfig.menus && this.businessId !== this.kduTeaBusinessId && menuBusinessType !== 'distributor') {
             const role = this.currentRole || 'VIEWER';
             let menus = dynamicConfig.menus.filter(m => {
+                if (menuBusinessType === 'attendance_payroll') return true;
                 if (!m.role) return true;
                 return m.role.includes(role);
             });
+            if (menuBusinessType === 'manufacturer') {
+                return [...this.getDashboardMenu(), ...menus];
+            }
+            if (menuBusinessType === 'attendance_payroll') {
+                return this.dedupeMenus(menus);
+            }
             return this.assembleSidebarMenus(menus);
         }
 
@@ -1176,25 +1863,21 @@ class Sidebar {
                 } else {
                     menus = [
                         { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
-                        { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
-                        { icon: '🏭', name: 'Products', link: '/modules/manufacturer/outbound.html' },
+                        { icon: '🏭', name: 'Production / Manufacturing', link: '/modules/manufacturer/outbound.html' },
                         { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
-                        { icon: '🧪', name: 'Quality Control', link: '/modules/manufacturer/stock.html' },
+                        { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
                         { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
-                        { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
                         { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
                     ];
                 }
             } else {
                 menus = [
                     { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
-                    { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
                     { icon: '🏭', name: 'Production / Manufacturing', link: '/modules/manufacturer/outbound.html' },
                     { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
-                    { icon: '🧪', name: 'Quality Control', link: '/modules/manufacturer/stock.html' },
-                    { icon: '🚛', name: 'Supplier Management', link: '/modules/manufacturer/inbound.html' },
+                    { icon: '🗑️', name: 'Wasted Goods Log', link: '/modules/manufacturer/wastage.html' },
+                    { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
                     { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
-                    { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
                     { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
                 ];
             }
@@ -1202,7 +1885,7 @@ class Sidebar {
             menus = [
                 { icon: '🛒', name: 'Point of Sale', link: '/modules/retail/pos.html' },
                 { icon: '📦', name: 'Inventory', link: '/modules/retail/inventory.html' },
-                { icon: '📥', name: 'Purchases', link: '/modules/retail/purchases.html' }
+                { icon: '📥', name: 'GRN', link: '/modules/retail/grn.html' }
             ];
         }
         const isKduManufacturer = menuBusinessType === 'manufacturer' && this.businessId === this.kduTeaBusinessId;
@@ -1343,7 +2026,8 @@ class Sidebar {
         const user = firebase.auth().currentUser;
         if (!user) return;
         try {
-            const userDoc = await window.db.collection('users').doc(user.uid).get();
+            const opt = navigator.onLine ? {} : { source: 'cache' };
+            const userDoc = await window.db.collection('users').doc(user.uid).get(opt);
             const userData = userDoc.exists ? userDoc.data() : {};
             this.ownerName = String(userData.ownerName || userData.name || this.ownerName || '').trim();
             const resolvedBusinessId = userData.businessId || this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || user.uid;
@@ -1354,7 +2038,8 @@ class Sidebar {
 
                 // Fetch Business Info & Permissions Bridge
                 try {
-                    const businessDoc = await window.db.collection('businesses').doc(resolvedBusinessId).get();
+                    const opt = navigator.onLine ? {} : { source: 'cache' };
+                    const businessDoc = await window.db.collection('businesses').doc(resolvedBusinessId).get(opt);
                     if (businessDoc.exists) {
                         const bd = businessDoc.data() || {};
                         resolvedName = String(bd.name || bd.businessName || '').trim();
@@ -1375,7 +2060,8 @@ class Sidebar {
                             if (cachedVersion !== remoteVersion || !sessionStorage.getItem(`digibiz_perms_v2_${resolvedBusinessId}`)) {
                                 console.log('[Sidebar] Refreshing direct permissions...');
                                 try {
-                                    const snap = await window.db.collection('businesses').doc(resolvedBusinessId).collection('configs').doc('permissions').get();
+                                    const opt = navigator.onLine ? {} : { source: 'cache' };
+                                    const snap = await window.db.collection('businesses').doc(resolvedBusinessId).collection('configs').doc('permissions').get(opt);
                                     if (snap.exists) {
                                         sessionStorage.setItem(`digibiz_perms_v2_${resolvedBusinessId}`, JSON.stringify(snap.data()));
                                         sessionStorage.setItem(`digibiz_perm_v_${resolvedBusinessId}`, remoteVersion);
@@ -1415,7 +2101,7 @@ class Sidebar {
         const pathname = window.location.pathname;
         const settingsItemsBase = [
             { icon: '🏢', name: 'Business Profile', link: '/modules/company/profile.html' },
-            { icon: '👥', name: 'Staff', link: '/modules/company/staff.html' },
+            { icon: '👥', name: 'Staff Management', link: '/modules/company/staff.html' },
             { icon: '🔑', name: 'Staff Permissions', link: '/modules/core/permissions-config.html', isNew: true },
             { icon: '🎨', name: 'Sidebar Config', link: '/modules/core/sidebar-config.html', isNew: true },
             { icon: '🔐', name: 'Change Password', link: '/modules/core/change-password.html' },
@@ -1438,7 +2124,7 @@ class Sidebar {
             const smsLogOk = rb === 'OWNER' || rb === 'SALES_COORDINATOR' || rb === 'AREA_MANAGER';
             settingsItems = settingsItems.filter((item) => {
                 if (item.name === 'Business Profile') return !!p.canBusinessInfoEdit;
-                if (item.name === 'Staff') return !!p.canStaffMutate;
+                if (item.name === 'Staff' || item.name === 'Staff Management') return true;
                 if (item.name === 'Staff Permissions') return rb === 'OWNER';
                 if (item.name === 'Settings') return !!p.canSettingsChange;
                 if (item.name === 'SMS Settings') return !!p.canSettingsChange;
@@ -1451,13 +2137,16 @@ class Sidebar {
         const loanItems = [
             { icon: '🏠', name: 'Loan Hub', link: '/modules/core/loans.html' },
             { icon: '📅', name: 'Weekly Loan', link: '/modules/admin/scrap-weekly-loans.html' },
+            { icon: '📆', name: 'Daily Loan', link: '/modules/core/loan-daily.html' },
             { icon: '🤝', name: 'Hand Loans', link: '/modules/core/hand-loans.html' },
             { icon: '🟢', name: 'No-interest Loan', link: '/modules/core/loan-no-interest.html' },
             { icon: '📈', name: 'Interest Loan (10%)', link: '/modules/core/loan-interest.html' },
             { icon: '🏦', name: 'Advanced Loan', link: '/modules/core/loan-advanced-investor.html' },
-            { icon: '👤', name: 'Investor', link: '/modules/core/investor.html' }
+            { icon: '👤', name: 'Investor', link: '/modules/core/investor.html' },
+            { icon: '🛡️', name: 'Risk Management', link: '/modules/core/loan-risk-management.html' }
         ];
         const loansActive = loanItems.some((item) => this.isMenuActive(item.link, pathname));
+        const financeActive = pathname.includes('receivables.html') || pathname.includes('payables.html') || pathname.includes('credit-aging.html');
         const menuItems = this.getMenus().filter((item) => !['Super Admin', 'User Management', 'Loans'].includes(item.name));
         const html = `
             <div class="retail-navbar digibiz-sidebar">
@@ -1470,30 +2159,59 @@ class Sidebar {
                             <span id="sidebarBusinessLogoIcon" class="sidebar-business-logo-icon is-visible" aria-hidden="true">🏢</span>
                         </div>
                         <div class="sidebar-business-name biz-name" id="sidebarBusinessName"></div>
-                        <div class="user-info-sidebar">
-                            <span class="user-avatar-sidebar">👤</span>
-                            <div>
-                                <div class="user-name-sidebar" id="sidebarUserName">Loading...</div>
-                                <div class="user-role-sidebar" id="sidebarUserRole">USER</div>
+                        <div class="user-info-sidebar" style="display:flex !important; flex-direction:column !important; align-items:center !important; text-align:center !important; background:rgba(255,255,255,.1) !important; padding:14px 10px 28px 10px !important; border-radius:12px !important; position:relative !important; overflow:hidden !important; width:100% !important; box-sizing:border-box !important;">
+                            <div style="width:100%; text-align:center; box-sizing:border-box;">
+                                <div class="user-name-sidebar" id="sidebarUserName" style="font-size:14px; font-weight:700; color:#fff; margin-bottom:4px; text-align:center;">Loading...</div>
+                                <div class="user-role-sidebar" id="sidebarUserRole" style="font-size:8.5px; padding:3px 10px; border-radius:20px; background:rgba(0,0,0,.35); display:inline-block; white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; letter-spacing:0.2px; box-sizing:border-box;">USER</div>
                                 <div class="sidebar-subscription-status" id="sidebarSubscriptionStatus">Checking plan...</div>
                             </div>
+                            <div id="sidebarConnectionStatus" style="position:absolute !important; bottom:6px !important; left:0 !important; right:0 !important; text-align:center !important; font-size:9.5px !important; font-weight:800 !important; letter-spacing:0.6px !important; text-transform:uppercase !important; display:block !important; visibility:visible !important;">Checking connection...</div>
                         </div>
                     </div>
                     <div class="nav-links" id="sidebarNavLinks">
                         ${menuItems.map((item) => {
-                            const isDashboard = item.name === 'Dashboard';
+                            const isDashboard = String(item.name).toLowerCase() === 'dashboard' || String(item.link).toLowerCase().includes('dashboard.html');
                             const isExpenses = item.name === 'EXPENSES';
                             const isScrapPage = window.location.pathname.includes('/scrap-');
                             const showScrapBadge = isDashboard && (this.businessType === 'scrap_collection_center' || isScrapPage);
+                            const showRetailRevenueBadge = isDashboard && (['retail', 'tire_centre'].includes(String(this.businessType).toLowerCase().trim()));
+                            const showDistributorRevenueBadge = isDashboard && (String(this.businessType).toLowerCase().trim() === 'distributor');
                             
                             let html = `
                             <a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}" style="position: relative;">
                                 <span class="menu-icon">${item.icon}</span>
-                                <span>${item.name}</span>
+                                <span>${window.i18n(item.name)}</span>
                                 ${item.isNew ? '<span class="menu-badge-new">NEW</span>' : ''}
                                 ${showScrapBadge ? '<span id="sidebarScrapPoolBadge" style="position: absolute; right: 10px; top: -15px; font-size: 10px; font-weight: 900; color: #34d399; display: none;"></span>' : ''}
+                                ${showRetailRevenueBadge ? `
+                                    <span id="sidebarRetailRevenueBadge" style="position: absolute; right: 10px; top: -15px; font-size: 10px; font-weight: 900; display: none; padding: 2px 6px; border-radius: 4px;"></span>
+                                    <span id="sidebarLiveCashBadge" style="position: absolute; left: 10px; top: -15px; font-size: 10px; font-weight: 900; display: none; padding: 2px 6px; border-radius: 4px; background: rgba(59, 130, 246, 0.15); color: #60a5fa;"></span>
+                                ` : ''}
+                                ${showDistributorRevenueBadge ? `
+                                    <span id="sidebarDistributorProfitBadge" style="position: absolute; right: 10px; top: -15px; font-size: 10px; font-weight: 900; display: none; padding: 2px 6px; border-radius: 4px;"></span>
+                                ` : ''}
                             </a>
                             `;
+                            
+                            const isFullSuiteBiz = this.businessType === 'retail' || this.businessType === 'tire_centre' || this.businessType === 'manufacturer';
+                            if (item.name === 'Customers' && isFullSuiteBiz) {
+                                const bTypeModule = this.businessType === 'manufacturer' ? 'retail' : this.businessType;
+                                const agingLink = `/modules/${bTypeModule}/credit-aging.html`;
+                                const receivablesLink = `/modules/${bTypeModule}/receivables.html`;
+                                const payablesLink = `/modules/${bTypeModule}/payables.html`;
+                                html += `
+                                <div class="menu-dropdown ${financeActive ? 'open' : ''}" id="financeDropdown">
+                                    <button type="button" class="menu-dropdown-toggle ${financeActive ? 'active' : ''}" id="financeDropdownToggle">
+                                        <span style="display: flex; align-items: center; gap: 14px;"><span class="menu-icon">💳</span><span>${window.i18n('Finance')}</span></span><span>${financeActive ? '▾' : '▸'}</span>
+                                    </button>
+                                    <div class="menu-dropdown-items">
+                                        <a href="${receivablesLink}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(receivablesLink, pathname) ? 'active' : ''}"><span class="menu-icon">📈</span><span>Receivables</span></a>
+                                        <a href="${payablesLink}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(payablesLink, pathname) ? 'active' : ''}"><span class="menu-icon">📉</span><span>Payables</span></a>
+                                        <a href="${agingLink}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(agingLink, pathname) ? 'active' : ''}"><span class="menu-icon">⏳</span><span>Credit Aging</span></a>
+                                    </div>
+                                </div>
+                                `;
+                            }
                             
                             if (isExpenses && isRasika) {
                                 html += `<div id="sidebarScrapPoolLabel" style="font-size: 16px; font-weight: 900; color: #34d399; padding: 15px 15px 30px 15px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.05); margin-bottom: 10px;">Checking pool...</div>`;
@@ -1501,37 +2219,29 @@ class Sidebar {
                             
                             return html;
                         }).join('')}
-                        ${(this.isSuperAdminUser() || this.businessType === 'scrap_collection_center') ? `<div class="menu-dropdown ${loansActive ? 'open' : ''}" id="loansDropdown">
+                        ${(this.businessType !== 'attendance_payroll' && (this.isSuperAdminUser() || this.businessType === 'scrap_collection_center')) ? `<div class="menu-dropdown ${loansActive ? 'open' : ''}" id="loansDropdown">
                             <button type="button" class="menu-dropdown-toggle ${loansActive ? 'active' : ''}" id="loansDropdownToggle">
-                                <span><span class="menu-icon">💸</span><span>Loans</span></span><span>${loansActive ? '▾' : '▸'}</span>
+                                <span style="display: flex; align-items: center; gap: 14px;"><span class="menu-icon">💸</span><span>Loans</span></span><span>${loansActive ? '▾' : '▸'}</span>
                             </button>
                             <div class="menu-dropdown-items">
                                 ${loanItems.map((item) => `<a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
                             </div>
                         </div>` : ''}
-                        ${settingsItems.length ? `
-                        <div class="menu-dropdown ${settingsActive ? 'open' : ''}" id="settingsDropdown">
+                        ${(this.businessType !== 'attendance_payroll' && settingsItems.length > 0) ? `<div class="menu-dropdown ${settingsActive ? 'open' : ''}" id="settingsDropdown">
                             <button type="button" class="menu-dropdown-toggle ${settingsActive ? 'active' : ''}" id="settingsDropdownToggle">
-                                <span>
-                                    <span class="menu-icon">⚙️</span>
-                                    <span>Settings</span>
-                                    ${settingsItems.some(si => si.isNew) ? '<span class="menu-badge-new" style="margin-left:8px; background:#ef4444;">NEW</span>' : ''}
-                                </span>
-                                <span>${settingsActive ? '▾' : '▸'}</span>
+                                <span style="display: flex; align-items: center; gap: 14px;"><span class="menu-icon">⚙️</span><span>Settings</span></span><span>${settingsActive ? '▾' : '▸'}</span>
                             </button>
                             <div class="menu-dropdown-items">
-                                ${settingsItems.map((item) => `
-                                    <a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}">
-                                        <span class="menu-icon">${item.icon}</span>
-                                        <span>${item.name}</span>
-                                        ${item.isNew ? '<span class="menu-badge-new">NEW</span>' : ''}
-                                    </a>
-                                `).join('')}
+                                ${settingsItems.map((item) => `<a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}"><span class="menu-icon">${item.icon}</span><span>${item.name}</span></a>`).join('')}
                             </div>
                         </div>` : ''}
+                        ${(this.businessType !== 'attendance_payroll') ? `<a href="https://play.google.com/store/account/subscriptions" target="_blank" class="menu-item">
+                            <span class="menu-icon">💳</span>
+                            <span>Manage Play Subscription</span>
+                        </a>` : ''}
                         ${this.isSuperAdminUser() ? `<div class="menu-section-label">Super Admin</div>
-                        <a href="/admin/super-dashboard.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${pathname === '/admin/super-dashboard.html' ? 'active' : ''}"><span class="menu-icon">👑</span><span>Super Admin</span></a>
-                        <a href="/admin/business-management.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${pathname === '/admin/business-management.html' ? 'active' : ''}"><span class="menu-icon">💼</span><span>Business Management</span></a>` : ''}
+                        <a href="/admin/super-dashboard.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive('/admin/super-dashboard.html', pathname) ? 'active' : ''}"><span class="menu-icon">👑</span><span>Super Admin</span></a>
+                        <a href="/admin/business-management.html" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive('/admin/business-management.html', pathname) ? 'active' : ''}"><span class="menu-icon">💼</span><span>Business Management</span></a>` : ''}
                     </div>
                 </div>
                 <div class="sidebar-footer">
@@ -1540,16 +2250,31 @@ class Sidebar {
             </div>
         `;
 
-        document.querySelectorAll('.retail-navbar').forEach((el) => el.remove());
+        const existingSidebar = document.querySelector('.retail-navbar');
         const mountPoint = document.getElementById('sidebar-container');
         if (mountPoint) {
-            mountPoint.innerHTML = '';
-            mountPoint.innerHTML = html;
+            if (mountPoint.innerHTML !== html) {
+                mountPoint.innerHTML = html;
+            }
         } else {
-            document.body.insertAdjacentHTML('afterbegin', html);
+            if (existingSidebar) {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = html;
+                const newSidebar = tempDiv.querySelector('.retail-navbar');
+                if (newSidebar && existingSidebar.innerHTML !== newSidebar.innerHTML) {
+                    existingSidebar.innerHTML = newSidebar.innerHTML;
+                }
+            } else {
+                document.body.insertAdjacentHTML('afterbegin', html);
+            }
         }
         this.updateUserInfo();
         this.refreshScrapPoolBadge();
+        this.initRetailRevenueBadge();
+        this.initDistributorRevenueBadge();
+        this.initLiveCashBadge();
+        this.updateConnectionStatusText();
+        this.attachEvents();
     }
 
     async refreshScrapPoolBadge() {
@@ -1581,16 +2306,7 @@ class Sidebar {
                 return;
             }
 
-            // AUTO-SYNC ONCE PER SESSION
-            const syncKey = `scrap_pool_synced_${bid}`;
-            if (!sessionStorage.getItem(syncKey) && window.scrapVbaCore.recalculateProfitPoolFromHistory) {
-                console.log('[Sidebar] Performing session-first auto-sync for Profit Pool (Background)...');
-                window.scrapVbaCore.recalculateProfitPoolFromHistory(bid).then(() => {
-                    sessionStorage.setItem(syncKey, '1');
-                    this.refreshScrapPoolBadge(bid);
-                }).catch(e => console.warn('Profit sync failed', e));
-                return; // Let the background task handle the UI update
-            }
+
 
             const bal = await window.scrapVbaCore.getProfitPool(bid);
             el.textContent = Math.floor(bal).toLocaleString();
@@ -1600,6 +2316,295 @@ class Sidebar {
         } catch (e) {
             console.warn('Scrap pool badge refresh failed:', e);
         }
+    }
+
+    async initRetailRevenueBadge(retryCount = 0) {
+        const bid = this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+        if (!bid) return;
+
+        // Ensure this is a retail or tire center business
+        if (!['retail', 'tire_centre'].includes(String(this.businessType).toLowerCase().trim())) return;
+
+        // Ensure the current user is the owner (Owner-only check)
+        const roleNorm = String(this.currentRole || '').toUpperCase();
+        const isOwner = this.currentUserId === bid || roleNorm === 'BUSINESS_OWNER' || roleNorm === 'SUPER_ADMIN';
+        if (!isOwner) return;
+
+        const el = document.getElementById('sidebarRetailRevenueBadge');
+        if (!el) {
+            if (retryCount < 5) {
+                setTimeout(() => this.initRetailRevenueBadge(retryCount + 1), 200);
+            }
+            return;
+        }
+
+        // Today's boundaries
+        const startOfToday = new Date();
+        startOfToday.setHours(0,0,0,0);
+        const endOfToday = new Date();
+        endOfToday.setHours(23,59,59,999);
+
+        // Listen in real-time to today's sales (orders)
+        if (typeof this.retailRevenueUnsubscribe === 'function') {
+            this.retailRevenueUnsubscribe();
+        }
+
+        try {
+            const fs = (typeof db !== 'undefined' && db) ? db : (window.db || (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore()));
+            this.retailRevenueUnsubscribe = fs.collection('orders').doc(bid).collection('list')
+                .where('createdAt', '>=', startOfToday)
+                .where('createdAt', '<=', endOfToday)
+                .onSnapshot(snapshot => {
+                    let totalRevenue = 0;
+                    snapshot.forEach(doc => {
+                        const d = doc.data();
+                        // Only add if not voided/reversed
+                        if (!d.isReversed) {
+                            totalRevenue += parseFloat(d.total || 0);
+                        }
+                    });
+
+                    const val = Math.floor(totalRevenue);
+                    if (val >= 0) {
+                        el.textContent = `+Rs. ${val.toLocaleString()}`;
+                        el.style.color = '#34d399';
+                        el.style.background = 'rgba(16, 185, 129, 0.15)';
+                    } else {
+                        el.textContent = `-Rs. ${Math.abs(val).toLocaleString()}`;
+                        el.style.color = '#f87171';
+                        el.style.background = 'rgba(239, 68, 68, 0.15)';
+                    }
+                    el.style.display = 'inline-block';
+                }, error => {
+                    console.warn('[Sidebar] Retail revenue listener error:', error);
+                });
+        } catch (e) {
+            console.warn('[Sidebar] Retail revenue badge initialization failed:', e);
+        }
+    }
+
+    async initDistributorRevenueBadge(retryCount = 0) {
+        const bid = this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+        if (!bid) return;
+        if (String(this.businessType).toLowerCase().trim() !== 'distributor') return;
+
+        const roleNorm = String(this.currentRole || '').toUpperCase();
+        const isOwner = this.currentUserId === bid || roleNorm === 'OWNER' || roleNorm === 'BUSINESS_OWNER' || roleNorm === 'DISTRIBUTOR_OWNER' || roleNorm === 'SUPER_ADMIN';
+        if (!isOwner) return;
+
+        const el = document.getElementById('sidebarDistributorProfitBadge');
+        if (!el) {
+            if (retryCount < 5) {
+                setTimeout(() => this.initDistributorRevenueBadge(retryCount + 1), 200);
+            }
+            return;
+        }
+
+        const startOfToday = new Date();
+        startOfToday.setHours(0,0,0,0);
+        const endOfToday = new Date();
+        endOfToday.setHours(23,59,59,999);
+
+        try {
+            const fs = (typeof db !== 'undefined' && db) ? db : (window.db || (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore()));
+            if (!fs) return;
+
+            const prodMap = {};
+            try {
+                const pSnap = await fs.collection('products').doc(bid).collection('list').get();
+                pSnap.forEach(d => {
+                    const data = d.data() || {};
+                    prodMap[d.id] = data;
+                    if (data.productCode) prodMap[String(data.productCode).trim()] = data;
+                });
+            } catch(e) {}
+
+            const [ordersSnap, expSnap] = await Promise.all([
+                fs.collection('orders').doc(bid).collection('list')
+                    .where('createdAt', '>=', startOfToday)
+                    .where('createdAt', '<=', endOfToday).get().catch(() => ({ docs: [] })),
+                fs.collection('expenses').doc(bid).collection('list')
+                    .where('createdAt', '>=', startOfToday)
+                    .where('createdAt', '<=', endOfToday).get().catch(() => ({ docs: [] }))
+            ]);
+
+            let todayRevenue = 0;
+            let todayCogs = 0;
+            ordersSnap.docs.forEach(doc => {
+                const b = doc.data() || {};
+                const status = String(b.status || '').toLowerCase();
+                if (status === 'rejected' || status === 'cancelled') return;
+                const items = Array.isArray(b.items) ? b.items : [];
+                items.forEach(line => {
+                    const soldQty = Math.max(0, Number(line.orderedQty != null ? line.orderedQty : line.qty) || 0);
+                    const freeQty = Math.max(0, Number(line.freeQty) || 0);
+                    const returnQty = Math.max(0, Number(line.returnResellQty != null ? line.returnResellQty : line.returnQty) || 0);
+                    const billedQty = Math.max(0, soldQty - returnQty);
+                    const unitPrice = Number(line.unitPrice) || 0;
+                    let buyPrice = Number(line.buyingPrice || line.buyingPriceRaw || line.costPrice);
+                    if (isNaN(buyPrice) || buyPrice <= 0) {
+                        const pRef = prodMap[line.productId] || prodMap[line.productCode];
+                        buyPrice = pRef ? (Number(pRef.buyingPrice) || Number(pRef.unitPrice) * 0.93) : (unitPrice * 0.93);
+                    }
+                    todayRevenue += billedQty * unitPrice;
+                    todayCogs += (billedQty + freeQty) * buyPrice;
+                });
+            });
+
+            let todayExp = 0;
+            expSnap.docs.forEach(doc => {
+                const r = doc.data() || {};
+                todayExp += Number(r.amount) || 0;
+            });
+
+            const netProfit = Math.floor(todayRevenue - todayCogs - todayExp);
+            if (netProfit >= 0) {
+                el.textContent = `Today Profit: Rs. ${netProfit.toLocaleString()}`;
+                el.style.color = '#34d399';
+                el.style.background = 'rgba(16, 185, 129, 0.15)';
+            } else {
+                el.textContent = `Today Profit: -Rs. ${Math.abs(netProfit).toLocaleString()}`;
+                el.style.color = '#f87171';
+                el.style.background = 'rgba(239, 68, 68, 0.15)';
+            }
+            el.style.display = 'inline-block';
+        } catch (e) {
+            console.warn('[Sidebar] Distributor profit badge failed:', e);
+        }
+    }
+
+    async initLiveCashBadge(retryCount = 0) {
+        const bid = this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+        if (!bid) return;
+
+        // Ensure this is a retail or tire center business
+        if (!['retail', 'tire_centre'].includes(String(this.businessType).toLowerCase().trim())) return;
+
+        // Ensure the current user is the owner/staff
+        const roleNorm = String(this.currentRole || '').toUpperCase();
+        const isOwner = this.currentUserId === bid || roleNorm === 'BUSINESS_OWNER' || roleNorm === 'SUPER_ADMIN' || roleNorm === 'BUSINESS_STAFF';
+        if (!isOwner) return;
+
+        const el = document.getElementById('sidebarLiveCashBadge');
+        if (!el) {
+            if (retryCount < 5) {
+                setTimeout(() => this.initLiveCashBadge(retryCount + 1), 200);
+            }
+            return;
+        }
+
+        const fs = (typeof db !== 'undefined' && db) ? db : (window.db || (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore()));
+        
+        // Listen to today's data
+        const startOfToday = new Date();
+        startOfToday.setHours(0,0,0,0);
+        const endOfToday = new Date();
+        endOfToday.setHours(23,59,59,999);
+        const dateStr = new Date().toISOString().split('T')[0];
+
+        try {
+            // Setup real-time listeners for cash sales, expenses, deposits, and onboarding cash
+            let initCash = 0;
+            let cashSales = 0;
+            let cashExp = 0;
+            let cashDep = 0;
+
+            const updateDisplay = () => {
+                const liveCash = (initCash + cashSales) - cashExp - cashDep;
+                el.textContent = `💵 Rs. ${Math.max(0, Math.floor(liveCash)).toLocaleString()}`;
+                el.style.display = 'inline-block';
+            };
+
+            // 1. Onboarding initial cash from businesses doc and journal entries
+            if (typeof this.liveCashUnsubscribeWizard === 'function') this.liveCashUnsubscribeWizard();
+            this.liveCashUnsubscribeWizard = fs.collection('businesses').doc(bid).onSnapshot(doc => {
+                let foundCash = 0;
+                if (doc.exists && doc.data().onboardingBalances?.cash) {
+                    foundCash = Number(doc.data().onboardingBalances.cash) || 0;
+                }
+                if (foundCash > 0) {
+                    initCash = foundCash;
+                    updateDisplay();
+                } else {
+                    fs.collection('journal').doc(bid).collection('entries')
+                        .where('refType', '==', 'ONBOARDING').get().then(snap => {
+                            snap.docs.forEach(d => {
+                                if (d.data().ref === 'onboarding_cash') {
+                                    const entry = (d.data().entries || [])[0];
+                                    if (entry) initCash = Number(entry.amount || entry.debit) || 0;
+                                }
+                            });
+                            updateDisplay();
+                        }).catch(() => updateDisplay());
+                }
+            });
+
+            // 2. Cash Sales today
+            if (typeof this.liveCashUnsubscribeSales === 'function') this.liveCashUnsubscribeSales();
+            this.liveCashUnsubscribeSales = fs.collection('orders').doc(bid).collection('list')
+                .where('createdAt', '>=', startOfToday)
+                .where('createdAt', '<=', endOfToday)
+                .onSnapshot(snap => {
+                    cashSales = 0;
+                    snap.forEach(dDoc => {
+                        const d = dDoc.data();
+                        if (!d.isReversed && (d.paymentMethod || 'CASH').toUpperCase() === 'CASH') {
+                            cashSales += parseFloat(d.total || 0);
+                        }
+                    });
+                    updateDisplay();
+                });
+
+            // 3. Cash Expenses today
+            if (typeof this.liveCashUnsubscribeExp === 'function') this.liveCashUnsubscribeExp();
+            this.liveCashUnsubscribeExp = fs.collection('expenses').doc(bid).collection('list')
+                .where('expenseDate', '==', dateStr)
+                .onSnapshot(snap => {
+                    cashExp = 0;
+                    snap.forEach(dDoc => {
+                        const d = dDoc.data();
+                        if ((d.paymentMethod || 'CASH').toUpperCase() === 'CASH') {
+                            cashExp += parseFloat(d.amount || 0);
+                        }
+                    });
+                    updateDisplay();
+                });
+
+            // 4. Cash Deposits from Drawer to Bank
+            if (typeof this.liveCashUnsubscribeDep === 'function') this.liveCashUnsubscribeDep();
+            this.liveCashUnsubscribeDep = fs.collection('banks').doc(bid).collection('transactions')
+                .where('type', '==', 'CASH_DEPOSIT')
+                .onSnapshot(snap => {
+                    cashDep = 0;
+                    snap.forEach(dDoc => {
+                        cashDep += parseFloat(dDoc.data().amount || 0);
+                    });
+                    updateDisplay();
+                });
+
+        } catch (e) {
+            console.warn('[Sidebar] Live cash badge failed:', e);
+        }
+    }
+
+    getBusinessTypePrefix() {
+        const raw = String(this.businessType || '').toLowerCase().trim();
+        const map = {
+            retail: 'RETAIL',
+            manufacturer: 'MANUFACTURER',
+            distributor: 'DISTRIBUTOR',
+            tire_centre: 'TIRE CENTER',
+            pharmacy: 'PHARMACY',
+            restaurant: 'RESTAURANT',
+            garment: 'GARMENT',
+            hardware: 'HARDWARE',
+            service: 'SERVICE',
+            scrap_collection_center: 'SCRAP',
+            tea_factory: 'TEA FACTORY'
+        };
+        if (map[raw]) return map[raw];
+        if (!raw) return '';
+        return raw.replace(/_/g, ' ').toUpperCase();
     }
 
     updateUserInfo() {
@@ -1622,7 +2627,20 @@ class Sidebar {
         this.renderBusinessName(this.businessName || '');
         if (roleEl) {
             const role = String(this.currentRole || 'USER').replace(/_/g, ' ');
-            roleEl.textContent = role;
+            const prefix = this.getBusinessTypePrefix();
+            let fullRoleText = role;
+            if (prefix && !role.toUpperCase().startsWith(prefix.toUpperCase()) && !role.toUpperCase().includes('SUPER ADMIN')) {
+                fullRoleText = `${prefix} ${role}`;
+            }
+            roleEl.textContent = fullRoleText;
+            if (fullRoleText.length > 20) {
+                roleEl.style.fontSize = '7.5px';
+            } else if (fullRoleText.length > 15) {
+                roleEl.style.fontSize = '8.5px';
+            } else {
+                roleEl.style.fontSize = '9.5px';
+            }
+            roleEl.style.whiteSpace = 'nowrap';
         }
         const subEl = document.getElementById('sidebarSubscriptionStatus');
         if (subEl) {
@@ -1647,36 +2665,38 @@ class Sidebar {
         }
     }
 
+    updateConnectionStatusText() {
+        const el = document.getElementById('sidebarConnectionStatus');
+        if (el) {
+            if (navigator.onLine) {
+                el.style.color = '#34d399'; // green matching badge
+                el.textContent = 'ONLINE SYNCHRONIZED';
+            } else {
+                el.style.color = '#f87171'; // red matching badge
+                el.textContent = 'OFFLINE';
+            }
+        }
+    }
+
     attachEvents() {
         const logoutBtn = document.getElementById('sidebarLogoutBtn');
-        if (!logoutBtn) return;
-        logoutBtn.onclick = () => {
-            firebase.auth().signOut().then(() => {
-                window.location.href = '/index.html';
-            });
-        };
+        if (logoutBtn) {
+            logoutBtn.onclick = () => {
+                if (typeof window.signOutUser === 'function') {
+                    window.signOutUser();
+                } else {
+                    firebase.auth().signOut().then(() => {
+                        sessionStorage.clear();
+                        window.location.href = '/auth/login.html';
+                    });
+                }
+            };
+        }
         
         this.updateScrapPoolBadge();
         const nav = document.getElementById('sidebarNavLinks');
         if (nav) {
-            const loanToggle = document.getElementById('loansDropdownToggle');
-            const loanDd = document.getElementById('loansDropdown');
-            if (loanToggle && loanDd) {
-                loanToggle.addEventListener('click', () => {
-                    loanDd.classList.toggle('open');
-                    const marker = loanToggle.querySelector('span:last-child');
-                    if (marker) marker.textContent = loanDd.classList.contains('open') ? '▾' : '▸';
-                });
-            }
-            const ddToggle = document.getElementById('settingsDropdownToggle');
-            const dd = document.getElementById('settingsDropdown');
-            if (ddToggle && dd) {
-                ddToggle.addEventListener('click', () => {
-                    dd.classList.toggle('open');
-                    const marker = ddToggle.querySelector('span:last-child');
-                    if (marker) marker.textContent = dd.classList.contains('open') ? '▾' : '▸';
-                });
-            }
+            // Dropdown toggling is handled via global event delegation at the bottom of the script
             nav.querySelectorAll('a.menu-item').forEach((link) => {
                 link.addEventListener('click', () => {
                     closeMobileSidebar();
@@ -1703,21 +2723,8 @@ class Sidebar {
             
             if (!poolLabel && !poolBadge) return;
             
-            if (window.scrapVbaCore && typeof window.scrapVbaCore.recalculateProfitPoolFromHistory === 'function') {
-                const res = await window.scrapVbaCore.recalculateProfitPoolFromHistory(bid);
-                const bal = res && typeof res.finalPool === 'number' ? res.finalPool : 0;
-                const formatted = `Rs ${bal.toLocaleString()}`;
-                
-                if (poolLabel) {
-                    poolLabel.textContent = formatted;
-                }
-                if (poolBadge) {
-                    poolBadge.textContent = formatted;
-                    poolBadge.style.display = 'block';
-                }
-            } else if (window.scrapVbaCore && typeof window.scrapVbaCore.getProfitPool === 'function') {
-                const res = await window.scrapVbaCore.getProfitPool(bid);
-                const bal = res && typeof res.balance === 'number' ? res.balance : 0;
+            if (window.scrapVbaCore && typeof window.scrapVbaCore.getProfitPool === 'function') {
+                const bal = await window.scrapVbaCore.getProfitPool(bid);
                 const formatted = `Rs ${bal.toLocaleString()}`;
                 if (poolLabel) poolLabel.textContent = formatted;
                 if (poolBadge) {
@@ -1728,6 +2735,701 @@ class Sidebar {
         } catch (e) {
             console.warn('[Sidebar] Pool fetch failed:', e);
         }
+    }
+
+    initDynamicLedgerList() {
+        const bid = this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+        if (!bid) return;
+        if (!['retail', 'tire_centre'].includes(String(this.businessType).toLowerCase().trim())) return;
+
+        if (typeof this.ledgerUnsubscribe === 'function') {
+            this.ledgerUnsubscribe();
+        }
+
+        const fs = (typeof db !== 'undefined' && db) ? db : (window.db || (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore()));
+        
+        try {
+            this.ledgerUnsubscribe = fs.collection('journal').doc(bid).collection('entries')
+                .orderBy('date', 'desc')
+                .onSnapshot(snapshot => {
+                    const entries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    window.sidebar.cachedJournalEntries = entries;
+                    this.updateSidebarLedgerList(entries);
+                }, error => {
+                    console.warn('[Sidebar] Ledger list listener error:', error);
+                });
+        } catch (e) {
+            console.warn('[Sidebar] Ledger list listener failed:', e);
+        }
+    }
+
+    updateSidebarLedgerList(entries) {
+        const itemsContainer = document.getElementById('ledgerDropdownItems');
+        if (!itemsContainer) return;
+
+        const glBalances = {};
+        entries.forEach(entry => {
+            if (entry.isReversed || entry.reversalOf) return;
+            (entry.entries || []).forEach(row => {
+                const code = row.accountCode || row.accountId || '';
+                if (!code) return;
+                
+                let dr = Number(row.debit) || 0;
+                let cr = Number(row.credit) || 0;
+                if (row.amount !== undefined && row.type !== undefined) {
+                    if (row.type === 'debit') dr = Number(row.amount) || 0;
+                    if (row.type === 'credit') cr = Number(row.amount) || 0;
+                }
+                
+                if (!glBalances[code]) {
+                    glBalances[code] = {
+                        code,
+                        name: row.accountName || this.getFallbackGLName(code),
+                        debit: 0,
+                        credit: 0
+                    };
+                }
+                glBalances[code].debit += dr;
+                glBalances[code].credit += cr;
+            });
+        });
+
+        const activeGL = [];
+        for (const code in glBalances) {
+            const acc = glBalances[code];
+            const isDebitNormal = code.startsWith('1') || code.startsWith('5');
+            const balance = isDebitNormal ? (acc.debit - acc.credit) : (acc.credit - acc.debit);
+            
+            if (Math.abs(balance) >= 0.01) {
+                activeGL.push({
+                    code,
+                    name: acc.name,
+                    balance
+                });
+            }
+        }
+        activeGL.sort((a, b) => a.code.localeCompare(b.code));
+
+        const customerBalances = {};
+        entries.forEach(entry => {
+            if (entry.isReversed || entry.reversalOf) return;
+            (entry.entries || []).forEach(row => {
+                const code = row.accountCode || row.accountId || '';
+                if (!code.startsWith('1-1030')) return;
+                
+                let dr = Number(row.debit) || 0;
+                let cr = Number(row.credit) || 0;
+                if (row.amount !== undefined && row.type !== undefined) {
+                    if (row.type === 'debit') dr = Number(row.amount) || 0;
+                    if (row.type === 'credit') cr = Number(row.amount) || 0;
+                }
+                
+                const memo = entry.memo || '';
+                let customerName = '';
+                if (memo.includes('Customer - ')) {
+                    customerName = memo.split('Customer - ')[1].trim();
+                } else if (memo.includes('Received from ')) {
+                    customerName = memo.split('Received from ')[1].split('.')[0].trim();
+                } else if (memo.includes('Sale to ')) {
+                    customerName = memo.split('Sale to ')[1].trim();
+                } else if (memo.includes('Loan Given to ')) {
+                    customerName = memo.split('Loan Given to ')[1].split(' - ')[0].trim();
+                } else if (memo.includes('Loan Settled from ')) {
+                    customerName = memo.split('Loan Settled from ')[1].trim();
+                }
+                
+                if (!customerName) return;
+                
+                if (!customerBalances[customerName]) {
+                    customerBalances[customerName] = { name: customerName, debit: 0, credit: 0 };
+                }
+                customerBalances[customerName].debit += dr;
+                customerBalances[customerName].credit += cr;
+            });
+        });
+
+        const activeCustomers = [];
+        for (const name in customerBalances) {
+            const cb = customerBalances[name];
+            const balance = cb.debit - cb.credit;
+            if (Math.abs(balance) >= 0.01) {
+                activeCustomers.push({ name, balance });
+            }
+        }
+        activeCustomers.sort((a, b) => a.name.localeCompare(b.name));
+
+        const supplierBalances = {};
+        entries.forEach(entry => {
+            if (entry.isReversed || entry.reversalOf) return;
+            (entry.entries || []).forEach(row => {
+                const code = row.accountCode || row.accountId || '';
+                if (!code.startsWith('2-2010')) return;
+                
+                let dr = Number(row.debit) || 0;
+                let cr = Number(row.credit) || 0;
+                if (row.amount !== undefined && row.type !== undefined) {
+                    if (row.type === 'debit') dr = Number(row.amount) || 0;
+                    if (row.type === 'credit') cr = Number(row.amount) || 0;
+                }
+                
+                const memo = entry.memo || '';
+                let supplierName = '';
+                if (memo.includes('Supplier - ')) {
+                    supplierName = memo.split('Supplier - ')[1].trim();
+                } else if (memo.includes('Purchase - Order PO-')) {
+                    if (memo.includes('(') && memo.includes(')')) {
+                        supplierName = memo.split('(')[1].split(')')[0].trim();
+                    }
+                }
+                
+                if (!supplierName) return;
+                
+                if (!supplierBalances[supplierName]) {
+                    supplierBalances[supplierName] = { name: supplierName, debit: 0, credit: 0 };
+                }
+                supplierBalances[supplierName].debit += dr;
+                supplierBalances[supplierName].credit += cr;
+            });
+        });
+
+        const activeSuppliers = [];
+        for (const name in supplierBalances) {
+            const sb = supplierBalances[name];
+            const balance = sb.credit - sb.debit;
+            if (Math.abs(balance) >= 0.01) {
+                activeSuppliers.push({ name, balance });
+            }
+        }
+        activeSuppliers.sort((a, b) => a.name.localeCompare(b.name));
+
+        let html = '';
+        const formatLKR = (val) => 'Rs. ' + Math.floor(val).toLocaleString();
+
+        if (activeGL.length > 0) {
+            html += `<div class="ledger-section-title">ලෙජර් ගිණුම් (General Ledgers)</div>`;
+            html += activeGL.map(acc => `
+                <a href="javascript:void(0)" onclick="window.sidebar.openLedgerModal('GL', '${acc.code}', '${acc.name}')" class="ledger-sub-item">
+                    <span>📂 ${acc.code.replace('-01','')} - ${acc.name}</span>
+                    <span class="ledger-balance-badge" style="color: ${acc.balance >= 0 ? '#34d399' : '#f87171'};">${formatLKR(acc.balance)}</span>
+                </a>
+            `).join('');
+        }
+
+        if (activeCustomers.length > 0) {
+            html += `<div class="ledger-section-title" style="margin-top: 10px;">පාරිභෝගික ණය (Customers)</div>`;
+            html += activeCustomers.map(cust => `
+                <a href="javascript:void(0)" onclick="window.sidebar.openLedgerModal('CUSTOMER', 'debtor_${cust.name}', '${cust.name}')" class="ledger-sub-item">
+                    <span>👤 ${cust.name}</span>
+                    <span class="ledger-balance-badge" style="color: #f87171;">${formatLKR(cust.balance)}</span>
+                </a>
+            `).join('');
+        }
+
+        if (activeSuppliers.length > 0) {
+            html += `<div class="ledger-section-title" style="margin-top: 10px;">සැපයුම්කරුවන් (Suppliers)</div>`;
+            html += activeSuppliers.map(supp => `
+                <a href="javascript:void(0)" onclick="window.sidebar.openLedgerModal('SUPPLIER', 'creditor_${supp.name}', '${supp.name}')" class="ledger-sub-item">
+                    <span>🤝 ${supp.name}</span>
+                    <span class="ledger-balance-badge" style="color: #fde68a;">${formatLKR(supp.balance)}</span>
+                </a>
+            `).join('');
+        }
+
+        if (activeGL.length === 0 && activeCustomers.length === 0 && activeSuppliers.length === 0) {
+            html = `<div style="padding: 10px; font-size: 11px; color: rgba(255,255,255,0.4); text-align: center;">සක්‍රීය ලෙජරයන් කිසිවක් නැත. (No active ledgers)</div>`;
+        }
+
+        itemsContainer.innerHTML = html;
+    }
+
+    getFallbackGLName(code) {
+        const dict = {
+            '1-1010-01': 'CASH (ඇතැති මුදල්)',
+            '1-1020-01': 'BANK (බැංකු ශේෂය)',
+            '1-1030-01': 'Debtors (පාරිභෝගික ණය)',
+            '1-1040-01': 'Inventory (තොග වටිනාකම)',
+            '2-2010-01': 'Creditors (සැපයුම්කරුවන්ගේ ණය)',
+            '3-3010-01': 'Equity (ප්‍රාග්ධනය)',
+            '4-4010-01': 'Sales Revenue (විකුණුම්)',
+            '5-5010-01': 'Cost of Goods Sold (COGS)',
+            '5-5020-01': 'Expenses - Salaries',
+            '5-5030-01': 'Expenses - Rent',
+            '5-5040-01': 'Expenses - Utilities',
+            '5-5050-01': 'Expenses - Marketing',
+            '5-5060-01': 'Expenses - Other'
+        };
+        return dict[code] || 'General Ledger Account';
+    }
+
+    openLedgerModal(type, key, name) {
+        let modal = document.getElementById('universalLedgerAuditorModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'universalLedgerAuditorModal';
+            document.body.appendChild(modal);
+        }
+        
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+            <div style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; z-index: 1000000; font-family: 'Inter', sans-serif;">
+                <div style="background: white; border-radius: 24px; width: 90%; max-width: 850px; max-height: 85vh; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); border: 1px solid rgba(226, 232, 240, 0.8); display: flex; flex-direction: column;">
+                    <div style="padding: 20px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc;">
+                        <div>
+                            <h3 style="font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 800; color: #0f3b2c; margin: 0;">${name}</h3>
+                            <span style="font-size: 13px; color: #64748b; font-weight: 500;">Account Code / ID: ${key}</span>
+                        </div>
+                        <button onclick="document.getElementById('universalLedgerAuditorModal').style.display='none'" style="background: #f1f5f9; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; color: #475569; cursor: pointer; transition: all 0.2s;">වහන්න (Close)</button>
+                    </div>
+                    <div style="padding: 24px; overflow-y: auto; flex: 1;">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13.5px;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid #e2e8f0; background: #f8fafc;">
+                                    <th style="padding: 10px; color: #475569; font-weight: 700;">දිනය (Date)</th>
+                                    <th style="padding: 10px; color: #475569; font-weight: 700;">ගනුදෙනුව (Reference/Memo)</th>
+                                    <th style="padding: 10px; color: #475569; font-weight: 700; text-align: right;">Dr (+)</th>
+                                    <th style="padding: 10px; color: #475569; font-weight: 700; text-align: right;">Cr (-)</th>
+                                    <th style="padding: 10px; color: #475569; font-weight: 700; text-align: right;">ශේෂය (Balance)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ledgerModalTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const body = document.getElementById('ledgerModalTableBody');
+        const entries = this.cachedJournalEntries || [];
+        
+        const lines = [];
+        entries.forEach(entry => {
+            if (entry.isReversed || entry.reversalOf) return;
+            
+            const memo = entry.memo || '';
+            const ref = entry.ref || '';
+            let entryDate = null;
+            if (entry.date) {
+                entryDate = entry.date.toDate ? entry.date.toDate() : new Date(entry.date);
+            }
+            if (!entryDate || isNaN(entryDate.getTime())) {
+                if (entry.createdAt) {
+                    entryDate = entry.createdAt.toDate ? entry.createdAt.toDate() : new Date(entry.createdAt);
+                }
+            }
+            if (!entryDate || isNaN(entryDate.getTime())) {
+                entryDate = new Date();
+            }
+            
+            (entry.entries || []).forEach(row => {
+                const code = row.accountCode || row.accountId || '';
+                
+                let isMatch = false;
+                if (type === 'GL') {
+                    isMatch = (code === key);
+                } else if (type === 'CUSTOMER') {
+                    isMatch = code.startsWith('1-1030') && (memo.toLowerCase().includes(name.toLowerCase()) || ref.toLowerCase().includes(name.toLowerCase()));
+                } else if (type === 'SUPPLIER') {
+                    isMatch = code.startsWith('2-2010') && (memo.toLowerCase().includes(name.toLowerCase()) || ref.toLowerCase().includes(name.toLowerCase()));
+                }
+                
+                if (isMatch) {
+                    let dr = Number(row.debit) || 0;
+                    let cr = Number(row.credit) || 0;
+                    if (row.amount !== undefined && row.type !== undefined) {
+                        if (row.type === 'debit') dr = Number(row.amount) || 0;
+                        if (row.type === 'credit') cr = Number(row.amount) || 0;
+                    }
+                    lines.push({
+                        date: entryDate,
+                        ref: ref,
+                        memo: memo,
+                        debit: dr,
+                        credit: cr,
+                        code: code
+                    });
+                }
+            });
+        });
+        
+        lines.sort((a, b) => a.date - b.date);
+        
+        if (lines.length === 0) {
+            body.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 40px; color: #94a3b8;">කිසිදු ගනුදෙනුවක් සොයාගත නොහැක. (No transactions found.)</td></tr>`;
+            return;
+        }
+
+        const firstCode = lines[0].code;
+        const isDebitNormal = firstCode.startsWith('1') || firstCode.startsWith('5');
+        
+        let runningBalance = 0;
+        const formatLKR = (val) => 'Rs. ' + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        
+        body.innerHTML = lines.map(line => {
+            const dr = line.debit;
+            const cr = line.credit;
+            
+            if (isDebitNormal) {
+                runningBalance += (dr - cr);
+            } else {
+                runningBalance += (cr - dr);
+            }
+            
+            return `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px 10px;">${line.date.toLocaleDateString()}</td>
+                    <td style="padding: 12px 10px;">
+                        <div style="font-weight: 600; color: #1e293b;">${String(line.ref || '').startsWith('onboarding_') ? 'ආරම්භක සැකසුම (Setup Initialization)' : (line.ref || '-')}</div>
+                        <div style="font-size: 12px; color: #64748b;">${line.memo}</div>
+                    </td>
+                    <td style="padding: 12px 10px; text-align: right; color: #059669; font-weight: 600;">${dr > 0 ? formatLKR(dr) : '-'}</td>
+                    <td style="padding: 12px 10px; text-align: right; color: #ef4444; font-weight: 600;">${cr > 0 ? formatLKR(cr) : '-'}</td>
+                    <td style="padding: 12px 10px; text-align: right; font-weight: 700; color: #0f3b2c;">${formatLKR(runningBalance)}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+}
+
+function runPageTranslation() {
+    const isApp = sessionStorage.getItem('is_android_app') === 'true';
+    const bizType = localStorage.getItem('currentBusinessType') || '';
+    const isScrapSystem = bizType === 'scrap_collection_center' || window.location.pathname.includes('/scrap-');
+    const isRetailUrl = window.location.pathname.includes('/retail/') || 
+                        window.location.pathname.includes('pos.html') || 
+                        window.location.pathname.includes('purchases.html') || 
+                        window.location.pathname.includes('grn.html') || 
+                        window.location.pathname.includes('inventory.html') || 
+                        window.location.pathname.includes('receivables.html') || 
+                        window.location.pathname.includes('payables.html') ||
+                        window.location.pathname.includes('credit-aging.html') ||
+                        window.location.pathname.includes('workbench.html');
+    
+    // Retail system is 100% Pure International English; Scrap system retains full Sinhala support
+    const isRetailSystem = (bizType === 'retail' || isRetailUrl) && !isScrapSystem;
+    const lang = isScrapSystem ? (localStorage.getItem('preferredLanguage') || 'si') : (localStorage.getItem('preferredLanguage') || 'en');
+    
+    if (lang === 'si') {
+        const dict = {
+            // Sidebar & Common
+            "Dashboard": "Dashboard (ප්‍රධාන පුවරුව)",
+            "Point of Sale": "Point of Sale (විකුණුම් පර්යන්තය)",
+            "Stock purchases": "Stock purchases (මිලදී ගැනීම්)",
+            "Stock": "Stock (තොගය)",
+            "Customers": "Customers (පාරිභෝගිකයින්)",
+            "Finance": "Finance (මූල්‍ය)",
+            "Accounting": "Accounting (ගිණුම්කරණය)",
+            "Reports": "Reports (වාර්තා)",
+            "Settings": "Settings (සැකසුම්)",
+            "Debts to be received by us": "අපිට එන්න තියන ණය",
+            "Debts to be paid by us": "අපි ගෙවන්න තියන ණය",
+            "Expenses": "වියදම් (Expenses)",
+            "Ledger": "ලෙජර් ගිණුම් (Ledger)",
+            "Revenue": "ආදායම් විශ්ලේෂණය (Revenue)",
+            "Daily Transactions": "දෛනික ගනුදෙනු (Transactions)",
+            
+            // POS Page
+            "Cart": "මිලදී ගන්නා භාණ්ඩ ලැයිස්තුව (Cart)",
+            "Walk-in Customer": "සාමාන්‍ය පාරිභෝගිකයා",
+            "Select Customer": "පාරිභෝගිකයෙකු තෝරන්න",
+            "Subtotal": "එකතුව",
+            "Discount": "වට්ටම්",
+            "Tax": "බදු",
+            "Total": "මුළු එකතුව",
+            "Paid Amount": "ගෙවූ මුදල",
+            "Balance Due": "ණය ශේෂය",
+            "Payment Method": "ගෙවීම් ක්‍රමය",
+            "Cash": "Cash (අත්පිට මුදල්)",
+            "Card": "Card (කාඩ්පත්)",
+            "Credit": "Credit (ණය)",
+            "Complete Sale": "විකිණීම සම්පූර්ණ කරන්න",
+            "Recent Sales": "මෑතකදී සිදු කළ විකුණුම්",
+            "Change": "ඉතිරි මුදල",
+            "Total Items": "මුළු අයිතම ගණන",
+            "Search products...": "භාණ්ඩ සොයන්න...",
+            "Hold": "ප්‍රමාද කරන්න",
+            "Pay": "ගෙවන්න",
+            "Search by name or phone...": "නම හෝ දුරකථන අංකයෙන් සොයන්න...",
+            "Select a customer": "පාරිභෝගිකයෙකු තෝරන්න",
+            "Invoice No": "Invoice අංකය",
+            "Date": "දිනය",
+            "Action": "ක්‍රියාව",
+            
+            // Stock purchases Page
+            "Supplier Management": "සැපයුම්කරුවන් කළමනාකරණය",
+            "Add Supplier": "නව සැපයුම්කරුවෙක් එක් කරන්න",
+            "Total Suppliers": "මුළු සැපයුම්කරුවන්",
+            "Active Suppliers": "සක්‍රිය සැපයුම්කරුවන්",
+            "Total Purchases": "මුළු මිලදී ගැනීම්",
+            "Outstanding": "සැපයුම්කරුවන්ට ගෙවීමට ඇති ණය",
+            "All Suppliers": "සැපයුම්කරුවන් ලැයිස්තුව",
+            "Purchase History": "මිලදී ගැනීමේ ඉතිහාසය",
+            "Suppliers List": "සැපයුම්කරුවන්ගේ ලැයිස්තුව",
+            "Purchase Orders": "මිලදී ගැනීමේ ඇණවුම්",
+            "Add Purchase Order": "නව මිලදී ගැනීමේ ඇණවුම",
+            "PO Number": "PO අංකය",
+            "Supplier": "සැපයුම්කරු",
+            "Status": "තත්ත්වය",
+            "Pending": "ලැබීමට ඇති",
+            "Received": "ලැබී ඇත",
+            "Material": "භාණ්ඩය",
+            "Quantity": "ප්‍රමාණය",
+            "Unit Price": "ඒකක මිල",
+            "Material Name": "භාණ්ඩයේ නම",
+            "Unit": "ඒකකය",
+            "Notes": "සටහන්",
+            "Create Purchase Order": "මිලදී ගැනීමේ ඇණවුම සාදන්න",
+            
+            // Stock Page
+            "Inventory Management": "තොග කළමනාකරණය (Stock)",
+            "Stock Level": "වත්මන් තොගය",
+            "Low Stock Alerts": "අඩු තොග අනතුරු ඇඟවීම්",
+            "Total Value": "තොගයේ මුළු වටිනාකම",
+            "Total Items": "මුළු භාණ්ඩ වර්ග ගණන",
+            "Search Stock...": "තොගය පරීක්ෂා කරන්න...",
+            "Stock List": "භාණ්ඩ තොග ලැයිස්තුව",
+            "Item Name": "භාණ්ඩයේ නම",
+            "SKU": "කේතය (SKU)",
+            "Category": "වර්ගය",
+            "Stock Qty": "තොග ප්‍රමාණය",
+            "Cost Price": "ගැණුම් මිල",
+            "Selling Price": "විකුණුම් මිල",
+            "Alert Qty": "අවම තොගය",
+            "Add Item": "නව භාණ්ඩයක් එක් කරන්න",
+            "Edit Item": "භාණ්ඩය සංස්කරණය කරන්න",
+            "Delete Item": "භාණ්ඩය ඉවත් කරන්න",
+            
+            // Customers Page
+            "Universal Customers": "පාරිභෝගික කළමනාකරණය (Customers)",
+            "Total Customers": "මුළු පාරිභෝගිකයින්",
+            "Search Customers...": "පාරිභෝගිකයින් සොයන්න...",
+            "Contact Person": "සම්බන්ධීකරණ පුද්ගලයා",
+            "Email": "ඊමේල්",
+            "WhatsApp Link": "WhatsApp පණිවිඩය",
+            "Add Customer": "නව පාරිභෝගිකයෙක් එක් කරන්න",
+            
+            // Accounting Page
+            "Advanced Accounting Dashboard": "ගිණුම්කරණ පුවරුව (Accounting)",
+            "General Ledger": "ප්‍රධාන ලෙජරය",
+            "Trial Balance": "ශේෂ පත්‍රය (Trial Balance)",
+            "Balance Sheet": "ශේෂ පත්‍රය (Balance Sheet)",
+            "Profit & Loss": "ලාභ අලාභ ගිණුම (Profit & Loss)",
+            "Chart of Accounts": "ගිණුම් වර්ගීකරණය",
+            "Journal Entries": "දිනපොත් සටහන් (Journal)",
+            "Debit": "හර (Debit)",
+            "Credit": "බැර (Credit)",
+            "Net Income": "ශුද්ධ ලාභය",
+            "Revenue": "ආදායම",
+            "Expenses": "වියදම්",
+            "Assets": "වත්කම්",
+            "Liabilities": "වගකීම්",
+            "Equity": "හිමිකම්",
+            
+            // Reports Page
+            "Reports Dashboard": "වාර්තා පුවරුව (Reports Dashboard)",
+            "Sales Report": "විකුණුම් වාර්තාව",
+            "Product Sales History": "භාණ්ඩ අනුව විකුණුම් වාර්තාව",
+            "Purchase Report": "මිලදී ගැනීමේ වාර්තාව",
+            "Inventory Report": "තොග වාර්තාව",
+            "Profit Report": "ලාභ වාර්තාව",
+            "Generate Report": "වාර්තාව සකසන්න",
+            "Start Date": "ආරම්භක දිනය",
+            "End Date": "අවසාන දිනය",
+            "Export to Excel": "Excel ගොනුවක් ලෙස ලබාගන්න",
+            "Export to PDF": "PDF ගොනුවක් ලෙස ලබාගන්න",
+            
+            // Business Profile
+            "Business Profile": "ව්‍යාපාරික පැතිකඩ (Profile)",
+            "Owner Name": "හිමිකරුගේ නම",
+            "Business Name": "ව්‍යාපාරයේ නම",
+            "Email Address": "ඊමේල් ලිපිනය",
+            "Address": "ලිපිනය",
+            "Save Changes": "වෙනස්කම් සුරකින්න",
+            "Upload Logo": "ලාංඡනය උඩුගත කරන්න",
+
+            // Receivables & Payables Pages
+            "Receivables & Loans Given": "අපිට එන්න තියන ණය (Receivables & Loans Given)",
+            "Payables & Loans Received": "අපි ගෙවන්න තියන ණය (Payables & Loans Received)",
+            "Record Hand Loan Given": "අතමාරු ණයක් සටහන් කරන්න",
+            "Record Hand Loan Received": "අතමාරු ණයක් ලබාගන්න",
+            "Customer Outstandings": "මුළු පාරිභෝගික ණය (Customer Outstandings)",
+            "Hand Loans Given": "මුළු අතමාරු ණය (Hand Loans Given)",
+            "Total Receivables": "මුළු ලැබීමට ඇති ණය (Total Receivables)",
+            "Supplier Outstandings": "සැපයුම්කරුවන්ගේ ණය (Supplier Outstandings)",
+            "Hand Loans Received": "ලබාගත් අතමාරු ණය (Hand Loans Received)",
+            "Total Payables": "මුළු ගෙවීමට ඇති ණය (Total Payables)",
+            "Customer Debts Tab": "පාරිභෝගික ණය (Customer Debts)",
+            "Hand Loans Given Tab": "අතමාරු ණය දීම් (Hand Loans Given)",
+            "Supplier Debts Tab": "සැපයුම්කරුවන්ගේ ණය (Supplier Debts)",
+            "Hand Loans Received Tab": "ලබාගත් අතමාරු ණය (Hand Loans Received)",
+            "Customer Debts List Title": "පාරිභෝගික ණය ලැයිස්තුව",
+            "Supplier Debts List Title": "සැපයුම්කරුවන්ගේ ණය ඇණවුම් ලැයිස්තුව",
+            "Hand Loans Given List Title": "අප විසින් ලබා දුන් අතමාරු ණය ලැයිස්තුව",
+            "Hand Loans Received List Title": "ලබාගත් අතමාරු ණය ලැයිස්තුව",
+            "Invoice No": "Invoice No",
+            "PO No": "PO No",
+            "Customer Name": "පාරිභෝගිකයාගේ නම",
+            "Supplier Name": "සැපයුම්කරුගේ නම",
+            "Phone Number": "දුරකථන අංකය",
+            "Total Amount": "මුළු මුදල",
+            "Paid Amount": "ගෙවූ මුදල",
+            "Outstanding": "ණය මුදල",
+            "Due Date": "ගෙවිය යුතු දිනය",
+            "Actions": "ක්‍රියාකාරකම්",
+            "Date": "දිනය",
+            "Person Name": "පුද්ගලයාගේ නම",
+            "Description": "විස්තරය",
+            "Amount": "මුදල",
+            "Payment Method": "ගෙවීම් ක්‍රමය",
+            "Status": "තත්ත්වය",
+            "Receive Payment Button": "මුදල් ලබාගන්න",
+            "Pay Supplier Button": "මුදල් ගෙවන්න",
+            "Settle Loan Button": "ණය පියවන්න",
+            "Receive Payment Modal Title": "මුදල් අයකර ගැනීම (Receive Payment)",
+            "Pay Supplier Modal Title": "සැපයුම්කරුට මුදල් ගෙවීම (Pay Supplier)",
+            "Add Hand Loan Given Title": "අතමාරු ණයක් සටහන් කිරීම (Add Hand Loan Given)",
+            "Add Hand Loan Received Title": "අතමාරු ණයක් සටහන් කිරීම (Add Hand Loan Received)",
+            "Outstanding Balance": "ණය මුදල (Outstanding Balance)",
+            "Outstanding Amount": "ගෙවීමට ඇති මුදල (Outstanding Amount)",
+            "Amount Received": "ලැබුණු මුදල (Amount Received)",
+            "Amount Paid": "ගෙවන මුදල (Amount Paid)",
+            "Person Name Label": "පුද්ගලයාගේ නම (Person Name)",
+            "Amount Label": "මුදල (Amount Rs.)",
+            "Date Label": "දිනය (Date)",
+            "Payment Method Label": "ගෙවීම් ක්‍රමය (Payment Method)",
+            "Description Label": "විස්තරය (Description)",
+            "Cancel": "Cancel",
+            "Save Payment": "Save Payment",
+            "Settle Payment": "Settle Payment",
+            "Confirm & Save": "Confirm & Save",
+            "Unpaid Badge": "ණය පියවා නැත",
+            "Paid Badge": "පියවා ඇත",
+            "Loading...": "පූරණය වෙමින්...",
+            "No customer credit": "ලැබීමට ඇති පාරිභෝගික ණය කිසිවක් නැත. (No customer credit)",
+            "No hand loans given": "ලබාදුන් අතමාරු ණය කිසිවක් නැත. (No hand loans given)",
+            "No supplier payables": "ගෙවීමට ඇති සැපයුම්කරුවන්ගේ ණය කිසිවක් නැත. (No supplier payables)",
+            "No hand loans received": "ලබාගත් අතමාරු ණය කිසිවක් නැත. (No hand loans received)",
+            "Payment saved successfully!": "ගෙවීම සාර්ථකව සටහන් කරගන්නා ලදී!",
+            "Hand loan recorded successfully!": "අතමාරු ණය සාර්ථකව සටහන් කරන ලදී!",
+            "Hand loan settled successfully!": "අතමාරු ණය පියවීම සාර්ථකව සටහන් කරන ලදී!"
+        };
+
+        const translateNode = (node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const text = node.nodeValue.trim();
+                if (text && dict[text]) {
+                    node.nodeValue = dict[text];
+                }
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                if (node.hasAttribute('placeholder')) {
+                    const ph = node.getAttribute('placeholder');
+                    if (dict[ph]) node.setAttribute('placeholder', dict[ph]);
+                }
+                if (node.hasAttribute('data-i18n-title')) {
+                    const titleKey = node.getAttribute('data-i18n-title');
+                    if (dict[titleKey]) node.setAttribute('title', dict[titleKey]);
+                } else if (node.hasAttribute('title')) {
+                    const t = node.getAttribute('title');
+                    if (dict[t]) node.setAttribute('title', dict[t]);
+                }
+                if (node.tagName === 'INPUT' && (node.type === 'button' || node.type === 'submit')) {
+                    const val = node.value.trim();
+                    if (dict[val]) node.value = dict[val];
+                }
+                node.childNodes.forEach(translateNode);
+            }
+        };
+
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => {
+                    translateNode(node);
+                });
+            });
+        });
+
+        translateNode(document.body);
+
+        observer.observe(document.body, { childList: true, subtree: true });
+    } else if (isRetailSystem) {
+        const siToEnMap = [
+            [/\bපාරිභෝගිකයා\s*\(Customer\)/gi, "Customer"],
+            [/\bපාරිභෝගිකයා\b/gi, "Customer"],
+            [/\bනව ලියාපදිංචිය\b/gi, "Register Customer"],
+            [/\bනව පාරිභෝගිකයෙකු ලියාපදිංචි කිරීම\s*\(Register Customer\)/gi, "Register New Customer"],
+            [/\bනව පාරිභෝගිකයෙකු ලියාපදිංචි කිරීම\b/gi, "Register New Customer"],
+            [/\bනම\s*\(Full Name\)/gi, "Full Name"],
+            [/\bදුරකථන අංකය\s*\(Mobile Number\)/gi, "Mobile Number"],
+            [/\bමුළු ණය ශේෂය\b/gi, "Total Outstanding Debt"],
+            [/\bමුළු මිලදී ගැනීම්\b/gi, "Total Purchase Value"],
+            [/\bගනුදෙනු ඉතිහාසය\s*\(History\)/gi, "Transaction History"],
+            [/\bමිලදී ගැනීම් සහ ණය ගනුදෙනු\s*\(Log\)/gi, "Purchase & Credit Log"],
+            [/\bමුදල් ගෙවීම්\s*\(Cash Payment\)/gi, "Cash Payment"],
+            [/\bණය ගනුදෙනු\s*\(On Credit \/ Pay Later\)/gi, "On Credit / Pay Later"],
+            [/\bචෙක්පත් ගෙවීම්\s*\(Cheque Payment\)/gi, "Cheque Payment"],
+            [/\bබැංකු මාරු කිරීම්\s*\(Bank Transfer\)/gi, "Bank Transfer"],
+            [/\bකාඩ්පත් ගෙවීම්\s*\(Card Payment\)/gi, "Card Payment"],
+            [/\bප්‍රධාන පුවරුව\b/gi, "Dashboard"],
+            [/\bවිකුණුම් පර්යන්තය\b/gi, "Point of Sale"],
+            [/\bමිලදී ගැනීම්\b/gi, "Stock Purchases"],
+            [/\bතොගය\b/gi, "Stock / Inventory"],
+            [/\bපාරිභෝගිකයින්\b/gi, "Customers"],
+            [/\bමූල්‍ය\b/gi, "Finance"],
+            [/\bගිණුම්කරණය\b/gi, "Accounting"],
+            [/\bවාර්තා\b/gi, "Reports"],
+            [/\bසැකසුම්\b/gi, "Settings"],
+            [/\bආදායම් විශ්ලේෂණය\b/gi, "Revenue Analysis"],
+            [/\bඅපිට එන්න තියන ණය\b/gi, "Receivables"],
+            [/\bඅපි ගෙවන්න තියන ණය\b/gi, "Payables"],
+            [/\bදෛනික ගනුදෙනු\b/gi, "Daily Transactions"],
+            [/\bවියදම්\b/gi, "Expenses"],
+            [/\bලෙජර් ගිණුම්\b/gi, "Ledger Accounts"],
+            [/\bසාමාන්‍ය පාරිභෝගිකයා\b/gi, "Walk-in Customer"],
+            [/\bමුළු එකතුව\b/gi, "Total Amount"],
+            [/\bගෙවූ මුදල\b/gi, "Paid Amount"],
+            [/\bණය ශේෂය\b/gi, "Balance Due"],
+            [/\bගෙවීම් ක්‍රමය\b/gi, "Payment Method"],
+            [/\bඅත්පිට මුදල්\b/gi, "Cash"],
+            [/\bකාඩ්පත්\b/gi, "Card"],
+            [/\bඅවලංගු කරන්න\b/gi, "Cancel"],
+            [/\bතහවුරු කරන්න\b/gi, "Confirm"],
+            [/\bසාර්ථකයි\b/gi, "Success"],
+            [/\bදෝෂයක්\b/gi, "Error"]
+        ];
+
+        const purgeSinhala = (node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                let text = node.nodeValue;
+                if (text && /[\u0D80-\u0DFF]/.test(text)) {
+                    siToEnMap.forEach(([pattern, replacement]) => {
+                        text = text.replace(pattern, replacement);
+                    });
+                    // Fallback cleanup for any residual Sinhala characters
+                    node.nodeValue = text.replace(/[\u0D80-\u0DFF]+/g, '').trim();
+                }
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                ['placeholder', 'title', 'value', 'data-i18n-title'].forEach(attr => {
+                    if (node.hasAttribute(attr)) {
+                        let val = node.getAttribute(attr);
+                        if (val && /[\u0D80-\u0DFF]/.test(val)) {
+                            siToEnMap.forEach(([pattern, replacement]) => {
+                                val = val.replace(pattern, replacement);
+                            });
+                            node.setAttribute(attr, val.replace(/[\u0D80-\u0DFF]+/g, '').trim());
+                        }
+                    }
+                });
+                node.childNodes.forEach(purgeSinhala);
+            }
+        };
+
+        purgeSinhala(document.body);
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => purgeSinhala(node));
+            });
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
     }
 }
 
@@ -1743,7 +3445,31 @@ function bootstrapSidebarImmediate() {
     ensureMobileSidebarControls();
     preReserveSidebarSpace();
     window.sidebar = new Sidebar();
+    
+    // Call page translator
+    runPageTranslation();
 }
+
+// Global event delegation for sidebar dropdown menus (Loans, Finance, Settings)
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('#settingsDropdownToggle, #loansDropdownToggle, #financeDropdownToggle');
+    if (!btn) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    let ddId = '';
+    if (btn.id === 'settingsDropdownToggle') ddId = 'settingsDropdown';
+    else if (btn.id === 'loansDropdownToggle') ddId = 'loansDropdown';
+    else if (btn.id === 'financeDropdownToggle') ddId = 'financeDropdown';
+    
+    const dd = document.getElementById(ddId);
+    if (dd) {
+        dd.classList.toggle('open');
+        const marker = btn.lastElementChild;
+        if (marker) marker.textContent = dd.classList.contains('open') ? '▾' : '▸';
+    }
+});
 
 // Primary path: run immediately at script evaluation time.
 bootstrapSidebarImmediate();

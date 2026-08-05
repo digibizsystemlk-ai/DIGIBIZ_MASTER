@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <link rel="manifest" href="/modules/core/mobile-hand-loans-manifest.json">
+    <meta name="theme-color" content="#0f766e">
+    <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', async function() {
+            try {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                for (let reg of regs) {
+                    if (reg.active && reg.active.scriptURL.includes('/sw.js')) {
+                        await reg.unregister();
+                        console.log('Unregistered root sw.js');
+                    }
+                }
+                await navigator.serviceWorker.register('/modules/core/sw-hand-loans.js?v=1', { scope: '/modules/core/' });
+                console.log('Registered dedicated sw-hand-loans.js');
+            } catch (err) { console.log('SW setup error:', err); }
+        });
+    }
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Hand Loans — Digibiz</title>
+    <meta name="description" content="සරල දුරකථන අත්තිකාරම් ණය (Hand Loans) සටහන් පිටුව">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/scrap-vba-core.js?v=1"></script>
+    <style>
+        body { font-family: Inter, Segoe UI, sans-serif; background: #f1f5f9; color: #0f172a; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        .header-bar { background: #0f766e; color: #fff; padding: 16px 20px; text-align: center; font-size: 18px; font-weight: 700; box-shadow: 0 4px 12px rgba(15,118,110,0.15); display: flex; justify-content: space-between; align-items: center; }
+        .header-title { margin: 0; font-size: 18px; font-weight: 700; }
+        .status-badge { background: #14532d; color: #fff; font-size: 10px; font-weight: 700; padding: 4px 8px; border-radius: 12px; text-transform: uppercase; }
+        .offline-badge { background: #f59e0b; display: none; }
+        .install-badge { background: #2563eb; color: #fff; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 12px; border: none; cursor: pointer; display: none; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
+        .container { padding: 20px; max-width: 500px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 20px; padding: 24px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01); border: 1px solid #e2e8f0; margin-bottom: 20px; }
+        
+        /* Passcode Screen */
+        #passcodeScreen { display: block; text-align: center; padding-top: 40px; }
+        .lock-icon { font-size: 48px; margin-bottom: 16px; }
+        .passcode-title { font-size: 22px; font-weight: 700; color: #0f766e; margin-bottom: 8px; }
+        .passcode-sub { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+        .passcode-input { width: 180px; font-size: 28px; letter-spacing: 12px; text-align: center; padding: 12px; border: 2px solid #cbd5e1; border-radius: 16px; font-weight: 800; color: #0f766e; margin-bottom: 20px; background: #f8fafc; transition: all 0.2s; }
+        .passcode-input:focus { border-color: #0f766e; outline: none; box-shadow: 0 0 0 4px rgba(15,118,110,0.1); background: #fff; }
+        .passcode-error { color: #ef4444; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
+        .btn-unlock { background: #0f766e; color: #fff; border: none; padding: 16px 32px; border-radius: 16px; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; max-width: 220px; box-shadow: 0 4px 12px rgba(15,118,110,0.2); transition: all 0.2s; }
+        .btn-unlock:active { transform: scale(0.97); }
+
+        /* Main Screen */
+        #appScreen { display: none; }
+        
+        /* Mobile Tabs */
+        .mobile-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        .m-tab { padding: 14px; text-align: center; background: #fff; border: 2px solid #e2e8f0; border-radius: 16px; font-size: 15px; font-weight: 700; color: #64748b; cursor: pointer; transition: all 0.2s; }
+        .m-tab.active { background: #0f766e; color: #fff; border-color: #0f766e; box-shadow: 0 4px 12px rgba(15,118,110,0.15); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        label { display: block; font-size: 12px; font-weight: 700; color: #475569; margin-top: 16px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+        input[type="number"], input[type="text"], select, input[type="date"] { width: 100%; padding: 16px; border: 2px solid #cbd5e1; border-radius: 16px; box-sizing: border-box; font-size: 16px; font-weight: 600; color: #0f172a; background: #f8fafc; transition: all 0.2s; }
+        input:focus, select:focus { border-color: #0f766e; background: #fff; outline: none; box-shadow: 0 0 0 4px rgba(15,118,110,0.1); }
+        
+        .btn-submit { background: #0f766e; color: #fff; border: none; padding: 18px 24px; border-radius: 16px; font-size: 17px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 28px; box-shadow: 0 6px 20px rgba(15,118,110,0.25); transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-submit:active { transform: scale(0.97); box-shadow: 0 3px 10px rgba(15,118,110,0.15); }
+        .btn-receive { background: #b91c1c; box-shadow: 0 6px 20px rgba(185,28,28,0.25); }
+        .btn-receive:active { box-shadow: 0 3px 10px rgba(185,28,28,0.15); }
+        .btn-loading { opacity: 0.7; pointer-events: none; background: #64748b !important; }
+
+        /* Toast */
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #0f766e; color: #fff; padding: 14px 28px; border-radius: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); display: none; z-index: 10000; font-size: 15px; font-weight: 700; animation: slideUp 0.3s ease-out; white-space: nowrap; }
+        @keyframes slideUp { from { transform: translate(-50%, 100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+        /* Summary Boxes */
+        .summary-box { padding: 16px; border-radius: 16px; margin-bottom: 20px; border: 2px solid #e2e8f0; }
+        .summary-box.given { background: #f0fdf4; border-color: #dcfce7; }
+        .summary-box.recv { background: #fef2f2; border-color: #fee2e2; }
+        .summary-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-bottom: 4px; }
+        .summary-val { font-size: 24px; font-weight: 900; }
+        
+        .bal-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; background: #f8fafc; border-radius: 14px; margin-bottom: 10px; border: 1px solid #e2e8f0; }
+        .bal-name { font-weight: 700; font-size: 15px; color: #0f172a; }
+        .bal-amount { font-weight: 800; font-size: 16px; }
+        .btn-settle { background: #fff; color: #0f766e; border: 2px solid #0f766e; padding: 6px 14px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; margin-left: 10px; }
+        .btn-settle-recv { color: #b91c1c; border-color: #b91c1c; }
+        .empty-text { font-size: 13px; color: #64748b; text-align: center; padding: 20px 0; }
+
+        /* Settlement Modal */
+        .modal-ov { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15,23,42,0.6); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(3px); }
+        .modal-card { background: #fff; padding: 24px; border-radius: 20px; width: 90%; max-width: 360px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+        .modal-card h3 { margin: 0 0 14px; font-size: 18px; color: #0f172a; }
+        .modal-body { display: flex; flex-direction: column; gap: 12px; }
+        .modal-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .btn-ghost { background: #f1f5f9; color: #475569; border: none; cursor: pointer; padding: 12px 20px; border-radius: 12px; font-weight: 600; }
+        .btn-modal-primary { background: #0f766e; color: #fff; border: none; cursor: pointer; padding: 12px 20px; border-radius: 12px; font-weight: 600; }
+    </style>
+</head>
+<body>
+
+<div class="header-bar">
+    <div class="header-title">🤝 Mobile Hand Loans</div>
+    <div>
+        <button id="installAppBtn" class="status-badge install-badge" onclick="installApp()">📲 Install App</button>
+        <div id="statusBadge" class="status-badge">Online</div>
+        <div id="offlineBadge" class="status-badge offline-badge">Offline Mode</div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<div class="container">
+    <!-- Passcode Screen -->
+    <div id="passcodeScreen">
+        <div class="lock-icon">🔒</div>
+        <div class="passcode-title">මුරපදය ඇතුළත් කරන්න</div>
+        <div class="passcode-sub">මෙම පිටුවට පිවිසීමට PIN අංකය (Passcode) ඇතුළත් කරන්න.</div>
+        <input type="password" id="passcodeInput" class="passcode-input" pattern="[0-9]*" inputmode="numeric" maxlength="4" placeholder="••••">
+        <div id="passcodeError" class="passcode-error">❌ මුරපදය වැරදියි! නැවත උත්සාහ කරන්න.</div>
+        <button id="unlockBtn" class="btn-unlock">ඇතුළු වන්න (Unlock)</button>
+    </div>
+
+    <!-- Main Screen -->
+    <div id="appScreen">
+        <div class="mobile-tabs">
+            <div class="m-tab active" onclick="switchTab('issue')">ණය ලබාදීම (Give)</div>
+            <div class="m-tab" onclick="switchTab('receive')">ණය ලබාගැනීම (Receive)</div>
+        </div>
+
+        <!-- Issue Loan Tab -->
+        <div id="tab-issue" class="tab-content active">
+            <div class="card">
+                <div style="font-size: 18px; font-weight: 800; color: #0f766e; margin-bottom: 6px;">නව ණයක් ලබාදීම (Give Loan)</div>
+                <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">පාරිභෝගිකයා තෝරා ලබාදෙන මුදල ඇතුළත් කරන්න.</div>
+                
+                <label for="customerName">පාරිභෝගිකයා (Customer)</label>
+                <input type="text" id="customerName" list="customerList" placeholder="පාරිභෝගිකයා තෝරන්න">
+                <datalist id="customerList"></datalist>
+
+                <label for="loanAmount">මුදල (Rs)</label>
+                <input type="number" id="loanAmount" step="0.01" min="0" placeholder="0.00" inputmode="decimal">
+
+                <label for="issueMethod">ගෙවීමේ ක්‍රමය (Method)</label>
+                <select id="issueMethod">
+                    <option value="CASH">Cash (අතින් ගෙවීම)</option>
+                    <option value="BANK">Bank Transfer (බැංකුව හරහා)</option>
+                </select>
+
+                <label for="issueDate">දිනය (Date)</label>
+                <input type="date" id="issueDate">
+
+                <label for="loanNote">සටහන (Note)</label>
+                <input type="text" id="loanNote" placeholder="අතිරේක සටහනක් ඇත්නම් ලියන්න">
+
+                <button type="button" id="issueLoanBtn" class="btn-submit" onclick="saveLoan('GIVEN')">➕ ණය ලබාදෙන්න (Issue Loan)</button>
+            </div>
+
+            <!-- Active Given Loans List -->
+            <div class="card">
+                <div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 14px;">🟢 ලබාදුන් සක්‍රීය ණය (Loans Given)</div>
+                <div class="summary-box given">
+                    <div class="summary-title" style="color: #166534;">Total Loans Given (Asset)</div>
+                    <div id="loanGivenTotal" class="summary-val" style="color: #14532d;">Rs 0.00</div>
+                </div>
+                <div id="activeGivenList">
+                    <div class="empty-text">ලබාදුන් සක්‍රීය ණය නොමැත.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Receive Loan Tab -->
+        <div id="tab-receive" class="tab-content">
+            <div class="card" style="border-top: 4px solid #b91c1c;">
+                <div style="font-size: 18px; font-weight: 800; color: #b91c1c; margin-bottom: 6px;">නව ණයක් ලබාගැනීම (Receive Loan)</div>
+                <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">ණය හිමියා තෝරා ලබාගත් මුදල ඇතුළත් කරන්න.</div>
+                
+                <label for="receiveCustomerName">ණය හිමියා (Creditor)</label>
+                <input type="text" id="receiveCustomerName" list="customerListReceive" placeholder="ණය හිමියා තෝරන්න">
+                <datalist id="customerListReceive"></datalist>
+
+                <label for="receiveAmount">ලැබුණු මුදල (Rs)</label>
+                <input type="number" id="receiveAmount" step="0.01" min="0" placeholder="0.00" inputmode="decimal">
+
+                <label for="receiveMethod">ලැබුණු ක්‍රමය (Method)</label>
+                <select id="receiveMethod">
+                    <option value="CASH">Cash (අතින් ලැබුණි)</option>
+                    <option value="BANK">Bank Deposit (බැංකුවට ලැබුණි)</option>
+                </select>
+
+                <label for="receiveDate">දිනය (Date)</label>
+                <input type="date" id="receiveDate">
+
+                <label for="receiveNote">සටහන (Note)</label>
+                <input type="text" id="receiveNote" placeholder="අතිරේක සටහනක් ඇත්නම් ලියන්න">
+
+                <button type="button" id="receiveLoanBtn" class="btn-submit btn-receive" onclick="saveLoan('RECEIVED')">📥 ණය ලබාගන්න (Receive Loan)</button>
+            </div>
+
+            <!-- Active Received Loans List -->
+            <div class="card">
+                <div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 14px;">🔴 ලබාගත් සක්‍රීය ණය (Loans Received)</div>
+                <div class="summary-box recv">
+                    <div class="summary-title" style="color: #991b1b;">Total Loans Received (Liability)</div>
+                    <div id="loanRecvTotal" class="summary-val" style="color: #7f1d1d;">Rs 0.00</div>
+                </div>
+                <div id="activeRecvList">
+                    <div class="empty-text">ලබාගත් සක්‍රීය ණය නොමැත.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Settlement Modal -->
+<div id="settleModal" class="modal-ov">
+    <div class="modal-card">
+        <h3 id="settleCustomerName">ණය පියවීම</h3>
+        <div class="modal-body">
+            <label for="settleAmount">පියවන මුදල (Rs)</label>
+            <input id="settleAmount" type="number" step="0.01" placeholder="0.00" inputmode="decimal">
+            
+            <label for="settleMethod">පියවන ක්‍රමය (Method)</label>
+            <select id="settleMethod">
+                <option value="CASH">Cash (අතින් ගෙවීම)</option>
+                <option value="BANK">Bank Transfer (බැංකුව හරහා)</option>
+            </select>
+        </div>
+        <div class="modal-foot">
+            <button class="btn-ghost" onclick="closeSettleModal()">අවලංගු කරන්න</button>
+            <button class="btn-modal-primary" id="confirmSettleBtn">පියවීම තහවුරු කරන්න</button>
+        </div>
+    </div>
+</div>
+
+<script>
+window.SCRAP_BUSINESS_ID = '';
+let registeredByName = {};
+
+// Double Entry Setup
+const GL_CASH = { accountCode:'1-1010-01', accountName:'Cash - Main' };
+const GL_BANK = { accountCode:'1-1020-01', accountName:'Bank - Current Account' };
+const GL_HAND_AR = { accountCode:'1-1030-10', accountName:'A/R — Hand loans (given)' };
+const GL_HAND_AP = { accountCode:'2-2010-10', accountName:'A/P — Hand loans (received)' };
+
+// DOM Setup
+const passcodeScreen = document.getElementById('passcodeScreen');
+const appScreen = document.getElementById('appScreen');
+const passcodeInput = document.getElementById('passcodeInput');
+const unlockBtn = document.getElementById('unlockBtn');
+const passcodeError = document.getElementById('passcodeError');
+
+if (sessionStorage.getItem('passcodeUnlocked') === 'true') {
+    passcodeScreen.style.display = 'none';
+    appScreen.style.display = 'block';
+} else {
+    passcodeScreen.style.display = 'block';
+    appScreen.style.display = 'none';
+    if (passcodeInput) passcodeInput.focus();
+}
+
+// Offline Detection
+function updateOnlineStatus() {
+    if (navigator.onLine) {
+        document.getElementById('statusBadge').style.display = 'inline-block';
+        document.getElementById('offlineBadge').style.display = 'none';
+    } else {
+        document.getElementById('statusBadge').style.display = 'none';
+        document.getElementById('offlineBadge').style.display = 'inline-block';
+    }
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
+
+// Firestore Persistence
+try {
+    if (typeof db !== 'undefined') {
+        db.enablePersistence({ experimentalTabSynchronization: true })
+            .then(() => console.log("🟢 Firestore Persistence enabled"))
+            .catch(err => console.warn("⚠️ Firestore persistence warning:", err));
+    }
+} catch (persistErr) { console.warn("Persistence error:", persistErr); }
+
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function showToast(m) {
+    const t = document.getElementById('toast');
+    t.textContent = m;
+    t.style.display = 'block';
+    setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+function switchTab(t) {
+    document.querySelectorAll('.m-tab').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    
+    if (t === 'issue') {
+        document.querySelector('.m-tab[onclick="switchTab(\'issue\')"]').classList.add('active');
+        document.getElementById('tab-issue').classList.add('active');
+    } else {
+        document.querySelector('.m-tab[onclick="switchTab(\'receive\')"]').classList.add('active');
+        document.getElementById('tab-receive').classList.add('active');
+    }
+}
+
+// Load Customers Autocomplete
+async function loadCustomers() {
+    if (!window.SCRAP_BUSINESS_ID) return;
+    try {
+        const snap = await db.collection('customers')
+            .where('businessId', '==', window.SCRAP_BUSINESS_ID)
+            .limit(1000)
+            .get();
+
+        const listIssue = document.getElementById('customerList');
+        const listReceive = document.getElementById('customerListReceive');
+        registeredByName = {};
+        
+        const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() || {}) }))
+            .filter((r) => r.archived !== true && r.isActive !== false);
+
+        const optionsHtml = rows.map((r) => {
+            const name = String(r.fullName || r.name || '').trim();
+            if (!name) return '';
+            registeredByName[name.toLowerCase()] = r;
+            registeredByName[name] = r;
+            return `<option value="${name.replace(/\"/g, '&quot;')}">`;
+        }).join('');
+
+        if (listIssue) listIssue.innerHTML = optionsHtml;
+        if (listReceive) listReceive.innerHTML = optionsHtml;
+    } catch (e) { console.error("loadCustomers error:", e); }
+}
+
+async function loadActiveLoans() {
+    if (!window.SCRAP_BUSINESS_ID) return;
+    try {
+        const snap = await db.collection('hand_loans')
+            .where('businessId', '==', window.SCRAP_BUSINESS_ID)
+            .limit(600)
+            .get();
+            
+        let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        const given = rows.filter(r => r.type === 'GIVEN' && r.active !== false && Number(r.balance || 0) > 0.01)
+            .sort((a,b) => String(a.customerName || '').localeCompare(String(b.customerName || '')));
+        const recv = rows.filter(r => r.type === 'RECEIVED' && r.active !== false && Number(r.balance || 0) > 0.01)
+            .sort((a,b) => String(a.customerName || '').localeCompare(String(b.customerName || '')));
+            
+        const totalGiven = given.reduce((s, r) => s + (Number(r.balance) || 0), 0);
+        const totalRecv = recv.reduce((s, r) => s + (Number(r.balance) || 0), 0);
+        
+        document.getElementById('loanGivenTotal').textContent = fmt(totalGiven);
+        document.getElementById('loanRecvTotal').textContent = fmt(totalRecv);
+        
+        const listGivenEl = document.getElementById('activeGivenList');
+        if (given.length > 0) {
+            listGivenEl.innerHTML = given.map(r => `
+                <div class="bal-item">
+                    <div>
+                        <div class="bal-name">${r.customerName}</div>
+                        <div style="font-size:11px; color:#64748b; margin-top:2px;">ක්‍රමය: ${r.payMethod || r.lastMethod || 'CASH'} | ${r.date || ''}</div>
+                    </div>
+                    <div style="display:flex; align-items:center;">
+                        <span class="bal-amount" style="color:#0f766e;">${fmt(r.balance)}</span>
+                        <button class="btn-settle" onclick="openSettleModal('${r.id}', '${r.customerName.replace(/'/g, "\\'")}', '${r.type}', ${r.balance}, '${r.customerMobile}')">Settle</button>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            listGivenEl.innerHTML = '<div class="empty-text">ලබාදුන් සක්‍රීය ණය නොමැත.</div>';
+        }
+        
+        const listRecvEl = document.getElementById('activeRecvList');
+        if (recv.length > 0) {
+            listRecvEl.innerHTML = recv.map(r => `
+                <div class="bal-item">
+                    <div>
+                        <div class="bal-name">${r.customerName}</div>
+                        <div style="font-size:11px; color:#64748b; margin-top:2px;">ක්‍රමය: ${r.payMethod || r.lastMethod || 'CASH'} | ${r.date || ''}</div>
+                    </div>
+                    <div style="display:flex; align-items:center;">
+                        <span class="bal-amount" style="color:#b91c1c;">${fmt(r.balance)}</span>
+                        <button class="btn-settle btn-settle-recv" onclick="openSettleModal('${r.id}', '${r.customerName.replace(/'/g, "\\'")}', '${r.type}', ${r.balance}, '${r.customerMobile}')">Settle</button>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            listRecvEl.innerHTML = '<div class="empty-text">ලබාගත් සක්‍රීය ණය නොමැත.</div>';
+        }
+    } catch(e) {
+        console.warn('Could not fetch active loans:', e);
+    }
+}
+
+// Passcode verify
+function verifyPasscode() {
+    if (passcodeInput.value === '1977') {
+        sessionStorage.setItem('passcodeUnlocked', 'true');
+        passcodeScreen.style.display = 'none';
+        appScreen.style.display = 'block';
+        if (window.SCRAP_BUSINESS_ID) {
+            loadCustomers();
+            loadActiveLoans();
+        }
+    } else {
+        passcodeError.style.display = 'block';
+        passcodeInput.value = '';
+        passcodeInput.focus();
+    }
+}
+
+unlockBtn.addEventListener('click', verifyPasscode);
+passcodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') verifyPasscode();
+});
+
+// Enqueue SMS Notice
+async function enqueueSms(mobile, message){
+  try {
+    if (!mobile) return { ok:false, skipped:'no_mobile' };
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.enqueuePendingSms === 'function') {
+      return await window.scrapVbaCore.enqueuePendingSms(window.SCRAP_BUSINESS_ID, mobile, message);
+    }
+    const id = `handloan_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+    await db.collection('pending_sms').doc(id).set({
+      businessId: window.SCRAP_BUSINESS_ID,
+      mobile,
+      message,
+      status:'pending',
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    return { ok:true, id };
+  } catch (e) {
+    return { ok:false, skipped:'send_error', error: String(e?.message || e || 'unknown') };
+  }
+}
+
+// Save Hand Loan
+async function saveLoan(type) {
+    const isIssue = type === 'GIVEN';
+    const inputId = isIssue ? 'customerName' : 'receiveCustomerName';
+    const amountId = isIssue ? 'loanAmount' : 'receiveAmount';
+    const methodId = isIssue ? 'issueMethod' : 'receiveMethod';
+    const dateId = isIssue ? 'issueDate' : 'receiveDate';
+    const noteId = isIssue ? 'loanNote' : 'receiveNote';
+
+    const nameInput = document.getElementById(inputId).value.trim();
+    const amount = Number(document.getElementById(amountId).value) || 0;
+    const payMethod = document.getElementById(methodId).value;
+    const date = document.getElementById(dateId).value;
+    const userNote = document.getElementById(noteId).value.trim();
+    const note = `[Mobile] ${userNote}`.trim();
+
+    if (!nameInput || amount <= 0 || !date) {
+        return alert('පාරිභෝගිකයා, මුදල සහ දිනය ඇතුළත් කිරීම අත්‍යවශ්‍ය වේ.');
+    }
+
+    const reg = registeredByName[nameInput.toLowerCase()] || registeredByName[nameInput];
+    const cid = reg ? reg.id : nameInput;
+    const customerName = reg ? (reg.fullName || reg.name) : nameInput;
+    const customerMobile = reg ? String(reg.mobile || reg.phone || '').trim() : '';
+
+    if (!confirm(`ණය සුරැකීම තහවුරු කරන්න?\nවර්ගය: ${type}\nපාරිභෝගිකයා: ${customerName}\nමුදල: Rs.${amount.toFixed(2)}`)) return;
+
+    const btnId = isIssue ? 'issueLoanBtn' : 'receiveLoanBtn';
+    const btn = document.getElementById(btnId);
+    const origText = btn.innerHTML;
+    btn.innerHTML = '⏳ සුරකිමින්...';
+    btn.classList.add('btn-loading');
+
+    try {
+        const existingSnap = await db.collection('hand_loans')
+            .where('businessId', '==', window.SCRAP_BUSINESS_ID)
+            .where('customerId', '==', cid)
+            .where('type', '==', type)
+            .where('active', '==', true)
+            .get();
+
+        let loanId;
+        let newTotal = amount;
+        let isTopUp = false;
+
+        if (!existingSnap.empty) {
+            const exDoc = existingSnap.docs[0];
+            const prevBal = Number(exDoc.data().balance || 0);
+            newTotal = prevBal + amount;
+            isTopUp = true;
+            await exDoc.ref.update({ balance: newTotal, lastMethod: payMethod, updatedAt: new Date() });
+            loanId = exDoc.id;
+        } else {
+            const loanRef = await db.collection('hand_loans').add({
+                businessId: window.SCRAP_BUSINESS_ID,
+                type,
+                customerId: cid,
+                customerName,
+                customerMobile,
+                balance: amount,
+                payMethod,
+                date,
+                createdAt: new Date(),
+                active: true
+            });
+            loanId = loanRef.id;
+        }
+
+        const GL_PAY = payMethod === 'BANK' ? GL_BANK : GL_CASH;
+        
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+            const desc = isIssue 
+                ? `${isTopUp ? 'Additional ' : ''}Hand loan given - ${customerName} (${payMethod}) [Mobile]`
+                : `${isTopUp ? 'Additional ' : ''}Hand loan received - ${customerName} (${payMethod}) [Mobile]`;
+            const entries = isIssue
+                ? [{...GL_HAND_AR, debit: amount, credit: 0}, {...GL_PAY, debit: 0, credit: amount}]
+                : [{...GL_PAY, debit: amount, credit: 0}, {...GL_HAND_AP, debit: 0, credit: amount}];
+            
+            await window.scrapVbaCore.postJournalEntry(window.SCRAP_BUSINESS_ID, {
+                description: desc,
+                reference: loanId,
+                referenceType: isIssue ? 'HAND_LOAN_GIVEN' : 'HAND_LOAN_RECEIVED',
+                date: new Date().toISOString(),
+                entries
+            });
+        }
+
+        await db.collection('hand_loan_history').add({
+            businessId: window.SCRAP_BUSINESS_ID,
+            loanId,
+            type,
+            customerName,
+            date: new Date().toISOString(),
+            amount: amount,
+            note: `${isTopUp ? 'Additional ' : ''}Hand loan issued - ${payMethod} [Mobile]`,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Send SMS
+        let msg = "";
+        if (type === 'GIVEN') {
+            msg = `Hand updated. Due: Rs.${newTotal.toFixed(0)}\nLink: https://digibiz-sys.web.app/l/${loanId} `;
+        } else {
+            msg = `Hand updated. Payable: Rs.${newTotal.toFixed(0)}`;
+        }
+        await enqueueSms(customerMobile, msg);
+
+        showToast('✅ ගනුදෙනුව සාර්ථකව සුරකින ලදී!');
+        
+        document.getElementById(amountId).value = '';
+        document.getElementById(inputId).value = '';
+        document.getElementById(noteId).value = '';
+        
+        await loadActiveLoans();
+    } catch(err) {
+        alert('දෝෂයක් සිදු විය: ' + err.message);
+    } finally {
+        btn.innerHTML = origText;
+        btn.classList.remove('btn-loading');
+    }
+}
+
+// Settlement Modal Logic
+let currentSettleId = null;
+let currentSettleType = null;
+let currentSettleMobile = "";
+
+window.openSettleModal = function(id, name, type, bal, mobile) {
+    currentSettleId = id;
+    currentSettleType = type;
+    currentSettleMobile = mobile;
+    
+    document.getElementById('settleCustomerName').textContent = `ණය පියවීම: ${name}`;
+    document.getElementById('settleAmount').value = Number(bal).toFixed(2);
+    document.getElementById('settleModal').style.display = 'flex';
+}
+
+window.closeSettleModal = function() {
+    document.getElementById('settleModal').style.display = 'none';
+}
+
+document.getElementById('confirmSettleBtn').addEventListener('click', async () => {
+    const pay = Number(document.getElementById('settleAmount').value) || 0;
+    if (pay <= 0) return alert('පියවන මුදල නිවැරදිව ඇතුළත් කරන්න.');
+    const method = document.getElementById('settleMethod').value;
+    const GL_PAY = method === 'BANK' ? GL_BANK : GL_CASH;
+    
+    const btn = document.getElementById('confirmSettleBtn');
+    const origText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ ක්‍රියාත්මක වේ...';
+    
+    try {
+        const ref = db.collection('hand_loans').doc(currentSettleId);
+        const snap = await ref.get();
+        if (!snap.exists) throw new Error('ණය වාර්තාව හමු නොවීය.');
+        
+        const r = snap.data() || {};
+        const cur = Number(r.balance || 0);
+        const applied = Math.min(cur, pay);
+        const next = Math.max(0, cur - applied);
+        
+        if (applied <= 0) throw new Error('Already settled');
+        
+        const patch = { balance: next, active: next > 0.0001, updatedAt: new Date() };
+        await ref.set(patch, { merge: true });
+        
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+            const desc = r.type === 'GIVEN'
+                ? `Hand loan received back - ${r.customerName||'-'} (${method}) [Mobile]`
+                : `Hand loan paid back - ${r.customerName||'-'} (${method}) [Mobile]`;
+            const entries = r.type === 'GIVEN'
+                ? [{...GL_PAY, debit: applied, credit: 0}, {...GL_HAND_AR, debit: 0, credit: applied}]
+                : [{...GL_HAND_AP, debit: applied, credit: 0}, {...GL_PAY, debit: 0, credit: applied}];
+            
+            await window.scrapVbaCore.postJournalEntry(window.SCRAP_BUSINESS_ID, {
+                description: desc,
+                reference: currentSettleId,
+                referenceType: r.type === 'GIVEN' ? 'HAND_LOAN_GIVEN_SETTLE' : 'HAND_LOAN_RECEIVED_SETTLE',
+                date: new Date().toISOString(),
+                entries
+            });
+        }
+        
+        await db.collection('hand_loan_history').add({
+            businessId: window.SCRAP_BUSINESS_ID,
+            loanId: currentSettleId,
+            type: r.type,
+            customerName: r.customerName || '-',
+            date: new Date().toISOString(),
+            amount: -applied,
+            note: `Hand loan settled - ${method} [Mobile]`,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        const mobile = currentSettleMobile || r.customerMobile || '';
+        let msg = "";
+        if (r.type === 'GIVEN') {
+            if (next > 0.0001) {
+                msg = `Hand updated. Due: Rs.${next.toFixed(0)}\nLink: https://digibiz-sys.web.app/l/${currentSettleId} `;
+            } else {
+                msg = `Hand updated. Your balance is now zero. Fully settled. `;
+            }
+        } else {
+            msg = `Hand updated. Payable: Rs.${next.toFixed(0)}`;
+        }
+        await enqueueSms(mobile, msg);
+        
+        showToast('✅ ණය පියවීම සාර්ථකව සිදු කරන ලදී!');
+        closeSettleModal();
+        await loadActiveLoans();
+    } catch(err) {
+        alert('දෝෂයක් සිදු විය: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origText;
+    }
+});
+
+// Auth Listener
+firebase.auth().onAuthStateChanged(async (user) => {
+    if (!user) {
+        window.location.href = '/';
+        return;
+    }
+    
+    let businessId = user.uid;
+    try {
+        if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+            const ctx = await window.dashboardCore.getContext(user);
+            businessId = String((ctx && ctx.businessId) || user.uid);
+        }
+    } catch (e) { console.warn('Business ID fetch error:', e); }
+    
+    window.SCRAP_BUSINESS_ID = businessId;
+    document.getElementById('issueDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('receiveDate').value = new Date().toISOString().slice(0, 10);
+
+    if (sessionStorage.getItem('passcodeUnlocked') === 'true') {
+        loadCustomers();
+        loadActiveLoans();
+    }
+});
+
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const installBtn = document.getElementById('installAppBtn');
+    if (installBtn) installBtn.style.display = 'inline-block';
+});
+
+window.installApp = function() {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((choiceResult) => {
+        deferredPrompt = null;
+        document.getElementById('installAppBtn').style.display = 'none';
+    });
+}
+</script>
+</body>
+</html>

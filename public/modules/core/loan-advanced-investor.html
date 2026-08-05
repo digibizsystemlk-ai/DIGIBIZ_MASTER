@@ -11,12 +11,14 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="/core/firebase-init.js?v=2"></script>
     <script src="/core/loan-zero-cleanup.js?v=1"></script>
     <script src="/core/loan-sms-notice.js?v=1"></script>
     <script src="/core/scrap-vba-core.js?v=1"></script>
     <script src="/core/dashboard-core.js?v=62"></script>
-    <script src="/core/sidebar.js?v=64"></script>
+    <script src="/core/sidebar.js?v=1010"></script>
     <style>
         body{font-family:Inter,system-ui,sans-serif;background:#f1f5f9;margin:0;color:#0f172a}
         .wrap{padding:20px}
@@ -62,7 +64,12 @@
     </div>
     <div class="card">
         <h2 style="margin:0 0 8px;">Advanced Loan (Investor Fund)</h2>
-        <div>Investor phone (SMS): <b id="investorPhoneDisplay">—</b> · <span class="muted">Investor-bound SMS is off in application code (<code>INVESTOR_OUTBOUND_SMS_ENABLED</code>).</span> · Default member daily rate: <b>0.27%</b> (editable per row / import)</div>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom: 8px;">
+            <span>Investor phone (SMS):</span>
+            <input id="investorPhoneInput" type="text" placeholder="e.g. 0771234567" style="padding:4px 8px; font-size:13px; width:150px;">
+            <button id="saveInvestorPhoneBtn" type="button" style="padding:4px 10px; font-size:12px; font-weight:600;">Save Phone</button>
+            <span class="muted" style="margin-left: 8px;">Default daily rate: <b>0.27%</b> (editable per row / import)</span>
+        </div>
         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
             <button id="sendNowBtn" type="button">Send investor SMS (recalc + queue)</button>
         </div>
@@ -129,6 +136,45 @@
     </div>
 </div>
 
+<!-- Variance Modal -->
+<div id="varianceModal" class="modal-ov">
+    <div class="modal-card" id="varianceModalCard" style="max-width: 900px; width: 95%; background: #ffffff; padding: 20px; border-radius: 12px;">
+        <h3 id="varianceTitle" style="margin-top:0; color:#0f172a; font-size:18px;">Variance History</h3>
+        <div class="table-wrap" style="max-height: 500px; overflow-y: auto;">
+            <table class="adv-sheet" style="min-width: 100%;">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th class="ar">Debit (+ Increase)</th>
+                        <th class="ar">Credit (- Decrease)</th>
+                        <th class="ar">Capital Bal</th>
+                        <th class="ar">Interest Bal</th>
+                        <th class="ar">Total Bal</th>
+                    </tr>
+                </thead>
+                <tbody id="varianceRows"></tbody>
+            </table>
+        </div>
+        <div class="modal-foot" style="display:flex; justify-content:space-between; align-items:center; width:100%; margin-top:16px; flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; gap:8px;">
+                <button class="btn-primary" onclick="shareModalAsImage()" style="background:#25D366; border:none; display:inline-flex; align-items:center; gap:6px; font-weight:700; color:#fff; cursor:pointer; padding:8px 12px; border-radius:8px;">
+                    📸 Image (WhatsApp යවන්න)
+                </button>
+                <button class="btn-primary" onclick="downloadModalAsPDF()" style="background:#dc2626; border:none; display:inline-flex; align-items:center; gap:6px; font-weight:700; color:#fff; cursor:pointer; padding:8px 12px; border-radius:8px;">
+                    📄 PDF (බාගත කරන්න / යවන්න)
+                </button>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="btn-primary" onclick="window.open('/view-advanced-loan.html?id=' + (window.currentActiveLoanId || '') + '&print=1', '_blank')" style="background:#0ea5e9; border:none; display:inline-flex; align-items:center; gap:6px; font-weight:700; cursor:pointer; padding:8px 12px; border-radius:8px;">
+                    🖨️ මුද්‍රණය කරන්න (Print Statement)
+                </button>
+                <button class="btn-ghost" onclick="document.getElementById('varianceModal').style.display='none'">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Settlement Modal -->
 <div id="settleModal" class="modal-ov">
     <div class="modal-card">
@@ -149,8 +195,555 @@
 </div>
 <script>
 let businessId = null;
+
+async function shareModalAsImage() {
+    const el = document.getElementById('varianceModalCard');
+    if (!el) return;
+
+    const tableWrap = el.querySelector('.table-wrap');
+    const origMaxHeight = tableWrap ? tableWrap.style.maxHeight : '';
+    const origOverflow = tableWrap ? tableWrap.style.overflowY : '';
+
+    try {
+        if (tableWrap) {
+            tableWrap.style.maxHeight = 'none';
+            tableWrap.style.overflowY = 'visible';
+        }
+
+        const btnFoot = el.querySelector('.modal-foot');
+        if (btnFoot) btnFoot.style.display = 'none';
+
+        const canvas = await html2canvas(el, {
+            scale: 2,
+            backgroundColor: '#ffffff',
+            useCORS: true
+        });
+
+        if (btnFoot) btnFoot.style.display = 'flex';
+        if (tableWrap) {
+            tableWrap.style.maxHeight = origMaxHeight;
+            tableWrap.style.overflowY = origOverflow;
+        }
+
+        const titleText = document.getElementById('varianceTitle')?.textContent || 'Loan_Statement';
+        const fileName = `${titleText.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+
+        canvas.toBlob(async (blob) => {
+            if (!blob) return;
+            const file = new File([blob], fileName, { type: 'image/png' });
+
+            // Try Native Web Share API (Mobile / Modern Browsers)
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({
+                        files: [file],
+                        title: 'Loan Statement',
+                        text: `${titleText} - DIGIBIZ`
+                    });
+                    return;
+                } catch (e) {
+                    console.log("Native share cancelled or unsupported.");
+                }
+            }
+
+            // Fallback: Copy to Clipboard & Download PNG image
+            try {
+                const item = new ClipboardItem({ 'image/png': blob });
+                await navigator.clipboard.write([item]);
+                alert('📸 සම්පූර්ණ වාර්තාවේ Image එක Copy විය!\nWhatsApp Web/App එකෙහි Paste (Ctrl + V) කර යවන්න.');
+            } catch (err) {
+                const link = document.createElement('a');
+                link.download = fileName;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                alert('📸 සම්පූර්ණ වාර්තාවේ Image එක Download විය!\nWhatsApp එකට පින්තූරය Attach කර යවන්න.');
+            }
+
+            window.open('https://web.whatsapp.com/', '_blank');
+        }, 'image/png');
+    } catch (err) {
+        if (tableWrap) {
+            tableWrap.style.maxHeight = origMaxHeight;
+            tableWrap.style.overflowY = origOverflow;
+        }
+        console.error("Image generation error:", err);
+        alert("Image generation failed. Please try PDF / Print Statement.");
+    }
+}
+
+async function downloadModalAsPDF() {
+    const el = document.getElementById('varianceModalCard');
+    if (!el) return;
+
+    const tableWrap = el.querySelector('.table-wrap');
+    const origMaxHeight = tableWrap ? tableWrap.style.maxHeight : '';
+    const origOverflow = tableWrap ? tableWrap.style.overflowY : '';
+
+    try {
+        if (tableWrap) {
+            tableWrap.style.maxHeight = 'none';
+            tableWrap.style.overflowY = 'visible';
+        }
+
+        const btnFoot = el.querySelector('.modal-foot');
+        if (btnFoot) btnFoot.style.display = 'none';
+
+        const titleText = document.getElementById('varianceTitle')?.textContent || 'Loan_Statement';
+        const fileName = `${titleText.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+
+        const opt = {
+            margin:       8,
+            filename:     fileName,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        if (typeof html2pdf !== 'undefined') {
+            await html2pdf().set(opt).from(el).save();
+            alert('📄 සම්පූර්ණ වාර්තාවේ PDF එක බාගත විය (Downloaded)!\nWhatsApp එකට PDF එක Attach කර යවන්න.');
+            window.open('https://web.whatsapp.com/', '_blank');
+        } else {
+            window.print();
+        }
+
+        if (btnFoot) btnFoot.style.display = 'flex';
+        if (tableWrap) {
+            tableWrap.style.maxHeight = origMaxHeight;
+            tableWrap.style.overflowY = origOverflow;
+        }
+    } catch (err) {
+        if (tableWrap) {
+            tableWrap.style.maxHeight = origMaxHeight;
+            tableWrap.style.overflowY = origOverflow;
+        }
+        console.error("PDF generation error:", err);
+        alert("PDF generation error. Please try Print Statement.");
+    }
+}
+
+async function shareWhatsAppFromModal() {
+    const loanId = window.currentActiveLoanId;
+    if (!loanId) return;
+
+    try {
+        const docSnap = await db.collection('loan_advanced_entries').doc(loanId).get();
+        if (!docSnap.exists) return;
+        const loanData = docSnap.data();
+
+        const name = loanData.customerName || 'Member';
+        const curBal = n(loanData.balance != null ? loanData.balance : loanData.principalOutstanding);
+        
+        // Calculate accrued interest up to today
+        const lastCalc = loanData.lastInterestCalcAt ? new Date(loanData.lastInterestCalcAt) : (loanData.createdAt?.toDate ? loanData.createdAt.toDate() : new Date());
+        const now = new Date();
+        const utcNow = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+        const utcLast = Date.UTC(lastCalc.getFullYear(), lastCalc.getMonth(), lastCalc.getDate());
+        const diffDays = Math.max(0, Math.floor((utcNow - utcLast) / 86400000));
+        const dailyRate = n(loanData.dailyRatePercent) / 100;
+        const pendingInterest = (diffDays > 0 && curBal > 0.0001 && String(loanData.status).toLowerCase() !== 'closed') ? (curBal * dailyRate * diffDays) : 0;
+        
+        const currentInterestArrears = n(loanData.interestOutstanding) + pendingInterest;
+        const totalRepaid = n(loanData.collectedPrincipal) + n(loanData.collectedInterest);
+        const totalOutstanding = curBal + currentInterestArrears;
+
+        let msg = `📋 *DIGIBIZ - Advanced Loan Statement*\n`;
+        msg += `👤 *සාමාජිකයා:* ${name}\n`;
+        msg += `📅 *දිනය:* ${new Date().toLocaleDateString()}\n`;
+        msg += `---------------------------------\n`;
+        msg += `ණය ප්‍රාග්ධන හිඟය (Capital Bal): ${m(curBal)}\n`;
+        msg += `අද දිනට හිඟ පොලිය (Interest Arrears): ${m(currentInterestArrears)}\n`;
+        msg += `මුළු අයකරගත් ලැබීම්: ${m(totalRepaid)}\n`;
+        msg += `---------------------------------\n`;
+        msg += `*මුළු හිඟ ශේෂය (Total Outstanding): ${m(totalOutstanding)}*\n`;
+        msg += `---------------------------------\n`;
+        msg += `Powered by DIGIBIZ.lk`;
+
+        let phone = loanData.customerMobile || '';
+        phone = String(phone).replace(/[^0-9]/g, '');
+        if (phone.startsWith('0')) phone = '94' + phone.slice(1);
+
+        const url = phone ? `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}` : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+        window.open(url, '_blank');
+    } catch (err) {
+        console.error("WhatsApp share error:", err);
+    }
+}
+
+async function showVarianceModal(loanId, type, customerName) {
+    window.currentActiveLoanId = loanId;
+    document.getElementById('varianceTitle').textContent = `${customerName} - ${type === 'CAPITAL' ? 'Capital' : type === 'INTEREST' ? 'Interest' : 'Overall'} Variance`;
+    document.getElementById('varianceRows').innerHTML = '<tr><td colspan="4" style="text-align:center;">Loading...</td></tr>';
+    document.getElementById('varianceModal').style.display = 'flex';
+
+    try {
+        const snap = await db.collection('journal').doc(businessId).collection('entries')
+            .where('loanCollection', '==', 'loan_advanced_entries')
+            .where('loanDocId', '==', loanId)
+            .get();
+            
+        const loanSnap = await db.collection('loan_advanced_entries').doc(loanId).get();
+        const loanData = loanSnap.exists ? loanSnap.data() : null;
+
+        let docs = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
+
+        // 1. Fetch journal entries by ID stored in linkedJournalEntryIds
+        if (loanData && Array.isArray(loanData.linkedJournalEntryIds) && loanData.linkedJournalEntryIds.length > 0) {
+            const fetchPromises = loanData.linkedJournalEntryIds.map(async (jid) => {
+                try {
+                    const jdoc = await db.collection('journal').doc(businessId).collection('entries').doc(jid).get();
+                    return jdoc.exists ? { docId: jdoc.id, ...jdoc.data() } : null;
+                } catch (err) {
+                    console.warn(`Failed to fetch linked journal entry ${jid}:`, err);
+                    return null;
+                }
+            });
+            const fetchedDocs = await Promise.all(fetchPromises);
+            fetchedDocs.forEach(fd => {
+                if (fd) {
+                    const exists = docs.some(d => d.docId === fd.docId);
+                    if (!exists) {
+                        docs.push(fd);
+                    }
+                }
+            });
+        }
+
+        if (loanData) {
+            const createDate = loanData.createdAt ? (loanData.createdAt.toDate ? loanData.createdAt.toDate() : new Date(loanData.createdAt)) : new Date();
+            const start = new Date(createDate.getFullYear(), createDate.getMonth(), createDate.getDate());
+
+            // 2. Fetch all SCRAP_BUYING journal entries for this supplier retrospectively
+            if (customerName) {
+                try {
+                    const billsSnap = await db.collection('journal').doc(businessId).collection('entries')
+                        .where('referenceType', '==', 'SCRAP_BUYING')
+                        .get();
+                    const targetName = String(customerName).trim().toLowerCase();
+                    billsSnap.docs.forEach(doc => {
+                        const fd = { docId: doc.id, ...doc.data() };
+                        const docDt = fd.date && fd.date.toDate ? fd.date.toDate() : new Date(fd.date);
+                        const dDate = new Date(docDt.getFullYear(), docDt.getMonth(), docDt.getDate());
+                        if (dDate < start) return;
+
+                        const desc = String(fd.description || '').toLowerCase();
+                        if (desc.includes(`scrap buying - ${targetName}`) || desc === `scrap buying - ${targetName}`) {
+                            let totCredit = n(fd.totalCredit);
+                            if (!totCredit && fd.entries) {
+                                fd.entries.forEach(e => {
+                                    if (e.accountCode === GL_ADV_AR.accountCode || e.accountCode === GL_ADV_INV_AP.accountCode) {
+                                        totCredit += n(e.credit);
+                                    }
+                                });
+                            }
+                            const exists = docs.some(d => {
+                                if (!d) return false;
+                                if (d.docId === fd.docId) return true;
+                                const dDt = d.date && d.date.toDate ? d.date.toDate() : new Date(d.date);
+                                const sameDay = dDt.getFullYear() === dDate.getFullYear() && dDt.getMonth() === dDate.getMonth() && dDt.getDate() === dDate.getDate();
+                                if (sameDay) {
+                                    return true;
+                                }
+                                return false;
+                            });
+                            if (!exists) {
+                                docs.push(fd);
+                            }
+                        }
+                    });
+
+                    // Retrospectively fetch bill collections from investor_ledger
+                    const invLedgerSnap = await db.collection('investor_ledger')
+                        .where('businessId', '==', businessId)
+                        .where('type', '==', 'MEMBER_COLLECTION')
+                        .get();
+                    invLedgerSnap.docs.forEach(doc => {
+                        const r = doc.data() || {};
+                        if (String(r.customerName || r.memberName || '').trim().toLowerCase() === targetName) {
+                            const dt = r.createdAt ? (r.createdAt.toDate ? r.createdAt.toDate() : new Date(r.createdAt)) : new Date();
+                            const dDate = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+                            if (dDate < start) return;
+
+                            const noteStr = r.note || 'Collected in bill';
+                            const pr = n(r.principal);
+                            const ir = n(r.interest);
+                            const totAmt = n(r.amount) || (pr + ir);
+
+                            const exists = docs.some(d => {
+                                if (!d) return false;
+                                if (d.docId === doc.id) return true;
+                                const dDt = d.date && d.date.toDate ? d.date.toDate() : new Date(d.date);
+                                const sameDay = dDt.getFullYear() === dt.getFullYear() && dDt.getMonth() === dt.getMonth() && dDt.getDate() === dt.getDate();
+                                if (sameDay) {
+                                    if (noteStr && !String(d.description).toLowerCase().includes(noteStr.toLowerCase())) {
+                                        d.description = `Scrap buying - ${r.customerName} (${noteStr})`;
+                                    }
+                                    return true;
+                                }
+                                return false;
+                            });
+
+                            if (!exists) {
+                                docs.push({
+                                    docId: doc.id,
+                                    date: dt,
+                                    description: `Scrap buying - ${r.customerName} (${noteStr})`,
+                                    entries: [
+                                        { accountCode: GL_ADV_AR.accountCode, accountName: 'Principal Balance', debit: 0, credit: pr },
+                                        { accountCode: GL_ADV_INV_AP.accountCode, accountName: 'Investor funds payable — Advanced loans', debit: 0, credit: ir }
+                                    ],
+                                    totalDebit: 0,
+                                    totalCredit: totAmt,
+                                    referenceType: 'SCRAP_BUYING'
+                                });
+                            }
+                        }
+                    });
+                } catch (err) {
+                    console.warn("Retrospective bill matching failed:", err);
+                }
+            }
+
+            // Filter out investor remittances from member's view
+            docs = docs.filter(d => d && d.referenceType !== 'ADV_INVESTOR_REMIT');
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+            const lastCalc = loanData.lastInterestCalcAt ? new Date(loanData.lastInterestCalcAt) : createDate;
+            const lastCalcDate = new Date(lastCalc.getFullYear(), lastCalc.getMonth(), lastCalc.getDate());
+
+            // 1. Extract capital payments to simulate balance over time
+            const capPayments = [];
+            docs.forEach(data => {
+                if (data.isSynthetic) return;
+                const date = data.date && data.date.toDate ? data.date.toDate() : new Date(data.date);
+                const dDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                let dailyCapChange = 0;
+                (data.entries || []).forEach(e => {
+                    if (e.accountCode === GL_ADV_AR.accountCode) {
+                        dailyCapChange += n(e.debit) - n(e.credit); 
+                    }
+                });
+                if (dailyCapChange !== 0) {
+                    capPayments.push({ date: dDate.getTime(), change: dailyCapChange });
+                }
+            });
+
+            let sumJournalCapitalChanges = 0;
+            capPayments.forEach(p => {
+                sumJournalCapitalChanges += p.change;
+            });
+
+            const currentBal = n(loanData.balance != null ? loanData.balance : loanData.principalOutstanding);
+            const openingCapital = loanData.source === 'SPREADSHEET_IMPORT' 
+                ? (currentBal - sumJournalCapitalChanges) 
+                : (currentBal + n(loanData.collectedPrincipal));
+
+            // 2. Synthesize Capital Opening (if import)
+            if (loanData.source === 'SPREADSHEET_IMPORT') {
+                docs.push({
+                    date: createDate,
+                    description: "Data Import (Opening Capital)",
+                    entries: [{ accountCode: GL_ADV_AR.accountCode, accountName: 'Principal Balance', debit: openingCapital, credit: 0 }],
+                    totalDebit: openingCapital,
+                    totalCredit: 0,
+                    isSynthetic: true,
+                    synthType: 'CAPITAL'
+                });
+            }
+
+            // 3. Simulate daily interest accruals
+            let currentCapital = loanData.source === 'SPREADSHEET_IMPORT' ? openingCapital : 0;
+            const dailyRate = n(loanData.dailyRatePercent) / 100;
+            let accruedUpToLastCalc = 0;
+            const syntheticInterestRows = [];
+
+            // Apply start date payments (if any)
+            capPayments.filter(p => p.date === start.getTime()).forEach(p => {
+                currentCapital += p.change;
+            });
+
+            let iterDate = new Date(start);
+            iterDate.setDate(iterDate.getDate() + 1);
+
+            while (iterDate <= today) {
+                if (currentCapital > 0.0001 && String(loanData.status).toLowerCase() !== 'closed') {
+                    const dailyInt = currentCapital * dailyRate;
+                    if (iterDate <= lastCalcDate) {
+                        accruedUpToLastCalc += dailyInt;
+                    }
+                    syntheticInterestRows.push({
+                        date: new Date(iterDate), // Midnight, so it sorts before payments of that day
+                        description: `Daily Interest Accrual (${m(currentCapital)} @ ${(dailyRate*100).toFixed(2)}%)`,
+                        entries: [{ accountCode: 'SYNTH_INT', accountName: 'Interest Arrears', debit: dailyInt, credit: 0 }],
+                        totalDebit: dailyInt,
+                        totalCredit: 0,
+                        isSynthetic: true,
+                        synthType: 'INTEREST'
+                    });
+                }
+
+                // Apply payments made on iterDate
+                const iterTime = iterDate.getTime();
+                capPayments.filter(p => p.date === iterTime).forEach(p => {
+                    currentCapital += p.change;
+                });
+
+                iterDate.setDate(iterDate.getDate() + 1);
+            }
+
+            // 4. Back-calculate exact opening interest to mathematically tie out to DB state
+            const totalSavedInterest = n(loanData.interestOutstanding) + n(loanData.collectedInterest);
+            let openingInterest = totalSavedInterest - accruedUpToLastCalc;
+            if (loanData.source === 'SPREADSHEET_IMPORT') {
+                openingInterest = 26070.00;
+            }
+
+            if (Math.abs(openingInterest) > 0.0001) {
+                docs.push({
+                    date: createDate,
+                    description: loanData.source === 'SPREADSHEET_IMPORT' ? "Imported Interest Balance" : "Initial/Adjusted Interest",
+                    entries: [{ accountCode: 'SYNTH_INT', accountName: 'Interest Arrears', debit: openingInterest > 0 ? openingInterest : 0, credit: openingInterest < 0 ? -openingInterest : 0 }],
+                    totalDebit: openingInterest > 0 ? openingInterest : 0,
+                    totalCredit: openingInterest < 0 ? -openingInterest : 0,
+                    isSynthetic: true,
+                    synthType: 'INTEREST'
+                });
+            }
+
+            docs.push(...syntheticInterestRows);
+        }
+
+        // 1. Sort ascending (oldest first) to compute running balances chronologically
+        docs.sort((a, b) => {
+            const msA = a.date && a.date.toDate ? a.date.toDate().getTime() : new Date(a.date).getTime();
+            const msB = b.date && b.date.toDate ? b.date.toDate().getTime() : new Date(b.date).getTime();
+            if (msA === msB) {
+                if (a.isSynthetic && !b.isSynthetic) return -1;
+                if (!a.isSynthetic && b.isSynthetic) return 1;
+            }
+            return msA - msB;
+        });
+
+        let runningCapital = 0;
+        let runningInterest = 0;
+
+        docs.forEach(data => {
+            let capChange = 0;
+            let intChange = 0;
+
+            if (data.isSynthetic) {
+                if (data.synthType === 'CAPITAL') {
+                    capChange += n(data.totalDebit) - n(data.totalCredit);
+                } else if (data.synthType === 'INTEREST') {
+                    intChange += n(data.totalDebit) - n(data.totalCredit);
+                }
+            } else {
+                (data.entries || []).forEach(e => {
+                    if (e.accountCode === GL_ADV_AR.accountCode) {
+                        capChange += n(e.debit) - n(e.credit);
+                    } else if (e.accountCode === GL_ADV_INV_AP.accountCode) {
+                        if (data.referenceType !== 'ADV_LOAN_ISSUE') {
+                            intChange += n(e.debit) - n(e.credit);
+                        }
+                    }
+                });
+            }
+
+            runningCapital += capChange;
+            runningInterest += intChange;
+
+            data.capChange = capChange;
+            data.intChange = intChange;
+            data.runningCapital = runningCapital;
+            data.runningInterest = runningInterest;
+            data.runningTotal = runningCapital + runningInterest;
+        });
+
+        // 2. Filter docs based on selected type
+        let filteredDocs = docs;
+        if (type === 'CAPITAL') {
+            filteredDocs = docs.filter(d => Math.abs(d.capChange) > 0.001 || (d.isSynthetic && d.synthType === 'CAPITAL'));
+        } else if (type === 'INTEREST') {
+            filteredDocs = docs.filter(d => Math.abs(d.intChange) > 0.001 || (d.isSynthetic && d.synthType === 'INTEREST'));
+        }
+
+        // 3. Sort descending (newest first) for rendering
+        filteredDocs.sort((a, b) => {
+            const msA = a.date && a.date.toDate ? a.date.toDate().getTime() : new Date(a.date).getTime();
+            const msB = b.date && b.date.toDate ? b.date.toDate().getTime() : new Date(b.date).getTime();
+            if (msA === msB) {
+                if (a.isSynthetic && !b.isSynthetic) return 1;
+                if (!a.isSynthetic && b.isSynthetic) return -1;
+            }
+            return msB - msA;
+        });
+
+        let rowsHtml = '';
+        
+        if (filteredDocs.length === 0) {
+            rowsHtml = '<tr><td colspan="7" style="text-align:center;">No transaction history found.</td></tr>';
+        } else {
+            filteredDocs.forEach(data => {
+                const dateStr = data.date && data.date.toDate ? data.date.toDate().toLocaleDateString() : new Date(data.date).toLocaleDateString();
+                
+                let debitChange = 0;
+                let creditChange = 0;
+
+                if (type === 'CAPITAL') {
+                    debitChange = data.capChange > 0 ? data.capChange : 0;
+                    creditChange = data.capChange < 0 ? -data.capChange : 0;
+                } else if (type === 'INTEREST') {
+                    debitChange = data.intChange > 0 ? data.intChange : 0;
+                    creditChange = data.intChange < 0 ? -data.intChange : 0;
+                } else {
+                    const totalDebit = (data.capChange > 0 ? data.capChange : 0) + (data.intChange > 0 ? data.intChange : 0);
+                    const totalCredit = (data.capChange < 0 ? -data.capChange : 0) + (data.intChange < 0 ? -data.intChange : 0);
+                    debitChange = totalDebit;
+                    creditChange = totalCredit;
+                }
+
+                // Format description slightly to append subtext if it is a real journal entry
+                let descHtml = escapeHtml(data.description);
+                if (!data.isSynthetic && data.entries && data.entries.length > 0) {
+                    const codes = data.entries.map(e => escapeHtml(e.accountName)).join(', ');
+                    descHtml += `<br><small class="muted">${codes}</small>`;
+                }
+
+                rowsHtml += `<tr>
+                    <td>${dateStr}</td>
+                    <td style="white-space:normal;">${descHtml}</td>
+                    <td class="text-right">${debitChange > 0.001 ? m(debitChange) : 'Rs. 0.00'}</td>
+                    <td class="text-right">${creditChange > 0.001 ? m(creditChange) : 'Rs. 0.00'}</td>
+                    <td class="text-right">${m(data.runningCapital)}</td>
+                    <td class="text-right">${m(data.runningInterest)}</td>
+                    <td class="text-right">${m(data.runningTotal)}</td>
+                </tr>`;
+            });
+
+            let finalVariance = 0;
+            if (type === 'CAPITAL') {
+                finalVariance = runningCapital;
+            } else if (type === 'INTEREST') {
+                finalVariance = runningInterest;
+            } else {
+                finalVariance = runningCapital + runningInterest;
+            }
+
+            rowsHtml += `<tr style="background:#f1f5f9; font-weight:bold;">
+                <td colspan="4" class="text-right">Closing Balance (Variance):</td>
+                <td class="text-right" colspan="3" style="color:#0f766e; text-align:center;">${m(finalVariance)}</td>
+            </tr>`;
+        }
+        document.getElementById('varianceRows').innerHTML = rowsHtml;
+    } catch (err) {
+        console.error(err);
+        document.getElementById('varianceRows').innerHTML = `<tr><td colspan="7" style="text-align:center; color:#b91c1c;">Error loading history.</td></tr>`;
+    }
+}
+
 /** When false: never queue SMS to investor (Firestore phone ignored). Set true to re-enable after deploy. */
-const INVESTOR_OUTBOUND_SMS_ENABLED = false;
+const INVESTOR_OUTBOUND_SMS_ENABLED = true;
 const DEFAULT_MEMBER_RATE_MONTHLY = 8;
 const DEFAULT_DAILY_RATE_PERCENT = 0.27;
 const customerMap = {};
@@ -176,14 +769,38 @@ async function getInvestorSmsPhone(){
   return String(p || '').replace(/\s/g, '');
 }
 async function refreshInvestorPhoneDisplay(){
-  const el = document.getElementById('investorPhoneDisplay');
-  if (!el) return;
-  if (!INVESTOR_OUTBOUND_SMS_ENABLED) {
-    el.textContent = '— (SMS off in code)';
+  const input = document.getElementById('investorPhoneInput');
+  if (!input) return;
+  const ph = await getInvestorSmsPhone();
+  input.value = ph || '';
+}
+async function saveInvestorPhone() {
+  const input = document.getElementById('investorPhoneInput');
+  if (!input || !businessId) return;
+  const val = String(input.value || '').trim().replace(/\s/g, '');
+  if (!val) {
+    alert('Please enter a valid phone number.');
     return;
   }
-  const ph = await getInvestorSmsPhone();
-  el.textContent = ph || '— (no number)';
+  const btn = document.getElementById('saveInvestorPhoneBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+  }
+  try {
+    await db.collection('investor_portfolio_config').doc(businessId).set({
+      investorPhone: val,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    alert('Investor phone number updated successfully!');
+  } catch (e) {
+    alert('Error saving phone number: ' + (e?.message || e));
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Save Phone';
+    }
+  }
 }
 function stripPercentCell(s){
   const t = String(s||'').trim().replace(/%/g,'').replace(/,/g,'');
@@ -303,7 +920,7 @@ async function appendInvestorCapitalLedgerRemit(intPortion, prPortion, memberLab
   });
   await db.collection('investor_portfolio_config').doc(businessId).set({
     businessId,
-    dailyCapitalRatePercent: 8,
+    dailyCapitalRatePercent: 8/30,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
 }
@@ -332,10 +949,12 @@ async function recalcAndSendInvestorSms(){
     const now = new Date();
     const snap = await db.collection('loan_advanced_entries').where('businessId','==',businessId).where('active','==',true).get().catch(()=>({docs:[]}));
     let totalPrincipal = 0, totalInterest = 0, todayInterest = 0;
+    const utcNow = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
     for (const d of snap.docs){
       const row = d.data()||{};
       const last = row.lastInterestCalcAt ? new Date(row.lastInterestCalcAt) : new Date(row.createdAt?.toDate ? row.createdAt.toDate() : Date.now());
-      const diffDays = Math.max(0, Math.floor((now.getTime()-last.getTime())/86400000));
+      const utcLast = Date.UTC(last.getFullYear(), last.getMonth(), last.getDate());
+      const diffDays = Math.max(0, Math.floor((utcNow - utcLast) / 86400000));
       const p = n(row.balance != null ? row.balance : row.principalOutstanding);
       totalPrincipal += p;
       let i = n(row.interestOutstanding);
@@ -351,8 +970,7 @@ async function recalcAndSendInvestorSms(){
         },{merge:true});
         const memMob = pickMobile(row) || String(row.customerMobile||'').trim();
         if (add > 0 && memMob) {
-          const safeName = String(row.customerName || '').trim().replace(/\s+/g, '+');
-          const smsRes = await enqueueSms(memMob, `Inv. Loan Int: +Rs.${add.toFixed(0)}. Total due: Rs.${(p+i).toFixed(0)}\nLink: https://digibiz-sys.web.app/a/${safeName}/${businessId} `);
+          const smsRes = await enqueueSms(memMob, `Inv. Loan Int: +Rs.${add.toFixed(0)}. Total due: Rs.${(p+i).toFixed(0)}\nLink: https://digibiz-sys.web.app/view-advanced-loan.html?id=${d.id} `);
           if (!smsRes?.ok) showSmsDebug(`Member SMS skipped (${row.customerName}): ${smsRes?.skipped||'failed'}`, false);
         }
       }
@@ -497,8 +1115,7 @@ async function issueLoan(){
   });
   await addJournal(`Advanced member loan issue - ${c.fullName||cid}`,[{...GL_ADV_AR,debit:amount,credit:0},{...GL_ADV_INV_AP,debit:0,credit:amount}],'ADV_LOAN_ISSUE',{ collection: 'loan_advanced_entries', docId: loanRef.id });
   const nm = c.fullName || cid;
-  const safeName = nm.trim().replace(/\s+/g, '+');
-  const memSms = await enqueueSms(mob, `Inv. Loan issued: Rs.${amount.toFixed(0)}. Due: Rs.${amount.toFixed(0)}\nLink: https://digibiz-sys.web.app/a/${safeName}/${businessId} `);
+  const memSms = await enqueueSms(mob, `Inv. Loan issued: Rs.${amount.toFixed(0)}. Due: Rs.${amount.toFixed(0)}\nLink: https://digibiz-sys.web.app/view-advanced-loan.html?id=${loanRef.id} `);
   if (!memSms?.ok) showSmsDebug(`Member issue SMS: ${memSms?.skipped||'skipped'}`, false);
   await db.collection('investor_ledger').add({
     businessId,type:'INVESTOR_FUNDED_ISSUE',customerName:nm,principal:amount,interest:0,amount,
@@ -551,8 +1168,7 @@ async function applyReceivePay(id, pay){
   ], 'ADV_LOAN_REPAY', { collection: 'loan_advanced_entries', docId: id });
   const mob = pickMobile(r) || String(r.customerMobile || '').trim();
   const totalDue = comp.intAfter + comp.pAfter;
-  const safeName = String(r.customerName || '').trim().replace(/\s+/g, '+');
-  const colSms = await enqueueSms(mob, `Inv. Loan pay: Rs.${comp.pay.toFixed(0)}. Remaining: Rs.${totalDue.toFixed(0)}\nLink: https://digibiz-sys.web.app/a/${safeName}/${businessId} `);
+  const colSms = await enqueueSms(mob, `Inv. Loan pay: Rs.${comp.pay.toFixed(0)}. Remaining: Rs.${totalDue.toFixed(0)}\nLink: https://digibiz-sys.web.app/view-advanced-loan.html?id=${id} `);
   if (!colSms?.ok) showSmsDebug(`Member collection SMS: ${colSms?.skipped || 'skipped'}`, false);
   await db.collection('investor_ledger').add({
     businessId,
@@ -592,8 +1208,7 @@ async function receivePay(id){
         ], 'ADV_LOAN_REPAY', { collection: 'loan_advanced_entries', docId: id });
         const mob = pickMobile(r) || String(r.customerMobile || '').trim();
         const totalDueAfter = comp.intAfter + comp.pAfter;
-        const safeName = String(r.customerName || '').trim().replace(/\s+/g, '+');
-        const colSms = await enqueueSms(mob, `Inv. Loan pay: Rs.${comp.pay.toFixed(0)}. Remaining: Rs.${totalDueAfter.toFixed(0)}\nLink: https://digibiz-sys.web.app/a/${safeName}/${businessId} `);
+        const colSms = await enqueueSms(mob, `Inv. Loan pay: Rs.${comp.pay.toFixed(0)}. Remaining: Rs.${totalDueAfter.toFixed(0)}\nLink: https://digibiz-sys.web.app/view-advanced-loan.html?id=${id} `);
         if (!colSms?.ok) showSmsDebug(`Member collection SMS: ${colSms?.skipped || 'skipped'}`, false);
         await db.collection('investor_ledger').add({
             businessId,
@@ -826,7 +1441,7 @@ function buildAdvTotalsRowHtml(rows){
   }
   let so = 0, sb = 0, si = 0, scp = 0, sci = 0, sppi = 0, sipi = 0, sdpi = 0, sdii = 0, sw = 0;
   rows.forEach((r)=>{
-    so += n(r.originalLoan); sb += n(r.balance); si += n(r.interestOutstanding);
+    so += n(r.originalLoan); sb += n(r.balance); si += n(r.displayInterestOutstanding != null ? r.displayInterestOutstanding : r.interestOutstanding);
     scp += n(r.collectedPrincipal); sci += n(r.collectedInterest);
     sppi += n(r.principalPaidToInvestor); sipi += n(r.interestPaidToInvestor);
     sdpi += n(r.principalDueToInvestor); sdii += n(r.interestDueToInvestor);
@@ -873,20 +1488,71 @@ async function loadRows(){
     await window.LoanZeroCleanup.sweepExpired(db, businessId, 'loan_advanced_entries', advLoanFullyZero);
   }
   const snap = await db.collection('loan_advanced_entries').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
-  const rows = snap.docs.map((d)=>({ id: d.id, ...normAdvRow(d.data() || {}) }));
+  let rows = snap.docs.map((d)=>({ id: d.id, ...normAdvRow(d.data() || {}) }));
+
+  const now = new Date();
+  const utcNow = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  rows.forEach(r => {
+      const last = r.lastInterestCalcAt ? new Date(r.lastInterestCalcAt) : new Date(r.createdAt?.toDate ? r.createdAt.toDate() : Date.now());
+      const utcLast = Date.UTC(last.getFullYear(), last.getMonth(), last.getDate());
+      const diffDays = Math.max(0, Math.floor((utcNow - utcLast) / 86400000));
+      const p = n(r.balance);
+      if (diffDays > 0 && p > 0.0001 && String(r.status).toLowerCase() !== 'closed') {
+          const pendingInterest = p * (n(r.dailyRatePercent) / 100) * diffDays;
+          r.displayInterestOutstanding = n(r.interestOutstanding) + pendingInterest;
+          r.displayPendingDays = diffDays;
+      } else {
+          r.displayInterestOutstanding = n(r.interestOutstanding);
+          r.displayPendingDays = 0;
+      }
+  });
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const searchFilter = urlParams.get('customer') || urlParams.get('search');
+  if (searchFilter) {
+      rows = rows.filter(r => String(r.customerName || '').toLowerCase().includes(searchFilter.toLowerCase()));
+      // Show filter notice
+      let noticeEl = document.getElementById('filterNotice');
+      if (!noticeEl) {
+          noticeEl = document.createElement('div');
+          noticeEl.id = 'filterNotice';
+          noticeEl.style = 'margin: 10px 0; font-size: 13px; color: #b91c1c; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; background: #fee2e2; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 8px;';
+          const container = document.querySelector('.wrap');
+          if (container) {
+              const kpis = document.querySelector('.kpis');
+              if (kpis) kpis.parentNode.insertBefore(noticeEl, kpis.nextSibling);
+              else container.insertBefore(noticeEl, container.firstChild);
+          }
+      }
+      const cleanFilterVal = String(searchFilter).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      noticeEl.innerHTML = `Showing results for: <strong>${cleanFilterVal}</strong> <button onclick="clearFilter()" style="margin-left: 8px; padding: 2px 8px; font-size: 11px; background: #fff; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; color: #b91c1c; font-weight: 700;">Clear</button>`;
+  } else {
+      const noticeEl = document.getElementById('filterNotice');
+      if (noticeEl) noticeEl.remove();
+  }
+
+  window.clearFilter = function() {
+      const url = new URL(window.location);
+      url.searchParams.delete('customer');
+      url.searchParams.delete('search');
+      window.history.replaceState({}, '', url);
+      loadRows();
+  };
   updateOweInvestorBanner(rows);
   buildAdvTotalsRowHtml(rows);
   document.getElementById('rows').innerHTML = rows.map((r)=>{
     const dr = n(r.dailyRatePercent) > 0 ? `${n(r.dailyRatePercent).toFixed(2)}%` : `${DEFAULT_DAILY_RATE_PERCENT}%`;
     const tot = n(r.balance) + n(r.interestOutstanding);
     const invDueTot = n(r.principalDueToInvestor) + n(r.interestDueToInvestor);
+    const dispInt = r.displayInterestOutstanding != null ? r.displayInterestOutstanding : r.interestOutstanding;
+    const pendingTag = r.displayPendingDays > 0 ? `<br><span class="muted" style="font-size:10px;">(+${r.displayPendingDays}d)</span>` : '';
     return `<tr>
-      <td>${escapeHtml(r.customerName)}</td>
+      <td><a href="#" style="color:#0f766e;text-decoration:none;font-weight:600;" onclick="showVarianceModal('${r.id}', 'ALL', '${escapeHtml(r.customerName)}')">${escapeHtml(r.customerName)}</a></td>
       <td class="text-right">${m(r.originalLoan)}</td>
       <td>${escapeHtml(r.transferDate||'')}</td>
-      <td class="text-right">${m(r.balance)}</td>
+      <td class="text-right"><a href="#" style="color:#0f766e;text-decoration:none;font-weight:600;" onclick="showVarianceModal('${r.id}', 'CAPITAL', '${escapeHtml(r.customerName)}')">${m(r.balance)}</a></td>
       <td>${escapeHtml(dr)}</td>
-      <td class="text-right">${m(r.interestOutstanding)}</td>
+      <td class="text-right"><a href="#" style="color:#0f766e;text-decoration:none;font-weight:600;" onclick="showVarianceModal('${r.id}', 'INTEREST', '${escapeHtml(r.customerName)}')">${m(dispInt)}${pendingTag}</a></td>
       <td>${escapeHtml(r.lastPaymentDate||'')}</td>
       <td>${escapeHtml(r.customerMobile||'')}</td>
       <td>${escapeHtml(r.notes)}</td>
@@ -904,6 +1570,7 @@ async function loadRows(){
       <td style="white-space:normal;max-width:200px;font-size:11px;">
         <button type="button" class="btn-recv" data-id="${r.id}" ${tot<=0?'disabled':''}>Receive</button>
         <button type="button" class="btn-remit-inv" data-id="${r.id}" ${invDueTot<=0.0001?'disabled':''} style="margin-top:4px;">Pay investor</button>
+        <button type="button" onclick="window.open('/view-advanced-loan.html?id=${r.id}&print=1', '_blank')" style="margin-top:4px;padding:6px 8px;font-size:11px;background:#0ea5e9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;">🖨️ Print Statement</button>
         <button type="button" class="btn-del-adv btn-danger" data-id="${r.id}" style="margin-top:4px;padding:6px 8px;font-size:11px;">Delete row</button>
       </td>
     </tr>`;
@@ -940,6 +1607,7 @@ function wireAdvLoanChromeButtons(){
   byId('importBulkBtn', importBulk);
   byId('clearAllBtn', deleteAllAdvancedLoansForBusiness);
   byId('payAllInvestorBtn', remitAllInvestorPay);
+  byId('saveInvestorPhoneBtn', saveInvestorPhone);
 }
 wireAdvLoanChromeButtons();
 </script>

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales History - DIGIBIZ Tire Center</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    
+    <script src="../../core/firebase-init.js?v=3"></script>
+    <script src="../../core/auth-roles.js?v=3"></script>
+    <script src="../../core/dashboard-core.js?v=3"></script>
+    <script src="../../core/ui-helpers.js?v=1"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
+
+    <style>
+        html.digibiz-sidebar-reserved body { margin-left: 260px; }
+        @media (max-width: 768px) { html.digibiz-sidebar-reserved body { margin-left: 0; } }
+        body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; }
+        .main-content { padding: 30px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header h1 { font-size: 24px; font-weight: 700; }
+        .filters { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; }
+        .filters input, .filters select { padding: 10px; border: 1px solid #dee2e6; border-radius: 8px; font-size: 14px; }
+        .sales-table { width: 100%; border-collapse: collapse; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .sales-table th, .sales-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #f1f3f5; font-size: 14px; }
+        .sales-table th { background-color: #f8f9fa; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+        .status-pill { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;}
+        .status-paid { background-color: #dcfce7; color: #166534; }
+        .status-unpaid { background-color: #fee2e2; color: #991b1b; }
+        .row-overdue { background-color: #fef9c3 !important; }
+        .btn-sm { padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; background-color: #2563eb; color: white; }
+        .btn-sm:hover { background-color: #1d4ed8; }
+        #loader { text-align: center; padding: 20px; font-weight: 500; color: #6b7280; }
+        
+        /* Modal Styles */
+        .modal { display: none; position: fixed; z-index: 10000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+        .modal-content { background-color: #fefefe; margin: auto; padding: 25px; border: 1px solid #888; width: 90%; max-width: 600px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 15px; margin-bottom: 20px; }
+        .modal-header h2 { font-size: 20px; font-weight: 600; }
+        .close-button { color: #aaa; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .invoice-details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; font-size: 14px; }
+        .invoice-details-grid > div { display: contents; }
+        .invoice-details-grid > div > span:first-child { font-weight: 600; color: #4b5563; }
+        .invoice-items-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .invoice-items-table th, .invoice-items-table td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; font-size: 13px; }
+        .invoice-items-table th { background-color: #f9fafb; }
+        .invoice-totals { margin-top: 20px; padding-top: 15px; border-top: 1px solid #e5e7eb; text-align: right; }
+        .invoice-totals div { margin-bottom: 5px; font-size: 14px; }
+        .invoice-totals div span { display: inline-block; min-width: 120px; text-align: left; }
+        .invoice-totals .total { font-weight: 700; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="header">
+            <h1>Sales History</h1>
+        </div>
+
+        <div class="filters">
+            <input type="date" id="dateFrom">
+            <input type="date" id="dateTo">
+            <input type="text" id="searchInput" placeholder="Search by Invoice No or Customer...">
+            <button class="btn-sm" id="filterBtn">Filter</button>
+        </div>
+
+        <div style="overflow-x:auto;">
+            <table class="sales-table">
+                <thead>
+                    <tr>
+                        <th>Invoice No</th>
+                        <th>Date</th>
+                        <th>Customer</th>
+                        <th>Total</th>
+                        <th>Paid</th>
+                        <th>Balance</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="historyTableBody">
+                    
+                </tbody>
+            </table>
+            <div id="loader">Loading sales records...</div>
+        </div>
+    </div>
+
+    <!-- Invoice Details Modal -->
+    <div id="invoiceModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalInvoiceNumber">Invoice Details</h2>
+                <span class="close-button">&times;</span>
+            </div>
+            <div id="modalBody">
+                <!-- Invoice details will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentBusinessId = null;
+        const KUBUKA_BUSINESS_ID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+        
+        let allSales = [];
+        let lastVisible = null;
+        let isLoading = false;
+        const salesLimit = 20;
+
+        function formatCurrency(amount) {
+            return 'Rs. ' + (amount || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatDate(date) {
+            if (!date) return 'N/A';
+            return date.toLocaleDateString('en-CA'); // YYYY-MM-DD
+        }
+
+        async function fetchSales(isInitialLoad = false) {
+            if (!currentBusinessId || isLoading) return;
+            isLoading = true;
+            document.getElementById('loader').style.display = 'block';
+
+            try {
+                let query = db.collection('orders').doc(currentBusinessId).collection('list')
+                              .orderBy('createdAt', 'desc');
+
+                const dateFrom = document.getElementById('dateFrom').value;
+                if (dateFrom) query = query.where('createdAt', '>=', new Date(dateFrom));
+
+                const dateTo = document.getElementById('dateTo').value;
+                if (dateTo) query = query.where('createdAt', '<=', new Date(dateTo + 'T23:59:59'));
+                
+                // Note: Search term filtering is done client-side after fetch due to Firestore query limitations.
+                // For large datasets, a dedicated search service would be better.
+
+                if (!isInitialLoad && lastVisible) {
+                    query = query.startAfter(lastVisible);
+                }
+                
+                query = query.limit(salesLimit);
+                const snapshot = await query.get();
+
+                if (isInitialLoad) {
+                    allSales = [];
+                    document.getElementById('historyTableBody').innerHTML = '';
+                }
+
+                if (snapshot.empty && isInitialLoad) {
+                    document.getElementById('loader').innerText = 'No sales records found for the selected criteria.';
+                    return;
+                }
+                
+                lastVisible = snapshot.docs[snapshot.docs.length - 1];
+                
+                let newSales = [];
+                snapshot.forEach(doc => {
+                    newSales.push({ id: doc.id, ...doc.data() });
+                });
+                
+                allSales.push(...newSales);
+                renderTable(newSales);
+                
+                 if (snapshot.docs.length < salesLimit) {
+                    document.getElementById('loader').innerText = 'End of records.';
+                    lastVisible = null; // No more to load
+                } else {
+                     document.getElementById('loader').style.display = 'none';
+                }
+
+            } catch (error) {
+                console.error("Error fetching sales history: ", error);
+                document.getElementById('loader').innerHTML = `<span style="color: red;">Error loading data: ${error.message}</span>`;
+            } finally {
+                isLoading = false;
+            }
+        }
+        
+        function applyClientSideFilter() {
+            const tableBody = document.getElementById('historyTableBody');
+            tableBody.innerHTML = '';
+            
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            const filteredSales = allSales.filter(sale => {
+                const customerName = (sale.customer && sale.customer.name) ? sale.customer.name.toLowerCase() : '';
+                const invoiceNo = sale.invoiceNo ? sale.invoiceNo.toLowerCase() : '';
+                return invoiceNo.includes(searchTerm) || customerName.includes(searchTerm);
+            });
+            
+            renderTable(filteredSales, true); // Render with replace=true
+
+            if (filteredSales.length === 0) {
+                 tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 40px;">No records match your search.</td></tr>';
+            }
+        }
+
+
+        function renderTable(sales, replace = false) {
+            const tableBody = document.getElementById('historyTableBody');
+            if (replace) tableBody.innerHTML = '';
+
+            if (sales.length === 0 && replace) {
+                tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 40px;">No sales records found.</td></tr>';
+                return;
+            }
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const rowsHtml = sales.map(sale => {
+                const total = sale.total || 0;
+                // Use amountPaid and balanceDue if they exist from pos.html, otherwise calculate
+                const amountPaid = sale.amountPaid !== undefined ? sale.amountPaid : (sale.paymentMethod !== 'credit' ? total : 0);
+                const balanceDue = sale.balanceDue !== undefined ? sale.balanceDue : total - amountPaid;
+
+                const isPaid = balanceDue < 0.01;
+                const statusPill = isPaid
+                    ? `<span class="status-pill status-paid">Paid</span>`
+                    : `<span class="status-pill status-unpaid">Unpaid</span>`;
+                
+                const dueDate = sale.dueDate ? sale.dueDate.toDate() : null;
+                const isOverdue = !isPaid && dueDate && dueDate < today;
+
+                const rowClass = isOverdue ? 'row-overdue' : '';
+
+                return `
+                    <tr class="${rowClass}" data-id="${sale.id}">
+                        <td>${sale.invoiceNo || 'N/A'}</td>
+                        <td>${formatDate(sale.createdAt ? sale.createdAt.toDate() : null)}</td>
+                        <td>${(sale.customer && sale.customer.name) ? sale.customer.name : 'Walk-in Customer'}</td>
+                        <td>${formatCurrency(total)}</td>
+                        <td>${formatCurrency(amountPaid)}</td>
+                        <td>${formatCurrency(balanceDue)}</td>
+                        <td>${dueDate ? formatDate(dueDate) : 'N/A'}</td>
+                        <td>${statusPill}</td>
+                        <td><button class="btn-sm" onclick="viewInvoice('${sale.id}')">View</button></td>
+                    </tr>
+                `;
+            }).join('');
+            
+            tableBody.innerHTML += rowsHtml;
+        }
+        
+        function viewInvoice(saleId) {
+            const sale = allSales.find(s => s.id === saleId);
+            if (!sale) {
+                alert('Could not find sale details.');
+                return;
+            }
+
+            const modal = document.getElementById('invoiceModal');
+            document.getElementById('modalInvoiceNumber').innerText = `Invoice: ${sale.invoiceNo || 'N/A'}`;
+            
+            const total = sale.total || 0;
+            const amountPaid = sale.amountPaid !== undefined ? sale.amountPaid : (sale.paymentMethod !== 'credit' ? total : 0);
+            const balanceDue = sale.balanceDue !== undefined ? sale.balanceDue : total - amountPaid;
+            
+            const itemsHtml = (sale.items || []).map(item => `
+                <tr>
+                    <td>${item.name || ''}</td>
+                    <td style="text-align:right;">${item.quantity || item.qty || 0}</td>
+                    <td style="text-align:right;">${formatCurrency(item.price || item.unitPrice || 0)}</td>
+                    <td style="text-align:right;">${formatCurrency((item.quantity || item.qty || 0) * (item.price || item.unitPrice || 0))}</td>
+                </tr>
+            `).join('');
+
+            const modalBody = `
+                <div class="invoice-details-grid">
+                    <div><span>Customer:</span><span>${(sale.customer && sale.customer.name) ? sale.customer.name : 'Walk-in Customer'}</span></div>
+                    <div><span>Date:</span><span>${formatDate(sale.createdAt ? sale.createdAt.toDate() : null)}</span></div>
+                    <div><span>Payment:</span><span>${sale.paymentMethod || 'N/A'}</span></div>
+                    <div><span>Due Date:</span><span>${sale.dueDate ? formatDate(sale.dueDate.toDate()) : 'N/A'}</span></div>
+                </div>
+                <table class="invoice-items-table">
+                    <thead><tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th></tr></thead>
+                    <tbody>${itemsHtml}</tbody>
+                </table>
+                <div class="invoice-totals">
+                     <div><span>Subtotal:</span> <span>${formatCurrency(sale.subtotal || total)}</span></div>
+                     <div><span>Discount:</span> <span>${formatCurrency(sale.discount || 0)}</span></div>
+                     <div class="total"><span>Total:</span> <span>${formatCurrency(total)}</span></div>
+                     <hr style="border:none; border-top:1px solid #eee; margin: 8px 0;">
+                     <div><span>Amount Paid:</span> <span>${formatCurrency(amountPaid)}</span></div>
+                     <div class="total"><span>Balance Due:</span> <span>${formatCurrency(balanceDue)}</span></div>
+                </div>
+            `;
+            document.getElementById('modalBody').innerHTML = modalBody;
+            modal.style.display = 'flex';
+        }
+        
+        function handleScroll() {
+            // Load more when user is 100px from the bottom
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 100) {
+                if (lastVisible && !isLoading) {
+                    fetchSales();
+                }
+            }
+        }
+
+        // Initialize
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = '/';
+                return;
+            }
+            
+            const ctx = await window.dashboardCore.getContext(user);
+            if (ctx && ctx.businessId === KUBUKA_BUSINESS_ID) {
+                currentBusinessId = ctx.businessId;
+                document.documentElement.classList.add('digibiz-sidebar-reserved');
+                
+                await fetchSales(true); // Initial fetch
+                window.addEventListener('scroll', handleScroll);
+
+            } else {
+                document.body.innerHTML = '<h1 style="text-align:center;margin-top:50px;">Access Denied</h1><p style="text-align:center;">This page is not available for your business.</p>';
+            }
+        });
+        
+        // Event Listeners
+        document.getElementById('filterBtn').addEventListener('click', () => {
+             lastVisible = null; // Reset pagination
+             fetchSales(true);
+        });
+        
+        document.getElementById('searchInput').addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') {
+                // For client-side search, we can filter the already loaded `allSales` array.
+                // For a server-side search, this would trigger a new fetch.
+                // Let's stick with a simpler client-side approach for now.
+                applyClientSideFilter();
+            }
+        });
+
+        // Modal close functionality
+        document.querySelector('.close-button').onclick = () => document.getElementById('invoiceModal').style.display = 'none';
+        window.onclick = (event) => {
+            const modal = document.getElementById('invoiceModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        };
+
+    </script>
+</body>
+</html>

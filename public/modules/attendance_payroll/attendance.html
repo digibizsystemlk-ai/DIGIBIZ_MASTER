@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance Log & Sync - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <script src="../../core/firebase-init.js?v=3"></script>
+    <script src="../../core/auth-roles.js?v=3"></script>
+    <script src="../../core/business-types.js?v=4"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
+    
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter',sans-serif;background:#f8fafc;color:#1e293b;padding:30px;}
+        
+        .header-section{display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;}
+        .header-title h2{font-size:24px;font-weight:800;color:#0f172a;}
+        .header-title p{font-size:14px;color:#64748b;margin-top:4px;}
+
+        .btn-primary{background:#3b82f6;color:white;border:none;padding:10px 20px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 4px 12px rgba(59,130,246,0.25);transition:all 0.2s;}
+        .btn-primary:hover{background:#2563eb;transform:translateY(-1px);}
+        .btn-qr{background:#8b5cf6;color:white;border:none;padding:10px 20px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 4px 12px rgba(139,92,246,0.25);transition:all 0.2s;}
+        .btn-qr:hover{background:#7c3aed;transform:translateY(-1px);}
+        .btn-outline{background:white;border:1px solid #cbd5e1;color:#475569;padding:10px 18px;border-radius:10px;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:8px;}
+
+        /* Rules Banner */
+        .rules-card{background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:16px;padding:16px 20px;margin-bottom:25px;font-size:13px;color:#1e3a8a;}
+        .rules-card h4{font-size:14px;font-weight:800;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+        .rules-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;background:white;padding:12px;border-radius:12px;border:1px solid #dbeafe;}
+
+        .controls-bar{background:white;border-radius:16px;padding:15px 20px;margin-bottom:25px;display:flex;gap:15px;align-items:center;border:1px solid #e2e8f0;flex-wrap:wrap;}
+        .controls-bar input, .controls-bar select{padding:10px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;}
+
+        .card-box{background:white;border-radius:20px;border:1px solid #e2e8f0;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);}
+        .table-custom{width:100%;border-collapse:collapse;}
+        .table-custom th,.table-custom td{padding:14px 18px;text-align:left;border-bottom:1px solid #e2e8f0;font-size:13px;}
+        .table-custom th{background:#f8fafc;font-weight:700;color:#475569;}
+        .table-custom tr:hover{background:#f8fafc;}
+        .table-custom tfoot tr{background:#f1f5f9;font-weight:800;border-top:2px solid #cbd5e1;}
+
+        .emp-report-link{color:#2563eb;font-weight:700;text-decoration:none;transition:all 0.2s;}
+        .emp-report-link:hover{text-decoration:underline;color:#1d4ed8;}
+
+        .badge{padding:5px 12px;border-radius:20px;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;gap:6px;}
+        .badge-onduty{background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;}
+        .badge-offduty{background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;}
+        .badge-pending{background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;}
+
+        /* Modal Overlay Styles */
+        .modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.7);z-index:9999;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px);}
+        .modal-card{background:white;border-radius:24px;padding:32px;width:100%;max-width:920px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);max-height:90vh;overflow-y:auto;}
+        
+        .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:20px 0;}
+        .stat-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:14px;text-align:center;}
+        .stat-card h4{font-size:18px;font-weight:800;color:#0f172a;}
+        .stat-card p{font-size:11px;font-weight:600;color:#64748b;margin-top:2px;}
+
+        /* QR Poster Modal */
+        .qr-poster-box{border:3px dashed #8b5cf6;border-radius:20px;padding:30px;background:#f8fafc;margin:20px 0;text-align:center;}
+        #qrcodeCanvas{display:flex;justify-content:center;margin:15px 0;}
+        #qrcodeCanvas img,#qrcodeCanvas canvas{border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.1);padding:12px;background:white;}
+    </style>
+</head>
+<body>
+    <div class="header-section">
+        <div class="header-title">
+            <h2>🏢 Employee Directory & Monthly Attendance Dashboard</h2>
+            <p>සේවක ලැයිස්තුව, සජීවී පැමිණීමේ තත්ත්වය සහ මාසික OT / Timesheet සාරාංශ පුවරුව</p>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn-qr" onclick="openQrModal()"><i class="fa-solid fa-qrcode"></i> Print Company QR Poster</button>
+            <button class="btn-outline" onclick="window.location.href='mobile-scan.html'"><i class="fa-solid fa-mobile-screen"></i> Mobile QR Scanner</button>
+            <button class="btn-primary" onclick="loadEmployeeDirectory()"><i class="fa-solid fa-rotate"></i> Refresh Sync</button>
+        </div>
+    </div>
+
+    <!-- Shift & OT Calculation Policy Banner -->
+    <div class="rules-card">
+        <h4><i class="fa-solid fa-calculator"></i> නිල සේවක වැඩ පැය සහ අතිකාල පැය (OT) ගණනය කිරීමේ සූත්‍රය (Work & OT Policy):</h4>
+        <div class="rules-grid">
+            <div>
+                <strong>☀️ පැය 12 ෂිෆ්ට් එක (Day/Night Shift):</strong><br>
+                • මුළු කාලය: පැය 12 | විවේකය: පැය 1 (දිවා/රාත්‍රී ආහාර)<br>
+                • සැබෑ වැඩ පැය: <strong>පැය 11</strong> (12 - 1) | සාමාන්‍ය වැඩ පැය: පැය 8<br>
+                • 🎯 <strong>හිමිවන අතිකාල (OT): පැය 3.0</strong> (11 - 8)
+            </div>
+            <div>
+                <strong>🌙 පැය 24 ෂිෆ්ට් එක (24-Hour Duty Shift):</strong><br>
+                • මුළු කාලය: පැය 24 | විවේකය: පැය 2<br>
+                • සැබෑ වැඩ පැය: <strong>පැය 22</strong> (24 - 2) | සාමාන්‍ය වැඩ පැය: පැය 8<br>
+                • 🎯 <strong>හිමිවන අතිකාල (OT): පැය 14.0</strong> (22 - 8)
+            </div>
+        </div>
+    </div>
+
+    <div class="controls-bar">
+        <label style="font-size:13px;font-weight:700;color:#475569;"><i class="fa-solid fa-calendar-days"></i> Select Month:</label>
+        <input type="month" id="selectedMonth" value="2026-08" onchange="loadEmployeeDirectory()">
+        
+        <select id="statusFilter" onchange="loadEmployeeDirectory()">
+            <option value="ALL">All Statuses (සියලුම සේවකයින්)</option>
+            <option value="ON_DUTY">🟢 Currently On Duty (සේවයේ නිරත)</option>
+            <option value="OFF_DUTY">🔴 Off Duty / Checked Out (පිටවූ)</option>
+            <option value="NOT_REPORTED">⚪ Not Reported Today (වාර්තා නොකළ)</option>
+        </select>
+        
+        <input type="text" id="searchInput" placeholder="Search employee by name, ID or phone..." style="flex:1;" oninput="loadEmployeeDirectory()">
+    </div>
+
+    <div class="card-box">
+        <table class="table-custom">
+            <thead>
+                <tr>
+                    <th>Emp ID</th>
+                    <th>Employee Name</th>
+                    <th>Registered Phone</th>
+                    <th>Today Status</th>
+                    <th>Monthly Days</th>
+                    <th>Monthly Active Hrs</th>
+                    <th>Monthly OT Hrs</th>
+                    <th>Monthly Night Allowance</th>
+                    <th style="text-align:center;">Action</th>
+                </tr>
+            </thead>
+            <tbody id="empTableBody">
+                <!-- Populated dynamically per employee -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Individual Employee Attendance Timesheet Popup Modal -->
+    <div class="modal-overlay" id="empReportModal">
+        <div class="modal-card">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:15px;">
+                <div>
+                    <h2 style="font-size:22px;font-weight:800;color:#0f172a;" id="repModalEmpName">M. N. Fernando</h2>
+                    <p style="font-size:13px;color:#64748b;margin-top:2px;" id="repModalEmpSub">Emp ID: EMP-003 | Phone: 0755551212 | DIGIBIZ Attendance Directory</p>
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="btn-primary" onclick="downloadIndividualPdf()"><i class="fa-solid fa-file-pdf"></i> Download PDF Report</button>
+                    <button class="btn-qr" onclick="printIndividualReport()"><i class="fa-solid fa-print"></i> Print A4 Report</button>
+                </div>
+            </div>
+
+            <!-- Timesheet Summary Cards -->
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <h4 id="statDaysPresent">0 Days</h4>
+                    <p>Total Days Worked</p>
+                </div>
+                <div class="stat-card">
+                    <h4 id="statTotalActiveHours">0.0 hrs</h4>
+                    <p>Active Work Hours (සැබෑ වැඩ පැය)</p>
+                </div>
+                <div class="stat-card">
+                    <h4 id="statBasicHours">0.0 hrs</h4>
+                    <p>Normal Duty (සාමාන්‍ය පැය)</p>
+                </div>
+                <div class="stat-card">
+                    <h4 id="statTotalOt">0.0 hrs</h4>
+                    <p>Calculated OT (අතිකාල පැය)</p>
+                </div>
+                <div class="stat-card">
+                    <h4 id="statNightAllowance">Rs. 0.00</h4>
+                    <p>Night Shift Allowance</p>
+                </div>
+            </div>
+
+            <!-- Detailed Monthly Breakdown Table -->
+            <h3 style="font-size:15px;font-weight:700;color:#334155;margin:20px 0 10px 0;">📅 Daily Attendance & OT Breakdown Timesheet</h3>
+            <div class="card-box" style="border-radius:12px;">
+                <table class="table-custom">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Shift Type</th>
+                            <th>In Time</th>
+                            <th>Out Time</th>
+                            <th>Total Time</th>
+                            <th>Rest Break</th>
+                            <th>Active Hours</th>
+                            <th>Basic Duty</th>
+                            <th>OT Hours</th>
+                            <th>Method</th>
+                        </tr>
+                    </thead>
+                    <tbody id="empReportTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                    <tfoot id="empReportTableFoot">
+                        <!-- Populated by JS for Final Monthly Totals -->
+                    </tfoot>
+                </table>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;margin-top:20px;">
+                <button class="btn-outline" onclick="closeEmpReportModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR Code Print Modal -->
+    <div class="modal-overlay" id="qrModal">
+        <div class="modal-card" style="max-width:520px;text-align:center;">
+            <h2 style="font-size:22px;font-weight:800;color:#0f172a;">🖨️ Official Workplace Attendance QR Code</h2>
+            <p style="font-size:13px;color:#64748b;margin-top:4px;">ආයතන පරිශ්‍රයේ අලවා තැබීම සඳහා වූ නිල QR Code පෝස්ටරය</p>
+            
+            <div class="qr-poster-box" id="printableQrArea">
+                <div style="font-size:24px;font-weight:900;color:#3b82f6;letter-spacing:1px;margin-bottom:4px;">DIGIBIZ™ ATTENDANCE</div>
+                <h3 id="bizTitleName">TEST - ATTENDANCE WORKPLACE</h3>
+                <p>SCAN WITH DIGIBIZ MOBILE APP TO MARK ATTENDANCE</p>
+                <div id="qrcodeCanvas"></div>
+                <div style="font-size:12px;font-weight:700;color:#64748b;margin-top:10px;">
+                    📌 Instructions: Open DIGIBIZ Mobile Attendance Scanner app on your phone and point camera to scan.
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:center;gap:12px;margin-top:20px;">
+                <button class="btn-outline" onclick="closeQrModal()">Close</button>
+                <button class="btn-qr" onclick="printQrPoster()"><i class="fa-solid fa-print"></i> Print Poster</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let qrGenerated = false;
+        let selectedEmpId = '';
+        let selectedEmpName = '';
+        let selectedEmpPhone = '';
+
+        let curTotalDays = 0;
+        let curTotalActiveHours = 0;
+        let curTotalBasicHours = 0;
+        let curTotalOtHours = 0;
+        let curTotalNightAllowance = 0;
+        let curTotalShiftHours = 0;
+        let curTotalRestBreakHours = 0;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadEmployeeDirectory();
+            initFirestoreListener();
+
+            window.addEventListener('storage', (e) => {
+                if (e.key === 'digibiz_attendance_logs' || e.key === 'digibiz_registered_employees') {
+                    loadEmployeeDirectory();
+                }
+            });
+        });
+
+        function getRegisteredEmployees() {
+            let list = [];
+            try {
+                const stored = localStorage.getItem('digibiz_registered_employees');
+                if (stored) list = JSON.parse(stored);
+            } catch(e) {}
+
+            if (!list || list.length === 0) {
+                list = [
+                    { empId: 'EMP-001', name: 'K. A. Perera', phone: '0771234567', designation: 'Technician' },
+                    { empId: 'EMP-002', name: 'S. D. Silva', phone: '0719876543', designation: 'Operator' },
+                    { empId: 'EMP-003', name: 'M. N. Fernando', phone: '0755551212', designation: 'Supervisor' }
+                ];
+            }
+            return list;
+        }
+
+        function calculateShiftMetrics(shiftName, inTime, outTime) {
+            let isCheckedOut = outTime && outTime !== '--:--';
+            let hasInTime = inTime && inTime !== '--:--';
+
+            if (!isCheckedOut || !hasInTime) {
+                let is24h = shiftName && shiftName.includes('24');
+                let totalShiftHours = is24h ? 24.0 : 12.0;
+                let restBreak = is24h ? 2.0 : 1.0;
+                let activeWorkHours = totalShiftHours - restBreak;
+                let basicHours = 8.0;
+
+                return {
+                    totalShiftHoursNum: totalShiftHours,
+                    restBreakNum: restBreak,
+                    totalShiftHoursStr: `${totalShiftHours.toFixed(1)} hrs`,
+                    restBreakStr: `${restBreak.toFixed(1)} hrs`,
+                    activeWorkHoursStr: 'In Progress',
+                    activeWorkHoursNum: 0.0,
+                    basicHoursStr: `${basicHours.toFixed(1)} hrs`,
+                    otHoursStr: '0.0 Hours',
+                    otHoursNum: 0.0
+                };
+            }
+
+            function parseToMinutes(tStr) {
+                if (!tStr || tStr === '--:--') return 0;
+                const parts = tStr.split(' ');
+                let [hrs, mins] = parts[0].split(':').map(Number);
+                if (parts[1]) {
+                    const ampm = parts[1].toUpperCase();
+                    if (ampm === 'PM' && hrs < 12) hrs += 12;
+                    if (ampm === 'AM' && hrs === 12) hrs = 0;
+                }
+                return hrs * 60 + mins;
+            }
+
+            let inMins = parseToMinutes(inTime);
+            let outMins = parseToMinutes(outTime);
+
+            if (outMins < inMins) outMins += 24 * 60;
+
+            let elapsedMins = outMins - inMins;
+            let totalElapsedHours = elapsedMins / 60;
+
+            let restBreak = 0.0;
+            if (totalElapsedHours >= 20) {
+                restBreak = 2.0;
+            } else if (totalElapsedHours >= 10) {
+                restBreak = 1.0;
+            } else if (totalElapsedHours > 1) {
+                restBreak = 0.5;
+            }
+
+            let activeWorkHours = Math.max(0, totalElapsedHours - restBreak);
+            let basicHours = Math.min(8.0, activeWorkHours);
+            let otHours = Math.max(0, activeWorkHours - 8.0);
+
+            return {
+                totalShiftHoursNum: totalElapsedHours,
+                restBreakNum: restBreak,
+                totalShiftHoursStr: `${totalElapsedHours.toFixed(1)} hrs`,
+                restBreakStr: `${restBreak.toFixed(1)} hrs`,
+                activeWorkHoursStr: `${activeWorkHours.toFixed(1)} hrs`,
+                activeWorkHoursNum: activeWorkHours,
+                basicHoursStr: `${basicHours.toFixed(1)} hrs`,
+                otHoursStr: `${otHours.toFixed(1)} Hours`,
+                otHoursNum: otHours
+            };
+        }
+
+        function consolidateLogs(rawLogs) {
+            const map = new Map();
+            rawLogs.forEach(l => {
+                if (!l || !l.empId) return;
+                const key = `${l.empId}_${l.date}`;
+                if (!map.has(key)) {
+                    map.set(key, { ...l });
+                } else {
+                    const existing = map.get(key);
+                    if (l.inTime && l.inTime !== '--:--') existing.inTime = l.inTime;
+                    if (l.outTime && l.outTime !== '--:--') existing.outTime = l.outTime;
+                    if (l.mode === 'OUT' || existing.outTime !== '--:--') {
+                        existing.status = 'Shift Completed';
+                    }
+                    if (l.timestamp > existing.timestamp) existing.timestamp = l.timestamp;
+                }
+            });
+            return Array.from(map.values()).sort((a,b) => (b.timestamp||0) - (a.timestamp||0));
+        }
+
+        function initFirestoreListener() {
+            const firestoreDb = window.db || (window.firebase && window.firebase.firestore ? window.firebase.firestore() : null);
+            if (firestoreDb) {
+                const bizId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || 'ATTENDANCE_BIZ_001';
+                
+                const handleSnapshot = (snapshot) => {
+                    let cloudLogs = [];
+                    snapshot.forEach(doc => {
+                        cloudLogs.push(doc.data());
+                    });
+
+                    if (cloudLogs.length > 0) {
+                        let localLogs = [];
+                        try {
+                            const stored = localStorage.getItem('digibiz_attendance_logs');
+                            if (stored) localLogs = JSON.parse(stored);
+                        } catch(e) {}
+
+                        const mergedMap = new Map();
+                        [...cloudLogs, ...localLogs].forEach(item => {
+                            if (!item || !item.empId) return;
+                            const key = item.empId + '_' + item.date + '_' + (item.time || item.inTime || item.mode);
+                            if (!mergedMap.has(key)) mergedMap.set(key, item);
+                        });
+
+                        const mergedLogs = Array.from(mergedMap.values()).sort((a,b) => (b.timestamp||0) - (a.timestamp||0));
+                        localStorage.setItem('digibiz_attendance_logs', JSON.stringify(mergedLogs));
+                        loadEmployeeDirectory();
+                    }
+                };
+
+                firestoreDb.collection('attendance_logs').onSnapshot(handleSnapshot, err => console.warn('Top-level snapshot error:', err));
+                firestoreDb.collection('businesses').doc(bizId).collection('attendance_logs').onSnapshot(handleSnapshot, err => console.warn('Sub-collection snapshot error:', err));
+            }
+        }
+
+        function loadEmployeeDirectory() {
+            const tableBody = document.getElementById('empTableBody');
+            const searchVal = document.getElementById('searchInput').value.toLowerCase().trim();
+            const selectedMonthVal = document.getElementById('selectedMonth').value; // e.g. "2026-08"
+            const statusFilterVal = document.getElementById('statusFilter').value;
+
+            const employees = getRegisteredEmployees();
+
+            let logs = [];
+            try {
+                const stored = localStorage.getItem('digibiz_attendance_logs');
+                if (stored) logs = JSON.parse(stored);
+            } catch(e) {}
+
+            const consolidated = consolidateLogs(logs);
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            let html = '';
+            employees.forEach(emp => {
+                if (searchVal && !emp.name.toLowerCase().includes(searchVal) && !emp.empId.toLowerCase().includes(searchVal) && !emp.phone.includes(searchVal)) {
+                    return;
+                }
+
+                // Filter logs for this employee for selected month
+                const empMonthlyLogs = consolidated.filter(l => (l.empId === emp.empId || l.phone === emp.phone) && l.date.startsWith(selectedMonthVal));
+                
+                // Check today's log status
+                const todayLog = consolidated.find(l => (l.empId === emp.empId || l.phone === emp.phone) && l.date === todayStr);
+
+                let statusBadge = '<span class="badge badge-pending">⚪ Not Reported Today</span>';
+                let statusCode = 'NOT_REPORTED';
+
+                if (todayLog) {
+                    if (todayLog.outTime && todayLog.outTime !== '--:--') {
+                        statusBadge = `<span class="badge badge-offduty">🔴 Off Duty (Out: ${todayLog.outTime})</span>`;
+                        statusCode = 'OFF_DUTY';
+                    } else if (todayLog.inTime && todayLog.inTime !== '--:--') {
+                        statusBadge = `<span class="badge badge-onduty">🟢 On Duty (In: ${todayLog.inTime})</span>`;
+                        statusCode = 'ON_DUTY';
+                    }
+                }
+
+                if (statusFilterVal !== 'ALL' && statusFilterVal !== statusCode) {
+                    return;
+                }
+
+                let monthlyDays = empMonthlyLogs.length;
+                let monthlyActiveHours = 0;
+                let monthlyOtHours = 0;
+                let monthlyNightAllowance = 0;
+
+                empMonthlyLogs.forEach(l => {
+                    const metrics = calculateShiftMetrics(l.shift, l.inTime || l.time, l.outTime);
+                    monthlyActiveHours += metrics.activeWorkHoursNum;
+                    monthlyOtHours += metrics.otHoursNum;
+                    if (l.shift && l.shift.toLowerCase().includes('night')) {
+                        monthlyNightAllowance += 200;
+                    }
+                });
+
+                html += `
+                    <tr>
+                        <td><strong>${emp.empId}</strong></td>
+                        <td>
+                            <a href="javascript:void(0)" class="emp-report-link" onclick="openEmpReportModal('${emp.empId}', '${emp.name.replace(/'/g, "\\'")}', '${emp.phone}')">
+                                <i class="fa-solid fa-user-gear"></i> ${emp.name}
+                            </a>
+                        </td>
+                        <td>${emp.phone}</td>
+                        <td>${statusBadge}</td>
+                        <td><strong>${monthlyDays} Days</strong></td>
+                        <td><strong>${monthlyActiveHours.toFixed(1)} hrs</strong></td>
+                        <td><strong style="color:#2563eb;">${monthlyOtHours.toFixed(1)} Hours</strong></td>
+                        <td>Rs. ${monthlyNightAllowance.toFixed(2)}</td>
+                        <td style="text-align:center;">
+                            <button class="btn-primary" onclick="openEmpReportModal('${emp.empId}', '${emp.name.replace(/'/g, "\\'")}', '${emp.phone}')" style="padding:6px 12px;font-size:12px;margin:0 auto;">
+                                <i class="fa-solid fa-file-invoice"></i> Monthly Timesheet
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            if (!html) {
+                html = `
+                    <tr>
+                        <td colspan="9" style="text-align:center;color:#64748b;padding:30px;font-weight:600;">
+                            ⚠️ සෙවුමට අදාළ සේවකයින් හෝ දත්ත හමු නොවිණි.
+                        </td>
+                    </tr>
+                `;
+            }
+
+            tableBody.innerHTML = html;
+        }
+
+        function openEmpReportModal(empId, empName, phone) {
+            selectedEmpId = empId;
+            selectedEmpName = empName;
+            selectedEmpPhone = phone;
+
+            document.getElementById('repModalEmpName').textContent = empName;
+            document.getElementById('repModalEmpSub').textContent = `Emp ID: ${empId} | Phone: ${phone} | DIGIBIZ Attendance Directory`;
+
+            const selectedMonthVal = document.getElementById('selectedMonth').value;
+
+            let logs = [];
+            try {
+                const stored = localStorage.getItem('digibiz_attendance_logs');
+                if (stored) logs = JSON.parse(stored);
+            } catch(e) {}
+
+            const empLogs = consolidateLogs(logs).filter(l => (l.empId === empId || l.phone === phone) && l.date.startsWith(selectedMonthVal));
+
+            curTotalDays = empLogs.length;
+            curTotalActiveHours = 0;
+            curTotalBasicHours = 0;
+            curTotalOtHours = 0;
+            curTotalNightAllowance = 0;
+            curTotalShiftHours = 0;
+            curTotalRestBreakHours = 0;
+
+            let tableHtml = '';
+            if (empLogs.length > 0) {
+                empLogs.forEach(l => {
+                    const metrics = calculateShiftMetrics(l.shift, l.inTime || l.time, l.outTime);
+                    curTotalShiftHours += metrics.totalShiftHoursNum;
+                    curTotalRestBreakHours += metrics.restBreakNum;
+                    curTotalActiveHours += metrics.activeWorkHoursNum;
+                    curTotalBasicHours += (l.outTime && l.outTime !== '--:--') ? Math.min(8.0, metrics.activeWorkHoursNum) : 0.0;
+                    curTotalOtHours += metrics.otHoursNum;
+
+                    if (l.shift && l.shift.toLowerCase().includes('night')) {
+                        curTotalNightAllowance += 200;
+                    }
+
+                    tableHtml += `
+                        <tr>
+                            <td>${l.date}</td>
+                            <td>${l.shift || '12h Day Shift'}</td>
+                            <td>${l.inTime || l.time || '07:30 AM'}</td>
+                            <td>${l.outTime || '--:--'}</td>
+                            <td>${metrics.totalShiftHoursStr}</td>
+                            <td>${metrics.restBreakStr}</td>
+                            <td><strong>${metrics.activeWorkHoursStr}</strong></td>
+                            <td>${metrics.basicHoursStr}</td>
+                            <td><strong style="color:#2563eb;">${metrics.otHoursStr}</strong></td>
+                            <td><span class="badge badge-mobile"><i class="fa-solid fa-qrcode"></i> ${l.method || 'Mobile QR Scan'}</span></td>
+                        </tr>
+                    `;
+                });
+            } else {
+                tableHtml = `
+                    <tr>
+                        <td colspan="10" style="text-align:center;color:#64748b;padding:24px;font-weight:600;">
+                            ⚠️ මෙම සේවකයා (${selectedMonthVal}) මාසය තුළ මෙතෙක් කිසිදු දිනයක සේවයට වාර්තා කර නොමැත.
+                        </td>
+                    </tr>
+                `;
+            }
+
+            document.getElementById('statDaysPresent').textContent = `${curTotalDays} Days`;
+            document.getElementById('statTotalActiveHours').textContent = `${curTotalActiveHours.toFixed(1)} hrs`;
+            document.getElementById('statBasicHours').textContent = `${curTotalBasicHours.toFixed(1)} hrs`;
+            document.getElementById('statTotalOt').textContent = `${curTotalOtHours.toFixed(1)} hrs`;
+            document.getElementById('statNightAllowance').textContent = `Rs. ${curTotalNightAllowance.toFixed(2)}`;
+
+            document.getElementById('empReportTableBody').innerHTML = tableHtml;
+
+            // Final Monthly Summary Footer Row
+            const footHtml = `
+                <tr>
+                    <td colspan="4" style="text-align:right;font-weight:800;color:#0f172a;">🏆 MONTHLY TOTALS (${selectedMonthVal}):</td>
+                    <td><strong>${curTotalShiftHours.toFixed(1)} hrs</strong></td>
+                    <td><strong>${curTotalRestBreakHours.toFixed(1)} hrs</strong></td>
+                    <td><strong style="color:#10b981;">${curTotalActiveHours.toFixed(1)} hrs</strong></td>
+                    <td><strong>${curTotalBasicHours.toFixed(1)} hrs</strong></td>
+                    <td><strong style="color:#2563eb;font-size:14px;">${curTotalOtHours.toFixed(1)} Hours</strong></td>
+                    <td>--</td>
+                </tr>
+            `;
+            document.getElementById('empReportTableFoot').innerHTML = footHtml;
+
+            document.getElementById('empReportModal').style.display = 'flex';
+        }
+
+        function closeEmpReportModal() {
+            document.getElementById('empReportModal').style.display = 'none';
+        }
+
+        function downloadIndividualPdf() {
+            const tableContent = document.getElementById('empReportTableBody').innerHTML;
+            const footContent = document.getElementById('empReportTableFoot').innerHTML;
+            const selectedMonthVal = document.getElementById('selectedMonth').value;
+            const cleanEmpName = (selectedEmpName || 'Employee').replace(/[^a-zA-Z0-9_]/g, '_');
+            const filename = `Attendance_Timesheet_${selectedEmpId}_${cleanEmpName}_${selectedMonthVal}.pdf`;
+
+            const container = document.createElement('div');
+            container.style.padding = '25px';
+            container.style.fontFamily = 'Inter, sans-serif';
+            container.style.color = '#0f172a';
+            container.style.background = '#ffffff';
+
+            container.innerHTML = `
+                <div style="border-bottom: 3px solid #3b82f6; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h2 style="font-size: 20px; margin: 0; color: #1e3a8a; font-weight: 800;">DIGIBIZ™ MONTHLY ATTENDANCE & OT TIMESHEET REPORT</h2>
+                        <p style="font-size: 12px; color: #64748b; margin-top: 4px;">Official Individual Monthly Attendance, Rest Hours & Overtime Summary</p>
+                    </div>
+                    <div style="text-align:right;font-size:12px;font-weight:700;color:#64748b;">
+                        Month: ${selectedMonthVal}<br>Generated: ${new Date().toISOString().split('T')[0]}
+                    </div>
+                </div>
+
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; margin-bottom: 16px; font-size: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div><strong>Employee Name:</strong> ${selectedEmpName}</div>
+                    <div><strong>Employee ID:</strong> ${selectedEmpId}</div>
+                    <div><strong>Phone Number:</strong> ${selectedEmpPhone}</div>
+                    <div><strong>Calculation Method:</strong> Standard Shift Rest/OT Rules</div>
+                </div>
+
+                <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px; font-size: 11px; margin-bottom: 16px; color: #1e3a8a;">
+                    <strong>📌 Calculation Rules Applied:</strong><br>
+                    • <strong>12-Hour Shift:</strong> Total 12h - Rest Break 1h = Active 11h (Basic 8h + <strong>OT 3.0 Hours</strong>)<br>
+                    • <strong>24-Hour Shift:</strong> Total 24h - Rest Break 2h = Active 22h (Basic 8h + <strong>OT 14.0 Hours</strong>)
+                </div>
+
+                <h3 style="font-size:14px;margin-bottom:8px;font-weight:700;color:#334155;">Daily Attendance Breakdown</h3>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 6px;">
+                    <thead>
+                        <tr style="background: #f1f5f9; font-weight: 700; color: #334155; font-size: 11px;">
+                            <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align:left;">Date</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align:left;">Shift Type</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align:left;">In Time</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align:left;">Out Time</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align:left;">Total</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align:left;">Rest</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align:left;">Active</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align:left;">Basic</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align:left;">OT</th>
+                            <th style="padding: 8px; border-bottom: 1px solid #cbd5e1; text-align:left;">Method</th>
+                        </tr>
+                    </thead>
+                    <tbody style="font-size:11px;">
+                        ${tableContent}
+                    </tbody>
+                    <tfoot style="font-size:11px;font-weight:800;background:#f1f5f9;">
+                        ${footContent}
+                    </tfoot>
+                </table>
+
+                <div style="background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 10px; padding: 14px; margin-top: 20px; font-size: 11.5px;">
+                    <h4 style="margin: 0 0 8px 0; color: #0f172a; font-weight: 800; font-size: 12px;">🏆 HR EXECUTIVE MONTHLY SUMMARY (${selectedMonthVal}):</h4>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+                        <div>• <strong>Total Days Worked:</strong> ${curTotalDays} Days</div>
+                        <div>• <strong>Total Active Work Hours:</strong> ${curTotalActiveHours.toFixed(1)} hrs</div>
+                        <div>• <strong>Total Basic Duty Hours:</strong> ${curTotalBasicHours.toFixed(1)} hrs</div>
+                        <div>• <strong>Total OT Hours:</strong> <span style="color:#2563eb;font-weight:800;">${curTotalOtHours.toFixed(1)} Hours</span></div>
+                        <div>• <strong>Night Allowance:</strong> <span style="color:#15803d;font-weight:800;">Rs. ${curTotalNightAllowance.toFixed(2)}</span></div>
+                        <div>• <strong>Verification Status:</strong> Approved & Certified</div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 40px; display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; color: #475569;">
+                    <div style="border-top: 1.5px solid #0f172a; width: 160px; text-align: center; padding-top: 4px;">Prepared By (HR)</div>
+                    <div style="border-top: 1.5px solid #0f172a; width: 160px; text-align: center; padding-top: 4px;">Employee Signature</div>
+                    <div style="border-top: 1.5px solid #0f172a; width: 160px; text-align: center; padding-top: 4px;">Approved By (Manager)</div>
+                </div>
+            `;
+
+            const opt = {
+                margin: 10,
+                filename: filename,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2 },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            if (window.html2pdf) {
+                html2pdf().set(opt).from(container).save();
+            } else {
+                printIndividualReport();
+            }
+        }
+
+        function printIndividualReport() {
+            const tableContent = document.getElementById('empReportTableBody').innerHTML;
+            const footContent = document.getElementById('empReportTableFoot').innerHTML;
+            const selectedMonthVal = document.getElementById('selectedMonth').value;
+            const printWin = window.open('', '', 'width=950,height=900');
+            printWin.document.write(`
+                <html>
+                <head>
+                    <title>Individual Timesheet & OT Report - ${selectedEmpName}</title>
+                    <style>
+                        @page { size: A4 portrait; margin: 15mm; }
+                        @media print {
+                            body { width: 210mm; margin: 0 auto; padding: 0; background: white; -webkit-print-color-adjust: exact; }
+                        }
+                        body { font-family: 'Inter', sans-serif; padding: 25px; color: #0f172a; background: #ffffff; }
+                        .header { border-bottom: 3px solid #3b82f6; padding-bottom: 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+                        .header h2 { font-size: 22px; margin: 0; color: #1e3a8a; font-weight: 800; }
+                        .header p { font-size: 13px; color: #64748b; margin-top: 4px; }
+                        .emp-info { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 13px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+                        .policy-summary { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 12px; font-size: 12px; margin-bottom: 20px; color: #1e3a8a; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #cbd5e1; font-size: 12px; }
+                        th { background: #f1f5f9; font-weight: 700; color: #334155; }
+                        tfoot tr { background: #f1f5f9; font-weight: 800; border-top: 2px solid #cbd5e1; }
+                        .summary-box { background: #f8fafc; border: 2px solid #cbd5e1; border-radius: 12px; padding: 16px; margin-top: 20px; font-size: 12px; }
+                        .signature-section { margin-top: 50px; display: flex; justify-content: space-between; font-size: 12px; font-weight: 700; color: #475569; }
+                        .sig-line { border-top: 1.5px solid #0f172a; width: 180px; text-align: center; padding-top: 6px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <div>
+                            <h2>DIGIBIZ™ MONTHLY ATTENDANCE & OT TIMESHEET REPORT</h2>
+                            <p>Official Individual Monthly Attendance, Rest Hours & Overtime Summary</p>
+                        </div>
+                        <div style="text-align:right;font-size:12px;font-weight:700;color:#64748b;">
+                            Month: ${selectedMonthVal}<br>Date: ${new Date().toISOString().split('T')[0]}
+                        </div>
+                    </div>
+
+                    <div class="emp-info">
+                        <div><strong>Employee Name:</strong> ${selectedEmpName}</div>
+                        <div><strong>Employee ID:</strong> ${selectedEmpId}</div>
+                        <div><strong>Phone Number:</strong> ${selectedEmpPhone}</div>
+                        <div><strong>Calculation Method:</strong> Standard Shift Rest/OT Rules</div>
+                    </div>
+
+                    <div class="policy-summary">
+                        <strong>📌 Calculation Rules Applied:</strong><br>
+                        • <strong>12-Hour Shift:</strong> Total 12h - Rest Break 1h = Active 11h (Basic 8h + <strong>OT 3.0 Hours</strong>)<br>
+                        • <strong>24-Hour Shift:</strong> Total 24h - Rest Break 2h = Active 22h (Basic 8h + <strong>OT 14.0 Hours</strong>)
+                    </div>
+
+                    <h3>Daily Attendance Breakdown (${selectedMonthVal})</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Shift Type</th>
+                                <th>In Time</th>
+                                <th>Out Time</th>
+                                <th>Total Time</th>
+                                <th>Rest Break</th>
+                                <th>Active Hours</th>
+                                <th>Basic Duty</th>
+                                <th>OT Hours</th>
+                                <th>Method</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableContent}
+                        </tbody>
+                        <tfoot>
+                            ${footContent}
+                        </tfoot>
+                    </table>
+
+                    <div class="summary-box">
+                        <h4 style="margin:0 0 10px 0;font-size:13px;color:#0f172a;font-weight:800;">🏆 HR EXECUTIVE MONTHLY FINAL SUMMARY STATEMENT (${selectedMonthVal}):</h4>
+                        <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;">
+                            <div>• <strong>Total Days Worked:</strong> ${curTotalDays} Days</div>
+                            <div>• <strong>Total Active Work Hours:</strong> ${curTotalActiveHours.toFixed(1)} hrs</div>
+                            <div>• <strong>Total Basic Duty Hours:</strong> ${curTotalBasicHours.toFixed(1)} hrs</div>
+                            <div>• <strong>Total Calculated OT Hours:</strong> <span style="color:#2563eb;font-weight:800;">${curTotalOtHours.toFixed(1)} Hours</span></div>
+                            <div>• <strong>Night Shift Allowance:</strong> <span style="color:#15803d;font-weight:800;">Rs. ${curTotalNightAllowance.toFixed(2)}</span></div>
+                            <div>• <strong>HR Audit Status:</strong> Verified & Finalized</div>
+                        </div>
+                    </div>
+
+                    <div class="signature-section">
+                        <div class="sig-line">Prepared By (HR)</div>
+                        <div class="sig-line">Employee Signature</div>
+                        <div class="sig-line">Approved By (Manager)</div>
+                    </div>
+
+                    <script>setTimeout(() => { window.print(); window.close(); }, 500);<\/script>
+                </body>
+                </html>
+            `);
+            printWin.document.close();
+        }
+
+        function openQrModal() {
+            document.getElementById('qrModal').style.display = 'flex';
+            if (!qrGenerated) {
+                const qrContainer = document.getElementById('qrcodeCanvas');
+                qrContainer.innerHTML = '';
+                const bizId = localStorage.getItem('currentBusinessId') || 'ATTENDANCE_BIZ_001';
+                const qrData = `DIGIBIZ_WORKPLACE_ATTENDANCE:${bizId}:${Date.now()}`;
+                
+                new QRCode(qrContainer, {
+                    text: qrData,
+                    width: 220,
+                    height: 220,
+                    colorDark : "#0f172a",
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.H
+                });
+                qrGenerated = true;
+            }
+        }
+
+        function closeQrModal() {
+            document.getElementById('qrModal').style.display = 'none';
+        }
+
+        function printQrPoster() {
+            const printContent = document.getElementById('printableQrArea').outerHTML;
+            const printWin = window.open('', '', 'width=700,height=800');
+            printWin.document.write(`
+                <html>
+                <head>
+                    <title>Workplace Attendance QR Poster</title>
+                    <style>
+                        body { font-family: 'Inter', sans-serif; text-align: center; padding: 40px; }
+                        .qr-poster-box { border: 4px solid #0f172a; border-radius: 24px; padding: 40px; max-width: 500px; margin: 0 auto; }
+                        h3 { font-size: 24px; margin-bottom: 6px; }
+                        p { font-size: 14px; color: #475569; }
+                        #qrcodeCanvas { margin: 24px 0; display: flex; justify-content: center; }
+                        #qrcodeCanvas img { width: 250px; height: 250px; }
+                    </style>
+                </head>
+                <body>
+                    ${printContent}
+                    <script>setTimeout(() => { window.print(); window.close(); }, 500);<\/script>
+                </body>
+                </html>
+            `);
+            printWin.document.close();
+        }
+    </script>
+</body>
+</html>

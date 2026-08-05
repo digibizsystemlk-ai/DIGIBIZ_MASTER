@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expenses Panel — DIGIBIZ Tire Center</title>
+    <style>
+        html.digibiz-sidebar-reserved body { margin-left: 260px; }
+        @media (max-width: 768px) { html.digibiz-sidebar-reserved body { margin-left: 0; } }
+    </style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=64"></script>
+    <script src="../../core/auth-roles.js?v=64"></script>
+    <script src="../../core/dashboard-core.js?v=64"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0f3b2c;
+            --primary-light: #10b981;
+            --text-dark: #0f172a;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --bg-page: #f8fafc;
+            --shadow: 0 4px 12px rgba(15, 59, 44, 0.05);
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg-page); color: var(--text-dark); margin: 0; padding: 0; }
+        .page { padding: 25px; max-width: 900px; margin: 0 auto; }
+        .card { background: white; border: 1px solid var(--border); border-radius: 20px; padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow); }
+        h1 { font-family: 'Outfit', sans-serif; font-size: 24px; font-weight: 800; color: var(--primary); margin: 0 0 8px; }
+        p.desc { font-size: 13px; color: var(--text-light); margin: 0 0 20px; }
+        label { display: block; font-size: 11px; font-weight: 700; color: var(--text-light); margin-top: 15px; text-transform: uppercase; letter-spacing: 0.05em; }
+        input, select, textarea { width: 100%; padding: 12px; border: 1.5px solid var(--border); border-radius: 12px; box-sizing: border-box; font-size: 14px; transition: all 0.2s; color: var(--text-dark); margin-top: 5px; }
+        input:focus, select:focus, textarea:focus { border-color: var(--primary-light); outline: none; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1); }
+        button.btn-save { background: var(--primary); color: white; border: none; padding: 14px; border-radius: 12px; cursor: pointer; font-weight: 700; margin-top: 24px; width: 100%; transition: all 0.2s; font-size: 14px; }
+        button.btn-save:hover { background: #134e3a; }
+        button.btn-save:active { transform: scale(0.98); }
+        .btn-loading { opacity: 0.7; pointer-events: none; background: #64748b !important; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 15px; }
+        th, td { padding: 12px 10px; border-bottom: 1px solid #f1f5f9; text-align: left; }
+        th { background: #f8fafc; font-weight: 700; color: var(--text-light); text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; }
+        .num { text-align: right; font-weight: 700; }
+        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: var(--primary); color: white; padding: 12px 24px; border-radius: 30px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); display: none; z-index: 10000; font-size: 14px; font-weight: 600; }
+        @media (max-width: 600px) {
+            .mobile-hide { display: none !important; }
+            th, td { padding: 10px 6px; }
+        }
+    </style>
+</head>
+<body>
+<div id="toast" class="toast"></div>
+<div class="page">
+    <div class="card">
+        <h1>Expenses Panel</h1>
+        <p class="desc">Log business daily operating expenses (rent, utilities, salaries, marketing). Entries automatically post to the general ledger.</p>
+        
+        <form id="expenseForm" onsubmit="saveExpense(event)">
+            <label for="expenseDate">Expense Date</label>
+            <input type="date" id="expenseDate" required>
+            
+            <label for="expAmount">Amount (LKR)</label>
+            <input type="number" id="expAmount" step="0.01" min="0.01" placeholder="0.00" required>
+            
+            <label for="expCategory">Expense Category</label>
+            <input id="expCategory" list="categoryList" placeholder="Select or type category..." required>
+            <datalist id="categoryList">
+                <option value="Salaries">Salaries</option>
+                <option value="Rent">Rent</option>
+                <option value="Utilities">Utilities</option>
+                <option value="Marketing">Marketing</option>
+                <option value="Other">Other</option>
+            </datalist>
+            
+            <label for="expPay">Payment Method</label>
+            <select id="expPay">
+                <option value="CASH">Cash (Cash in Hand)</option>
+                <option value="BANK">Bank (Bank Transfer)</option>
+            </select>
+            
+            <label for="expNote">Description / Note</label>
+            <textarea id="expNote" rows="2" placeholder="Brief note or reference (optional)..."></textarea>
+            
+            <button type="submit" class="btn-save" id="saveBtn">Save Expense</button>
+        </form>
+    </div>
+
+    <div class="card" id="todayCard" style="display:none; border: 1.5px solid var(--primary-light); background: #f0fdf4;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h2 style="font-family:'Outfit', sans-serif; font-size:18px; margin:0; color:var(--primary);">🟢 Today's Expenses</h2>
+            <div id="todayTotal" style="font-weight:800; font-size:15px; color:#065f46; background:#d1fae5; padding:6px 14px; border-radius:30px; border:1px solid #a7f3d0;">Total: Rs. 0.00</div>
+        </div>
+        <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Category</th>
+                        <th>Note</th>
+                        <th>Method</th>
+                        <th class="num">Amount (Rs.)</th>
+                    </tr>
+                </thead>
+                <tbody id="todayExpList"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="font-family:'Outfit', sans-serif; font-size:16px; margin:0 0 12px; color:var(--text-light);">Recent History</h2>
+        <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Category</th>
+                        <th>Note</th>
+                        <th>Method</th>
+                        <th class="num">Amount (Rs.)</th>
+                    </tr>
+                </thead>
+                <tbody id="historyExpList">
+                    <tr><td colspan="5" style="text-align:center; padding:30px; color:#94a3b8;">Loading expenses...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentBusinessId = '';
+    const fmt = (v) => `Rs. ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    function renderRow(r) {
+        return `
+            <tr>
+                <td>${r.expenseDate || '-'}</td>
+                <td><span style="font-weight:700; color:var(--primary);">${r.category}</span></td>
+                <td style="color:var(--text-light);">${r.note || '-'}</td>
+                <td><span style="font-size:11px; font-weight:700; background:#f1f5f9; padding:3px 8px; border-radius:6px;">${r.paymentMethod || 'CASH'}</span></td>
+                <td class="num" style="color:#dc2626;">${fmt(r.amount).replace('Rs. ', '')}</td>
+            </tr>
+        `;
+    }
+
+    async function loadList() {
+        if (!currentBusinessId) return;
+        
+        let snap;
+        try {
+            snap = await db.collection('expenses').doc(currentBusinessId).collection('list')
+                .orderBy('expenseDate', 'desc')
+                .limit(100)
+                .get();
+        } catch (e) {
+            console.error('[Expenses] Fetch failed:', e);
+            snap = { docs: [] };
+        }
+
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+        const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        const todayRows = rows.filter(r => r.expenseDate === today);
+        const olderRows = rows.filter(r => r.expenseDate !== today);
+
+        const todayCard = document.getElementById('todayCard');
+        const todayTotalEl = document.getElementById('todayTotal');
+        const todayBody = document.getElementById('todayExpList');
+        const historyBody = document.getElementById('historyExpList');
+
+        if (todayRows.length > 0) {
+            const total = todayRows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+            if (todayTotalEl) todayTotalEl.textContent = `Total: ${fmt(total)}`;
+            if (todayBody) todayBody.innerHTML = todayRows.map(renderRow).join('');
+            if (todayCard) todayCard.style.display = 'block';
+        } else {
+            if (todayCard) todayCard.style.display = 'none';
+        }
+
+        if (historyBody) {
+            historyBody.innerHTML = olderRows.map(renderRow).join('') || '<tr><td colspan="5" style="text-align:center; padding:30px; color:#94a3b8;">No expenses recorded yet.</td></tr>';
+        }
+    }
+
+    async function saveExpense(e) {
+        e.preventDefault();
+        if (!currentBusinessId) return;
+
+        const expenseDate = document.getElementById('expenseDate').value;
+        const amount = parseFloat(document.getElementById('expAmount').value) || 0;
+        const category = document.getElementById('expCategory').value.trim();
+        const pay = document.getElementById('expPay').value;
+        const note = document.getElementById('expNote').value.trim();
+
+        if (amount <= 0) return alert('Please enter a valid amount.');
+        if (!category) return alert('Please select an expense category.');
+
+        // Map Category to Chart of Accounts
+        let accCode = '5-5050-01'; // Default: Marketing/Other
+        let accName = 'Marketing Expense';
+        if (category.toLowerCase().includes('salary')) {
+            accCode = '5-5020-01';
+            accName = 'Salary Expense';
+        } else if (category.toLowerCase().includes('rent')) {
+            accCode = '5-5030-01';
+            accName = 'Rent Expense';
+        } else if (category.toLowerCase().includes('utilit')) {
+            accCode = '5-5040-01';
+            accName = 'Utilities Expense';
+        }
+
+        const btn = document.getElementById('saveBtn');
+        btn.disabled = true;
+        btn.textContent = 'Saving expense...';
+
+        try {
+            // Write expense document
+            const expDoc = await db.collection('expenses').doc(currentBusinessId).collection('list').add({
+                expenseDate,
+                amount,
+                category,
+                paymentMethod: pay,
+                note,
+                accountCode: accCode,
+                accountName: accName,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            // Write double-entry journal posting
+            const creditAcc = pay === 'BANK' ? '1-1020-01' : '1-1010-01';
+            const journalEntries = [
+                { accountId: accCode, amount: amount, type: 'debit' },
+                { accountId: creditAcc, amount: amount, type: 'credit' }
+            ];
+
+            await db.collection('journal').doc(currentBusinessId).collection('entries').add({
+                date: new Date(expenseDate),
+                memo: `Tire Center Expense - ${category}${note ? ' (' + note + ')' : ''}`,
+                entries: journalEntries,
+                ref: expDoc.id,
+                refType: 'EXPENSE',
+                businessId: currentBusinessId,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            // Reset inputs
+            document.getElementById('expAmount').value = '';
+            document.getElementById('expNote').value = '';
+
+            showToast('✅ Expense saved successfully!');
+            await loadList();
+        } catch (err) {
+            console.error('[Expenses] Save failed:', err);
+            alert('Error saving expense: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Save Expense';
+        }
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.style.display = 'block';
+        setTimeout(() => { t.style.display = 'none'; }, 3000);
+    }
+
+    auth.onAuthStateChanged(async (user) => {
+        if (!user) { window.location.href = '/'; return; }
+        
+        let businessId = user.uid;
+        try {
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+        } catch (e) {
+            console.warn('[Expenses] Context fetch failed, using UID.');
+        }
+
+        currentBusinessId = businessId;
+        
+        // Set date input to Colombo today
+        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+        document.getElementById('expenseDate').value = todayStr;
+
+        await loadList();
+    });
+</script>
+</body>
+</html>

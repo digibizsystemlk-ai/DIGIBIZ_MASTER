@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ගණුදෙනු ඉතිහාසය - DIGIBIZ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js"></script>
+    <style>
+        :root { --primary: #0f172a; --bg: #f8fafc; --card: #ffffff; }
+        body { margin: 0; padding: 10px; font-family: 'Outfit', sans-serif; background-color: var(--bg); color: var(--primary); display: flex; justify-content: center; min-height: 100vh; }
+        .container { background: var(--card); width: 100%; max-width: 550px; padding: 25px; border-radius: 28px; box-shadow: 0 20px 50px -12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; margin-bottom: 40px; align-self: flex-start; margin-top: 20px;}
+        .header { text-align: center; margin-bottom: 25px; }
+        .brand { font-weight: 800; font-size: 22px; color: var(--primary); margin-bottom: 5px; }
+        .tagline { font-size: 14px; font-weight: 600; color: #64748b; }
+        table { width: 100%; border-collapse: collapse; margin: 0; }
+        th { text-align: left; font-size: 11px; text-transform: uppercase; color: #94a3b8; padding: 12px 15px; border-bottom: 2px solid #f1f5f9; }
+        td { padding: 15px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+        .text-right { text-align: right; }
+        .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container" id="mainContent">
+        <div style="text-align:center; padding:50px; color:#94a3b8;">කරුණාකර රැඳී සිටින්න... (Loading...)</div>
+    </div>
+
+    <script>
+        async function loadHistory() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const loanId = urlParams.get('hl');
+
+            if (!loanId) {
+                document.getElementById('mainContent').innerHTML = '<div style="text-align:center; padding:40px;">අවලංගු ලින්ක් එකකි. (Invalid Link)</div>';
+                return;
+            }
+
+            try {
+                let db = window.db;
+                if (!db) {
+                    for (let i = 0; i < 20; i++) {
+                        await new Promise(r => setTimeout(r, 200));
+                        if (window.db) { db = window.db; break; }
+                    }
+                }
+                if (!db) throw new Error("Database not ready.");
+
+                const snap = await db.collection('hand_loan_history')
+                    .where('loanId', '==', loanId)
+                    .limit(500)
+                    .get();
+
+                if (snap.empty) {
+                    document.getElementById('mainContent').innerHTML = `
+                        <div class="header">
+                            <div class="brand">ඔබගේ ගණුදෙනු ඉතිහාසය</div>
+                            <div class="tagline">මෙම ණය සඳහා ඉතිහාසයක් තවම සටහන් වී නොමැත.</div>
+                        </div>`;
+                    return;
+                }
+
+                const docs = snap.docs.map(d => d.data());
+                docs.sort((a,b)=>String(a.date || '').localeCompare(String(b.date || '')));
+
+                const customerName = docs[0].customerName || '-';
+
+                let running = 0;
+                let lastZeroIdx = -1;
+                const withTotals = docs.map((x, idx)=>{
+                    const amt = Number(x.amount || 0);
+                    running += amt;
+                    if (Math.abs(running) < 0.01) lastZeroIdx = idx;
+                    return { ...x, runningAfter: running };
+                });
+
+                const cycleRows = withTotals.slice(lastZeroIdx + 1);
+                let rows = cycleRows.slice().sort((a,b)=>String(b.date || '').localeCompare(String(a.date || '')));
+
+                let tableHtml = rows.map((x)=>{
+                    const dt = x.date ? new Date(x.date).toLocaleDateString() : '-';
+                    const amt = Number(x.amount || 0);
+                    const sign = amt >= 0 ? '+' : '';
+                    const tone = amt >= 0 ? '#166534' : '#b91c1c';
+                    
+                    return `<tr>
+                        <td>
+                            <div style="font-weight:600; color:#0f172a;">${dt}</div>
+                            <div style="font-size:11px; color:#64748b; margin-top:4px;">${x.note || '-'}</div>
+                        </td>
+                        <td class="text-right" style="font-weight:800; color:${tone};">
+                            ${sign}${Math.abs(amt).toLocaleString()}
+                        </td>
+                        <td class="text-right" style="font-weight:800; color:#0f172a;">
+                            ${x.runningAfter.toLocaleString()}
+                        </td>
+                    </tr>`;
+                }).join('');
+
+                if (rows.length === 0) {
+                    tableHtml = '<tr><td colspan="3" style="text-align:center; padding:30px; color:#94a3b8;">වාර්තා නොමැත</td></tr>';
+                }
+
+                document.getElementById('mainContent').innerHTML = `
+                    <div class="header">
+                        <div class="brand">ඔබගේ ගණුදෙනු ඉතිහාසය</div>
+                        <div class="tagline">නම: ${customerName}</div>
+                    </div>
+                    
+                    <div style="background:#fff; border:1px solid #e2e8f0; border-radius:16px; overflow:hidden;">
+                        <table>
+                            <thead style="background:#f8fafc;">
+                                <tr>
+                                    <th>දිනය (Date)</th>
+                                    <th class="text-right">වෙනස</th>
+                                    <th class="text-right">ඉතිරිය</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tableHtml}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="footer">
+                        Powered by <b>DIGIBIZ.lk</b>
+                    </div>
+                `;
+
+            } catch (err) {
+                console.error("History Error:", err);
+                document.getElementById('mainContent').innerHTML = '<div style="text-align:center; padding:40px; color:#ef4444;">දත්ත ලබාගැනීමට නොහැකි විය. කරුණාකර නැවත උත්සහ කරන්න.</div>';
+            }
+        }
+
+        window.onload = loadHistory;
+    </script>
+</body>
+</html>

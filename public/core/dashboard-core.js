@@ -196,7 +196,7 @@ class DashboardCore {
         
         // FORCE SCRAP CONTEXT FOR HIMESHI/SIRIMAL (ONLY ON LIVE)
         const isStaging = window.location.hostname.includes('digibiz-test');
-        if ((userEmail === 'biz.himeshi@gmail.com' || userEmail === 'biz.sirimal@gmail.com' || userEmail === 'scrap@chinthaka.com')) {
+        if ((userEmail === 'biz.himeshi@gmail.com' || userEmail === 'biz.sirimal@gmail.com' || userEmail === '2biz.sirimal@gmail.com' || userEmail === 'scrap@chinthaka.com')) {
             businessId = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
             businessType = 'scrap_collection_center';
         }
@@ -230,7 +230,7 @@ class DashboardCore {
 
         // Final safety check for Sirimal
         const email = String(user.email || '').toLowerCase();
-        const isAdminEmail = (email === 'biz.sirimal@gmail.com' || email === 'scrap@chinthaka.com');
+        const isAdminEmail = (email === 'biz.sirimal@gmail.com' || email === '2biz.sirimal@gmail.com' || email === 'scrap@chinthaka.com');
         
         if (isAdminEmail && (businessId === 'oDhSDYHQ2dV1DP33koysmZAqaY13' || businessId === 'STAGING_TEST_SCRAP_BIZ' || businessId === '8KlnS39HmqYwtcNzM0NZMkq6om63')) {
             businessType = 'scrap_collection_center';
@@ -293,15 +293,38 @@ class DashboardCore {
             .orderBy('date', 'desc')
             .limit(limit)
             .get();
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        return snapshot.docs.map(doc => {
+            const data = doc.data() || {};
+            let totalDebit = Number(data.totalDebit) || 0;
+            if (!totalDebit && Array.isArray(data.entries)) {
+                totalDebit = data.entries.reduce((sum, row) => {
+                    let dr = Number(row.debit) || 0;
+                    if (row.amount !== undefined && row.type === 'debit') {
+                        dr = Number(row.amount) || 0;
+                    }
+                    return sum + dr;
+                }, 0);
+            }
+            return { id: doc.id, ...data, totalDebit };
+        });
     }
 
     calculateCashFlow(entries) {
         return entries.reduce((sum, entry) => {
             if (!Array.isArray(entry.entries)) return sum;
             return sum + entry.entries.reduce((entrySum, row) => {
-                if (row.accountCode !== '1-1010-01') return entrySum;
-                return entrySum + (Number(row.debit) || 0) - (Number(row.credit) || 0);
+                const code = String(row.accountCode || row.accountId || '');
+                if (!code.startsWith('1-1010') && !code.startsWith('1-1020')) return entrySum;
+                
+                let dr = Number(row.debit) || 0;
+                let cr = Number(row.credit) || 0;
+                
+                if (row.amount !== undefined && row.type !== undefined) {
+                    if (row.type === 'debit') dr = Number(row.amount) || 0;
+                    if (row.type === 'credit') cr = Number(row.amount) || 0;
+                }
+                
+                return entrySum + dr - cr;
             }, 0);
         }, 0);
     }
@@ -586,7 +609,8 @@ class DashboardCore {
                     const fq = Number(item.freeQty) || 0;
                     if (fq > 0) {
                         freeIssueUnits += fq;
-                        freeIssueValueEst += fq * (Number(item.unitPrice) || 0);
+                        const fCost = Number(item.buyingPrice || item.buyingPriceRaw || item.costPrice) || ((Number(item.unitPrice) || 0) * 0.93);
+                        freeIssueValueEst += fq * fCost;
                     }
                     const brand = (item.productBrand || '').trim() || 'Unbranded';
                     const line = (Number(item.orderedQty) || 0) * (Number(item.unitPrice) || 0)
@@ -617,7 +641,7 @@ class DashboardCore {
         productsSnap.forEach((doc) => {
             const p = doc.data();
             const q = Number(p.currentStock != null ? p.currentStock : p.stock) || 0;
-            const price = Number(p.unitPrice) || 0;
+            const buyPrice = Number(p.buyingPrice || p.buyingPriceRaw || p.costPrice) || ((Number(p.unitPrice) || 0) * 0.93);
             if (q === 0) outOfStockCount++;
             else if (q <= (Number(p.minStockLevel) || 10)) lowStockAlertCount++;
             if (q === 0 || (q > 0 && q <= (Number(p.minStockLevel) || 10))) {
@@ -626,7 +650,7 @@ class DashboardCore {
             topProductLines.push({
                 name: p.name || '—',
                 brand: p.brand || '',
-                v: q * price
+                v: q * buyPrice
             });
         });
         lowStockList.sort((a, b) => a.q - b.q);
@@ -708,12 +732,19 @@ class DashboardCore {
             if (stock > 0 && stock <= 10) lowStock++;
         });
 
-        const monthJournal = await window.db.collection('journal').doc(context.businessId).collection('entries')
-            .where('date', '>=', startMonth)
+        const journalSnapshot = await window.db.collection('journal').doc(context.businessId).collection('entries')
+            .orderBy('date', 'desc')
             .get();
+        const allEntries = journalSnapshot.docs.map(doc => doc.data());
+
+        const monthEntries = allEntries.filter(entry => {
+            if (!entry.date) return false;
+            const entryDate = entry.date.toDate ? entry.date.toDate() : new Date(entry.date);
+            return entryDate >= startMonth;
+        });
+
         let monthSales = 0;
         let todaySales = 0;
-        const monthEntries = monthJournal.docs.map(doc => doc.data());
         monthEntries.forEach(entry => {
             if (!['SALE', 'DISTRIBUTOR_ORDER_APPROVED'].includes(entry.referenceType)) return;
             const amount = Number(entry.totalCredit) || 0;
@@ -723,7 +754,389 @@ class DashboardCore {
         });
 
         const cashFlow = this.calculateCashFlow(monthEntries);
-        return { todaySales, monthSales, pendingOrders, lowStock, cashFlow };
+        const cashBalance = monthEntries.reduce((sum, entry) => {
+            if (!Array.isArray(entry.entries)) return sum;
+            return sum + entry.entries.reduce((entrySum, row) => {
+                const code = String(row.accountCode || row.accountId || '');
+                if (!code.startsWith('1-1010')) return entrySum;
+                let dr = Number(row.debit) || 0;
+                let cr = Number(row.credit) || 0;
+                if (row.amount !== undefined && row.type !== undefined) {
+                    if (row.type === 'debit') dr = Number(row.amount) || 0;
+                    if (row.type === 'credit') cr = Number(row.amount) || 0;
+                }
+                return entrySum + dr - cr;
+            }, 0);
+        }, 0);
+        const bankBalance = monthEntries.reduce((sum, entry) => {
+            if (!Array.isArray(entry.entries)) return sum;
+            return sum + entry.entries.reduce((entrySum, row) => {
+                const code = String(row.accountCode || row.accountId || '');
+                if (!code.startsWith('1-1020')) return entrySum;
+                let dr = Number(row.debit) || 0;
+                let cr = Number(row.credit) || 0;
+                if (row.amount !== undefined && row.type !== undefined) {
+                    if (row.type === 'debit') dr = Number(row.amount) || 0;
+                    if (row.type === 'credit') cr = Number(row.amount) || 0;
+                }
+                return entrySum + dr - cr;
+            }, 0);
+        }, 0);
+
+        let w1 = 0, w2 = 0, w3 = 0, w4 = 0;
+        monthEntries.forEach(entry => {
+            const entryDate = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date);
+            const day = entryDate.getDate();
+            let net = 0;
+            if (Array.isArray(entry.entries)) {
+                entry.entries.forEach(row => {
+                    const code = String(row.accountCode || row.accountId || '');
+                    if (!code.startsWith('1-1010') && !code.startsWith('1-1020')) return;
+                    let dr = Number(row.debit) || 0;
+                    let cr = Number(row.credit) || 0;
+                    if (row.amount !== undefined && row.type !== undefined) {
+                        if (row.type === 'debit') dr = Number(row.amount) || 0;
+                        if (row.type === 'credit') cr = Number(row.amount) || 0;
+                    }
+                    net += dr - cr;
+                });
+            }
+            if (day <= 7) w1 += net;
+            else if (day <= 14) w2 += net;
+            else if (day <= 21) w3 += net;
+            else w4 += net;
+        });
+
+        const cashFlowWeeks = [w1, w1 + w2, w1 + w2 + w3, w1 + w2 + w3 + w4];
+
+        let stockValue = 0;
+        let supplierOutstanding = 0;
+        let customerOutstanding = 0;
+
+        const glBalances = {};
+        allEntries.forEach(entry => {
+            if (entry.isReversed || entry.reversalOf) return;
+            (entry.entries || []).forEach(row => {
+                const code = row.accountCode || row.accountId || '';
+                if (!code) return;
+                
+                let dr = Number(row.debit) || 0;
+                let cr = Number(row.credit) || 0;
+                if (row.amount !== undefined && row.type !== undefined) {
+                    if (row.type === 'debit') dr = Number(row.amount) || 0;
+                    if (row.type === 'credit') cr = Number(row.amount) || 0;
+                }
+
+                if (!glBalances[code]) {
+                    glBalances[code] = { debit: 0, credit: 0 };
+                }
+                glBalances[code].debit += dr;
+                glBalances[code].credit += cr;
+            });
+        });
+
+        if (glBalances['1-1040-01']) {
+            stockValue = glBalances['1-1040-01'].debit - glBalances['1-1040-01'].credit;
+        }
+        if (glBalances['1-1030-01']) {
+            customerOutstanding = glBalances['1-1030-01'].debit - glBalances['1-1030-01'].credit;
+        }
+        if (glBalances['2-2010-01']) {
+            supplierOutstanding = glBalances['2-2010-01'].credit - glBalances['2-2010-01'].debit;
+        }
+
+        return { todaySales, monthSales, pendingOrders, lowStock, cashFlow, cashBalance, bankBalance, cashFlowWeeks, stockValue, supplierOutstanding, customerOutstanding };
+    }
+
+    async getTireCentreMetrics(context) {
+        const startToday = new Date();
+        startToday.setHours(0, 0, 0, 0);
+        const endToday = new Date();
+        endToday.setHours(23, 59, 59, 999);
+        const startMonth = new Date(startToday.getFullYear(), startToday.getMonth(), 1);
+
+        // 1. Fetch Orders / Sales
+        let todaySales = 0;
+        let monthSales = 0;
+        let completedOrdersCount = 0;
+        let pendingOrdersCount = 0;
+        let creditOrdersSum = 0;
+
+        try {
+            const orderSnapshot = await window.db.collection('orders').doc(context.businessId).collection('list').get();
+            orderSnapshot.docs.forEach(doc => {
+                const order = doc.data();
+                if (order.isReversed === true || order.status === 'cancelled') return;
+                
+                const amt = Number(order.netTotal || order.total || order.grandTotal || order.amount) || 0;
+                let oDate = null;
+                if (order.createdAt) {
+                    oDate = order.createdAt.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
+                } else if (order.date) {
+                    oDate = order.date.toDate ? order.date.toDate() : new Date(order.date);
+                }
+
+                if (oDate && !isNaN(oDate.getTime())) {
+                    if (oDate >= startMonth) monthSales += amt;
+                    if (oDate >= startToday && oDate <= endToday) todaySales += amt;
+                }
+
+                if (['pending', 'hold', 'credit', 'UNPAID'].includes(order.status) || order.paymentStatus === 'UNPAID') {
+                    pendingOrdersCount++;
+                    if (order.status === 'credit' || order.paymentStatus === 'UNPAID') {
+                        creditOrdersSum += amt;
+                    }
+                } else {
+                    completedOrdersCount++;
+                }
+            });
+        } catch (e) {
+            console.warn('[Dashboard] Tire Centre orders fetch error:', e);
+        }
+
+        // Also check journal entries for SALE refType
+        try {
+            const journalSnapshot = await window.db.collection('journal').doc(context.businessId).collection('entries').get();
+            journalSnapshot.docs.forEach(doc => {
+                const entry = doc.data();
+                if (entry.isReversed || (entry.refType !== 'SALE' && entry.referenceType !== 'SALE')) return;
+                const amt = Number(entry.totalCredit || entry.totalDebit || entry.amount) || 0;
+                let eDate = null;
+                if (entry.date) eDate = entry.date.toDate ? entry.date.toDate() : new Date(entry.date);
+                else if (entry.createdAt) eDate = entry.createdAt.toDate ? entry.createdAt.toDate() : new Date(entry.createdAt);
+
+                if (eDate && !isNaN(eDate.getTime())) {
+                    if (eDate >= startMonth && monthSales === 0) monthSales += amt;
+                    if (eDate >= startToday && eDate <= endToday && todaySales === 0) todaySales += amt;
+                }
+            });
+        } catch (e) {}
+
+        // 2. Fetch Products / Inventory
+        let lowStock = 0;
+        let stockValue = 0;
+        let totalTireSkus = 0;
+
+        try {
+            const productSnapshot = await window.db.collection('products').doc(context.businessId).collection('list').get();
+            productSnapshot.docs.forEach(doc => {
+                const p = doc.data();
+                if (p.isService === true) return; // Skip service items
+
+                totalTireSkus++;
+                const stock = Number(p.stock) || 0;
+                const restockLevel = Number(p.restockLevel) || 5;
+                if (stock <= restockLevel) lowStock++;
+
+                const cost = Number(p.cost) || Number(p.price) || 0;
+                if (stock > 0 && cost > 0) {
+                    stockValue += (stock * cost);
+                }
+            });
+        } catch (e) {
+            console.warn('[Dashboard] Tire Centre products fetch error:', e);
+        }
+
+        // 3. Fetch Appointments
+        let todayAppointments = 0;
+        try {
+            const apptSnapshot = await window.db.collection('appointments').doc(context.businessId).collection('list').get();
+            apptSnapshot.docs.forEach(doc => {
+                const appt = doc.data();
+                let aDate = null;
+                if (appt.date) aDate = appt.date.toDate ? appt.date.toDate() : new Date(appt.date);
+                else if (appt.createdAt) aDate = appt.createdAt.toDate ? appt.createdAt.toDate() : new Date(appt.createdAt);
+
+                if (aDate && !isNaN(aDate.getTime()) && aDate >= startToday && aDate <= endToday) {
+                    todayAppointments++;
+                }
+            });
+        } catch (e) {
+            console.warn('[Dashboard] Tire Centre appointments fetch error:', e);
+        }
+
+        // 4. Fetch Expenses & Cash/Bank split
+        let monthExpenses = 0;
+        let cashExpenses = 0;
+        let bankExpenses = 0;
+        try {
+            const expSnapshot = await window.db.collection('expenses').doc(context.businessId).collection('list').get();
+            expSnapshot.docs.forEach(doc => {
+                const exp = doc.data();
+                const amt = Number(exp.amount) || 0;
+                let eDate = null;
+                if (exp.expenseDate) eDate = new Date(exp.expenseDate);
+                else if (exp.createdAt) eDate = exp.createdAt.toDate ? exp.createdAt.toDate() : new Date(exp.createdAt);
+
+                const payMethod = String(exp.paymentMethod || 'cash').toLowerCase();
+                if (eDate && !isNaN(eDate.getTime()) && eDate >= startMonth) {
+                    monthExpenses += amt;
+                    if (payMethod === 'bank' || payMethod === 'cheque') bankExpenses += amt;
+                    else cashExpenses += amt;
+                }
+            });
+        } catch (e) {
+            console.warn('[Dashboard] Tire Centre expenses fetch error:', e);
+        }
+
+        // 5. Fetch Onboarding balances from businesses/{businessId} and journal/{businessId}/entries
+        let initCash = 0;
+        let initBank = 0;
+        try {
+            const bizDoc = await window.db.collection('businesses').doc(context.businessId).get();
+            if (bizDoc.exists && bizDoc.data().onboardingBalances) {
+                const b = bizDoc.data().onboardingBalances;
+                initCash = Number(b.cash) || 0;
+                initBank = Number(b.bank) || 0;
+            }
+
+            // Also check journal entries with refType === 'ONBOARDING'
+            const journalSnap = await window.db.collection('journal').doc(context.businessId).collection('entries')
+                .where('refType', '==', 'ONBOARDING').get();
+            journalSnap.docs.forEach(doc => {
+                const d = doc.data();
+                const ref = String(d.ref || '');
+                (d.entries || []).forEach(row => {
+                    const code = String(row.accountCode || row.accountId || '');
+                    const amt = Number(row.amount) || Number(row.debit) || 0;
+                    if (ref === 'onboarding_cash' || code.startsWith('1-1010')) {
+                        if (!initCash) initCash = amt;
+                    }
+                    if (ref === 'onboarding_bank' || code.startsWith('1-1020')) {
+                        if (!initBank) initBank = amt;
+                    }
+                });
+            });
+        } catch (e) {
+            console.warn('[Dashboard] Onboarding balance fetch error:', e);
+        }
+
+        // 6. Fetch Purchases / GRNs
+        let cashPurchases = 0;
+        let bankPurchases = 0;
+        let unpaidPurchasesSum = 0;
+        try {
+            const poSnapshot = await window.db.collection('purchases').doc(context.businessId).collection('orders').get();
+            poSnapshot.docs.forEach(doc => {
+                const po = doc.data();
+                const amt = Number(po.netTotal || po.total || po.amount) || 0;
+                const payMethod = String(po.paymentMethod || 'cash').toLowerCase();
+                if (po.paymentStatus === 'UNPAID') {
+                    unpaidPurchasesSum += amt;
+                } else {
+                    if (payMethod === 'bank' || payMethod === 'cheque') bankPurchases += amt;
+                    else cashPurchases += amt;
+                }
+            });
+        } catch (e) {}
+
+        // 7. Calculate Cash vs Bank Sales
+        let cashSales = 0;
+        let bankSales = 0;
+        try {
+            const salesSnapshot = await window.db.collection('orders').doc(context.businessId).collection('list').get();
+            salesSnapshot.docs.forEach(doc => {
+                const s = doc.data();
+                if (s.isReversed === true || s.status === 'cancelled') return;
+                const amt = Number(s.netTotal || s.total || s.grandTotal || s.amount) || 0;
+                const pm = String(s.paymentMethod || 'cash').toLowerCase();
+                if (s.status !== 'credit' && s.paymentStatus !== 'UNPAID') {
+                    if (pm === 'bank' || pm === 'card' || pm === 'online' || pm === 'cheque') {
+                        bankSales += amt;
+                    } else {
+                        cashSales += amt;
+                    }
+                }
+            });
+        } catch (e) {}
+
+        // 7b. Fetch Bank Transactions for Cash Deposits transferred from drawer to bank
+        let cashDepositsTotal = 0;
+        try {
+            const depSnap = await window.db.collection('banks').doc(context.businessId).collection('transactions')
+                .where('type', '==', 'CASH_DEPOSIT').get();
+            depSnap.docs.forEach(doc => {
+                cashDepositsTotal += (Number(doc.data().amount) || 0);
+            });
+        } catch (e) {}
+
+        const cashBalance = Math.max(0, initCash + cashSales - cashExpenses - cashPurchases - cashDepositsTotal);
+        const bankBalance = Math.max(0, initBank + bankSales + cashDepositsTotal - bankExpenses - bankPurchases);
+        const cashFlow = cashBalance + bankBalance;
+
+        // 8. Receivables & Payables
+        let customerListSum = 0;
+        let supplierListSum = 0;
+        try {
+            const custSnap = await window.db.collection('customers').doc(context.businessId).collection('list').get();
+            custSnap.docs.forEach(doc => {
+                customerListSum += (Number(doc.data().balance || doc.data().outstanding) || 0);
+            });
+        } catch (e) {}
+
+        try {
+            const supSnap = await window.db.collection('suppliers').doc(context.businessId).collection('list').get();
+            supSnap.docs.forEach(doc => {
+                supplierListSum += (Number(doc.data().balance || doc.data().outstanding) || 0);
+            });
+        } catch (e) {}
+
+        let glCustomerOutstanding = 0;
+        let glSupplierOutstanding = 0;
+        let glStockValue = 0;
+        try {
+            const journalSnap = await window.db.collection('journal').doc(context.businessId).collection('entries').get();
+            const glBalances = {};
+            journalSnap.docs.forEach(doc => {
+                const entry = doc.data();
+                if (entry.isReversed) return;
+                (entry.entries || []).forEach(row => {
+                    const code = row.accountCode || row.accountId || '';
+                    if (!code) return;
+                    let dr = Number(row.debit) || 0;
+                    let cr = Number(row.credit) || 0;
+                    if (row.amount !== undefined && row.type !== undefined) {
+                        if (row.type === 'debit') dr = Number(row.amount) || 0;
+                        if (row.type === 'credit') cr = Number(row.amount) || 0;
+                    }
+                    if (!glBalances[code]) glBalances[code] = { debit: 0, credit: 0 };
+                    glBalances[code].debit += dr;
+                    glBalances[code].credit += cr;
+                });
+            });
+
+            if (glBalances['1-1030-01']) glCustomerOutstanding = Math.max(0, glBalances['1-1030-01'].debit - glBalances['1-1030-01'].credit);
+            if (glBalances['2-2010-01']) glSupplierOutstanding = Math.max(0, glBalances['2-2010-01'].credit - glBalances['2-2010-01'].debit);
+            if (glBalances['1-1040-01']) glStockValue = Math.max(0, glBalances['1-1040-01'].debit - glBalances['1-1040-01'].credit);
+        } catch (e) {}
+
+        const customerOutstanding = Math.max(customerListSum, creditOrdersSum, glCustomerOutstanding);
+        const supplierOutstanding = Math.max(supplierListSum, unpaidPurchasesSum, glSupplierOutstanding);
+        if (stockValue === 0 && glStockValue > 0) stockValue = glStockValue;
+
+        const cashFlowWeeks = [
+            Math.round(cashFlow * 0.25),
+            Math.round(cashFlow * 0.50),
+            Math.round(cashFlow * 0.75),
+            Math.round(cashFlow)
+        ];
+
+        return {
+            todaySales,
+            monthSales,
+            todayAppointments,
+            lowStock,
+            cashFlow,
+            cashBalance,
+            bankBalance,
+            cashFlowWeeks,
+            stockValue,
+            supplierOutstanding,
+            customerOutstanding,
+            totalTireSkus,
+            pendingOrdersCount,
+            completedOrdersCount
+        };
     }
 
     async getPharmacyMetrics(context) {
@@ -1393,17 +1806,18 @@ class DashboardCore {
     getDashboardStructure(businessType) {
         businessType = this.normalizeBusinessType(businessType);
         const structures = {
-            retail: ['todaySales', 'monthSales', 'pendingOrders', 'lowStock', 'cashFlow'],
+            retail: ['todaySales', 'monthSales', 'pendingOrders', 'lowStock', 'cashFlow', 'stockValue', 'customerOutstanding', 'supplierOutstanding'],
             distributor: [
                 'pendingQueueCount', 'todaySales', 'monthSales', 'approvedCount', 'rejectedCount',
                 'dispatchedCount', 'deliveredCount', 'totalStockValue', 'outOfStockCount', 'lowStockAlertCount',
                 'returnsCat1Units', 'returnsCat2Units', 'freeIssueUnits', 'freeIssueValueEst', 'outstandingBalance',
                 'activeReps', 'newCustomers', 'monthOrderCount', 'cashFlow'
             ],
-            pharmacy: ['todaySales', 'monthSales', 'expiringSoon', 'drugCategories', 'prescriptionUploads', 'cashFlow'],
-            hardware: ['todaySales', 'monthSales', 'unitConvertibleItems', 'bulkWeightPricedItems', 'bulkItems', 'quotationCount', 'quoteConversionRate', 'cashFlow'],
+            pharmacy: ['todaySales', 'monthSales', 'expiringSoon', 'drugCategories', 'prescriptionUploads', 'cashFlow', 'stockValue', 'customerOutstanding', 'supplierOutstanding'],
+            hardware: ['todaySales', 'monthSales', 'unitConvertibleItems', 'bulkWeightPricedItems', 'bulkItems', 'quotationCount', 'quoteConversionRate', 'cashFlow', 'stockValue', 'customerOutstanding', 'supplierOutstanding'],
             service: ['todayAppointments', 'upcomingAppointments', 'todaySales', 'serviceBills', 'utilization', 'clients', 'cashFlow'],
             manufacturer: ['rmStockValue', 'fgStockValue', 'productionRuns', 'productionStatus', 'materialEfficiencyYield', 'pendingSettlements', 'rmPurchaseMonth', 'productionCostMonth', 'operationalCostMonth', 'sideIncomeMonth', 'monthSales', 'monthProfit', 'cashFlow'],
+            tire_centre: ['todaySales', 'monthSales', 'todayAppointments', 'lowStock', 'cashFlow', 'stockValue', 'customerOutstanding', 'supplierOutstanding'],
             scrap_collection_center: ['cashBalance', 'bankBalance', 'todaySales', 'todayBuying', 'todayStockIn', 'todayStockOut', 'monthSales', 'monthBuying', 'monthStockIn', 'monthStockOut', 'monthProfit', 'stockValue', 'cashFlow', 'scrapGlRevenue', 'scrapGlCogs', 'scrapGlLoansGiven', 'scrapGlInterestIncome', 'scrapGlNet1030', 'scrapGlNet1060', 'outstandingLoans', 'advanceOutstanding', 'externalSettlementNet', 'lowStock']
 
         };
@@ -1414,6 +1828,7 @@ class DashboardCore {
         if (!context) return null;
         const normalizedType = this.normalizeBusinessType(context.businessType);
         context = { ...context, businessType: normalizedType };
+        if (context.businessType === 'tire_centre') return this.getTireCentreMetrics(context);
         if (context.businessType === 'distributor') return this.getDistributorMetrics(context);
         if (context.businessType === 'pharmacy') return this.getPharmacyMetrics(context);
         if (context.businessType === 'hardware') return this.getHardwareMetrics(context);

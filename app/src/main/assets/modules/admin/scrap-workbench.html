@@ -1,0 +1,3098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Scrap Workbench</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=58"></script>
+    <script src="../../core/event-validation.js?v=58"></script>
+    <script src="../../core/event-bus.js?v=58"></script>
+    <script src="../../core/accounts-core.js?v=58"></script>
+    <script src="../../core/auth-roles.js?v=58"></script>
+    <script src="../../core/business-types.js?v=58"></script>
+    <script src="../../core/dashboard-core.js?v=58"></script>
+    <script src="../../core/subscription-manager.js?v=58"></script>
+    <script src="../../core/sidebar.js?v=1008"></script>
+    <script src="../../core/sms-wallet-core.js?v=4"></script>
+    <script src="../../core/scrap-vba-core.js?v=78"></script>
+    <style>
+        body{font-family:Inter,Segoe UI,sans-serif;background:#f5f7fb;color:#0f172a;}
+        .page{padding:20px;}
+        .card{background:#fff;border:1px solid #dbe4ee;border-radius:12px;padding:16px;margin-bottom:12px;}
+        table{width:100%;border-collapse:collapse;font-size:13px;}
+        th,td{padding:8px;border-bottom:1px solid #eef2f7;text-align:left;}
+        th{background:#f8fafc;}
+        .kpi{font-size:22px;font-weight:800;color:#0f3b2c;}
+        .small{font-size:12px;color:#64748b;}
+        input,button{padding:9px;border:1px solid #cbd5e1;border-radius:8px;}
+        button{background:#0f3b2c;color:#fff;border:none;cursor:pointer;}
+        .danger{background:#b91c1c;}
+        .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:10000;}
+        .modal-card{background:#fff;border-radius:12px;padding:14px;border:1px solid #dbe4ee;min-width:360px;max-width:540px;}
+        .summary-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:8px;margin-bottom:10px;}
+        .summary-card{border:1px solid #dbe4ee;border-radius:10px;padding:10px;background:#fff;}
+        .bill-workspace{display:flex;gap:14px;align-items:flex-start;}
+        .bill-left{width:560px;max-width:100%;}
+        .bill-right{flex:1;min-height:40px;}
+        .bill-sheet{border:1px solid #0f172a;border-radius:10px;background:#fff;overflow:hidden;}
+        .bill-head{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;border-bottom:1px solid #0f172a;}
+        .bill-meta{display:grid;grid-template-columns:120px 1fr;gap:6px 8px;align-items:center;font-size:12px;}
+        .bill-meta label{font-weight:700;}
+        .bill-meta input{padding:6px 8px;border:1px solid #94a3b8;border-radius:8px;font-size:12px;}
+        .bill-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;}
+        .bill-table{width:100%;border-collapse:collapse;font-size:12px;}
+        .bill-table th,.bill-table td{border:1px solid #0f172a;padding:6px;}
+        .bill-table th{background:#f8fafc;font-weight:800;}
+        .bill-table td:nth-child(2), .bill-table td:nth-child(3), .bill-table th:nth-child(2), .bill-table th:nth-child(3){text-align:right;}
+        .bill-table input{width:100%;padding:4px 6px;border:0;border-radius:0;text-align:right;outline:none;font-size:12px;}
+        .bill-foot{display:grid;grid-template-columns:1fr 220px;gap:10px;padding:10px;border-top:1px solid #0f172a;align-items:end;}
+        .bill-total{display:grid;grid-template-columns:120px 1fr;gap:6px 8px;align-items:center;font-size:12px;}
+        .bill-total label{font-weight:900;}
+        .bill-actions{display:flex;gap:8px;justify-content:flex-end;}
+        .bill-actions button{padding:8px 10px;}
+        .bill-muted{color:#64748b;font-size:12px;}
+        @media (max-width:980px){
+            .bill-workspace{flex-direction:column;}
+            .bill-left{width:100%;}
+            .bill-grid{grid-template-columns:1fr;}
+            .bill-foot{grid-template-columns:1fr;}
+            .bill-actions{justify-content:flex-start;}
+        }
+        .indika-highlight {
+            color: #2563eb !important;
+            font-weight: 800 !important;
+        }
+        .stock-name-cell {
+            cursor: pointer;
+            user-select: none;
+        }
+        .stock-qty-span.black-box-style {
+            background: #000 !important;
+            color: #fff !important;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+            <h1 id="viewTitle" style="margin:0;">SCRAP WORKBENCH</h1>
+            <p class="small" id="viewDesc" style="margin:4px 0 0;">VBA sheet style operational view.</p>
+        </div>
+        <div id="profitPoolStatus" style="font-weight:800; font-size:14px; padding:8px 16px; border-radius:20px; border:2px solid #0f172a; min-width:150px; text-align:center; background:#f8fafc;">Pool: Loading...</div>
+    </div>
+    <div id="smsDebugBadge" class="small" style="margin-top:8px;display:none;padding:8px;border-radius:8px;"></div>
+    <div class="card" id="viewBody"></div>
+<script>
+let SCRAP_BUSINESS_ID = '';
+let isBulkEditMode = false;
+let isReorderMode = false;
+let isDeleteMode = false;
+let currentUser = null;
+
+function escHtml(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+const VIEW_META = {
+    BILL: { title: 'BILL', desc: 'Create selling/billing entries (web equivalent).' },
+    STOCK: { title: 'STOCK', desc: 'Stock foundation list (65 items).' },
+    BUY: { title: 'BUY', desc: 'Supplier purchase history (horizontal sheet).' },
+    LOAN: { title: 'LOAN', desc: 'Loan control; use Scrap Debts for full management.' },
+    DAILYTR: { title: 'DAILYTR', desc: 'Daily transaction log view.' },
+    PERFORMANCE: { title: 'PERFORMANCE', desc: 'Performance summary from history.' },
+    RISK_MONITOR: { title: 'RISK_MONITOR', desc: 'Risk dashboard & daily recovery equivalent.' },
+    RWD: { title: 'RWD', desc: 'Rewards/bonus dashboard.' },
+    PT: { title: 'PT', desc: 'PT engine summary view.' }
+};
+
+function qView() {
+    const v = new URLSearchParams(window.location.search).get('view');
+    return (v || 'BILL').toUpperCase();
+}
+function fmt(v) { return `LKR ${(Number(v)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`; }
+function advId(name){ return `ADV_${SCRAP_BUSINESS_ID}_${String(name||'').trim().toUpperCase().replace(/[^A-Z0-9]+/g,'_')}`; }
+function showLoading(show) {
+    let el = document.getElementById('digibizLoadingOverlay');
+    if (!el && show) {
+        el = document.createElement('div');
+        el.id = 'digibizLoadingOverlay';
+        el.style = 'position:fixed;inset:0;background:rgba(255,255,255,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;font-weight:700;';
+        el.innerHTML = 'Processing...';
+        document.body.appendChild(el);
+    }
+    if (el) el.style.display = show ? 'flex' : 'none';
+}
+
+
+function smsSkipReasonText(code) {
+    if (code === 'event_disabled') return 'SMS skipped: event toggle is OFF.';
+    if (code === 'no_phone') return 'SMS skipped: customer phone number missing.';
+    if (code === 'wallet_exhausted') return 'SMS skipped: SMS wallet exhausted.';
+    if (code === 'quota_exhausted') return 'SMS skipped: Firestore quota exceeded (billing / daily limit).';
+    if (code === 'permission') return 'SMS skipped: permission denied for SMS queue.';
+    if (code === 'invalid_input') return 'SMS skipped: invalid phone/message input.';
+    if (code === 'db_unavailable') return 'SMS skipped: database unavailable.';
+    if (code === 'firestore_error') return 'SMS skipped: queue write failed (see detail below).';
+    return `SMS skipped: ${code || 'unknown reason'}`;
+}
+function showSmsDebug(result, extraReason) {
+    const el = document.getElementById('smsDebugBadge');
+    if (!el) return;
+    let ok = false;
+    let txt = '';
+    if (result && result.ok) {
+        ok = true;
+        if (result.via === 'rtdb_quota_fallback') {
+            txt = 'SMS queued via Realtime Database (Firestore write quota exceeded). Gateway app should send; cloud wallet was not debited — reconcile when Firestore is available again.';
+        } else if (result.fallback) {
+            txt = 'SMS queued via direct gateway fallback.';
+        } else {
+            txt = 'SMS queued successfully.';
+        }
+    } else {
+        txt = smsSkipReasonText(extraReason || (result && result.skipped));
+        if (result && result.error) {
+            txt += ' — ' + String(result.error);
+        }
+    }
+    el.style.display = 'block';
+    el.style.background = ok ? '#dcfce7' : '#fee2e2';
+    el.style.color = ok ? '#14532d' : '#7f1d1d';
+    el.style.border = `1px solid ${ok ? '#86efac' : '#fca5a5'}`;
+    el.textContent = txt;
+}
+
+async function renderSTOCK(body) {
+    const [snap] = await Promise.all([
+        db.collection('scrap_items').where('businessId','==',SCRAP_BUSINESS_ID).get(),
+    ]);
+    const rows = snap.docs.map(d=>({ id: d.id, ...d.data() })).sort((a,b) => {
+        if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
+        if (a.sortOrder !== undefined) return -1;
+        if (b.sortOrder !== undefined) return 1;
+        return String(a.itemName||'').localeCompare(String(b.itemName||''));
+    });
+
+    const convertToSinglish = (name) => {
+        const clean = String(name || '').trim();
+        const mapping = {
+            'යකඩ': 'Yakada',
+            'තබ': 'Thaba',
+            'තබ කොර්': 'Thaba Core',
+            'පිත්තල': 'Piththala',
+            'ඇලුමිනියම්': 'Aluminium',
+            'ඇලුමිනියම් කොර්': 'Aluminium Core',
+            'ඊයම්': 'Eeyam',
+            'බැරල්': 'Baral',
+            'පොල්කටු': 'Polkatu',
+            'පොත්': 'Poth',
+            'පුටු': 'Putu',
+            'බේසම්': 'Besam',
+            'පොඩි බැටරි': 'Podi Battery',
+            'ලොකු බැටරි': 'Loku Battery',
+            'තහඩු': 'Thahadu',
+            'PVC': 'PVC',
+            'කෑන්': 'Can',
+            'බියර් ටින්': 'Beer Tin',
+            'චට්ටි': 'Chatti',
+            'ෆිටින්ස්': 'Fittins',
+            'මෝටර්': 'Motor',
+            'එන්ජින්': 'Engine',
+            'ෆිල්ටර් සහ දැල්': 'Filter saha Dal',
+            'කොළ': 'Kola',
+            'හාර්ඩ් ඩිස්ක්': 'Hard Disk',
+            'ලැප්ටොප්': 'Laptop',
+            'ලයිනර්': 'Liner',
+            'පොඩි TV': 'Podi TV',
+            'රැම්': 'Ram',
+            'ප්‍රොසෙසර්': 'Processor',
+            'පවර් සෆ්ලයි': 'Power Supply',
+            'ෆෝන් බෝර්ඩ්': 'Phone Board',
+            'VGA බෝර්ඩ්': 'VGA Board',
+            'සර්කිට් / TV බෝර්ඩ්': 'Circuit / TV Board',
+            'අඩි': 'Adi'
+        };
+        return mapping[clean] || clean;
+    };
+
+    const triggerPriceChangeWhatsapp = async (row, newPrice, oldPrice) => {
+        if (!row) return;
+        const name = String(row.itemName || '').trim();
+        if (name.toUpperCase().startsWith("S-")) {
+            console.log(`[WhatsApp-Skip] Skipped S- item: ${name}`);
+            return;
+        }
+
+        const userApproved = confirm(`මිල වෙනස් විය. මෙම මිල වෙනස් වීම WhatsApp හරහා Share කිරීමට අවශ්‍යද?`);
+        if (!userApproved) {
+            console.log(`[WhatsApp-Cancel] User cancelled WhatsApp sharing for ${name} at LKR ${newPrice}`);
+            return;
+        }
+        
+        try {
+            const fp = Number(newPrice).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            const prevPrice = oldPrice !== undefined && oldPrice !== null ? Number(oldPrice) : (Number(row.growingPrice) || 0);
+            const oldPriceStr = prevPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            const diff = newPrice - prevPrice;
+            const diffStr = Number(Math.abs(diff)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            const dir = diff >= 0 ? 'වැඩි' : 'අඩු';
+            
+            const msg = `${name} - මිල Rs ${oldPriceStr}/= සිට, Rs ${fp}/= දක්වා Rs ${diffStr}/= කින් ${dir} විය.`;
+            const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+            window.open(waUrl, '_blank');
+            console.log(`[WhatsApp-Redirect] Opened sharing link for: "${msg}"`);
+        } catch (e) {
+            console.error("Error triggering WhatsApp redirect:", e);
+        }
+    };
+
+    const unitCost = (r) => {
+        const cp = Number(r.costPrice);
+        if (Number.isFinite(cp) && cp > 0) return cp;
+        return 0;
+    };
+    const stockValue = rows.reduce((sum, r) => sum + ((Number(r.currentStock) || 0) * unitCost(r)), 0);
+    const totalSalesValue = rows.reduce((sum, r) => sum + ((Number(r.currentStock) || 0) * (Number(r.sellingPrice) || 0)), 0);
+    const expectedProfit = totalSalesValue - stockValue;
+    const indikaValue = rows.reduce((sum, r) => sum + (r.indikaSelected === true ? ((Number(r.currentStock) || 0) * (Number(r.sellingPrice) || 0)) : 0), 0);
+
+    body.innerHTML = `<div class="summary-grid" style="grid-template-columns: repeat(4, minmax(180px, 1fr));">
+      <div class="summary-card" style="border-color:#2563eb; background:#f0f9ff;"><div class="small" style="color:#2563eb; font-weight:700;">INDIKA (Highlighted Stock Value)</div><div class="kpi" style="color:#1d4ed8;">${fmt(indikaValue)}</div></div>
+      <div class="summary-card"><div class="small">Total Purchase Value</div><div class="kpi">${fmt(stockValue)}</div></div>
+      <div class="summary-card"><div class="small">Total Sales Value</div><div class="kpi">${fmt(totalSalesValue)}</div></div>
+      <div class="summary-card"><div class="small">Expected Profit on Stock</div><div class="kpi">${fmt(expectedProfit)}</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:10px;">
+      <input id="stockNewName" placeholder="Item Name">
+      <input id="stockNewQty" type="number" step="0.01" placeholder="Stock">
+      <input id="stockNewProfit" type="number" step="0.01" placeholder="Profit">
+      <input id="stockNewSell" type="number" step="0.01" placeholder="Sell Price">
+      <button id="stockAddBtn">Add Item</button>
+      <button id="resetAllStockBtn" class="danger" style="white-space:nowrap;">Reset All Stock to 0</button>
+      <button id="bulkEditBtn" style="background:#0ea5e9;">${isBulkEditMode ? 'Cancel Bulk Edit' : 'Bulk Edit Mode'}</button>
+      <button id="reorderBtn" style="background:#7c3aed;">${isReorderMode ? 'Cancel Reorder' : 'Reorder Items'}</button>
+      ${isBulkEditMode ? '<button id="saveBulkBtn" style="background:#16a34a;">Save All Changes</button>' : ''}
+      ${isReorderMode ? '<button id="saveOrderBtn" style="background:#16a34a;">Save New Order</button>' : ''}
+    </div>
+    <table><thead><tr><th>Item Name</th><th>Current Stock</th><th>Special Price</th><th>Growing Price</th><th>Buying Price</th><th>Down Buying Price / ඩවුන් මිල</th><th>Profit</th><th>Sell Price</th><th>Action</th></tr></thead><tbody>${
+        rows.map(r => {
+            const isIndika = r.indikaSelected === true;
+            const highlightClass = isIndika ? 'indika-highlight' : '';
+            if (isBulkEditMode) {
+                const buy = (Number(r.sellingPrice)||0) - (Number(r.profit)||0);
+                return `<tr>
+                    <td class="stock-name-cell ${highlightClass}" data-id="${r.id}"><input data-bulk-name="${r.id}" value="${escHtml(r.itemName)}" style="width:100%;box-sizing:border-box;padding:4px;"></td>
+                    <td><span class="stock-qty-span" style="cursor:pointer; user-select:none;">${Number(r.currentStock||0).toFixed(1)}</span></td>
+                    <td>${r.specialPrice !== undefined && r.specialPrice !== null ? Number(r.specialPrice) : '-'}</td>
+                    <td>${r.growingPrice !== undefined && r.growingPrice !== null ? Number(r.growingPrice) : '-'}</td>
+                    <td data-bulk-buy-display="${r.id}">${buy.toFixed(2)}</td>
+                    <td>${r.downBuyingPrice !== undefined && r.downBuyingPrice !== null ? Number(r.downBuyingPrice) : '-'}</td>
+                    <td><input type="number" step="0.01" data-bulk-profit="${r.id}" value="${Number(r.profit)||0}" style="width:80px;padding:4px;"></td>
+                    <td><input type="number" step="0.01" data-bulk-sell="${r.id}" value="${Number(r.sellingPrice)||0}" style="width:80px;padding:4px;"></td>
+                    <td>-</td>
+                </tr>`;
+            }
+            if (isReorderMode) {
+                return `<tr>
+                    <td class="stock-name-cell ${highlightClass}" data-id="${r.id}">${escHtml(r.itemName)}</td>
+                    <td><span class="stock-qty-span" style="cursor:pointer; user-select:none;">${Number(r.currentStock||0).toFixed(1)}</span></td>
+                    <td>${r.specialPrice !== undefined && r.specialPrice !== null ? Number(r.specialPrice) : '-'}</td>
+                    <td>${r.growingPrice !== undefined && r.growingPrice !== null ? Number(r.growingPrice) : '-'}</td>
+                    <td>${Number(unitCost(r) || 0)}</td>
+                    <td>${r.downBuyingPrice !== undefined && r.downBuyingPrice !== null ? Number(r.downBuyingPrice) : '-'}</td>
+                    <td>${Number(r.profit||0)}</td>
+                    <td>${Number(r.sellingPrice||0)}</td>
+                    <td>
+                        <button data-move-up="${r.id}" style="padding:4px 8px;background:#6366f1;">▲</button>
+                        <button data-move-down="${r.id}" style="padding:4px 8px;background:#6366f1;">▼</button>
+                    </td>
+                </tr>`;
+            }
+            
+            let specialPriceHtml = '';
+            if (r.specialPrice !== undefined && r.specialPrice !== null) {
+                specialPriceHtml = `<span class="special-price-text" data-id="${r.id}" style="cursor: pointer; display: inline-block; min-width: 60px; min-height: 20px; font-weight: bold; color: #1d4ed8;">${r.specialPrice}</span>`;
+            } else {
+                specialPriceHtml = `<input type="number" step="0.01" placeholder="Add Special" class="special-price-input" data-id="${r.id}" style="width: 80px; padding: 4px;">`;
+            }
+
+            let growingPriceHtml = '';
+            if (r.growingPrice !== undefined && r.growingPrice !== null) {
+                growingPriceHtml = `<span class="growing-price-text" data-id="${r.id}" style="cursor: pointer; display: inline-block; min-width: 60px; min-height: 20px; font-weight: bold; color: #059669;">${r.growingPrice}</span>`;
+            } else {
+                growingPriceHtml = `<input type="number" step="0.01" placeholder="Add Price" class="growing-price-input" data-id="${r.id}" style="width: 80px; padding: 4px;">`;
+            }
+            
+            let downBuyHtml = '';
+            if (r.downBuyingPrice !== undefined && r.downBuyingPrice !== null) {
+                downBuyHtml = `<span class="down-price-text" data-id="${r.id}" style="cursor: pointer; display: inline-block; min-width: 60px; min-height: 20px; font-weight: bold; color: #b91c1c;">${r.downBuyingPrice}</span>`;
+            } else {
+                downBuyHtml = `<input type="number" step="0.01" placeholder="Add Down Price" class="down-price-input" data-id="${r.id}" style="width: 100px; padding: 4px;">`;
+            }
+            
+            return `<tr>
+                <td class="stock-name-cell ${highlightClass}" data-id="${r.id}">${r.itemName||'-'}</td>
+                <td><span class="stock-qty-span" style="cursor:pointer; user-select:none;">${Number(r.currentStock||0).toFixed(1)}</span></td>
+                <td>${specialPriceHtml}</td>
+                <td>${growingPriceHtml}</td>
+                <td>${Number(unitCost(r) || 0)}</td>
+                <td>${downBuyHtml}</td>
+                <td>${Number(r.profit||0)}</td>
+                <td>${Number(r.sellingPrice||0)}</td>
+                <td><button data-edit="${r.id}" style="padding:4px 8px;">Edit</button></td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="9">No items</td></tr>'
+    }</tbody></table>`;
+
+    body.querySelector('tbody').addEventListener('click', (e) => {
+        if (e.target.classList.contains('stock-qty-span') && e.detail === 3) {
+            e.target.classList.toggle('black-box-style');
+        }
+    });
+
+    document.getElementById('stockAddBtn').addEventListener('click', async () => {
+        const itemName = String(document.getElementById('stockNewName').value || '').trim();
+        const currentStock = Number(document.getElementById('stockNewQty').value) || 0;
+        const profit = Number(document.getElementById('stockNewProfit').value) || 0;
+        const sellingPrice = Number(document.getElementById('stockNewSell').value) || 0;
+        if (!itemName) return alert('Item name is required.');
+        await db.collection('scrap_items').add({
+            businessId: SCRAP_BUSINESS_ID,
+            itemName,
+            currentStock,
+            profit,
+            sellingPrice,
+            costPrice: sellingPrice - profit,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
+            await window.scrapVbaCore.syncInventoryAssetWithStock(SCRAP_BUSINESS_ID);
+        }
+        await renderSTOCK(body);
+    });
+    document.getElementById('resetAllStockBtn').addEventListener('click', async () => {
+        if (!confirm('WARNING: This will set current stock to 0 for ALL items. Continue?')) return;
+        const nukeTxt = prompt('Type "RESET" to confirm:');
+        if (nukeTxt !== 'RESET') return;
+        
+        try {
+            const batch = db.batch();
+            rows.forEach((r) => {
+                const ref = db.collection('scrap_items').doc(r.id);
+                batch.update(ref, {
+                    currentStock: 0,
+                    totalBuyingValue: 0,
+                    totalSellingValue: 0,
+                    potentialProfitValue: 0,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            });
+            await batch.commit();
+            if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
+                await window.scrapVbaCore.syncInventoryAssetWithStock(OWNER_UID);
+            }
+            alert('All stock levels reset to 0.');
+            await renderSTOCK(body);
+        } catch (e) {
+            alert('Error resetting stock: ' + e.message);
+        }
+    });
+    document.getElementById('bulkEditBtn').addEventListener('click', () => {
+        isBulkEditMode = !isBulkEditMode;
+        renderSTOCK(body);
+    });
+    if (isBulkEditMode) {
+        const updateBuy = (id) => {
+            const p = Number(body.querySelector(`[data-bulk-profit="${id}"]`)?.value) || 0;
+            const s = Number(body.querySelector(`[data-bulk-sell="${id}"]`)?.value) || 0;
+            const disp = body.querySelector(`[data-bulk-buy-display="${id}"]`);
+            if (disp) disp.textContent = (s - p).toFixed(2);
+        };
+        body.querySelectorAll('[data-bulk-profit], [data-bulk-sell]').forEach((inp) => {
+            inp.addEventListener('input', () => updateBuy(inp.dataset.bulkProfit || inp.dataset.bulkSell));
+        });
+
+        document.getElementById('saveBulkBtn').addEventListener('click', async () => {
+            const batch = db.batch();
+            let count = 0;
+            rows.forEach((r) => {
+                const nameInp = body.querySelector(`[data-bulk-name="${r.id}"]`);
+                const profitInp = body.querySelector(`[data-bulk-profit="${r.id}"]`);
+                const sellInp = body.querySelector(`[data-bulk-sell="${r.id}"]`);
+                if (!nameInp || !profitInp || !sellInp) return;
+                
+                const newName = String(nameInp.value || '').trim();
+                const newProfit = Number(profitInp.value) || 0;
+                const newSell = Number(sellInp.value) || 0;
+                const newCost = newSell - newProfit;
+                
+                if (newName !== r.itemName || newProfit !== r.profit || newSell !== r.sellingPrice) {
+                    const ref = db.collection('scrap_items').doc(r.id);
+                    batch.update(ref, {
+                        itemName: newName,
+                        profit: newProfit,
+                        sellingPrice: newSell,
+                        costPrice: newCost,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    count++;
+                }
+            });
+            if (count > 0) {
+                await batch.commit();
+                if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
+                    await window.scrapVbaCore.syncInventoryAssetWithStock(OWNER_UID);
+                }
+                alert(`Saved changes for ${count} items.`);
+            }
+            isBulkEditMode = false;
+            renderSTOCK(body);
+        });
+    }
+    document.getElementById('reorderBtn').addEventListener('click', () => {
+        isReorderMode = !isReorderMode;
+        isBulkEditMode = false;
+        renderSTOCK(body);
+    });
+    if (isReorderMode) {
+        let dragSrcIndex = null;
+        function handleDragStart(e) {
+            dragSrcIndex = Number(this.dataset.index);
+            e.dataTransfer.effectAllowed = 'move';
+            this.style.opacity = '0.4';
+        }
+        function handleDragOver(e) {
+            if (e.preventDefault) e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            return false;
+        }
+        function handleDrop(e) {
+            if (e.stopPropagation) e.stopPropagation();
+            const targetIndex = Number(this.dataset.index);
+            if (dragSrcIndex !== null && dragSrcIndex !== targetIndex) {
+                const item = rows.splice(dragSrcIndex, 1)[0];
+                rows.splice(targetIndex, 0, item);
+                renderUpdatedRows();
+            }
+            return false;
+        }
+
+        document.querySelectorAll('button[data-move-up]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.moveUp;
+                const idx = rows.findIndex(x => x.id === id);
+                if (idx > 0) {
+                    [rows[idx], rows[idx - 1]] = [rows[idx - 1], rows[idx]];
+                    renderUpdatedRows();
+                }
+            });
+        });
+        document.querySelectorAll('button[data-move-down]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.moveDown;
+                const idx = rows.findIndex(x => x.id === id);
+                if (idx < rows.length - 1) {
+                    [rows[idx], rows[idx + 1]] = [rows[idx + 1], rows[idx]];
+                    renderUpdatedRows();
+                }
+            });
+        });
+        function renderUpdatedRows() {
+            const tbody = body.querySelector('tbody');
+            tbody.innerHTML = rows.map((r, idx) => `<tr draggable="true" data-index="${idx}" style="cursor:move;">
+                <td>${escHtml(r.itemName)}</td>
+                <td><span class="stock-qty-span" style="cursor:pointer; user-select:none;">${Number(r.currentStock||0).toFixed(1)}</span></td>
+                <td>${r.growingPrice !== undefined && r.growingPrice !== null ? Number(r.growingPrice) : '-'}</td>
+                <td>${Number(unitCost(r) || 0)}</td>
+                <td>${r.downBuyingPrice !== undefined && r.downBuyingPrice !== null ? Number(r.downBuyingPrice) : '-'}</td>
+                <td>${Number(r.profit||0)}</td>
+                <td>${Number(r.sellingPrice||0)}</td>
+                <td>
+                    <button data-move-up="${r.id}" style="padding:4px 8px;background:#6366f1;">▲</button>
+                    <button data-move-down="${r.id}" style="padding:4px 8px;background:#6366f1;">▼</button>
+                </td>
+            </tr>`).join('');
+            
+            tbody.querySelectorAll('tr').forEach(tr => {
+                tr.addEventListener('dragstart', handleDragStart);
+                tr.addEventListener('dragover', handleDragOver);
+                tr.addEventListener('drop', handleDrop);
+                tr.addEventListener('dragend', function() { this.style.opacity = '1'; });
+            });
+
+            tbody.querySelectorAll('button[data-move-up]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const id = btn.dataset.moveUp;
+                    const idx = rows.findIndex(x => x.id === id);
+                    if (idx > 0) {
+                        [rows[idx], rows[idx - 1]] = [rows[idx - 1], rows[idx]];
+                        renderUpdatedRows();
+                    }
+                });
+            });
+            tbody.querySelectorAll('button[data-move-down]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const id = btn.dataset.moveDown;
+                    const idx = rows.findIndex(x => x.id === id);
+                    if (idx < rows.length - 1) {
+                        [rows[idx], rows[idx + 1]] = [rows[idx + 1], rows[idx]];
+                        renderUpdatedRows();
+                    }
+                });
+            });
+        }
+        renderUpdatedRows(); // Initialize drag handlers
+        document.getElementById('saveOrderBtn').addEventListener('click', async () => {
+            const batch = db.batch();
+            rows.forEach((r, idx) => {
+                const ref = db.collection('scrap_items').doc(r.id);
+                batch.update(ref, { sortOrder: idx, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            });
+            await batch.commit();
+            alert('New order saved.');
+            isReorderMode = false;
+            renderSTOCK(body);
+        });
+    }
+    document.querySelectorAll('button[data-edit]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.edit;
+            const row = rows.find((r) => r.id === id);
+            if (!row) return;
+            const wrap = document.createElement('div');
+            wrap.className = 'modal';
+            wrap.innerHTML = `<div class="modal-card">
+                <h3 style="margin-bottom:8px;">Edit Item</h3>
+                <div class="small" style="margin-bottom:4px;">${escHtml(row.itemName || '-')}</div>
+                <div class="small" style="margin-bottom:8px;color:#0369a1;">Buying Price: <b id="mBuyDisp">${(Number(row.sellingPrice||0) - Number(row.profit||0)).toFixed(2)}</b></div>
+                <div style="display:grid;grid-template-columns:repeat(6, 1fr);gap:8px;">
+                    <div><label class="small">Stock</label><input id="mQty" type="number" step="0.01" value="${Number(row.currentStock) || 0}" style="width:100%;"></div>
+                    <div>
+                        <label class="small" style="display:flex; justify-content:space-between; align-items:center;">
+                            <span>Profit</span>
+                            <select id="mProfitType" style="padding:2px; font-size:10px; border-radius:4px; margin-left:4px; height:18px; width:45px;">
+                                <option value="fixed">Rs</option>
+                                <option value="percent">%</option>
+                            </select>
+                        </label>
+                        <input id="mProfit" type="number" step="0.01" value="${Number(row.profit) || 0}" style="width:100%;">
+                    </div>
+                    <div><label class="small">Sell Price</label><input id="mSell" type="number" step="0.01" value="${Number(row.sellingPrice) || 0}" style="width:100%;"></div>
+                    <div><label class="small">Growing Price</label><input id="mGrowing" type="number" step="0.01" value="${row.growingPrice !== undefined && row.growingPrice !== null ? Number(row.growingPrice) : ''}" placeholder="None" style="width:100%;"></div>
+                    <div><label class="small">Special Price</label><input id="mSpecial" type="number" step="0.01" value="${row.specialPrice !== undefined && row.specialPrice !== null ? Number(row.specialPrice) : ''}" placeholder="None" style="width:100%;"></div>
+                    <div><label class="small">Down Price</label><input id="mDown" type="number" step="0.01" value="${row.downBuyingPrice !== undefined && row.downBuyingPrice !== null ? Number(row.downBuyingPrice) : ''}" placeholder="None" style="width:100%;"></div>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end;">
+                    <button id="mDelete" class="danger">Delete</button>
+                    <button id="mClose" style="background:#64748b;">Cancel</button>
+                    <button id="mSave">Save</button>
+                </div>
+            </div>`;
+            document.body.appendChild(wrap);
+            
+            const mUpdateBuy = () => {
+                const type = wrap.querySelector('#mProfitType').value;
+                const p = Number(wrap.querySelector('#mProfit').value) || 0;
+                const s = Number(wrap.querySelector('#mSell').value) || 0;
+                
+                let buyPrice = 0;
+                if (type === 'percent') {
+                    buyPrice = (1 + p / 100 > 0) ? s / (1 + p / 100) : 0;
+                } else {
+                    buyPrice = s - p;
+                }
+                wrap.querySelector('#mBuyDisp').textContent = buyPrice.toFixed(2);
+            };
+
+            wrap.querySelector('#mProfitType').addEventListener('change', (e) => {
+                const type = e.target.value;
+                const pInput = wrap.querySelector('#mProfit');
+                const p = Number(pInput.value) || 0;
+                const s = Number(wrap.querySelector('#mSell').value) || 0;
+                
+                if (type === 'percent') {
+                    const buy = s - p;
+                    const pct = buy > 0 ? (p / buy) * 100 : 0;
+                    pInput.value = pct.toFixed(2);
+                } else {
+                    const divisor = 1 + p / 100;
+                    const buy = divisor > 0 ? s / divisor : 0;
+                    const absProfit = s - buy;
+                    pInput.value = absProfit.toFixed(2);
+                }
+                mUpdateBuy();
+            });
+
+            wrap.querySelector('#mProfit').addEventListener('input', mUpdateBuy);
+            wrap.querySelector('#mSell').addEventListener('input', mUpdateBuy);
+            wrap.querySelector('#mClose').addEventListener('click', () => wrap.remove());
+            wrap.querySelector('#mSave').addEventListener('click', async () => {
+                const currentStock = Number(wrap.querySelector('#mQty').value) || 0;
+                const sellingPrice = Number(wrap.querySelector('#mSell').value) || 0;
+                const pVal = Number(wrap.querySelector('#mProfit').value) || 0;
+                const pType = wrap.querySelector('#mProfitType').value;
+                const growingVal = wrap.querySelector('#mGrowing').value.trim();
+                const specialVal = wrap.querySelector('#mSpecial').value.trim();
+                const downVal = wrap.querySelector('#mDown').value.trim();
+
+                let profit = 0;
+                if (pType === 'percent') {
+                    const divisor = 1 + pVal / 100;
+                    const buy = divisor > 0 ? sellingPrice / divisor : 0;
+                    profit = sellingPrice - buy;
+                } else {
+                    profit = pVal;
+                }
+
+                const updateData = {
+                    currentStock, 
+                    profit: Number(profit.toFixed(2)), 
+                    sellingPrice,
+                    costPrice: Number((sellingPrice - profit).toFixed(2)),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                const oldGrowing = row.growingPrice;
+                let growingChanged = false;
+                let newGrowingVal = 0;
+
+                if (growingVal === '') {
+                    if (oldGrowing !== undefined && oldGrowing !== null) {
+                        growingChanged = true;
+                    }
+                    updateData.growingPrice = firebase.firestore.FieldValue.delete();
+                } else {
+                    const growingPrice = Number(growingVal);
+                    if (isNaN(growingPrice) || growingPrice < 0) {
+                        alert('Please enter a valid positive number for Growing Price');
+                        return;
+                    }
+                    if (oldGrowing !== growingPrice) {
+                        growingChanged = true;
+                        newGrowingVal = growingPrice;
+                    }
+                    updateData.growingPrice = growingPrice;
+                }
+
+                if (specialVal === '') {
+                    updateData.specialPrice = firebase.firestore.FieldValue.delete();
+                } else {
+                    const specialPrice = Number(specialVal);
+                    if (isNaN(specialPrice) || specialPrice < 0) {
+                        alert('Please enter a valid positive number for Special Price');
+                        return;
+                    }
+                    updateData.specialPrice = specialPrice;
+                }
+                if (downVal === '') {
+                    updateData.downBuyingPrice = firebase.firestore.FieldValue.delete();
+                } else {
+                    const downPrice = Number(downVal);
+                    if (isNaN(downPrice) || downPrice < 0) {
+                        alert('Please enter a valid positive number for Down Price');
+                        return;
+                    }
+                    updateData.downBuyingPrice = downPrice;
+                }
+
+                const oldCostPrice = Number(row.costPrice) || 0;
+                const newCostPrice = Number((sellingPrice - profit).toFixed(2));
+                const costPriceChanged = (oldCostPrice !== newCostPrice);
+
+                await db.collection('scrap_items').doc(id).update(updateData);
+                if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
+                    await window.scrapVbaCore.syncInventoryAssetWithStock(SCRAP_BUSINESS_ID);
+                }
+
+                // WhatsApp Sharing
+                const name = String(row.itemName || '').trim();
+                if (!name.toUpperCase().startsWith("S-")) {
+                    const shareTexts = [];
+                    
+                    if (growingChanged && newGrowingVal > 0) {
+                        const fp = Number(newGrowingVal).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const prevPrice = Number(oldGrowing) || 0;
+                        const oldPriceStr = prevPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const diff = newGrowingVal - prevPrice;
+                        const diffStr = Number(Math.abs(diff)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const dir = diff >= 0 ? 'වැඩි' : 'අඩු';
+                        shareTexts.push(`${name} - මිල Rs ${oldPriceStr}/= සිට, Rs ${fp}/= දක්වා Rs ${diffStr}/= කින් ${dir} විය.`);
+                    }
+                    if (costPriceChanged && newCostPrice > 0) {
+                        const fp = Number(newCostPrice).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const prevPrice = Number(oldCostPrice) || 0;
+                        const oldPriceStr = prevPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const diff = newCostPrice - prevPrice;
+                        const diffStr = Number(Math.abs(diff)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const dir = diff >= 0 ? 'වැඩි' : 'අඩු';
+                        shareTexts.push(`${name} - මිල Rs ${oldPriceStr}/= සිට, Rs ${fp}/= දක්වා Rs ${diffStr}/= කින් ${dir} විය.`);
+                    }
+                    
+                    if (shareTexts.length > 0) {
+                        if (confirm('මිල වෙනස් විය. මෙම මිල වෙනස් වීම් WhatsApp හරහා Share කිරීමට අවශ්‍යද?')) {
+                            const finalMsg = shareTexts.join('\n');
+                            const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(finalMsg)}`;
+                            window.open(waUrl, '_blank');
+                        }
+                    }
+                }
+
+                wrap.remove();
+                await renderSTOCK(body);
+            });
+            wrap.querySelector('#mDelete').addEventListener('click', async () => {
+                if (!confirm('Delete this item?')) return;
+                await db.collection('scrap_items').doc(id).delete();
+                if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
+                    await window.scrapVbaCore.syncInventoryAssetWithStock(SCRAP_BUSINESS_ID);
+                }
+                wrap.remove();
+                await renderSTOCK(body);
+            });
+        });
+    });
+
+    // Attach triple click event listeners to toggle highlight state
+    body.querySelectorAll('.stock-name-cell').forEach((cell) => {
+        cell.addEventListener('click', async (e) => {
+            if (e.detail === 3) {
+                e.preventDefault();
+                const itemId = cell.dataset.id;
+                const item = rows.find(x => x.id === itemId);
+                if (!item) return;
+                
+                const newSelected = !item.indikaSelected;
+                showLoading(true);
+                try {
+                    await db.collection('scrap_items').doc(itemId).update({
+                        indikaSelected: newSelected,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    await renderSTOCK(body);
+                } catch(err) {
+                    alert('Error updating highlight status: ' + err.message);
+                } finally {
+                    showLoading(false);
+                }
+            }
+        });
+    });
+
+    // Inline edit listeners for Down Buying Price
+    body.querySelectorAll('.down-price-input').forEach((input) => {
+        input.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                const itemId = input.dataset.id;
+                const valStr = input.value.trim();
+                showLoading(true);
+                try {
+                    if (valStr === '') {
+                        await db.collection('scrap_items').doc(itemId).update({
+                            downBuyingPrice: firebase.firestore.FieldValue.delete(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    } else {
+                        const downPrice = Number(valStr);
+                        if (isNaN(downPrice) || downPrice < 0) {
+                            alert('Please enter a valid positive number');
+                            return;
+                        }
+                        await db.collection('scrap_items').doc(itemId).update({
+                            downBuyingPrice: downPrice,
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                    await renderSTOCK(body);
+                } catch(err) {
+                    alert('Error updating down price: ' + err.message);
+                } finally {
+                    showLoading(false);
+                }
+            }
+        });
+    });
+
+    body.querySelectorAll('.down-price-text').forEach((span) => {
+        span.addEventListener('dblclick', (e) => {
+            const itemId = span.dataset.id;
+            const currentVal = span.textContent;
+            const parent = span.parentNode;
+            parent.innerHTML = `<input type="number" step="0.01" value="${currentVal}" class="down-price-input" data-id="${itemId}" style="width: 100px; padding: 4px;" autofocus>`;
+            const input = parent.querySelector('.down-price-input');
+            input.focus();
+            input.addEventListener('keypress', async (evt) => {
+                if (evt.key === 'Enter') {
+                    const valStr = input.value.trim();
+                    showLoading(true);
+                    try {
+                        if (valStr === '') {
+                            await db.collection('scrap_items').doc(itemId).update({
+                                downBuyingPrice: firebase.firestore.FieldValue.delete(),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        } else {
+                            const downPrice = Number(valStr);
+                            if (isNaN(downPrice) || downPrice < 0) {
+                                alert('Please enter a valid positive number');
+                                return;
+                            }
+                            await db.collection('scrap_items').doc(itemId).update({
+                                downBuyingPrice: downPrice,
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                        await renderSTOCK(body);
+                    } catch(err) {
+                        alert('Error updating down price: ' + err.message);
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+            });
+            input.addEventListener('keydown', (evt) => {
+                if (evt.key === 'Escape') {
+                    renderSTOCK(body);
+                }
+            });
+        });
+    });
+
+    // Inline edit listeners for Special Price
+    body.querySelectorAll('.special-price-input').forEach((input) => {
+        input.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                const itemId = input.dataset.id;
+                const valStr = input.value.trim();
+                showLoading(true);
+                try {
+                    if (valStr === '') {
+                        await db.collection('scrap_items').doc(itemId).update({
+                            specialPrice: firebase.firestore.FieldValue.delete(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    } else {
+                        const specialPrice = Number(valStr);
+                        if (isNaN(specialPrice) || specialPrice < 0) {
+                            alert('Please enter a valid positive number');
+                            return;
+                        }
+                        await db.collection('scrap_items').doc(itemId).update({
+                            specialPrice: specialPrice,
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                    await renderSTOCK(body);
+                } catch(err) {
+                    alert('Error updating special price: ' + err.message);
+                } finally {
+                    showLoading(false);
+                }
+            }
+        });
+    });
+
+    body.querySelectorAll('.special-price-text').forEach((span) => {
+        span.addEventListener('dblclick', (e) => {
+            const itemId = span.dataset.id;
+            const currentVal = span.textContent;
+            const parent = span.parentNode;
+            parent.innerHTML = `<input type="number" step="0.01" value="${currentVal}" class="special-price-input" data-id="${itemId}" style="width: 80px; padding: 4px;" autofocus>`;
+            const input = parent.querySelector('.special-price-input');
+            input.focus();
+            input.addEventListener('keypress', async (evt) => {
+                if (evt.key === 'Enter') {
+                    const valStr = input.value.trim();
+                    showLoading(true);
+                    try {
+                        if (valStr === '') {
+                            await db.collection('scrap_items').doc(itemId).update({
+                                specialPrice: firebase.firestore.FieldValue.delete(),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        } else {
+                            const specialPrice = Number(valStr);
+                            if (isNaN(specialPrice) || specialPrice < 0) {
+                                alert('Please enter a valid positive number');
+                                return;
+                            }
+                            await db.collection('scrap_items').doc(itemId).update({
+                                specialPrice: specialPrice,
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                        await renderSTOCK(body);
+                    } catch(err) {
+                        alert('Error updating special price: ' + err.message);
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+            });
+            input.addEventListener('keydown', (evt) => {
+                if (evt.key === 'Escape') {
+                    renderSTOCK(body);
+                }
+            });
+        });
+    });
+
+    // Inline edit listeners for Growing Price
+    body.querySelectorAll('.growing-price-input').forEach((input) => {
+        input.addEventListener('keypress', async (e) => {
+            if (e.key === 'Enter') {
+                const itemId = input.dataset.id;
+                const valStr = input.value.trim();
+                showLoading(true);
+                try {
+                    const row = rows.find(r => r.id === itemId);
+                    const oldPrice = row ? row.growingPrice : null;
+                    let hasChanged = false;
+                    let newPriceVal = 0;
+
+                    if (valStr === '') {
+                        if (oldPrice !== undefined && oldPrice !== null) {
+                            hasChanged = true;
+                        }
+                        await db.collection('scrap_items').doc(itemId).update({
+                            growingPrice: firebase.firestore.FieldValue.delete(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    } else {
+                        const growingPrice = Number(valStr);
+                        if (isNaN(growingPrice) || growingPrice < 0) {
+                            alert('Please enter a valid positive number');
+                            return;
+                        }
+                        if (oldPrice !== growingPrice) {
+                            hasChanged = true;
+                            newPriceVal = growingPrice;
+                        }
+                        await db.collection('scrap_items').doc(itemId).update({
+                            growingPrice: growingPrice,
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                    if (hasChanged && newPriceVal > 0) {
+                        triggerPriceChangeWhatsapp(row, newPriceVal, oldPrice).catch(err => console.error("WhatsApp failed:", err));
+                    }
+                    await renderSTOCK(body);
+                } catch(err) {
+                    alert('Error updating growing price: ' + err.message);
+                } finally {
+                    showLoading(false);
+                }
+            }
+        });
+    });
+
+    body.querySelectorAll('.growing-price-text').forEach((span) => {
+        span.addEventListener('dblclick', (e) => {
+            const itemId = span.dataset.id;
+            const currentVal = span.textContent;
+            const parent = span.parentNode;
+            parent.innerHTML = `<input type="number" step="0.01" value="${currentVal}" class="growing-price-input" data-id="${itemId}" style="width: 80px; padding: 4px;" autofocus>`;
+            const input = parent.querySelector('.growing-price-input');
+            input.focus();
+            input.addEventListener('keypress', async (evt) => {
+                if (evt.key === 'Enter') {
+                    const valStr = input.value.trim();
+                    showLoading(true);
+                    try {
+                        const row = rows.find(r => r.id === itemId);
+                        const oldPrice = row ? row.growingPrice : null;
+                        let hasChanged = false;
+                        let newPriceVal = 0;
+
+                        if (valStr === '') {
+                            if (oldPrice !== undefined && oldPrice !== null) {
+                                hasChanged = true;
+                            }
+                            await db.collection('scrap_items').doc(itemId).update({
+                                growingPrice: firebase.firestore.FieldValue.delete(),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        } else {
+                            const growingPrice = Number(valStr);
+                            if (isNaN(growingPrice) || growingPrice < 0) {
+                                alert('Please enter a valid positive number');
+                                return;
+                            }
+                            if (oldPrice !== growingPrice) {
+                                hasChanged = true;
+                                newPriceVal = growingPrice;
+                            }
+                            await db.collection('scrap_items').doc(itemId).update({
+                                growingPrice: growingPrice,
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                        if (hasChanged && newPriceVal > 0) {
+                            triggerPriceChangeWhatsapp(row, newPriceVal, oldPrice).catch(err => console.error("WhatsApp failed:", err));
+                        }
+                        await renderSTOCK(body);
+                    } catch(err) {
+                        alert('Error updating growing price: ' + err.message);
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+            });
+            input.addEventListener('keydown', (evt) => {
+                if (evt.key === 'Escape') {
+                    renderSTOCK(body);
+                }
+            });
+        });
+    });
+}
+
+async function deleteSelectedPurchases(selectedIds) {
+    if (!selectedIds || selectedIds.length === 0) return;
+    showLoading(true);
+    try {
+        for (const id of selectedIds) {
+            const docRef = db.collection('buying_history').doc(id);
+            const snap = await docRef.get();
+            if (!snap.exists) continue;
+            const purchase = snap.data();
+            const supplierName = purchase.supplierName;
+            
+            // 1. Stock Reversal
+            const items = Array.isArray(purchase.items) ? purchase.items : [];
+            for (const line of items) {
+                if (!line.itemId) continue;
+                const itemRef = db.collection('scrap_items').doc(line.itemId);
+                const itemSnap = await itemRef.get();
+                if (itemSnap.exists) {
+                    const itemData = itemSnap.data();
+                    const currentStock = Number(itemData.currentStock) || 0;
+                    const nextStock = Math.max(0, currentStock - (Number(line.weight) || 0));
+                    
+                    const s = nextStock;
+                    const sp = Number(itemData.sellingPrice) || 0;
+                    const pf = Number(itemData.profit) || 0;
+                    const cpInput = Number(itemData.costPrice);
+                    const cp = Number.isFinite(cpInput) && cpInput > 0 ? cpInput : 0;
+                    const totalBuyingValue = s * cp;
+                    const totalSellingValue = s * sp;
+                    const potentialProfitValue = s * pf;
+                    
+                    await itemRef.update({
+                        currentStock: nextStock,
+                        totalBuyingValue,
+                        totalSellingValue,
+                        potentialProfitValue,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+            }
+            
+            // 2. Revert Advances
+            const advanceApplied = Number(purchase.advanceApplied) || 0;
+            if (advanceApplied > 0.01) {
+                const advRef = db.collection('scrap_advances').doc(advId(supplierName));
+                await advRef.set({
+                    businessId: SCRAP_BUSINESS_ID,
+                    supplierName,
+                    balance: firebase.firestore.FieldValue.increment(advanceApplied),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+                
+                const advHistSnap = await db.collection('scrap_advance_history')
+                    .where('businessId', '==', SCRAP_BUSINESS_ID)
+                    .where('supplierName', '==', supplierName)
+                    .where('type', '==', 'APPLIED_IN_BILL')
+                    .get();
+                for (const d of advHistSnap.docs) {
+                    const dData = d.data();
+                    if (Math.abs((Number(dData.amount) || 0) + advanceApplied) < 0.01) {
+                        await d.ref.delete();
+                        break;
+                    }
+                }
+            }
+            
+            // 3. Revert Revenue & Profit Pool
+            let totalPotentialProfit = 0;
+            for (const line of items) {
+                const itemSnap = await db.collection('scrap_items').doc(line.itemId).get();
+                if (itemSnap.exists) {
+                    const itData = itemSnap.data();
+                    const bp = Number(line.rate) || 0;
+                    const sp = Number(itData.sellingPrice) || 0;
+                    const margin = sp > 0 ? (sp - bp) : 0;
+                    totalPotentialProfit += margin * (Number(line.weight) || 0);
+                }
+            }
+            
+            const vehicleHireApplied = Number(purchase.vehicleHireApplied) || 0;
+            const pDate = purchase.date || purchase.billDateTime || new Date().toISOString();
+            const purchaseDateStr = pDate.split('T')[0];
+            const revHistSnap = await db.collection('scrap_revenue_history')
+                .where('businessId', '==', SCRAP_BUSINESS_ID)
+                .where('supplierName', '==', supplierName)
+                .where('date', '==', purchaseDateStr)
+                .get();
+            for (const d of revHistSnap.docs) {
+                const dData = d.data();
+                const type = dData.type;
+                const amount = Number(dData.amount) || 0;
+                
+                let shouldDelete = false;
+                if (type === 'POTENTIAL_PROFIT' && Math.abs(amount - totalPotentialProfit) < 0.05) {
+                    shouldDelete = true;
+                } else if (type === 'VEHICLE_HIRE' && Math.abs(amount - vehicleHireApplied) < 0.05) {
+                    shouldDelete = true;
+                }
+                
+                if (shouldDelete) {
+                    await d.ref.delete();
+                }
+            }
+            
+            if (window.scrapVbaCore && typeof window.scrapVbaCore.updateProfitPool === 'function') {
+                const totalPoolImpact = -(totalPotentialProfit + vehicleHireApplied);
+                await window.scrapVbaCore.updateProfitPool(SCRAP_BUSINESS_ID, totalPoolImpact, 'PURCHASE_REVERSED', `Reversed purchase from ${supplierName} (Bill #${purchase.billNo || ''})`);
+            }
+            
+            // 4. Reverse Loan Allocations
+            const loanAllocations = Array.isArray(purchase.loanAllocations) ? purchase.loanAllocations : [];
+            for (const row of loanAllocations) {
+                const amt = Number(row.amount) || 0;
+                if (amt <= 0.0001) continue;
+                const src = row.sourceCollection || 'scrap_loans';
+                
+                if (src === 'hand_loans') {
+                    const ref = db.collection('hand_loans').doc(row.id);
+                    await ref.update({
+                        balance: firebase.firestore.FieldValue.increment(amt),
+                        active: true,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } else if (src === 'loan_no_interest') {
+                    const ref = db.collection('loan_no_interest').doc(row.id);
+                    await ref.update({
+                        balance: firebase.firestore.FieldValue.increment(amt),
+                        principalOutstanding: firebase.firestore.FieldValue.increment(amt),
+                        active: true,
+                        pendingRemovalAt: firebase.firestore.FieldValue.delete(),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } else if (src === 'loan_interest_entries') {
+                    let principalPaid = amt;
+                    let intPaid = 0;
+                    const histSnap = await db.collection('loan_interest_history')
+                        .where('businessId', '==', SCRAP_BUSINESS_ID)
+                        .where('loanId', '==', row.id)
+                        .get();
+                    for (const hDoc of histSnap.docs) {
+                        const hData = hDoc.data();
+                        if (hData.note && hData.note.includes(purchase.billNo)) {
+                            principalPaid = Math.abs(hData.principalChange || 0);
+                            intPaid = Math.abs(hData.interestChange || 0);
+                            await hDoc.ref.delete();
+                            break;
+                        }
+                    }
+                    
+                    const ref = db.collection('loan_interest_entries').doc(row.id);
+                    await ref.update({
+                        balance: firebase.firestore.FieldValue.increment(amt),
+                        principalOutstanding: firebase.firestore.FieldValue.increment(principalPaid),
+                        interestOutstanding: firebase.firestore.FieldValue.increment(intPaid),
+                        active: true,
+                        pendingRemovalAt: firebase.firestore.FieldValue.delete(),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } else if (src === 'loan_advanced_entries') {
+                    const ref = db.collection('loan_advanced_entries').doc(row.id);
+                    const lSnap = await ref.get();
+                    if (lSnap.exists) {
+                        const r = lSnap.data();
+                        const restorePr = Math.min(amt, Number(r.collectedPrincipal) || 0);
+                        const restoreIn = Math.min(amt - restorePr, Number(r.collectedInterest) || 0);
+                        
+                        const pNew = (Number(r.principalOutstanding) || 0) + restorePr;
+                        const iNew = (Number(r.interestOutstanding) || 0) + restoreIn;
+                        
+                        await ref.update({
+                            principalOutstanding: pNew,
+                            balance: pNew,
+                            interestOutstanding: iNew,
+                            collectedPrincipal: Math.max(0, (Number(r.collectedPrincipal) || 0) - restorePr),
+                            collectedInterest: Math.max(0, (Number(r.collectedInterest) || 0) - restoreIn),
+                            principalDueToInvestor: Math.max(0, (Number(r.principalDueToInvestor) || 0) - restorePr),
+                            interestDueToInvestor: Math.max(0, (Number(r.interestDueToInvestor) || 0) - restoreIn),
+                            active: (pNew + iNew) > 0.0001,
+                            pendingRemovalAt: firebase.firestore.FieldValue.delete(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                } else if (src === 'loan_daily_entries') {
+                    const ref = db.collection('loan_daily_entries').doc(row.id);
+                    const lSnap = await ref.get();
+                    if (lSnap.exists) {
+                        const r = lSnap.data();
+                        const restorePr = Number(row.principalPaid || 0);
+                        const restoreIn = Number(row.interestPaid || 0);
+                        
+                        const pNew = (Number(r.principalOutstanding) || 0) + restorePr;
+                        const iNew = (Number(r.interestOutstanding) || 0) + restoreIn;
+                        
+                        await ref.update({
+                            principalOutstanding: pNew,
+                            interestOutstanding: iNew,
+                            balance: pNew + iNew,
+                            active: (pNew + iNew) > 0.0001,
+                            pendingRemovalAt: firebase.firestore.FieldValue.delete(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+
+                        if (restoreIn > 0.01 && window.scrapVbaCore && typeof window.scrapVbaCore.updateProfitPool === 'function') {
+                            await window.scrapVbaCore.updateProfitPool(SCRAP_BUSINESS_ID, -restoreIn, 'DAILY_LOAN_REV_REV', `Reversal of Daily Loan Interest from ${supplierName} (Bill #${purchase.billNo || ''})`);
+                        }
+                    }
+                } else if (src === 'scrap_loans') {
+                    const ref = db.collection('scrap_loans').doc(row.id);
+                    await ref.update({
+                        balance: firebase.firestore.FieldValue.increment(amt),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+            }
+            
+            // 5. Reverse Weekly Loans
+            const weeklyDeduct = Number(purchase.weeklyLoanDeduction || (purchase.loanApplyBreakdown && purchase.loanApplyBreakdown.WEEKLY) || 0);
+            if (weeklyDeduct > 0.01) {
+                const wSnap = await db.collection('weekly_loans')
+                    .where('businessId', '==', SCRAP_BUSINESS_ID)
+                    .where('customerName', '==', supplierName)
+                    .get();
+                
+                let remainingToUndo = weeklyDeduct;
+                const wDocs = wSnap.docs.map(d => ({ id: d.id, data: d.data() }))
+                    .sort((a, b) => String(b.data.date || '').localeCompare(String(a.data.date || '')));
+                
+                const todayStr = new Date().toISOString().split('T')[0];
+                for (const wRow of wDocs) {
+                    if (remainingToUndo <= 0.01) break;
+                    const wData = wRow.data;
+                    const schedule = wData.schedule || [];
+                    
+                    for (let i = schedule.length - 1; i >= 0; i--) {
+                        if (remainingToUndo <= 0.01) break;
+                        const inst = schedule[i];
+                        const paid = Number(inst.paidAmount) || 0;
+                        if (paid > 0) {
+                            const undoAmt = Math.min(paid, remainingToUndo);
+                            inst.paidAmount = paid - undoAmt;
+                            if (inst.paidAmount < inst.amount - 0.01) {
+                                inst.status = inst.dueDate < todayStr ? 'OVERDUE' : 'PENDING';
+                            }
+                            remainingToUndo -= undoAmt;
+                        }
+                    }
+                    
+                    if (window.WeeklyLoanCore) {
+                        window.WeeklyLoanCore.refreshScheduleStatus(wData);
+                    }
+                    
+                    const scheduleActive = wData.schedule.some(inst => inst.status !== 'PAID');
+                    await db.collection('weekly_loans').doc(wRow.id).update({
+                        schedule: wData.schedule,
+                        active: scheduleActive,
+                        totalOverdueInterest: wData.totalOverdueInterest || 0,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+            }
+            
+            // 6. Delete Journal Entries
+            const journalSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
+                .where('reference', '==', id)
+                .where('referenceType', '==', 'SCRAP_BUYING')
+                .get();
+            for (const d of journalSnap.docs) {
+                await d.ref.delete();
+            }
+            
+            // 7. Delete scrap_buying_sessions
+            const sessionSnap = await db.collection('scrap_buying_sessions')
+                .where('businessId', '==', SCRAP_BUSINESS_ID)
+                .where('billNo', '==', purchase.billNo || '')
+                .get();
+            for (const d of sessionSnap.docs) {
+                await d.ref.delete();
+            }
+            
+            // 8. Delete the purchase itself
+            await docRef.delete();
+        }
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function renderBUY(body) {
+    showLoading(true);
+    try {
+        const [buySnap, itemSnap] = await Promise.all([
+            db.collection('buying_history').where('businessId', '==', SCRAP_BUSINESS_ID).get(),
+            db.collection('scrap_items').where('businessId', '==', SCRAP_BUSINESS_ID).get()
+        ]);
+        const itemNames = itemSnap.docs.map((d) => String(d.data().itemName || '').trim()).filter(Boolean).sort((a, b) => a.localeCompare(b));
+        const rows = buySnap.docs.map((d) => {
+            const data = d.data();
+            return { id: d.id, ...data };
+        }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+        body.innerHTML = `
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;background:#fff;padding:12px;border:1px solid #dbe4ee;border-radius:10px;">
+            <div style="display:flex;flex-direction:column;gap:4px;">
+                <label class="small" style="font-weight:700;">Supplier Name / නම</label>
+                <input id="buySearchName" placeholder="Search by name..." style="min-width:220px;padding:8px;font-size:13px;">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+                <label class="small" style="font-weight:700;">From Date / ආරම්භක දිනය</label>
+                <input id="buySearchFrom" type="date" style="padding:8px;font-size:13px;">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+                <label class="small" style="font-weight:700;">To Date / අවසාන දිනය</label>
+                <input id="buySearchTo" type="date" style="padding:8px;font-size:13px;">
+            </div>
+            <div style="display:flex;align-items:flex-end;height:100%;margin-top:18px;gap:8px;">
+                <button id="buySearchReset" style="background:#64748b;font-weight:700;padding:9px 15px;">Reset / පැහැදිලි කරන්න</button>
+            </div>
+            <div style="margin-left:auto;display:flex;gap:8px;align-items:flex-end;margin-top:18px;">
+                <button id="buyToggleDeleteBtn" style="background:${isDeleteMode ? '#64748b' : '#dc2626'};color:#fff;font-weight:700;padding:9px 15px;border:none;border-radius:6px;cursor:pointer;">${isDeleteMode ? 'Cancel / අවලංගු කරන්න' : 'Delete Mode / මකන්න'}</button>
+                <button id="buyPermanentDeleteBtn" style="background:#b91c1c;color:#fff;font-weight:700;padding:9px 15px;border:none;border-radius:6px;cursor:pointer;display:none;">Permanent Delete / ස්ථිරවම මකන්න</button>
+                <span class="small" style="font-weight:700;align-self:center;margin-left:8px;">Records / ගනුදෙනු ගණන: <b id="buyFilteredCount" style="color:#0f3b2c;font-size:14px;">0</b></span>
+            </div>
+          </div>
+          <div style="overflow:auto;border:1px solid #e2e8f0;border-radius:10px;">
+            <table style="min-width:${Math.max(1200, 750 + (itemNames.length * 110))}px;">
+              <thead>
+                <tr>
+                  ${isDeleteMode ? '<th style="width:50px;text-align:center;">Select</th>' : ''}
+                  <th>Date</th><th>Name</th><th>Total Weight</th><th>Total Amount</th>
+                  ${itemNames.map((n) => `<th>${n}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody id="buyTableBody"></tbody>
+            </table>
+          </div>`;
+
+        const nameInput = document.getElementById('buySearchName');
+        const fromInput = document.getElementById('buySearchFrom');
+        const toInput = document.getElementById('buySearchTo');
+        const resetBtn = document.getElementById('buySearchReset');
+        const tbody = document.getElementById('buyTableBody');
+        const countEl = document.getElementById('buyFilteredCount');
+
+        const formatDate = (isoStr) => {
+            if (!isoStr) return '';
+            const d = new Date(isoStr);
+            if (isNaN(d.getTime())) return '';
+            return d.toLocaleDateString('en-CA'); // YYYY-MM-DD
+        };
+
+        function applyFilters() {
+            const nameVal = nameInput.value.trim().toLowerCase();
+            const fromVal = fromInput.value;
+            const toVal = toInput.value;
+
+            const filtered = rows.filter((r) => {
+                if (nameVal) {
+                    const supplierName = String(r.supplierName || '').toLowerCase();
+                    const walkInName = String(r.walkInName || '').toLowerCase();
+                    if (!supplierName.includes(nameVal) && !walkInName.includes(nameVal)) {
+                        return false;
+                    }
+                }
+
+                if (fromVal || toVal) {
+                    const dateStr = r.date || r.billDateTime || '';
+                    const rowDate = formatDate(dateStr);
+                    if (!rowDate) return false;
+                    if (fromVal && rowDate < fromVal) return false;
+                    if (toVal && rowDate > toVal) return false;
+                }
+
+                return true;
+            });
+
+            countEl.textContent = filtered.length;
+
+            const todayIso = new Date().toLocaleDateString('en-CA');
+            const yesterdayIso = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
+
+            tbody.innerHTML = filtered.map((r) => {
+                const weights = {};
+                (Array.isArray(r.items) ? r.items : []).forEach((line) => {
+                    weights[String(line.itemName || '').trim()] = Number(line.weight) || 0;
+                });
+
+                let dateHtml = '-';
+                let isLastTwoDays = false;
+                if (r.date) {
+                    const rDateObj = new Date(r.date);
+                    const rIso = rDateObj.toLocaleDateString('en-CA');
+                    const timeStr = rDateObj.toLocaleString();
+                    isLastTwoDays = (rIso === todayIso || rIso === yesterdayIso);
+                    
+                    if (rIso === todayIso) {
+                        dateHtml = `<span style="color:#16a34a; font-weight:700;">${timeStr}</span>`;
+                    } else if (rIso === yesterdayIso) {
+                        dateHtml = `<span style="color:#a16207; font-weight:700;">${timeStr}</span>`;
+                    } else {
+                        dateHtml = timeStr;
+                    }
+                }
+
+                let chkHtml = '';
+                if (isDeleteMode) {
+                    if (isLastTwoDays) {
+                        chkHtml = `<td style="text-align:center;"><input type="checkbox" class="buy-delete-chk" data-id="${r.id}" style="width:18px;height:18px;cursor:pointer;"></td>`;
+                    } else {
+                        chkHtml = `<td></td>`;
+                    }
+                }
+
+                return `<tr>
+                  ${chkHtml}
+                  <td>${dateHtml}</td>
+                  <td><a href="#" onclick="viewFullBill('${r.id || ''}', ${JSON.stringify(r).replace(/"/g, '&quot;')}); return false;" style="color:#0ea5e9; font-weight:700; text-decoration:none;">${r.supplierName || '-'}</a></td>
+                  <td>${(Number(r.totalWeight) || 0).toFixed(2)}</td>
+                  <td>${fmt(r.totalAmount || 0)}</td>
+                  ${itemNames.map((name) => `<td>${(weights[name] || 0).toFixed(2)}</td>`).join('')}
+                </tr>`;
+            }).join('') || `<tr><td colspan="${(isDeleteMode ? 5 : 4) + itemNames.length}" style="text-align:center;padding:20px;color:#64748b;">No matching records found / ගැලපෙන ගනුදෙනු සොයාගත නොහැක</td></tr>`;
+
+            if (isDeleteMode) {
+                const chks = tbody.querySelectorAll('.buy-delete-chk');
+                chks.forEach(chk => {
+                    chk.addEventListener('change', () => {
+                        const checkedCount = tbody.querySelectorAll('.buy-delete-chk:checked').length;
+                        const permBtn = document.getElementById('buyPermanentDeleteBtn');
+                        if (permBtn) {
+                            permBtn.style.display = checkedCount > 0 ? 'inline-block' : 'none';
+                        }
+                    });
+                });
+            }
+        }
+
+        // Event listeners
+        nameInput.addEventListener('input', applyFilters);
+        fromInput.addEventListener('change', applyFilters);
+        toInput.addEventListener('change', applyFilters);
+        resetBtn.addEventListener('click', () => {
+            nameInput.value = '';
+            fromInput.value = '';
+            toInput.value = '';
+            applyFilters();
+        });
+
+        const toggleDeleteBtn = document.getElementById('buyToggleDeleteBtn');
+        const permDeleteBtn = document.getElementById('buyPermanentDeleteBtn');
+        
+        toggleDeleteBtn.addEventListener('click', () => {
+            if (!isDeleteMode) {
+                const todayIso = new Date().toLocaleDateString('en-CA');
+                const yesterdayIso = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
+                const eligibleCount = rows.filter((r) => {
+                    const dateStr = r.date || r.billDateTime || '';
+                    const rDateObj = new Date(dateStr);
+                    const rIso = rDateObj.toLocaleDateString('en-CA');
+                    return (rIso === todayIso || rIso === yesterdayIso);
+                }).length;
+
+                if (eligibleCount === 0) {
+                    alert("මකා දැමිය හැකි අවසන් දින දෙකේ මිලදී ගැනීම් කිසිවක් නොමැත.");
+                    return;
+                }
+            }
+            isDeleteMode = !isDeleteMode;
+            renderBUY(body);
+        });
+
+        permDeleteBtn.addEventListener('click', async () => {
+            const checkedChks = tbody.querySelectorAll('.buy-delete-chk:checked');
+            const selectedIds = Array.from(checkedChks).map(chk => chk.dataset.id);
+            if (selectedIds.length === 0) return;
+            
+            const confirmMsg = `මීට අදාළ මුදල් ගනුදෙනු සහ ස්ටොක් තත්ත්වය ආපස්සට හැරවීම සමඟින් තෝරාගත් මිලදී ගැනීම් ${selectedIds.length} ක් ස්ථිරවම මකා දැමීමට අවශ්‍යද?`;
+            if (confirm(confirmMsg)) {
+                try {
+                    await deleteSelectedPurchases(selectedIds);
+                    alert('තෝරාගත් මිලදී ගැනීම් සාර්ථකව මකා දමන ලදී.');
+                    isDeleteMode = false;
+                    renderBUY(body);
+                } catch (err) {
+                    console.error(err);
+                    alert('මකා දැමීම අසාර්ථක විය: ' + err.message);
+                }
+            }
+        });
+
+        // Initial render
+        applyFilters();
+    } catch (err) {
+        console.error("renderBUY error:", err);
+        body.innerHTML = `<div style="padding:20px;color:#b91c1c;background:#fee2e2;border:1px solid #fca5a5;border-radius:12px;">
+            <h4 style="margin:0 0 8px;">Failed to load purchases</h4>
+            <div class="small">${err.message}</div>
+        </div>`;
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function renderDAILYTR(body) {
+    const [ev, buy, sell, journal, extSettle, advHist, exp] = await Promise.all([
+        db.collection('scrap_event_log').where('businessId','==',SCRAP_BUSINESS_ID).limit(200).get(),
+        db.collection('buying_history').where('businessId','==',SCRAP_BUSINESS_ID).limit(200).get(),
+        db.collection('selling_history').where('businessId','==',SCRAP_BUSINESS_ID).limit(200).get(),
+        db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries').limit(200).get(),
+        db.collection('scrap_external_settlements').where('businessId','==',SCRAP_BUSINESS_ID).limit(200).get(),
+        db.collection('scrap_advance_history').where('businessId','==',SCRAP_BUSINESS_ID).limit(200).get(),
+        db.collection('scrap_expenses').where('businessId','==',SCRAP_BUSINESS_ID).limit(200).get()
+    ]);
+    const events = [];
+    const minDate = new Date();
+    minDate.setDate(minDate.getDate() - 60);
+    ev.forEach(d=>events.push({id:d.id,t:'EVENT',dt:d.data().createdAt?.toDate?.()?.toISOString()||'',d:d.data(),refType:''}));
+    buy.forEach(d=>{
+        const row = d.data();
+        const at = row.createdAt?.toDate ? row.createdAt.toDate().toISOString() : String(row.date || '');
+        events.push({id:d.id,t:'BUY',dt:at,d:row,refType:'SCRAP_BUYING'});
+    });
+    sell.forEach(d=>{
+        const row = d.data();
+        const at = row.createdAt?.toDate ? row.createdAt.toDate().toISOString() : String(row.date || '');
+        events.push({id:d.id,t:'SELL',dt:at,d:row,refType:'SCRAP_BILL'});
+    });
+
+    extSettle.forEach((d) => {
+        const row = d.data();
+        events.push({
+            id: d.id,
+            t: 'EXT',
+
+            dt: String(row.date || ''),
+            d: {
+                action: 'EXTERNAL_SETTLEMENT',
+                detail: `${row.customerName || '-'} (${row.note || ''})`,
+                amount: Number(row.amount) || 0
+            },
+            refType: 'SCRAP_EXT_SETTLEMENT'
+        });
+    });
+    advHist.forEach((d) => {
+        const row = d.data();
+        const at = row.date || (row.createdAt?.toDate ? row.createdAt.toDate().toISOString() : '');
+        events.push({
+            id: d.id,
+            t: 'ADV',
+
+            dt: at,
+            d: {
+                action: row.type || (Number(row.amount) > 0 ? 'ISSUE' : 'ADJUST'),
+                detail: `${row.supplierName || '-'} (${row.note || ''})`,
+                amount: Number(row.amount) || 0
+            },
+            refType: 'SCRAP_ADVANCE'
+        });
+
+    });
+    
+    exp.forEach((d) => {
+        const row = d.data();
+        const at = row.createdAt?.toDate ? row.createdAt.toDate().toISOString() : String(row.expenseDate || '');
+        events.push({
+            id: d.id,
+            t: 'EXP',
+            dt: at,
+            d: {
+                action: 'EXPENSE',
+                detail: `${row.category || '-'} (${row.note || ''})`,
+                amount: Number(row.amount) || 0,
+                paymentMethod: row.paymentMethod
+            },
+            refType: 'SCRAP_EXPENSE'
+        });
+    });
+    journal.forEach((d) => {
+        const row = d.data();
+        const refType = String(row.referenceType || '');
+        if (['SCRAP_ADVANCE_ISSUE', 'SCRAP_ADVANCE_RECEIVED', 'SCRAP_EXT_SETTLEMENT', 'SCRAP_ADVANCE_ADJUST', 'SCRAP_BUYING', 'SCRAP_BILL'].includes(refType)) return;
+        
+        const lines = Array.isArray(row.entries) ? row.entries : [];
+        const totalAmount = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
+        
+        let dtStr = '';
+        try {
+            if (row.date?.toDate) dtStr = row.date.toDate().toISOString();
+            else if (row.date) dtStr = new Date(row.date).toISOString();
+        } catch(e) {}
+
+        events.push({
+            id: d.id,
+            t: 'ACC',
+
+            dt: dtStr,
+            d: {
+                action: refType === 'CAPITAL_INJECTION' ? 'FUND INJECTION' : (row.referenceType || 'JOURNAL'),
+                detail: row.description || '',
+                amount: totalAmount
+            },
+            refType
+        });
+    });
+    events.sort((a,b)=>String(b.dt).localeCompare(String(a.dt)));
+    const typeOptions = ['ALL', 'EVENT', 'BUY', 'SELL', 'EXT', 'ADV', 'ACC', 'EXP'];
+    const refTypes = Array.from(new Set(events.map((e) => String(e.refType || '').trim()).filter(Boolean))).sort();
+    const today = new Date();
+    const todayIso = today.toISOString().slice(0, 10);
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(today.getDate() - 7);
+    const sevenDaysAgoIso = sevenDaysAgo.toISOString().slice(0, 10);
+
+    body.innerHTML = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+        <select id="dailyTypeFilter">${typeOptions.map((t) => `<option value="${t}">${t}</option>`).join('')}</select>
+        <select id="dailyRefFilter"><option value="ALL">ALL_REF_TYPES</option>${refTypes.map((r) => `<option value="${r}">${r}</option>`).join('')}</select>
+        <input id="dailyFromDate" type="date" value="${sevenDaysAgoIso}">
+        <input id="dailyToDate" type="date" value="${todayIso}">
+        <button id="dailyExportBtn" style="background:#2563eb;">Export CSV</button>
+        <button id="addFundsBtn" style="background:#10b981;" onclick="openAddFundsModal()">+ Add Funds</button>
+        <button id="withdrawFundsBtn" style="background:#f59e0b;" onclick="openWithdrawFundsModal()">- Withdraw / Adjust</button>
+        <div class="small">Rows: <b id="dailyRowsCount">${events.length}</b></div>
+        <div class="small">Total: <b id="dailyRowsTotal">${fmt(0)}</b></div>
+        
+        <button id="dailyClearAllBtn" style="background:#ef4444;margin-left:auto;">Clear All History</button>
+      </div>
+      <div id="addFundsModal" class="modal" style="display:none;">
+        <div class="modal-card">
+            <h3>Add Capital Funds</h3>
+            <p class="small">Inject cash or bank assets into the business.</p>
+            <div style="margin-top:12px;">
+                <label class="small">Amount (LKR)</label>
+                <input type="number" id="fundAmount" style="width:100%;margin-bottom:10px;" placeholder="0.00">
+                <label class="small">Payment Method</label>
+                <select id="fundMethod" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:10px;">
+                    <option value="CASH">Cash - Main (1-1010-01)</option>
+                    <option value="BANK">Bank - Current Account (1-1020-01)</option>
+                </select>
+                <label class="small">Note</label>
+                <input type="text" id="fundNote" style="width:100%;margin-bottom:10px;" placeholder="Reason for injection">
+                <label class="small">Confirm Password</label>
+                <input type="password" id="fundPassword" style="width:100%;margin-bottom:15px;" placeholder="Enter your login password">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button style="background:#cbd5e1;color:#1a1a2e;" onclick="document.getElementById('addFundsModal').style.display='none'">Cancel</button>
+                <button style="background:#10b981;" onclick="processAddFunds()">Add Funds</button>
+            </div>
+        </div>
+      </div>
+      <div id="withdrawFundsModal" class="modal" style="display:none;">
+        <div class="modal-card">
+            <h3>Withdraw / Adjust Funds</h3>
+            <p class="small">Remove cash or bank assets from the business.</p>
+            <div style="margin-top:12px;">
+                <label class="small">Amount to REDUCE (LKR)</label>
+                <input type="number" id="withdrawAmount" style="width:100%;margin-bottom:10px;" placeholder="0.00">
+                <label class="small">Source Method</label>
+                <select id="withdrawMethod" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:10px;">
+                    <option value="CASH">Cash - Main (1-1010-01)</option>
+                    <option value="BANK">Bank - Current Account (1-1020-01)</option>
+                </select>
+                <label class="small">Note</label>
+                <input type="text" id="withdrawNote" style="width:100%;margin-bottom:10px;" placeholder="Reason for reduction / adjustment">
+                <label class="small">Confirm Password</label>
+                <input type="password" id="withdrawPassword" style="width:100%;margin-bottom:15px;" placeholder="Enter your login password">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button style="background:#cbd5e1;color:#1a1a2e;" onclick="document.getElementById('withdrawFundsModal').style.display='none'">Cancel</button>
+                <button style="background:#f59e0b;" onclick="processWithdrawFunds()">Withdraw Funds</button>
+            </div>
+        </div>
+      </div>
+      <table><thead><tr><th>Time</th><th>Type</th><th>Direction</th><th>Method</th><th>Detail</th><th class="num">Amount</th><th id="actionsHead">Actions</th></tr></thead><tbody id="dailyTrBody"></tbody></table>`;
+
+
+    
+    const filteredRows = () => {
+        const selected = document.getElementById('dailyTypeFilter').value;
+        const refSelected = document.getElementById('dailyRefFilter').value;
+        const from = document.getElementById('dailyFromDate').value;
+        const to = document.getElementById('dailyToDate').value;
+        return events.filter((r) => {
+            if (!r.dt) return false;
+            const stamp = new Date(r.dt);
+            if (Number.isNaN(stamp.getTime()) || stamp < minDate) return false;
+            if (selected !== 'ALL' && r.t !== selected) return false;
+            if (refSelected !== 'ALL' && String(r.refType || '') !== refSelected) return false;
+            if (!from && !to) return true;
+            const day = String(r.dt).slice(0, 10);
+            if (from && day < from) return false;
+            if (to && day > to) return false;
+            return true;
+        });
+    };
+    const renderRows = () => {
+        const rows = filteredRows();
+        const countEl = document.getElementById('dailyRowsCount');
+        if (countEl) countEl.textContent = rows.length;
+        const total = rows.reduce((sum, r) => {
+            if (r.t === 'EVENT') return sum;
+            const action = String(r.d.action || r.t).toUpperCase();
+            const associate = r.d.supplierName || r.d.customerName || r.d.detail || '';
+            const detail = associate ? `${action}: ${associate}` : action;
+            const detailUpper = detail.toUpperCase();
+            const isOut = (() => {
+                const rt = String(r.refType || '');
+                const t = String(r.t || '');
+                const det = detailUpper;
+
+                // 1. Explicit Outgoing Types
+                if (['BUY', 'EXP'].includes(t)) return true;
+                if (rt.includes('COGS')) return true;
+                if (rt === 'CAPITAL_WITHDRAWAL') return true;
+                if (rt === 'SCRAP_EXPENSE' || rt === 'SCRAP_BUYING') return true;
+                if (rt === 'ADV_INVESTOR_REMIT') return true;
+                if (rt === 'HAND_LOAN_RECEIVED_SETTLE') return true; // Paying back a loan we took
+                if (rt === 'HAND_LOAN_GIVEN') return true; // Issuing a new loan
+
+                // 2. Explicit Incoming Types
+                if (rt === 'CAPITAL_INJECTION') return false;
+                if (rt === 'SCRAP_BILL') return false;
+                if (rt === 'HAND_LOAN_RECEIVED') return false; // Taking a new loan
+                if (rt === 'HAND_LOAN_GIVEN_SETTLE') return false; // Getting back a loan we gave
+                if (rt === 'LOAN_INTEREST_REPAY' || rt === 'LOAN_NO_INTEREST_REPAY' || rt === 'ADV_LOAN_REPAY') return false;
+
+                // 3. Fallback logic based on keywords
+                if (t === 'ADV' && (Number(r.d.amount) || 0) > 0) return true;
+                if (t === 'ACC') {
+                    if (det.includes('GIVEN') || det.includes('ISSUE') || det.includes('REPAYMENT PAID') || det.includes('PAID BACK') || det.includes('WITHDRAWAL')) return true;
+                }
+                if (t === 'EVENT') {
+                    if (det.includes('BUYING') || det.includes('PURCHASE')) return true;
+                }
+                return false;
+            })();
+            
+            let amt = 0;
+            if (r.t === 'BUY') {
+                amt = Math.abs(Number(r.d.cashPaid ?? (r.d.billGrandTotal || r.d.totalAmount || 0)));
+            } else {
+                amt = Math.abs(Number(r.d.billGrandTotal || r.d.totalAmount || r.d.amount || 0));
+            }
+            return sum + (isOut ? -amt : amt);
+        }, 0);
+
+        const totalEl = document.getElementById('dailyRowsTotal');
+        if (totalEl) totalEl.textContent = fmt(total);
+
+        const bodyEl = document.getElementById('dailyTrBody');
+        if (bodyEl) {
+            let lastDate = '';
+            let html = '';
+            
+            const formatDate = (isoStr) => {
+                if (!isoStr) return '-';
+                const d = new Date(isoStr);
+                if (isNaN(d.getTime())) return isoStr;
+                return d.toLocaleDateString('en-CA'); // YYYY-MM-DD
+            };
+
+            const formatTime = (isoStr) => {
+                if (!isoStr) return '-';
+                const d = new Date(isoStr);
+                if (isNaN(d.getTime())) return '-';
+                return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            };
+
+            const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+
+            rows.slice(0, 500).forEach((r) => {
+                const currentDate = formatDate(r.dt);
+                if (currentDate !== lastDate) {
+                    const isToday = currentDate === todayIso;
+                    if (isToday) {
+                        html += `<tr style="background: linear-gradient(90deg, #0f3b2c 0%, #1e5c4a 100%);">
+                            <td colspan="7" style="padding:15px; border-top: 2px solid #0f3b2c;">
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <span style="background:#ffd966; color:#0f3b2c; padding:4px 12px; border-radius:20px; font-weight:900; font-size:12px; letter-spacing:1px;">TODAY</span>
+                                    <span style="color:#fff; font-weight:700; font-size:15px;">📅 ${currentDate}</span>
+                                </div>
+                            </td>
+                        </tr>`;
+                    } else {
+                        html += `<tr style="background:#f1f5f9;">
+                            <td colspan="7" style="font-weight:900; color:#1e293b; padding:10px 15px; border-top: 2px solid #cbd5e1;">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span>📅</span>
+                                    <span>${currentDate}</span>
+                                </div>
+                            </td>
+                        </tr>`;
+                    }
+                    lastDate = currentDate;
+                }
+
+                const action = String(r.d.action || r.t).toUpperCase();
+                const associate = r.d.supplierName || r.d.customerName || r.d.detail || '';
+                const detail = associate ? `${action}: ${associate}` : action;
+                let amount = 0;
+                if (r.t === 'BUY') {
+                    amount = Number(r.d.cashPaid ?? (r.d.billGrandTotal || r.d.totalAmount || 0));
+                } else {
+                    amount = Number(r.d.billGrandTotal || r.d.totalAmount || r.d.amount || 0);
+                }
+                const detailUpper = detail.toUpperCase();
+                const isOut = (() => {
+                    const rt = String(r.refType || '');
+                    const t = String(r.t || '');
+                    const det = detailUpper;
+                    if (['BUY', 'EXP'].includes(t)) return true;
+                    if (rt.includes('COGS')) return true;
+                    if (rt === 'CAPITAL_WITHDRAWAL') return true;
+                    if (rt === 'SCRAP_EXPENSE' || rt === 'SCRAP_BUYING') return true;
+                    if (rt === 'ADV_INVESTOR_REMIT') return true;
+                    if (rt === 'HAND_LOAN_RECEIVED_SETTLE') return true;
+                    if (rt === 'HAND_LOAN_GIVEN') return true;
+                    if (rt === 'CAPITAL_INJECTION') return false;
+                    if (rt === 'SCRAP_BILL') return false;
+                    if (rt === 'HAND_LOAN_RECEIVED') return false;
+                    if (rt === 'HAND_LOAN_GIVEN_SETTLE') return false;
+                    if (rt === 'LOAN_INTEREST_REPAY' || rt === 'LOAN_NO_INTEREST_REPAY' || rt === 'ADV_LOAN_REPAY') return false;
+                    if (t === 'ADV' && (Number(r.d.amount) || 0) > 0) return true;
+                    if (t === 'ACC') {
+                        if (det.includes('GIVEN') || det.includes('ISSUE') || det.includes('REPAYMENT PAID') || det.includes('PAID BACK') || det.includes('WITHDRAWAL')) return true;
+                    }
+                    if (t === 'EVENT') {
+                        if (det.includes('BUYING') || det.includes('PURCHASE')) return true;
+                    }
+                    return false;
+                })();
+                
+                const direction = isOut ? '<span class="badge" style="background:#fee2e2;color:#b91c1c;">GIVEN</span>' : '<span class="badge" style="background:#dcfce7;color:#15803d;">TAKEN</span>';
+                
+                let method = r.d.paymentMethod || r.d.method || '-';
+                if (r.t === 'ACC' && r.d.detail) {
+                    const detailStr = String(r.d.detail).toUpperCase();
+                    if (detailStr.includes('CASH')) method = 'CASH';
+                    else if (detailStr.includes('BANK')) method = 'BANK';
+                }
+                if (method === 'CASH') method = '<span style="color:#059669;font-weight:700;">CASH</span>';
+                if (method === 'BANK') method = '<span style="color:#2563eb;font-weight:700;">BANK</span>';
+
+                const displayAmount = (r.t === 'ADV' || r.t === 'EVENT') ? Math.abs(Number(r.d.amount || 0)) : amount;
+                const sign = displayAmount ? (isOut ? `- ${fmt(displayAmount)}` : `+ ${fmt(displayAmount)}`) : '-';
+                const color = isOut ? '#b91c1c' : '#15803d';
+                const time = formatTime(r.dt);
+                const isRowToday = currentDate === todayIso;
+
+                const undoBtn = `<button class="btn-sm" style="background:#b91c1c;padding:2px 8px;font-size:10px;" onclick="undoDailyTr('${r.t}', '${r.id}')">DELETE</button>`;
+
+                html += `<tr style="${isRowToday ? 'background:rgba(16,185,129,0.03);' : ''}">
+                    <td>${time}</td>
+                    <td><span style="font-weight:700; color:#475569;">${r.t}</span></td>
+                    <td>${direction}</td>
+                    <td>${method}</td>
+                    <td style="font-weight:500;">${detail}</td>
+                    <td class="num" style="color:${displayAmount ? color : '#0f172a'};font-weight:${displayAmount ? '900' : '400'}; font-size:14px;">${sign}</td>
+                    <td>${undoBtn}</td>
+                </tr>`;
+
+                // Add a separator line if this was the last 'Today' row
+                const nextRow = rows[rows.indexOf(r) + 1];
+                const nextDate = nextRow ? formatDate(nextRow.dt) : '';
+                if (isRowToday && nextDate && nextDate !== todayIso) {
+                    html += `<tr style="height:15px; background:#fff;"><td colspan="7" style="border-bottom: 8px solid #0f3b2c; padding:0;"></td></tr>
+                            <tr style="height:15px; background:#fff;"><td colspan="7" style="padding:0;"></td></tr>`;
+                }
+            });
+            
+            bodyEl.innerHTML = html || '<tr><td colspan="7">No transactions</td></tr>';
+        }
+    };
+    const advanceDocId = (name) => `ADV_${SCRAP_BUSINESS_ID}_${String(name||'').trim().toUpperCase().replace(/[^A-Z0-9]+/g,'_')}`;
+
+    window.undoDailyTr = async (type, id) => {
+        const confirmMsg = type === 'ACC' 
+            ? `Are you sure you want to UNDO this Accounting transaction?\nThis will reverse the ledger balances and delete the record.`
+            : `Are you sure you want to UNDO this ${type} transaction?\nThis will reverse stock, balances, and delete the record.`;
+            
+        if (!confirm(confirmMsg)) return;
+        
+        // Security: Ask for password when undoing critical financial entries
+        let password = null;
+        if (type === 'ACC' || type === 'EXT' || type === 'ADV' || type === 'EXP') {
+            password = prompt("Security Check: Enter your login password to confirm this reversal:");
+            if (!password) return;
+        }
+        
+        try {
+            showLoading(true);
+            
+            // Verify Password if provided
+            if (password) {
+                const credential = firebase.auth.EmailAuthProvider.credential(currentUser.email, password);
+                await currentUser.reauthenticateWithCredential(credential);
+            }
+
+            const batch = db.batch();
+            const num = (v) => Number(v) || 0;
+            
+            let poolDelta = 0;
+            let poolType = null;
+            let poolNote = "";
+            
+            if (type === 'EVENT') {
+                batch.delete(db.collection('scrap_event_log').doc(id));
+            } else if (type === 'BUY') {
+                const doc = await db.collection('buying_history').doc(id).get();
+                if (!doc.exists) throw new Error("Transaction not found.");
+                const data = doc.data();
+                
+                // 1. Reverse Stock
+                if (Array.isArray(data.items)) {
+                    for (const item of data.items) {
+                        const iRef = db.collection('scrap_items').doc(item.itemId || item.id);
+                        batch.update(iRef, { currentStock: firebase.firestore.FieldValue.increment(-num(item.weight)) });
+                    }
+                }
+                // 2. Reverse Advance
+                if (num(data.advanceApplied) > 0) {
+                    const aRef = db.collection('scrap_advances').doc(advanceDocId(data.supplierName));
+                    batch.update(aRef, { balance: firebase.firestore.FieldValue.increment(num(data.advanceApplied)) });
+                }
+                // 3. Delete Buy Record
+                batch.delete(doc.ref);
+                
+                // Calculate Profit Pool impact for reversal
+                let totalPotentialProfit = 0;
+                if (Array.isArray(data.items)) {
+                    for (const line of data.items) {
+                        const itemSnap = await db.collection('scrap_items').doc(line.itemId || line.id).get();
+                        if (itemSnap.exists) {
+                            const itData = itemSnap.data();
+                            const bp = Number(line.buyingPrice || line.rate) || 0;
+                            const sp = Number(itData.sellingPrice) || 0;
+                            const margin = sp > 0 ? (sp - bp) : 0;
+                            totalPotentialProfit += margin * (Number(line.weight) || 0);
+                        }
+                    }
+                }
+                const vehicleHireApplied = Number(data.vehicleHireApplied) || 0;
+                poolDelta = -(totalPotentialProfit + vehicleHireApplied);
+                poolType = 'PURCHASE_REVERSED';
+                poolNote = `Reversed purchase from ${data.supplierName} (Bill #${data.billNo || ''}) via Daily Transactions`;
+                
+                // 4. Delete associated Journal Entries and decrement ledger
+                const jSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
+                    .where('referenceType', '==', 'SCRAP_BUYING')
+                    .where('reference', '==', id)
+                    .get();
+                
+                let targetJournalDocs = jSnap.docs;
+                if (targetJournalDocs.length === 0) {
+                    // Fallback for old records using supplier name as reference
+                    const nameSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
+                        .where('referenceType', '==', 'SCRAP_BUYING')
+                        .where('reference', '==', data.supplierName)
+                        .get();
+                    // Filter by approximate time match to be safer
+                    targetJournalDocs = nameSnap.docs.filter(j => Math.abs(num((j.data().entries || []).reduce((s,l)=>s+num(l.debit),0)) - num(data.billGrandTotal || data.totalAmount)) < 1);
+                }
+
+                for (const jDoc of targetJournalDocs) {
+                    const jData = jDoc.data();
+                    if (Array.isArray(jData.entries)) {
+                        const ledgerBase = db.collection("journal").doc(SCRAP_BUSINESS_ID).collection("account_ledger");
+                        for (const line of jData.entries) {
+                            const code = String(line.accountCode || "").trim() || "UNKNOWN";
+                            const docId = code.replace(/\//g, "_");
+                            batch.update(ledgerBase.doc(docId), {
+                                totalDebit: firebase.firestore.FieldValue.increment(-num(line.debit)),
+                                totalCredit: firebase.firestore.FieldValue.increment(-num(line.credit)),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    }
+                    batch.delete(jDoc.ref);
+                }
+            } else if (type === 'EXT') {
+                const doc = await db.collection('scrap_external_settlements').doc(id).get();
+                if (!doc.exists) throw new Error("Settlement record not found.");
+                const data = doc.data();
+                batch.delete(doc.ref);
+
+                const jSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
+                    .where('referenceType', '==', 'SCRAP_EXT_SETTLEMENT')
+                    .where('reference', '==', id)
+                    .get();
+                
+                let targetJournalDocs = jSnap.docs;
+                if (targetJournalDocs.length === 0) {
+                    const nameSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
+                        .where('referenceType', '==', 'SCRAP_EXT_SETTLEMENT')
+                        .where('reference', '==', data.customerName)
+                        .get();
+                    targetJournalDocs = nameSnap.docs.filter(j => Math.abs(num((j.data().entries || []).reduce((s,l)=>s+num(l.debit),0)) - Math.abs(num(data.amount))) < 0.01);
+                }
+
+                for (const jDoc of targetJournalDocs) {
+                    const jData = jDoc.data();
+                    if (Array.isArray(jData.entries)) {
+                        const ledgerBase = db.collection("journal").doc(SCRAP_BUSINESS_ID).collection("account_ledger");
+                        for (const line of jData.entries) {
+                            const code = String(line.accountCode || "").trim() || "UNKNOWN";
+                            const docId = code.replace(/\//g, "_");
+                            batch.update(ledgerBase.doc(docId), {
+                                totalDebit: firebase.firestore.FieldValue.increment(-num(line.debit)),
+                                totalCredit: firebase.firestore.FieldValue.increment(-num(line.credit)),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    }
+                    batch.delete(jDoc.ref);
+                }
+            } else if (type === 'ADV') {
+                const doc = await db.collection('scrap_advance_history').doc(id).get();
+                if (!doc.exists) throw new Error("Advance record not found.");
+                const data = doc.data();
+                const aRef = db.collection('scrap_advances').doc(advanceDocId(data.supplierName));
+                
+                // Reverse balance: If we issued (+), we subtract. If we applied (-), we add.
+                batch.update(aRef, { balance: firebase.firestore.FieldValue.increment(-num(data.amount)) });
+                batch.delete(doc.ref);
+
+                // Delete associated Journal Entries and decrement ledger
+                const jSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
+                    .where('referenceType', '==', 'SCRAP_ADVANCE_ISSUE')
+                    .where('reference', '==', data.supplierName)
+                    .get();
+                
+                for (const jDoc of jSnap.docs) {
+                    const jData = jDoc.data();
+                    const totalDebit = (jData.entries || []).reduce((s,l)=>s+num(l.debit), 0);
+                    if (Math.abs(totalDebit - Math.abs(num(data.amount))) > 0.01) continue;
+
+                    if (Array.isArray(jData.entries)) {
+                        const ledgerBase = db.collection("journal").doc(SCRAP_BUSINESS_ID).collection("account_ledger");
+                        for (const line of jData.entries) {
+                            const code = String(line.accountCode || "").trim() || "UNKNOWN";
+                            const docId = code.replace(/\//g, "_");
+                            batch.update(ledgerBase.doc(docId), {
+                                totalDebit: firebase.firestore.FieldValue.increment(-num(line.debit)),
+                                totalCredit: firebase.firestore.FieldValue.increment(-num(line.credit)),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    }
+                    batch.delete(jDoc.ref);
+                }
+            } else if (type === 'SELL') {
+                const doc = await db.collection('selling_history').doc(id).get();
+                if (!doc.exists) throw new Error("Sale record not found.");
+                const data = doc.data();
+                
+                // Put stock back
+                if (Array.isArray(data.items)) {
+                    for (const item of data.items) {
+                        const iRef = db.collection('scrap_items').doc(item.id);
+                        batch.update(iRef, { currentStock: firebase.firestore.FieldValue.increment(num(item.weight)) });
+                    }
+                }
+                batch.delete(doc.ref);
+                
+                // Calculate Profit Pool impact for reversal
+                const totalRealizedProfit = Number(data.realizedProfit) || 0;
+                const totalExpectedProfitSold = Array.isArray(data.items)
+                    ? data.items.reduce((s, item) => s + (Number(item.expectedProfitPart) || 0), 0)
+                    : 0;
+                const poolAdjustment = totalRealizedProfit - totalExpectedProfitSold;
+                poolDelta = -poolAdjustment;
+                poolType = 'SALE_REVERSED';
+                poolNote = `Reversed sale to ${data.buyerName || '-'} via Daily Transactions`;
+
+                // Delete associated Journal Entries
+                const jSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
+                    .where('referenceType', '==', 'SCRAP_BILL')
+                    .where('reference', '==', id)
+                    .get();
+                for (const jDoc of jSnap.docs) {
+                    const jData = jDoc.data();
+                    if (Array.isArray(jData.entries)) {
+                        const ledgerBase = db.collection("journal").doc(SCRAP_BUSINESS_ID).collection("account_ledger");
+                        for (const line of jData.entries) {
+                            const code = String(line.accountCode || "").trim() || "UNKNOWN";
+                            const docId = code.replace(/\//g, "_");
+                            batch.update(ledgerBase.doc(docId), {
+                                totalDebit: firebase.firestore.FieldValue.increment(-num(line.debit)),
+                                totalCredit: firebase.firestore.FieldValue.increment(-num(line.credit)),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    }
+                    batch.delete(jDoc.ref);
+                }
+            } else if (type === 'ACC') {
+                const doc = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries').doc(id).get();
+                if (!doc.exists) throw new Error("Journal entry not found.");
+                const data = doc.data();
+                
+                // Properly reverse the ledger
+                if (Array.isArray(data.entries)) {
+                    const ledgerBase = db.collection("journal").doc(SCRAP_BUSINESS_ID).collection("account_ledger");
+                    for (const line of data.entries) {
+                        const code = String(line.accountCode || "").trim() || "UNKNOWN";
+                        const docId = code.replace(/\//g, "_");
+                        batch.update(ledgerBase.doc(docId), {
+                            totalDebit: firebase.firestore.FieldValue.increment(-num(line.debit)),
+                            totalCredit: firebase.firestore.FieldValue.increment(-num(line.credit)),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                }
+                batch.delete(doc.ref);
+            } else if (type === 'EXP') {
+                const doc = await db.collection('scrap_expenses').doc(id).get();
+                if (!doc.exists) throw new Error("Expense record not found.");
+                const data = doc.data();
+                batch.delete(doc.ref);
+                
+                // Calculate Profit Pool impact for reversal (add back the expense amount)
+                poolDelta = Number(data.amount) || 0;
+                poolType = 'EXPENSE_REVERSED';
+                poolNote = `Reversed expense: ${data.expenseType || ''} (${data.details || ''}) via Daily Transactions`;
+
+                const jSnap = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries')
+                    .where('referenceType', '==', 'SCRAP_EXPENSE')
+                    .get();
+                
+                for (const jDoc of jSnap.docs) {
+                    const jData = jDoc.data();
+                    if (Math.abs(num((jData.entries || []).reduce((s,l)=>s+num(l.debit),0)) - num(data.amount)) > 0.01) continue;
+                    if (jData.reference !== data.expenseDate) continue;
+
+                    if (Array.isArray(jData.entries)) {
+                        const ledgerBase = db.collection("journal").doc(SCRAP_BUSINESS_ID).collection("account_ledger");
+                        for (const line of jData.entries) {
+                            const code = String(line.accountCode || "").trim() || "UNKNOWN";
+                            const docId = code.replace(/\//g, "_");
+                            batch.update(ledgerBase.doc(docId), {
+                                totalDebit: firebase.firestore.FieldValue.increment(-num(line.debit)),
+                                totalCredit: firebase.firestore.FieldValue.increment(-num(line.credit)),
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    }
+                    batch.delete(jDoc.ref);
+                }
+            }
+            
+            await batch.commit();
+            
+            // Execute Profit Pool update after successful batch commit
+            if (poolType && window.scrapVbaCore && typeof window.scrapVbaCore.updateProfitPool === 'function') {
+                try {
+                    await window.scrapVbaCore.updateProfitPool(SCRAP_BUSINESS_ID, poolDelta, poolType, poolNote);
+                } catch (poolErr) {
+                    console.error("Profit Pool update failed during transaction reversal:", poolErr);
+                }
+            }
+            
+            alert("Transaction deleted and ledger adjusted successfully.");
+            location.reload();
+        } catch (e) {
+            console.error("Delete failed:", e);
+            alert("Error deleting transaction: " + e.message);
+        }
+    };
+
+    document.getElementById('dailyTypeFilter').addEventListener('change', renderRows);
+    document.getElementById('dailyRefFilter').addEventListener('change', renderRows);
+    document.getElementById('dailyFromDate').addEventListener('change', renderRows);
+    document.getElementById('dailyToDate').addEventListener('change', renderRows);
+    document.getElementById('dailyExportBtn').addEventListener('click', () => {
+        const rows = filteredRows();
+        const csv = ['time,type,detail,amount'].concat(rows.map((r) => {
+            const detail = String(r.d.action || r.d.supplierName || r.d.customerName || r.d.detail || '-').replace(/"/g, '""');
+            const amount = Number(r.d.totalAmount || r.d.amount || 0);
+            return `"${r.dt || ''}","${r.t}","${detail}",${amount}`;
+        })).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `dailytr_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    });
+
+    document.getElementById('dailyClearAllBtn').addEventListener('click', async () => {
+        const code = prompt('WARNING: This will permanently delete ALL buying, selling, events, and accounting history for this business.\n\nType "CONFIRM" to proceed:');
+        if (code !== 'CONFIRM') return;
+
+        const btn = document.getElementById('dailyClearAllBtn');
+        const oldTxt = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Clearing...';
+
+        try {
+            const collections = [
+                'buying_history',
+                'selling_history',
+                'scrap_event_log',
+                'scrap_external_settlements',
+                'scrap_advances',
+                'scrap_advance_history',
+                'scrap_expenses'
+            ];
+
+            for (const coll of collections) {
+                const snap = await db.collection(coll).where('businessId', '==', SCRAP_BUSINESS_ID).get();
+                const batch = db.batch();
+                snap.docs.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+            }
+
+            // Journal entries and ledger summaries
+            const journalRef = db.collection('journal').doc(SCRAP_BUSINESS_ID);
+            const journalSnap = await journalRef.collection('entries').get();
+            const jBatch = db.batch();
+            journalSnap.docs.forEach(doc => jBatch.delete(doc.ref));
+            await jBatch.commit();
+
+            const ledgerSnap = await journalRef.collection('account_ledger').get();
+            const lBatch = db.batch();
+            ledgerSnap.docs.forEach(doc => lBatch.delete(doc.ref));
+            await lBatch.commit();
+
+            alert('Business history and accounting records cleared.');
+            location.reload();
+        } catch (err) {
+            console.error('Clear All failed:', err);
+            alert('Error clearing data: ' + err.message);
+            btn.disabled = false;
+            btn.textContent = oldTxt;
+        }
+    });
+
+    renderRows();
+}
+
+async function renderPERFORMANCE(body) {
+
+    const snap = await db.collection('buying_history').where('businessId','==',SCRAP_BUSINESS_ID).get();
+    let totalA=0,totalW=0,count=0;
+    snap.forEach(d=>{const r=d.data();totalA+=Number(r.totalAmount)||0;totalW+=Number(r.totalWeight)||0;count++;});
+    body.innerHTML = `<div class="kpi">${fmt(totalA)}</div><div class="small">Total Buying Value</div>
+        <div class="kpi" style="margin-top:10px;">${totalW.toFixed(2)} kg</div><div class="small">Total Buying Weight</div>
+        <div class="kpi" style="margin-top:10px;">${count}</div><div class="small">Buying Sessions</div>`;
+}
+
+async function renderRWD(body) {
+    const summary = await window.scrapVbaCore.getSupplierRewardSummary(SCRAP_BUSINESS_ID);
+    const top = summary?.topSupplier;
+    const bonus = summary?.annualBonus || [];
+    body.innerHTML = `<div><b>Weekly Top Supplier:</b> ${top ? `${top.name} (${Number(top.weight).toFixed(2)}kg)` : 'N/A'}</div>
+      <table style="margin-top:10px;"><thead><tr><th>Supplier</th><th>Weight</th><th>Bonus</th></tr></thead><tbody>${
+        bonus.slice(0,30).map(r=>`<tr><td>${r.supplierName}</td><td>${Number(r.totalWeight).toFixed(2)}</td><td>${fmt(r.bonus)}</td></tr>`).join('')
+        || '<tr><td colspan="3">No bonus data</td></tr>'
+      }</tbody></table>`;
+}
+
+async function renderRISK(body) {
+    const [loanSnap, queueSnap, buySnap, sellSnap] = await Promise.all([
+        db.collection('scrap_loans').where('businessId','==',SCRAP_BUSINESS_ID).where('active','==',true).get(),
+        db.collection('scrap_recovery_queue').where('businessId','==',SCRAP_BUSINESS_ID).get(),
+        db.collection('buying_history').where('businessId','==',SCRAP_BUSINESS_ID).get(),
+        db.collection('selling_history').where('businessId','==',SCRAP_BUSINESS_ID).get()
+    ]);
+    const buyRows = buySnap.docs.map((d) => d.data());
+    const sellRows = sellSnap.docs.map((d) => d.data());
+    const risky = [];
+    loanSnap.forEach((d) => {
+        const r = d.data();
+        const lastSupplyAt = r.lastSupplyAt ? new Date(r.lastSupplyAt).getTime() : 0;
+        const daysSinceSupply = lastSupplyAt ? Math.floor((Date.now() - lastSupplyAt) / (24 * 60 * 60 * 1000)) : 999;
+        const riskMeta = window.scrapVbaCore.riskStatusByDays(daysSinceSupply);
+        risky.push({
+            ...r,
+            daysSinceSupply,
+            status: riskMeta.status,
+            risk: riskMeta.risk,
+            color: riskMeta.color
+        });
+    });
+    risky.sort((a, b) => {
+        const byPriority = Number(window.scrapVbaCore.riskPriority(b.status)) - Number(window.scrapVbaCore.riskPriority(a.status));
+        if (byPriority !== 0) return byPriority;
+        const byDebt = Number(b.balance || 0) - Number(a.balance || 0);
+        if (byDebt !== 0) return byDebt;
+        return Number(b.daysSinceSupply || 0) - Number(a.daysSinceSupply || 0);
+    });
+    const state = { filter: 'ALL' };
+    function byFilter(rows) {
+        if (state.filter === 'ALL') return rows;
+        if (state.filter === 'SAFE') return rows.filter((r) => r.status === 'ACTIVE' || r.status === 'WARNING');
+        if (state.filter === 'BLOCKED') return rows.filter((r) => r.status === 'BLOCKED');
+        if (state.filter === 'CRITICAL') return rows.filter((r) => r.status === 'CRITICAL');
+        return rows;
+    }
+    function customerSpark(name) {
+        const points = [];
+        buyRows.forEach((r) => {
+            if (String(r.supplierName || '').trim() === name) {
+                points.push({ t: String(r.date || ''), v: Number(r.totalAmount || 0), type: 'BUY' });
+            }
+        });
+        sellRows.forEach((r) => {
+            if (String(r.customerName || '').trim() === name) {
+                points.push({ t: String(r.date || ''), v: Number(r.totalAmount || 0), type: 'SELL' });
+            }
+        });
+        points.sort((a, b) => String(a.t).localeCompare(String(b.t)));
+        return points.slice(-8);
+    }
+    function renderTable() {
+        const rows = byFilter(risky);
+        document.getElementById('riskRows').innerHTML = rows.map((r, idx) =>
+            `<tr data-name="${(r.customerName || '').replace(/"/g, '&quot;')}">
+                <td>${idx + 1}</td>
+                <td>${r.customerName||'-'}</td>
+                <td>${r.loanType||'-'}</td>
+                <td>${fmt(r.balance)}</td>
+                <td>${r.daysSinceSupply}</td>
+                <td><span style="display:inline-block;padding:2px 8px;border-radius:999px;background:${r.color};color:white;font-size:11px;">${r.status}</span></td>
+                <td>${r.risk}</td>
+                <td>${r.promiseDate ? new Date(r.promiseDate).toLocaleDateString() : '-'}</td>
+                <td><button data-promise="${(r.customerName || '').replace(/"/g, '&quot;')}" style="padding:4px 8px;">Promise</button></td>
+            </tr>`
+        ).join('') || '<tr><td colspan="9">No risk data</td></tr>';
+        document.querySelectorAll('button[data-promise]').forEach((btn) => {
+            btn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                const cName = btn.dataset.promise;
+                const raw = prompt(`Set promise date for ${cName} (YYYY-MM-DD):`);
+                if (!raw) return;
+                const pDate = new Date(raw);
+                if (Number.isNaN(pDate.getTime())) return alert('Invalid date format.');
+                const targets = loanSnap.docs.filter((d) => String(d.data().customerName || '').trim() === cName);
+                for (const doc of targets) {
+                    await doc.ref.update({
+                        promiseDate: pDate.toISOString(),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+                await window.scrapVbaCore.logEvent(SCRAP_BUSINESS_ID, 'RISK_PROMISE_DATE', `${cName} ${pDate.toISOString().slice(0, 10)}`, 'Admin');
+                await renderRISK(body);
+            });
+        });
+        document.querySelectorAll('#riskRows tr[data-name]').forEach((rowEl) => {
+            rowEl.addEventListener('click', () => {
+                const cName = rowEl.dataset.name;
+                const points = customerSpark(cName);
+                document.getElementById('riskHistoryTitle').textContent = `History: ${cName}`;
+                document.getElementById('riskHistoryBody').innerHTML = points.map((p) =>
+                    `<tr><td>${p.t ? new Date(p.t).toLocaleString() : '-'}</td><td>${p.type}</td><td>${fmt(p.v)}</td></tr>`
+                ).join('') || '<tr><td colspan="3">No BUY/SELL history</td></tr>';
+            });
+        });
+    }
+    const critical = risky.filter((r) => r.status === 'CRITICAL').length;
+    const blocked = risky.filter((r) => r.status === 'BLOCKED').length;
+    const safe = risky.filter((r) => r.status === 'ACTIVE' || r.status === 'WARNING').length;
+    body.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="runRecoveryBtn">Run Daily Recovery</button>
+        <button id="sendPromiseReminderBtn" style="background:#7c3aed;">Send Promise Reminders</button>
+        <button data-filter="ALL" style="background:#2563eb;">SHOW ALL</button>
+        <button data-filter="SAFE" style="background:#16a34a;">SAFE</button>
+        <button data-filter="BLOCKED" style="background:#dc2626;">BLOCKED</button>
+        <button data-filter="CRITICAL" style="background:#111827;">CRITICAL</button>
+        <button id="toggleQueueBtn" style="background:#0ea5e9;">QUEUE</button>
+        <div class="small" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">SAFE: <b>${safe}</b></div>
+        <div class="small" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">CRITICAL: <b>${critical}</b></div>
+        <div class="small" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">BLOCKED: <b>${blocked}</b></div>
+        <div class="small" style="padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;">Queue: <b>${queueSnap.size}</b></div>
+      </div>
+      <table style="margin-top:10px;"><thead><tr><th>#</th><th>Customer</th><th>Type</th><th>Balance</th><th>Days</th><th>Status</th><th>Risk</th><th>Promise Date</th><th>Action</th></tr></thead><tbody id="riskRows"></tbody></table>
+      <div id="queuePanel" style="display:none;margin-top:12px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;">
+        <div style="font-weight:700;">Recovery Queue</div>
+        <table style="margin-top:8px;"><thead><tr><th>Created</th><th>Customer</th><th>Status</th><th>Risk</th><th>Balance</th></tr></thead><tbody id="queueRows">${
+            queueSnap.docs.map((q) => {
+                const r = q.data();
+                const at = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : '-';
+                return `<tr><td>${at}</td><td>${r.customerName || '-'}</td><td>${r.status || '-'}</td><td>${r.risk || '-'}</td><td>${fmt(r.balance)}</td></tr>`;
+            }).join('') || '<tr><td colspan="5">No queue data</td></tr>'
+        }</tbody></table>
+      </div>
+      <div style="margin-top:12px;border:1px solid #e2e8f0;border-radius:10px;padding:10px;">
+        <div id="riskHistoryTitle" style="font-weight:700;">History: (click customer row)</div>
+        <table style="margin-top:8px;"><thead><tr><th>Time</th><th>Type</th><th>Amount</th></tr></thead><tbody id="riskHistoryBody"><tr><td colspan="3">No customer selected</td></tr></tbody></table>
+      </div>`;
+    document.getElementById('runRecoveryBtn').addEventListener('click', async ()=>{
+        const result = await window.scrapVbaCore.runDailyRecovery(SCRAP_BUSINESS_ID);
+        alert(`Daily recovery queued: ${Number(result?.queued)||0}`);
+        await renderRISK(body);
+    });
+    document.querySelectorAll('button[data-filter]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            state.filter = btn.dataset.filter;
+            renderTable();
+        });
+    });
+    document.getElementById('sendPromiseReminderBtn').addEventListener('click', async () => {
+        const result = await window.scrapVbaCore.sendPromiseReminders(SCRAP_BUSINESS_ID);
+        if (result && result.disabled) showSmsDebug(null, 'event_disabled');
+        alert(`Promise reminders sent: ${Number(result?.sent) || 0}`);
+    });
+    document.getElementById('toggleQueueBtn').addEventListener('click', () => {
+        const panel = document.getElementById('queuePanel');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    renderTable();
+}
+
+async function renderPT(body) {
+    const [buy, sell, extSettle] = await Promise.all([
+        db.collection('buying_history').where('businessId','==',SCRAP_BUSINESS_ID).get(),
+        db.collection('selling_history').where('businessId','==',SCRAP_BUSINESS_ID).get(),
+        db.collection('scrap_external_settlements').where('businessId','==',SCRAP_BUSINESS_ID).get()
+    ]);
+    let b=0,s=0; buy.forEach(d=>b+=Number(d.data().totalAmount)||0); sell.forEach(d=>s+=Number(d.data().totalAmount)||0);
+    let revenue = 0;
+    let cogs = 0;
+    let expenses = 0;
+    let flatLines = [];
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.getFlattenedJournalLines === 'function') {
+        flatLines = await window.scrapVbaCore.getFlattenedJournalLines(SCRAP_BUSINESS_ID);
+    } else {
+        const journal = await db.collection('journal').doc(SCRAP_BUSINESS_ID).collection('entries').get();
+        journal.forEach((doc) => {
+            (doc.data().entries || []).forEach((line) => flatLines.push(line));
+        });
+    }
+    flatLines.forEach((line) => {
+        const name = String(line.accountName || '').toLowerCase();
+        const debit = Number(line.debit) || 0;
+        const credit = Number(line.credit) || 0;
+        if (name.includes('revenue') || name.includes('income')) revenue += (credit - debit);
+        if (name.includes('cost of goods sold') || name.includes('cogs')) cogs += (debit - credit);
+        if (name.includes('expense')) expenses += (debit - credit);
+    });
+    let extNet = 0;
+    extSettle.forEach((d) => { extNet += Number(d.data().amount) || 0; });
+    const accountingNet = revenue - cogs - expenses;
+    body.innerHTML = `<div class="kpi">${fmt(b)}</div><div class="small">Operational Buying Total</div>
+      <div class="kpi" style="margin-top:10px;">${fmt(s)}</div><div class="small">Operational Selling Total</div>
+      <div class="kpi" style="margin-top:10px;">${fmt(s-b)}</div><div class="small">Operational PT Net</div>
+      <div class="kpi" style="margin-top:10px;">${fmt(extNet)}</div><div class="small">External Settlement Net</div>
+      <hr style="margin:12px 0;border:none;border-top:1px solid #e2e8f0;">
+      <div class="kpi">${fmt(revenue)}</div><div class="small">Accounting Revenue</div>
+      <div class="kpi" style="margin-top:10px;">${fmt(cogs + expenses)}</div><div class="small">Accounting Costs</div>
+      <div class="kpi" style="margin-top:10px;">${fmt(accountingNet)}</div><div class="small">Accounting PT Net</div>`;
+}
+
+async function renderBILL(body) {
+    const itemSnap = await db.collection('scrap_items').where('businessId', '==', SCRAP_BUSINESS_ID).get();
+    const itemRows = itemSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => String(a.itemName || '').localeCompare(String(b.itemName || '')));
+    const mid = Math.ceil(itemRows.length / 2);
+    const leftRows = itemRows.slice(0, mid);
+    const rightRows = itemRows.slice(mid);
+
+    const renderTable = (rows) => `
+        <table class="bill-table">
+            <thead><tr><th style="width:58%;">ITEM</th><th style="width:20%;">WEIGHT</th><th style="width:22%;">AMOUNT</th></tr></thead>
+            <tbody>
+                ${rows.map((r) => {
+                    const price = Number(r.sellingPrice) || 0;
+                    return `<tr>
+                        <td>${String(r.itemName || '-').replace(/</g,'&lt;')}</td>
+                        <td><input inputmode="decimal" data-w="${r.id}" data-price="${price}" placeholder="0"></td>
+                        <td><input inputmode="decimal" data-a="${r.id}" placeholder="0" readonly></td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>`;
+
+    body.innerHTML = `
+        <div class="bill-workspace">
+            <div class="bill-left">
+                <div class="bill-muted">Bill view: items are split into two columns. Left aligned layout leaves space on the right for future details.</div>
+                <div class="bill-sheet" style="margin-top:10px;">
+                    <div class="bill-head">
+                        <div class="bill-meta">
+                            <label>Customer</label>
+                            <div>
+                                <input id="billCustomer" list="billCustomerList" placeholder="Customer name">
+                                <datalist id="billCustomerList"></datalist>
+                            </div>
+                            <label>Phone</label><input id="billPhone" placeholder="07xxxxxxxx">
+                        </div>
+                        <div class="bill-meta">
+                            <label>Date</label><input id="billDate" value="${new Date().toISOString().slice(0, 10)}">
+                            <label>Bill No</label><input id="billNo" placeholder="Optional">
+                        </div>
+                    </div>
+                    <div class="bill-grid">
+                        <div>${renderTable(leftRows)}</div>
+                        <div>${renderTable(rightRows)}</div>
+                    </div>
+                    <div class="bill-foot">
+                        <div class="bill-total">
+                            <label>Total Weight</label><input id="billTotalWeight" readonly value="0.00">
+                            <label>Total Amount</label><input id="billTotalAmount" readonly value="0.00">
+                        </div>
+                        <div class="bill-actions">
+                            <button id="billClearBtn" style="background:#64748b;">Clear</button>
+                            <button id="saveBillBtn">Save BILL</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="bill-right"></div>
+        </div>`;
+
+    function recalcTotals() {
+        let tw = 0;
+        let ta = 0;
+        body.querySelectorAll('input[data-w]').forEach((el) => {
+            const w = Number(el.value) || 0;
+            const price = Number(el.dataset.price) || 0;
+            const amt = w * price;
+            tw += w;
+            ta += amt;
+            const out = body.querySelector(`input[data-a="${el.dataset.w}"]`);
+            if (out) out.value = amt ? amt.toFixed(2) : '';
+        });
+        const tWeight = body.querySelector('#billTotalWeight');
+        const tAmount = body.querySelector('#billTotalAmount');
+        if (tWeight) tWeight.value = window.scrapVbaCore && window.scrapVbaCore.formatWeight ? window.scrapVbaCore.formatWeight(tw) : tw.toFixed(2);
+        if (tAmount) tAmount.value = ta.toFixed(2);
+    }
+
+    body.querySelectorAll('input[data-w]').forEach((el) => {
+        el.addEventListener('input', recalcTotals);
+        el.addEventListener('keydown', (ev) => {
+            if (ev.key !== 'Enter') return;
+            ev.preventDefault();
+            const all = Array.from(body.querySelectorAll('input[data-w]'));
+            const idx = all.indexOf(el);
+            const next = all[idx + 1];
+            if (next) next.focus();
+        });
+    });
+
+    document.getElementById('billClearBtn').addEventListener('click', () => {
+        body.querySelectorAll('input[data-w], input[data-a]').forEach((el) => (el.value = ''));
+        recalcTotals();
+        const c = body.querySelector('#billCustomer');
+        if (c) c.focus();
+    });
+
+    const customersByName = {};
+    try {
+        const snap = await db.collection('customers').where('businessId', '==', SCRAP_BUSINESS_ID).limit(500).get();
+        const listEl = document.getElementById('billCustomerList');
+        if (listEl) {
+            listEl.innerHTML = snap.docs.map((d) => {
+                const row = d.data() || {};
+                const name = String(row.fullName || '').trim();
+                if (!name) return '';
+                customersByName[name.toLowerCase()] = row;
+                return `<option value="${name.replace(/\"/g, '&quot;')}"></option>`;
+            }).join('');
+        }
+    } catch (e) {
+        console.warn('BILL customers load', e);
+    }
+
+    const customerInput = document.getElementById('billCustomer');
+    if (customerInput) {
+        customerInput.addEventListener('change', () => {
+            const key = String(customerInput.value || '').trim().toLowerCase();
+            const row = customersByName[key];
+            if (row && row.mobile && !String(document.getElementById('billPhone').value || '').trim()) {
+                document.getElementById('billPhone').value = String(row.mobile);
+            }
+        });
+    }
+
+    document.getElementById('saveBillBtn').addEventListener('click', async ()=>{
+        const customerName = String(document.getElementById('billCustomer').value||'').trim();
+        const billDate = String(document.getElementById('billDate').value || '').trim();
+        const billNo = String(document.getElementById('billNo').value || '').trim();
+        const phoneInput = String(document.getElementById('billPhone').value || '').trim();
+        if(!customerName) return alert('Customer is required.');
+
+        const weightsById = {};
+        body.querySelectorAll('input[data-w]').forEach((el) => { weightsById[el.dataset.w] = Number(el.value) || 0; });
+        const lines = itemRows.map((item) => {
+            const qty = Number(weightsById[item.id]) || 0;
+            if (!qty) return null;
+            const sellPrice = Number(item.sellingPrice) || 0;
+            const cp = Number(item.costPrice);
+            const costPrice = (Number.isFinite(cp) && cp > 0) ? cp : 0;
+            return { itemId: item.id, itemName: item.itemName || '', qty, sellPrice, amount: qty * sellPrice, cogs: qty * costPrice };
+        }).filter(Boolean);
+
+        if (!lines.length) return alert('Enter at least one weight.');
+
+        let cogsAmount = 0;
+        for (const line of lines) {
+            const ref = db.collection('scrap_items').doc(line.itemId);
+            const snap = await ref.get();
+            if (!snap.exists) continue;
+            const row = snap.data();
+            const currentStock = Number(row.currentStock) || 0;
+            const nextStock = currentStock - (Number(line.qty) || 0);
+            const cp = Number(row.costPrice);
+            const cost = (Number.isFinite(cp) && cp > 0) ? cp : 0;
+            cogsAmount += (Number(line.qty) || 0) * cost;
+            await ref.update({
+                currentStock: nextStock,
+                totalBuyingValue: nextStock * cost,
+                totalSellingValue: nextStock * (Number(row.sellingPrice) || 0),
+                potentialProfitValue: nextStock * (Number(row.profit) || 0),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        const totalAmount = lines.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const totalWeight = lines.reduce((s, r) => s + (Number(r.qty) || 0), 0);
+
+        await db.collection('selling_history').add({
+            businessId: SCRAP_BUSINESS_ID,
+            customerName,
+            phone: phoneInput,
+            billNo,
+            billDate,
+            totalWeight,
+            totalAmount,
+            items: lines,
+            cogsAmount,
+            date: new Date().toISOString(),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+            await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+                description: `Scrap BILL - ${customerName}`,
+                reference: customerName,
+                referenceType: 'SCRAP_BILL',
+                date: new Date().toISOString(),
+                entries: [
+                    { accountCode: '1-1010-01', accountName: 'Cash', debit: totalAmount, credit: 0 },
+                    { accountCode: '4-4010-01', accountName: 'Scrap Sales Revenue', debit: 0, credit: totalAmount }
+                ]
+            });
+            if (cogsAmount > 0) {
+                await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+                    description: `Scrap BILL COGS - ${customerName}`,
+                    reference: customerName,
+                    referenceType: 'SCRAP_BILL_COGS',
+                    date: new Date().toISOString(),
+                    entries: [
+                        { accountCode: '5-5010-01', accountName: 'Cost of Goods Sold', debit: cogsAmount, credit: 0 },
+                        { accountCode: '1-1030-01', accountName: 'Scrap Inventory', debit: 0, credit: cogsAmount }
+                    ]
+                });
+            }
+        }
+
+        const [customerSnap, settingsSnap] = await Promise.all([
+            db.collection('scrap_customers').where('businessId', '==', SCRAP_BUSINESS_ID).where('name', '==', customerName).limit(1).get(),
+            db.collection('scrap_sms_settings').doc(SCRAP_BUSINESS_ID).get()
+        ]);
+        if (window.scrapVbaCore && (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function' || typeof window.scrapVbaCore.enqueuePendingSms === 'function')) {
+            const enabled = window.scrapVbaCore.isScrapSmsEventEnabled
+                ? await window.scrapVbaCore.isScrapSmsEventEnabled(SCRAP_BUSINESS_ID, 'bill')
+                : false;
+            if (enabled && !customerSnap.empty) {
+                const customer = customerSnap.docs[0].data();
+                const settings = settingsSnap.exists ? settingsSnap.data() : {};
+                const defaultSettlement = window.scrapVbaCore.buildSettlementMessage(customerName, totalAmount);
+                const tpl = String(settings.tplSettlement || defaultSettlement);
+                const msg = window.scrapVbaCore.renderTemplate
+                    ? window.scrapVbaCore.renderTemplate(tpl, {
+                        name: customerName,
+                        amount: `Rs. ${Math.round(totalAmount).toLocaleString()}/=`,
+                        direction: 'you have to pay us',
+                        date: new Date().toLocaleString()
+                    })
+                    : defaultSettlement;
+                const targetPhone = phoneInput || customer?.phone;
+                if (targetPhone) {
+                    const smsRes = await (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function'
+                        ? window.scrapVbaCore.enqueuePendingSmsForScrap(targetPhone, msg)
+                        : window.scrapVbaCore.enqueuePendingSms(SCRAP_BUSINESS_ID, targetPhone, msg));
+                    showSmsDebug(smsRes);
+                } else {
+                    showSmsDebug(null, 'no_phone');
+                }
+            } else {
+                showSmsDebug(null, enabled ? 'no_phone' : 'event_disabled');
+            }
+        }
+
+        await window.scrapVbaCore.logEvent(SCRAP_BUSINESS_ID,'BILL_SAVE',`${customerName} ${totalAmount}`,'Admin');
+        if (window.scrapVbaCore?.syncInventoryAssetWithStock) {
+            await window.scrapVbaCore.syncInventoryAssetWithStock(SCRAP_BUSINESS_ID);
+        }
+        alert('BILL saved.');
+        document.getElementById('billClearBtn').click();
+    });
+}
+
+function viewFullBill(id, r) {
+    if (!r) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'modal';
+    wrap.innerHTML = `
+        <div class="modal-card" style="max-width:600px; width:95%; max-height:90vh; overflow:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:2px solid #f1f5f9; padding-bottom:10px;">
+                <h2 style="margin:0; font-size:18px;">Buying Bill Details</h2>
+                <span onclick="this.closest('.modal').remove()" style="cursor:pointer; font-size:24px; font-weight:800;">&times;</span>
+            </div>
+            <div style="font-size:13px; display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:15px;">
+                <div><strong>Supplier:</strong> ${r.supplierName || '-'}</div>
+                <div><strong>Date:</strong> ${r.billDateTime || r.date || '-'}</div>
+                <div><strong>Total Weight:</strong> ${(Number(r.totalWeight)||0).toFixed(2)} kg</div>
+                <div><strong>Total Amount:</strong> ${fmt(r.totalAmount)}</div>
+            </div>
+            <table class="bill-table" style="margin-bottom:15px;">
+                <thead><tr><th>Item</th><th style="text-align:right;">Weight</th><th style="text-align:right;">Price</th><th style="text-align:right;">Total</th></tr></thead>
+                <tbody>
+                    ${(r.items || []).map(line => {
+                        const price = Number(line.buyingPrice || line.price || 0);
+                        const weight = Number(line.weight || 0);
+                        const sub = line.subtotal !== undefined ? Number(line.subtotal) : (weight * price);
+                        return `
+                            <tr>
+                                <td>${line.itemName || '-'}</td>
+                                <td style="text-align:right;">${weight.toFixed(2)}</td>
+                                <td style="text-align:right;">${price.toFixed(2)}</td>
+                                <td style="text-align:right;">${fmt(sub)}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+            <div style="border-top:1px solid #e2e8f0; padding-top:10px; font-size:13px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Items Subtotal:</span><span>${fmt(r.totalAmount)}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Misc Charges:</span><span>${fmt(r.miscCharges)}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-weight:800; border-top:1px solid #e2e8f0; padding-top:4px;"><span>Grand Total:</span><span>${fmt(r.billGrandTotal)}</span></div>
+                <div style="height:10px;"></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#b91c1c;"><span>Advance Applied:</span><span>- ${fmt(r.advanceApplied)}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#b91c1c;"><span>Loan Deductions:</span><span>- ${fmt((r.loanDeduction||0) + (r.advanceLoanDeduction||0))}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#b91c1c;"><span>Vehicle Hire:</span><span>- ${fmt(r.vehicleHireApplied)}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:16px; font-weight:900; background:#f8fafc; padding:8px; border-radius:8px;"><span>CASH DUE:</span><span>${fmt(r.cashPaid)}</span></div>
+            </div>
+            <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center;">
+                <button onclick="shareBillViaWhatsapp(${JSON.stringify(r).replace(/"/g, '&quot;')})" style="padding:10px 15px; background:#16a34a; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:700; display:flex; align-items:center; gap:5px;">
+                    <span>WhatsApp Share</span>
+                </button>
+                <button onclick="this.closest('.modal').remove()" style="padding:10px 20px; background:#64748b; color:#fff; border:none; border-radius:8px; cursor:pointer;">Close</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(wrap);
+}
+
+async function shareBillViaWhatsapp(r) {
+    if (!r) return;
+    const name = r.supplierName || '-';
+    const billId = r.id || '';
+    // Use the people pick from global scope if available
+    const person = (typeof peopleByName !== 'undefined') ? (peopleByName[name] || peopleByName[name.toLowerCase()]) : null;
+    const wa = person?.whatsapp || person?.phone || '';
+    
+    if (!wa) {
+        alert('WhatsApp number not found for this customer.');
+        return;
+    }
+
+    const lines = r.items || [];
+    const sub = Number(r.totalAmount) || 0;
+    const misc = Number(r.miscCharges) || 0;
+    const appliedAdv = Number(r.advanceApplied) || 0;
+    const loans = Number(r.loanDeduction || 0) + Number(r.advanceLoanDeduction || 0);
+    const hire = Number(r.vehicleHireApplied || 0);
+    const grand = Number(r.billGrandTotal) || (sub + misc);
+    const cash = Number(r.cashPaid) || (grand - appliedAdv - loans - hire);
+    const billDt = r.billDateTime ? new Date(r.billDateTime).toLocaleString('en-GB') : (r.date ? new Date(r.date).toLocaleString('en-GB') : '-');
+    const walkIn = r.walkInName || '';
+
+    // Clean, Aligned Text Format
+    const pad = (s, l) => (String(s) + " ".repeat(l)).slice(0, l);
+
+    let msg = `අපේ කඩේ (APE KADE) BILL\n`;
+    msg += `-------------------------------\n`;
+    msg += `Bill No:  ${r.billNo || '-'}\n`;
+    msg += `Customer: ${name}${walkIn ? ` (${walkIn})` : ''}\n`;
+    msg += `Date: ${billDt}\n`;
+    msg += `-------------------------------\n`;
+    msg += `ITEM       RATE     QTY     LKR\n`;
+    msg += `-------------------------------\n`;
+    msg += `\`\`\`\n`;
+    lines.forEach(l => {
+        const rate = (Number(l.price || l.buyingPrice) || 0).toLocaleString();
+        const w = (Number(l.weight) || 0).toFixed(2);
+        const a = (Number(l.amount || l.subtotal) || (Number(l.weight) * (Number(l.price || l.buyingPrice)))).toLocaleString();
+        msg += `${pad(l.itemName || l.name || '-', 10)} ${pad(rate, 8)} ${pad(w, 7)} ${a}\n`;
+    });
+    if (misc > 0.01) msg += `${pad('OTHERS', 10)} ${pad('-', 8)} ${pad('-', 7)} ${misc.toLocaleString()}\n`;
+    msg += `\`\`\`\n`;
+    msg += `-------------------------------\n`;
+    msg += `Grand Total: LKR ${grand.toLocaleString()}\n`;
+    
+    if (appliedAdv > 0.01) msg += `Advance Ded: -LKR ${appliedAdv.toLocaleString()}\n`;
+    if (loans > 0.01) msg += `Loan Ded:    -LKR ${loans.toLocaleString()}\n`;
+    if (hire > 0.01) msg += `Hire:        -LKR ${hire.toLocaleString()}\n`;
+
+    msg += `\nCASH PAID:   LKR ${cash.toLocaleString()}\n`;
+    msg += `-------------------------------\n`;
+    
+    if (r.billNo || billId) {
+        msg += `සම්පුර්ණ බිල මෙතනින් බලන්න :\n`;
+        msg += `https://digibiz-sys.web.app/view-bill.html?no=${r.billNo || billId}\n`;
+        msg += `-------------------------------\n`;
+    }
+
+    msg += `Software solution by DIGIBIZ\n`;
+    msg += `0713446500`;
+
+    const cleanWa = wa.replace(/[^0-9]/g, '');
+    let finalPhone = cleanWa;
+    if (finalPhone.startsWith('0')) finalPhone = '94' + finalPhone.substring(1);
+    else if (!finalPhone.startsWith('94')) finalPhone = '94' + finalPhone;
+
+    const encoded = encodeURIComponent(msg);
+    const url = `https://wa.me/${finalPhone}?text=${encoded}`;
+    const win = window.open(url, '_blank');
+    if (!win) location.href = url;
+}
+
+async function renderLOAN(body) {
+
+    const snap = await db.collection('scrap_loans').where('businessId','==',SCRAP_BUSINESS_ID).where('active','==',true).get();
+    const rows = snap.docs.map(d=>d.data());
+    body.innerHTML = `<div><a href="/modules/admin/scrap-debts.html" style="text-decoration:none;">Open Full LOAN Manager</a></div>
+      <table style="margin-top:10px;"><thead><tr><th>Customer</th><th>Type</th><th>Balance</th></tr></thead><tbody>${
+        rows.map(r=>`<tr><td>${r.customerName||'-'}</td><td>${r.loanType||'-'}</td><td>${fmt(r.balance)}</td></tr>`).join('')
+        || '<tr><td colspan="3">No loans</td></tr>'
+      }</tbody></table>`;
+}
+
+async function renderView(view) {
+    try {
+        isDeleteMode = false;
+        const meta = VIEW_META[view] || VIEW_META.STOCK;
+        document.getElementById('viewTitle').textContent = meta.title;
+        document.getElementById('viewDesc').textContent = meta.desc;
+        const body = document.getElementById('viewBody');
+        body.innerHTML = '<div style="padding:20px;text-align:center;">Loading view...</div>';
+        
+        if (view === 'BILL') await renderBILL(body);
+        else if (view === 'STOCK') await renderSTOCK(body);
+        else if (view === 'BUY') await renderBUY(body);
+        else if (view === 'LOAN') await renderLOAN(body);
+        else if (view === 'DAILYTR') await renderDAILYTR(body);
+        else if (view === 'PERFORMANCE') await renderPERFORMANCE(body);
+        else if (view === 'RISK_MONITOR') await renderRISK(body);
+        else if (view === 'RWD') await renderRWD(body);
+        else if (view === 'PT') await renderPT(body);
+        else await renderSTOCK(body);
+        await refreshProfitPool();
+    } catch (e) {
+        console.error('RenderView Error:', e);
+        document.getElementById('viewBody').innerHTML = `<div style="padding:20px;color:#b91c1c;background:#fee2e2;border:1px solid #fca5a5;border-radius:12px;">
+            <h4 style="margin:0 0 8px;">Failed to render view: ${view}</h4>
+            <div class="small">${e.message}</div>
+        </div>`;
+    }
+}
+
+auth.onAuthStateChanged(async (user) => {
+    currentUser = user;
+    if (!user) { window.location.href = '/'; return; }
+
+    // Dynamic Business Context
+    let businessId = user.uid;
+    if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+        const ctx = await window.dashboardCore.getContext(user);
+        businessId = String((ctx && ctx.businessId) || user.uid);
+    } else {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    }
+    
+    const bizDoc = await db.collection('businesses').doc(businessId).get();
+    const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
+    
+    if (businessType !== 'scrap_collection_center') {
+        window.location.href = '/modules/core/dashboard.html';
+        return;
+    }
+    
+    SCRAP_BUSINESS_ID = businessId;
+
+    if (window.scrapVbaCore) {
+        const dayKey = new Date().toISOString().slice(0, 10);
+        const autoKey = `scrapWorkbookAuto_${SCRAP_BUSINESS_ID}_${dayKey}`;
+        if (!localStorage.getItem(autoKey)) {
+            try {
+                await window.scrapVbaCore.calculateAllDailyInterest(SCRAP_BUSINESS_ID);
+                await window.scrapVbaCore.checkClosedLoans(SCRAP_BUSINESS_ID);
+                await window.scrapVbaCore.runDailyRecovery(SCRAP_BUSINESS_ID);
+                await window.scrapVbaCore.sendPromiseReminders(SCRAP_BUSINESS_ID);
+                localStorage.setItem(autoKey, '1');
+            } catch(maintErr) {
+                console.warn("Daily Maintenance Failed:", maintErr);
+            }
+        }
+    }
+    await renderView(qView());
+    await refreshProfitPool();
+});
+
+window.openAddFundsModal = () => {
+    document.getElementById('addFundsModal').style.display = 'flex';
+};
+window.openWithdrawFundsModal = () => {
+    document.getElementById('withdrawFundsModal').style.display = 'flex';
+};
+
+window.processAddFunds = async () => {
+    const amount = Number(document.getElementById('fundAmount').value) || 0;
+    const method = document.getElementById('fundMethod').value;
+    const note = document.getElementById('fundNote').value || 'Capital Injection';
+    const password = document.getElementById('fundPassword').value;
+    
+    if (amount <= 0) return alert("Please enter a valid amount.");
+    if (!password) return alert("Please enter your password to confirm.");
+    
+    try {
+        const btn = document.querySelector('#addFundsModal button:last-child');
+        btn.disabled = true;
+        btn.textContent = 'Verifying...';
+        
+        // 1. Verify Password via Re-authentication
+        const credential = firebase.auth.EmailAuthProvider.credential(currentUser.email, password);
+        await currentUser.reauthenticateWithCredential(credential);
+        
+        // 2. Post Journal Entry
+        const accountCode = method === 'CASH' ? '1-1010-01' : '1-1020-01';
+        const accountName = method === 'CASH' ? 'Cash - Main' : 'Bank - Current Account';
+        
+        btn.textContent = 'Saving...';
+        await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+            description: note,
+            referenceType: 'CAPITAL_INJECTION',
+            entries: [
+                { accountCode: accountCode, accountName: accountName, debit: amount, credit: 0 },
+                { accountCode: '3-3010-01', accountName: 'Capital', debit: 0, credit: amount }
+            ]
+        });
+        
+        alert("Funds added successfully!");
+        location.reload();
+    } catch (e) {
+        console.error("Fund addition failed:", e);
+        alert("Verification failed: " + e.message);
+    } finally {
+        const btn = document.querySelector('#addFundsModal button:last-child');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Add Funds';
+        }
+    }
+};
+
+window.processWithdrawFunds = async () => {
+    const amount = Number(document.getElementById('withdrawAmount').value) || 0;
+    const method = document.getElementById('withdrawMethod').value;
+    const note = document.getElementById('withdrawNote').value || 'Capital Withdrawal / Adjustment';
+    const password = document.getElementById('withdrawPassword').value;
+    
+    if (amount <= 0) return alert("Please enter a valid amount.");
+    if (!password) return alert("Please enter your password to confirm.");
+    
+    try {
+        const btn = document.querySelector('#withdrawFundsModal button:last-child');
+        btn.disabled = true;
+        btn.textContent = 'Verifying...';
+        
+        // 1. Verify Password
+        const credential = firebase.auth.EmailAuthProvider.credential(currentUser.email, password);
+        await currentUser.reauthenticateWithCredential(credential);
+        
+        // 2. Post Journal Entry (Reverse of Injection)
+        const accountCode = method === 'CASH' ? '1-1010-01' : '1-1020-01';
+        const accountName = method === 'CASH' ? 'Cash - Main' : 'Bank - Current Account';
+        
+        btn.textContent = 'Saving...';
+        await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+            description: note,
+            referenceType: 'CAPITAL_WITHDRAWAL',
+            entries: [
+                { accountCode: '3-3010-01', accountName: 'Capital', debit: amount, credit: 0 },
+                { accountCode: accountCode, accountName: accountName, debit: 0, credit: amount }
+            ]
+        });
+        
+        alert("Funds reduced successfully!");
+        location.reload();
+    } catch (e) {
+        console.error("Fund withdrawal failed:", e);
+        alert("Verification failed: " + e.message);
+    } finally {
+        const btn = document.querySelector('#withdrawFundsModal button:last-child');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Withdraw Funds';
+        }
+    }
+};
+
+async function refreshProfitPool(retry = 0) {
+    const el = document.getElementById('profitPoolStatus');
+    if (!SCRAP_BUSINESS_ID) {
+        if (retry < 15) setTimeout(() => refreshProfitPool(retry + 1), 1000);
+        else if (el) el.textContent = 'Pool: LKR 0.00';
+        return;
+    }
+    if (!window.scrapVbaCore?.getProfitPool) {
+        console.log(`[Pool] Waiting for core... retry ${retry}`);
+        if (retry < 15) setTimeout(() => refreshProfitPool(retry + 1), 1000);
+        else if (el) el.textContent = 'Pool: LKR 0.00';
+        return;
+    }
+    try {
+        const bal = await window.scrapVbaCore.getProfitPool(SCRAP_BUSINESS_ID);
+        if (el) {
+            el.textContent = `Pool: LKR ${bal.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+            el.style.borderColor = bal < 0 ? '#ef4444' : '#10b981';
+            el.style.color = bal < 0 ? '#b91c1c' : '#15803d';
+            el.style.background = bal < 0 ? '#fee2e2' : '#dcfce7';
+        }
+    } catch (e) {
+        console.error("Profit Pool Refresh Error:", e);
+        if (el) el.textContent = 'Pool: LKR 0.00';
+    }
+}
+</script>
+</body>
+</html>

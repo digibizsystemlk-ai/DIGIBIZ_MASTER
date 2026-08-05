@@ -22,7 +22,7 @@
     <script src="../../core/business-types.js?v=3"></script>
     <script src="../../core/dashboard-core.js?v=3"></script>
     <script src="../../core/subscription-manager.js?v=3"></script>
-    <script src="../../core/sidebar.js?v=30"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
     
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
@@ -140,13 +140,9 @@
             <h3 id="modalTitle">Add New Product</h3>
             <input type="text" id="productCode" placeholder="Product Code (e.g., P001)">
             <input type="text" id="productName" placeholder="Product Name">
-            <select id="productCategory">
-                <option value="groceries">Groceries</option>
-                <option value="dairy">Dairy</option>
-                <option value="personal">Personal Care</option>
-                <option value="beverages">Beverages</option>
-                <option value="snacks">Snacks</option>
-            </select>
+            <label style="display:block; margin-top:12px; margin-bottom:4px; font-size:12px; font-weight:600; color:#64748b; text-align: left;">Product Category</label>
+            <input type="text" id="productCategory" list="categoryOptions" placeholder="Type or Select Category">
+            <datalist id="categoryOptions"></datalist>
             <input type="number" id="productPrice" placeholder="Selling Price (Rs.)">
             <input type="number" id="productCost" placeholder="Cost Price (Rs.)">
             <input type="number" id="productStock" placeholder="Initial Stock">
@@ -195,6 +191,35 @@
             setTimeout(()=>toast.classList.remove('show'), 3000);
         }
         
+        function populateCategoryLists() {
+            const categories = [...new Set(products.map(p => p.category).filter(Boolean))];
+            
+            // Update the Category Filter dropdown
+            const filterSelect = document.getElementById('categoryFilter');
+            const selectedFilterVal = filterSelect.value;
+            filterSelect.innerHTML = '<option value="all">All Categories</option>';
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat;
+                opt.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+                filterSelect.appendChild(opt);
+            });
+            if (selectedFilterVal && (selectedFilterVal === 'all' || categories.includes(selectedFilterVal))) {
+                filterSelect.value = selectedFilterVal;
+            } else {
+                filterSelect.value = 'all';
+            }
+
+            // Update the Product Category Datalist in the modal
+            const datalist = document.getElementById('categoryOptions');
+            datalist.innerHTML = '';
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat;
+                datalist.appendChild(opt);
+            });
+        }
+
         // Load products from Firestore
         async function loadProducts(){
             if(!currentBusinessId) return;
@@ -202,19 +227,8 @@
             products = [];
             snapshot.forEach(doc => products.push({id: doc.id, ...doc.data()}));
             
-            if(products.length === 0){
-                // Demo products
-                products = [
-                    { id: 'P001', code: 'P001', name: 'Sugar 1kg', category: 'groceries', price: 250, cost: 220, stock: 50, barcode: '123456' },
-                    { id: 'P002', code: 'P002', name: 'Rice 5kg', category: 'groceries', price: 850, cost: 800, stock: 30, barcode: '123457' },
-                    { id: 'P003', code: 'P003', name: 'Milk Powder 400g', category: 'dairy', price: 650, cost: 600, stock: 20, barcode: '123458' },
-                    { id: 'P004', code: 'P004', name: 'Soap', category: 'personal', price: 120, cost: 100, stock: 100, barcode: '123459' },
-                    { id: 'P005', code: 'P005', name: 'Toothpaste', category: 'personal', price: 180, cost: 150, stock: 45, barcode: '123460' }
-                ];
-                for(const p of products){
-                    await db.collection('products').doc(currentBusinessId).collection('list').doc(p.id).set(p);
-                }
-            }
+            populateCategoryLists();
+            // No demo products seeded automatically
             applyFilters();
         }
         
@@ -285,7 +299,7 @@
             document.getElementById('modalTitle').innerHTML = 'Add New Product';
             document.getElementById('productCode').value = '';
             document.getElementById('productName').value = '';
-            document.getElementById('productCategory').value = 'groceries';
+            document.getElementById('productCategory').value = '';
             document.getElementById('productPrice').value = '';
             document.getElementById('productCost').value = '';
             document.getElementById('productStock').value = '';
@@ -310,33 +324,44 @@
         };
         
         async function saveProduct(){
-            const code = document.getElementById('productCode').value;
-            const name = document.getElementById('productName').value;
-            const category = document.getElementById('productCategory').value;
+            const rawCode = document.getElementById('productCode').value.trim();
+            const name = document.getElementById('productName').value.trim();
+            const category = document.getElementById('productCategory').value.trim();
             const price = parseFloat(document.getElementById('productPrice').value);
-            const cost = parseFloat(document.getElementById('productCost').value);
+            const cost = parseFloat(document.getElementById('productCost').value || 0);
             const stock = parseInt(document.getElementById('productStock').value) || 0;
-            const barcode = document.getElementById('productBarcode').value;
+            const barcode = document.getElementById('productBarcode').value.trim();
             
-            if(!name || !price){
+            if(!name || isNaN(price)){
                 showToast('Product name and price are required!', true);
                 return;
             }
             
-            const productId = code || 'P' + Date.now();
-            const productData = { id: productId, code: productId, name, category, price, cost, stock, barcode, updatedAt: new Date() };
+            const cleanDocId = rawCode ? rawCode.replace(/[\/\\#\$\.\[\]]/g, '_') : ('P' + Date.now());
+            const productId = editingProductId || cleanDocId;
+            const productData = { id: productId, code: rawCode || productId, name, category, price, cost, stock, barcode, updatedAt: new Date() };
             
-            if(editingProductId){
-                await db.collection('products').doc(currentBusinessId).collection('list').doc(editingProductId).update(productData);
-                showToast('Product updated successfully!');
-            } else {
-                productData.createdAt = new Date();
-                await db.collection('products').doc(currentBusinessId).collection('list').doc(productId).set(productData);
-                showToast('Product added successfully!');
+            const btn = document.getElementById('saveProductBtn');
+            try {
+                btn.disabled = true;
+                btn.textContent = 'Saving...';
+                if(editingProductId){
+                    await db.collection('products').doc(currentBusinessId).collection('list').doc(editingProductId).set(productData, { merge: true });
+                    showToast('Product updated successfully!');
+                } else {
+                    productData.createdAt = new Date();
+                    await db.collection('products').doc(currentBusinessId).collection('list').doc(productId).set(productData);
+                    showToast('Product added successfully!');
+                }
+                document.getElementById('productModal').style.display = 'none';
+                await loadProducts();
+            } catch(err) {
+                console.error('Error saving product:', err);
+                showToast('Failed to save product: ' + (err.message || err), true);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Save Product';
             }
-            
-            document.getElementById('productModal').style.display = 'none';
-            await loadProducts();
         }
         
         window.deleteProduct = async (id) => {

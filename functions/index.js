@@ -28,7 +28,7 @@ try {
 }
 
 /** When false: never queue investor portfolio accrual SMS (Firestore investorPhone is ignored). Set true and redeploy to re-enable. */
-const INVESTOR_OUTBOUND_SMS_ENABLED = false;
+const INVESTOR_OUTBOUND_SMS_ENABLED = true;
 
 function registrationNotifierTransport() {
     const host = String(
@@ -126,6 +126,13 @@ function colomboCalendarDaysBetween(lastIso, now) {
     return Math.round((t2 - t1) / 86400000);
 }
 
+function normalizePhone(phone) {
+    let ph = String(phone || "").replace(/[ -]/g, "");
+    if (ph.length === 9) ph = `94${ph}`;
+    if (ph.length === 10 && ph.startsWith("0")) ph = `94${ph.slice(1)}`;
+    return ph;
+}
+
 async function queueSms(businessId, mobile, message, createdBy = "cloudfunctions.dailyInterestLoanAccrualColombo") {
     const normalized = String(mobile || "").replace(/\s/g, "");
     if (!normalized) {
@@ -148,6 +155,72 @@ async function queueSms(businessId, mobile, message, createdBy = "cloudfunctions
             ...payload,
             createdAt: Date.now(),
         });
+    }
+
+    // Call REST API dynamically if API key is present
+    try {
+        const [settingsSnap, bizSnap, smsSettingsSnap] = await Promise.all([
+            db.collection("settings").doc(businessId).get().catch(() => null),
+            db.collection("businesses").doc(businessId).get().catch(() => null),
+            db.collection("scrap_sms_settings").doc(businessId).get().catch(() => null)
+        ]);
+
+        const smsSettings = smsSettingsSnap && smsSettingsSnap.exists ? (smsSettingsSnap.data() || {}) : {};
+        const settingsData = settingsSnap && settingsSnap.exists ? (settingsSnap.data() || {}) : {};
+        const bizData = bizSnap && bizSnap.exists ? (bizSnap.data() || {}) : {};
+
+        const customHeader = String(settingsData.smsHeader || "").trim();
+        const bizName = String(bizData.name || "").trim();
+        const srcHeader = customHeader || bizName || "DIGIBIZ";
+        const header = srcHeader.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 10) || "DIGIBIZ";
+        const finalBrandedText = `[${header}] - ${message}`;
+
+        if (smsSettings.apiKey) {
+            const apiFormattedPhone = normalizePhone(normalized);
+            let finalPhone = apiFormattedPhone;
+            if (finalPhone && !finalPhone.startsWith("+")) {
+                finalPhone = "+" + finalPhone;
+            }
+
+            const response = await fetch("https://us-central1-digibiz-sms.cloudfunctions.net/sendSMSRest", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-API-Key": smsSettings.apiKey
+                },
+                body: JSON.stringify({ phoneNumber: finalPhone, message: finalBrandedText })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                logger.info(`✅ CF SMS sent successfully via REST API for business ${businessId} to ${mobile}`);
+                await db.collection("pending_sms").doc(id).update({
+                    status: "sent",
+                    apiMessageId: result.messageId,
+                    sentAt: admin.firestore.FieldValue.serverTimestamp()
+                }).catch(() => null);
+                
+                await db.collection("sms_logs").doc(result.messageId || db.collection("sms_logs").doc().id).set({
+                    businessId,
+                    mobile: finalPhone,
+                    text: finalBrandedText,
+                    status: "sent",
+                    costCredits: 1,
+                    creditsRemaining: result.creditsRemaining || 0,
+                    timestamp: admin.firestore.FieldValue.serverTimestamp()
+                }).catch(() => null);
+            } else {
+                logger.error(`❌ CF SMS failed via REST API for business ${businessId} to ${mobile}:`, result.error);
+                await db.collection("pending_sms").doc(id).update({
+                    status: "failed",
+                    error: result.error
+                }).catch(() => null);
+            }
+        } else {
+            logger.warn(`⚠️ No REST API Key found for business ${businessId}. SMS remains in firebase queue.`);
+        }
+    } catch (e) {
+        logger.error(`🔥 CF SMS REST API call error for business ${businessId} to ${mobile}:`, e);
     }
 }
 
@@ -310,11 +383,8 @@ exports.dailyInvestorPortfolioAccrualColombo = onSchedule(
                 );
 
                 if (INVESTOR_OUTBOUND_SMS_ENABLED && phone) {
-                    const msg = `Investor ledger: daily interest on capital Rs.${interestAdd.toFixed(
-                        2
-                    )} (${diffDays} day(s) at ${ratePct}%/day). Interest balance Rs.${nextIntBal.toFixed(
-                        2
-                    )}. Capital balance Rs.${capBal.toFixed(2)}.`;
+                    const fmtVal = (val) => Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+                    const msg = `INVESTOR UPDATE - ${todayKey}\n\nDaily Interest Accrued: Rs ${fmtVal(interestAdd)}\n\nCapital Balance: Rs ${fmtVal(capBal)}\nInterest Due: Rs ${fmtVal(nextIntBal)}\nNet Payable: Rs ${fmtVal(capBal + nextIntBal)}`;
                     await queueSms(businessId, phone, msg, "cloudfunctions.dailyInvestorPortfolioAccrualColombo");
                 }
                 appended += 1;
@@ -660,6 +730,448 @@ exports.onBusinessCreatedReferral = onDocumentCreated(
             });
         } catch (e) {
             logger.error(`Referral reward transaction failed for ${referrerId}:`, e);
+        }
+    }
+);
+
+exports.scrapDailyLiabilityExpenseCron = onSchedule(
+    {
+        schedule: "1 0 * * *",
+        timeZone: "Asia/Colombo",
+        memory: "256MiB",
+        timeoutSeconds: 300,
+    },
+    async () => {
+        const now = new Date();
+        const todayKey = colomboDateKey(now);
+        const liabilitiesSnap = await db.collection("scrap_liabilities").get();
+        let appended = 0;
+        let errors = 0;
+
+        const businessTotals = {};
+
+        for (const doc of liabilitiesSnap.docs) {
+            try {
+                const data = doc.data() || {};
+                const businessId = String(data.businessId || "");
+                if (!businessId) continue;
+                
+                // Skip if remainingBalance is zero or less
+                if (data.remainingBalance !== undefined && data.remainingBalance !== null && Number(data.remainingBalance) <= 0.0001) {
+                    continue;
+                }
+
+                if (data.endDate) {
+                    const end = new Date(data.endDate);
+                    end.setHours(23, 59, 59, 999);
+                    if (!Number.isNaN(end.getTime()) && now > end) {
+                        continue;
+                    }
+                }
+
+                const dailyAmount = Number(data.dailyAmount || 0);
+                if (dailyAmount > 0) {
+                    businessTotals[businessId] = (businessTotals[businessId] || 0) + dailyAmount;
+                    
+                    // Deduct from remainingBalance in Firestore
+                    if (data.remainingBalance !== undefined && data.remainingBalance !== null && data.remainingBalance > 0) {
+                        const deduction = Math.min(data.remainingBalance, dailyAmount);
+                        const nextBal = Math.max(0, data.remainingBalance - deduction);
+                        await doc.ref.update({
+                            remainingBalance: nextBal,
+                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                }
+
+                if (data.nextInstallmentDate) {
+                    const nextDate = new Date(data.nextInstallmentDate);
+                    if (!Number.isNaN(nextDate.getTime())) {
+                        nextDate.setHours(23, 59, 59, 999);
+                        if (now > nextDate) {
+                            const newMonthDate = new Date(nextDate);
+                            newMonthDate.setMonth(newMonthDate.getMonth() + 1);
+                            
+                            const newDateStr = newMonthDate.toISOString().split("T")[0];
+                            await doc.ref.update({
+                                nextInstallmentDate: newDateStr,
+                                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    }
+                }
+            } catch (e) {
+                errors += 1;
+                logger.error("scrapDailyLiabilityExpenseCron doc failed", doc.id, e);
+            }
+        }
+
+        for (const businessId in businessTotals) {
+            const totalDaily = businessTotals[businessId];
+            if (totalDaily > 0) {
+                try {
+                    const todayExpenses = await db.collection("scrap_expenses")
+                        .where("businessId", "==", businessId)
+                        .where("expenseDate", "==", todayKey)
+                        .where("category", "==", "Liability (Daily Total)")
+                        .get();
+                        
+                    if (todayExpenses.empty) {
+                        await db.collection("scrap_expenses").add({
+                            businessId,
+                            expenseDate: todayKey,
+                            category: "Liability (Daily Total)",
+                            amount: totalDaily,
+                            note: "Auto-deducted daily liabilities total",
+                            createdBy: "system_cron",
+                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                        appended += 1;
+                    } else {
+                        const existingDoc = todayExpenses.docs[0];
+                        if (Number(existingDoc.data().amount) !== totalDaily) {
+                            await existingDoc.ref.update({
+                                amount: totalDaily,
+                                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    }
+                } catch(e) {
+                    errors += 1;
+                    logger.error(`scrapDailyLiabilityExpenseCron expense add/update failed for ${businessId}`, e);
+                }
+            }
+        }
+
+        logger.info(`scrapDailyLiabilityExpenseCron: scanned=${liabilitiesSnap.size} appended=${appended} errors=${errors}`);
+    }
+);
+
+async function postJournalEntryAdmin(businessId, payload) {
+    if (!businessId) {
+        logger.error("[postJournalEntryAdmin] FAILED: businessId is missing.");
+        return;
+    }
+    if (!payload || !Array.isArray(payload.entries)) {
+        logger.error("[postJournalEntryAdmin] FAILED: Invalid payload or missing entries.");
+        return;
+    }
+
+    const lines = payload.entries.map((line) => ({
+        accountCode: String(line.accountCode || ""),
+        accountName: String(line.accountName || ""),
+        debit: Number(line.debit || 0),
+        credit: Number(line.credit || 0)
+    }));
+    const totalDebit = lines.reduce((s, r) => s + r.debit, 0);
+    const totalCredit = lines.reduce((s, r) => s + r.credit, 0);
+    if (Math.abs(totalDebit - totalCredit) > 0.01) {
+        logger.warn("[postJournalEntryAdmin] SKIPPED: unbalanced lines", { payload, totalDebit, totalCredit });
+        return;
+    }
+
+    try {
+        const ledgerBase = db.collection("journal").doc(businessId).collection("account_ledger");
+        const entryRef = db.collection("journal").doc(businessId).collection("entries").doc();
+        const batch = db.batch();
+        const desc = String(payload.description || "Scrap entry").slice(0, 240);
+        const refType = String(payload.referenceType || "SCRAP_TXN");
+
+        const entryDate = (function() {
+            const d = payload.date;
+            if (!d) return admin.firestore.Timestamp.now();
+            if (d instanceof admin.firestore.Timestamp) return d;
+            if (d.toDate && typeof d.toDate === 'function') return d;
+            const parsed = new Date(d);
+            return isNaN(parsed.getTime()) ? admin.firestore.Timestamp.now() : admin.firestore.Timestamp.fromDate(parsed);
+        })();
+
+        batch.set(entryRef, {
+            businessId,
+            date: entryDate,
+            description: desc,
+            reference: String(payload.reference || ""),
+            referenceType: refType,
+            entries: lines,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        lines.forEach((line) => {
+            const code = String(line.accountCode || "").trim() || "UNKNOWN";
+            const docId = code.replace(/\//g, "_");
+            const ref = ledgerBase.doc(docId);
+            batch.set(
+                ref,
+                {
+                    businessId,
+                    accountCode: code,
+                    accountName: String(line.accountName || code),
+                    totalDebit: admin.firestore.FieldValue.increment(line.debit),
+                    totalCredit: admin.firestore.FieldValue.increment(line.credit),
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    lastDescription: desc,
+                    lastReferenceType: refType
+                },
+                { merge: true }
+            );
+        });
+
+        await batch.commit();
+        logger.info("[postJournalEntryAdmin] SUCCESS: Batch committed for entry:", entryRef.id);
+    } catch (err) {
+        logger.error("[postJournalEntryAdmin] CRITICAL ERROR during batch commit:", err);
+        throw err;
+    }
+}
+
+exports.scrapRiskPoolAllocationCron = onSchedule(
+    {
+        schedule: "0 23 * * *",
+        timeZone: "Asia/Colombo",
+        memory: "512MiB",
+        timeoutSeconds: 540,
+    },
+    async () => {
+        const now = new Date();
+        const todayKey = colomboDateKey(now);
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const thirtyDaysAgoStr = colomboDateKey(thirtyDaysAgo);
+
+        logger.info("scrapRiskPoolAllocationCron started", { todayKey });
+
+        const businessesSnap = await db.collection("businesses").get();
+        logger.info(`Found ${businessesSnap.size} businesses to scan.`);
+
+        for (const bizDoc of businessesSnap.docs) {
+            const businessId = bizDoc.id;
+            try {
+                // A. 5% Profit Pool Allocation
+                const profitPoolRef = db.collection("scrap_profit_pool").doc(businessId);
+                const profitPoolSnap = await profitPoolRef.get();
+                const currentProfitBal = profitPoolSnap.exists ? Number(profitPoolSnap.data().balance || 0) : 0;
+
+                if (currentProfitBal > 0.01) {
+                    const deduction = Math.round((currentProfitBal * 0.05) * 100) / 100;
+                    if (deduction > 0.01) {
+                        // Deduct from profit pool
+                        await profitPoolRef.set({
+                            businessId,
+                            balance: Math.round((currentProfitBal - deduction) * 100) / 100,
+                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        }, { merge: true });
+
+                        // Log profit pool movement
+                        await db.collection("scrap_profit_pool_logs").add({
+                            businessId,
+                            delta: -deduction,
+                            type: "RISK_ALLOCATION",
+                            note: "5% Risk Allocation for Risk Management",
+                            balanceAfter: Math.round((currentProfitBal - deduction) * 100) / 100,
+                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+
+                        // Record scrap expense
+                        await db.collection("scrap_expenses").add({
+                            businessId,
+                            expenseDate: todayKey,
+                            amount: deduction,
+                            category: "Risk Management",
+                            note: "for risk management",
+                            accountCode: "5-5020-01",
+                            accountName: "Risk Management Expense",
+                            paymentMethod: "CASH",
+                            addedBy: "system_cron",
+                            addedByEmail: "system@digibiz.lk",
+                            createdAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+
+                        // Update Loan Pool
+                        const loanPoolRef = db.collection("scrap_loan_pool").doc(businessId);
+                        await db.runTransaction(async (tx) => {
+                            const poolSnap = await tx.get(loanPoolRef);
+                            const currentPoolBal = poolSnap.exists ? Number(poolSnap.data().balance || 0) : 0;
+                            tx.set(loanPoolRef, {
+                                businessId,
+                                balance: Math.round((currentPoolBal + deduction) * 100) / 100,
+                                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            }, { merge: true });
+                        });
+
+                        // Add transaction log
+                        await db.collection("scrap_loan_pool_transactions").add({
+                            businessId,
+                            type: "ALLOCATION",
+                            amount: deduction,
+                            customerName: "Profit Pool",
+                            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                            note: "5% Allocation from Profit Pool"
+                        });
+
+                        // Post Journal Entry
+                        await postJournalEntryAdmin(businessId, {
+                            description: "5% Risk Allocation from Profit Pool",
+                            reference: todayKey,
+                            referenceType: "ALLOCATION",
+                            date: now,
+                            entries: [
+                                { accountCode: "5-5020-01", accountName: "Risk Management Expense", debit: deduction, credit: 0 },
+                                { accountCode: "2-2020-01", accountName: "Risk Reserve", debit: 0, credit: deduction }
+                            ]
+                        });
+
+                        logger.info(`Business ${businessId}: Allocated ${deduction} to Risk Loan Pool.`);
+                    }
+                }
+
+                // B. 30-Day Inactive Scan is now handled manually by the user from the Risk Management dashboard.
+                logger.info(`Business ${businessId}: Automatic 30-day scan skipped (handled manually).`);
+
+            } catch (err) {
+                logger.error(`Error processing allocation/scan for business ${businessId}`, err);
+            }
+        }
+    }
+);
+
+exports.scrapRiskPoolPayoffCron = onSchedule(
+    {
+        schedule: "0 5 * * *",
+        timeZone: "Asia/Colombo",
+        memory: "512MiB",
+        timeoutSeconds: 540,
+    },
+    async () => {
+        const now = new Date();
+        const todayKey = colomboDateKey(now);
+
+        logger.info("scrapRiskPoolPayoffCron started", { todayKey });
+
+        const businessesSnap = await db.collection("businesses").get();
+        logger.info(`Found ${businessesSnap.size} businesses to scan for payoffs.`);
+
+        for (const bizDoc of businessesSnap.docs) {
+            const businessId = bizDoc.id;
+            try {
+                const loanPoolRef = db.collection("scrap_loan_pool").doc(businessId);
+                const loanPoolSnap = await loanPoolRef.get();
+                let availablePoolBal = loanPoolSnap.exists ? Number(loanPoolSnap.data().balance || 0) : 0;
+
+                if (availablePoolBal <= 0.01) {
+                    continue;
+                }
+
+                const approvedSnap = await db.collection("risk_management_loans")
+                    .where("businessId", "==", businessId)
+                    .where("status", "==", "APPROVED")
+                    .get();
+
+                if (approvedSnap.empty) {
+                    continue;
+                }
+
+                const approvedLoans = approvedSnap.docs.map(doc => ({
+                    id: doc.id,
+                    ref: doc.ref,
+                    ...doc.data()
+                }));
+
+                logger.info(`Business ${businessId}: Found ${approvedLoans.length} APPROVED risky loans. Available pool: ${availablePoolBal}`);
+
+                let poolBalance = availablePoolBal;
+                let activeLoans = approvedLoans.map(l => ({
+                    ...l,
+                    maxPayoffToday: Math.min(Number(l.remainingBalance || 0), 500)
+                }));
+                const payoffs = {};
+
+                let changed = true;
+                while (poolBalance > 0.01 && activeLoans.length > 0 && changed) {
+                    changed = false;
+                    let share = poolBalance / activeLoans.length;
+                    
+                    let overpaidIndex = activeLoans.findIndex(l => Number(l.maxPayoffToday || 0) < share);
+                    if (overpaidIndex !== -1) {
+                        const loan = activeLoans[overpaidIndex];
+                        const payAmt = Number(loan.maxPayoffToday || 0);
+                        if (payAmt > 0) {
+                            payoffs[loan.id] = (payoffs[loan.id] || 0) + payAmt;
+                            poolBalance -= payAmt;
+                        }
+                        loan.maxPayoffToday = 0;
+                        activeLoans.splice(overpaidIndex, 1);
+                        changed = true;
+                    } else {
+                        for (const loan of activeLoans) {
+                            payoffs[loan.id] = (payoffs[loan.id] || 0) + share;
+                            loan.maxPayoffToday = Number(loan.maxPayoffToday || 0) - share;
+                        }
+                        poolBalance = 0;
+                        changed = true;
+                    }
+                }
+
+                let totalAppliedPayoffs = 0;
+
+                for (const loan of approvedLoans) {
+                    const payoffAmount = payoffs[loan.id] || 0;
+                    if (payoffAmount <= 0.01) continue;
+
+                    const roundedPayoff = Math.round(payoffAmount * 100) / 100;
+                    const nextRemaining = Math.max(0, Number(loan.remainingBalance || 0) - roundedPayoff);
+                    const nextStatus = nextRemaining <= 0.01 ? "SETTLED" : "APPROVED";
+
+                    await loan.ref.set({
+                        remainingBalance: nextRemaining,
+                        status: nextStatus,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+
+                    await db.collection("scrap_loan_pool_transactions").add({
+                        businessId,
+                        type: "PAYOFF",
+                        amount: -roundedPayoff,
+                        customerName: loan.customerName,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        note: `Payoff applied for borrower: ${loan.customerName}`
+                    });
+
+                    const isAdvance = String(loan.originalCollection || "").includes("advance");
+                    const assetAccountCode = isAdvance ? "1-1060-01" : "1-1050-01";
+                    const assetAccountName = isAdvance ? "Supplier Advances (Scrap)" : "Loans Given";
+
+                    await postJournalEntryAdmin(businessId, {
+                        description: `Risk Payoff - ${loan.customerName}`,
+                        reference: todayKey,
+                        referenceType: "PAYOFF",
+                        date: now,
+                        entries: [
+                            { accountCode: "2-2020-01", accountName: "Risk Reserve", debit: roundedPayoff, credit: 0 },
+                            { accountCode: assetAccountCode, accountName: assetAccountName, debit: 0, credit: roundedPayoff }
+                        ]
+                    });
+
+                    const customerMobile = String(loan.customerMobile || "").trim();
+                    if (customerMobile) {
+                        const smsMsg = `Oba wisin nogewana lada naya sadaha apa wisin ada dina Rs ${Math.round(roundedPayoff)}ka mudalak yodawana ladi. Thawa higa ${Math.round(nextRemaining)}/=.`;
+                        await queueSms(businessId, customerMobile, smsMsg, "cloudfunctions.scrapRiskPoolPayoffCron");
+                    }
+
+                    totalAppliedPayoffs += roundedPayoff;
+                    logger.info(`Business ${businessId}: Applied payoff of ${roundedPayoff} to loan ${loan.id}. Remaining: ${nextRemaining}`);
+                }
+
+                if (totalAppliedPayoffs > 0.01) {
+                    const finalPoolBal = Math.max(0, Math.round((availablePoolBal - totalAppliedPayoffs) * 100) / 100);
+                    await loanPoolRef.set({
+                        balance: finalPoolBal,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+                    logger.info(`Business ${businessId}: Deducted total payoffs of ${totalAppliedPayoffs} from Loan Pool. Final balance: ${finalPoolBal}`);
+                }
+
+            } catch (err) {
+                logger.error(`Error processing payoff for business ${businessId}`, err);
+            }
         }
     }
 );

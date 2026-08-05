@@ -10,6 +10,7 @@ window.AuthUI = {
     async routeToUniversalDashboard(user) {
         if (!user) return;
         
+        let businessType = 'retail';
         try {
             // Ensure global DB is ready
             let retry = 0;
@@ -42,13 +43,12 @@ window.AuthUI = {
                     businessId = regDoc.data().businessId;
                 } else {
                     // Try direct bypasses
-                    if (emailNorm === 'biz.himeshi@gmail.com' || emailNorm === 'biz.sirimal@gmail.com') {
+                    if (emailNorm === 'biz.himeshi@gmail.com' || emailNorm === 'biz.sirimal@gmail.com' || emailNorm === '2biz.sirimal@gmail.com') {
                         businessId = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
                     }
                 }
             }
 
-            let businessType = 'retail';
             const businessDoc = await window.db.collection('businesses').doc(businessId).get();
             if (businessDoc.exists) {
                 businessType = businessDoc.data().businessType || businessType;
@@ -70,13 +70,19 @@ window.AuthUI = {
                 window.location.href = '../modules/core/change-password.html';
                 return;
             }
+            // Check Subscription Status for Google Play → Web Access Sync
+            const subStatus = userData.subscriptionStatus || (businessDoc.exists ? businessDoc.data().subscriptionStatus : 'ACTIVE');
+            if (subStatus === 'EXPIRED' || subStatus === 'INACTIVE') {
+                alert('Your DigiBiz Retail Subscription is currently inactive. Please renew via Google Play App or Contact Support.');
+                window.location.href = 'https://play.google.com/store/account/subscriptions';
+                return;
+            }
         } catch (error) {
             console.warn('[AuthUI] Login context resolution failed:', error);
         }
         
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        if (isMobile) {
-            window.location.href = '../modules/admin/scrap-buying.html';
+        if (businessType === 'scrap_collection_center') {
+            window.location.href = '../modules/admin/scrap-master.html';
         } else {
             window.location.href = '../modules/core/dashboard.html';
         }

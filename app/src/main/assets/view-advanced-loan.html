@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Loan (Investor Fund) Summary - DIGIBIZ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js"></script>
+
+    <style>
+        :root {
+            --primary: #0f172a;
+            --accent: #0f766e;
+            --success: #10b981;
+            --danger: #ef4444;
+            --bg: #f1f5f9;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--primary);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .card {
+            background: white;
+            width: 100%;
+            max-width: 800px;
+            border-radius: 24px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            padding: 32px;
+            box-sizing: border-box;
+            margin-bottom: 20px;
+        }
+
+        .logo { font-weight: 800; font-size: 24px; text-align: center; margin-bottom: 5px; letter-spacing: -1px; }
+        .logo span { color: var(--accent); }
+
+        .customer-name { font-size: 22px; font-weight: 800; margin-bottom: 8px; text-align: center; }
+        .loan-id { font-size: 11px; color: #64748b; text-align: center; margin-bottom: 32px; text-transform: uppercase; letter-spacing: 1px; }
+
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 16px; margin-bottom: 32px; }
+        .stat-item { background: #f8fafc; padding: 16px; border-radius: 16px; text-align: center; border: 1px solid #e2e8f0; }
+        .stat-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
+        .stat-val { font-size: 16px; font-weight: 800; }
+
+        .ledger-title { font-size: 14px; font-weight: 700; margin-bottom: 16px; color: #64748b; text-transform: uppercase; }
+        
+        .table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 16px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #f1f5f9; }
+        th { background: #f8fafc; font-weight: 700; color: #64748b; font-size: 11px; text-transform: uppercase; }
+        .text-right { text-align: right; }
+
+        .footer { font-size: 12px; color: #64748b; text-align: center; max-width: 400px; margin-top: 20px; }
+        #loading { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 100; font-weight: 800; }
+        .muted { color: #64748b; }
+    </style>
+</head>
+<body>
+
+    <div id="loading">දත්ත ලබාගනිමින් පවතී...</div>
+
+    <div class="card" id="mainCard" style="display: none;">
+        <div class="logo" style="color: var(--accent); margin-bottom: 5px;">Advanced ණය සාරාංශය</div>
+        <div style="text-align: center; font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 30px; letter-spacing: 2px;">INVESTOR FUND LOAN</div>
+        
+        <div class="customer-name" id="customerName">-</div>
+        <div class="loan-id" id="loanId">-</div>
+
+        <div class="stat-grid">
+            <div class="stat-item">
+                <div class="stat-label">Original Loan</div>
+                <div class="stat-val" id="valOriginal">Rs. 0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Capital Balance</div>
+                <div class="stat-val" id="valCapital">Rs. 0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Interest Balance</div>
+                <div class="stat-val" id="valInterest" style="color: var(--danger);">Rs. 0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Total Repaid</div>
+                <div class="stat-val" id="valPaid" style="color: var(--success);">Rs. 0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Total Outstanding</div>
+                <div class="stat-val" id="valRemain" style="color: var(--accent);">Rs. 0</div>
+            </div>
+        </div>
+
+        <div class="ledger-title">ගනුදෙනු ලෙජරය (Ledger History)</div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th class="text-right">Debit (+ Increase)</th>
+                        <th class="text-right">Credit (- Decrease)</th>
+                        <th class="text-right">Capital Bal</th>
+                        <th class="text-right">Interest Bal</th>
+                        <th class="text-right">Total Bal</th>
+                    </tr>
+                </thead>
+                <tbody id="ledgerRows"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="footer">
+        Powered by <b>DIGIBIZ.lk</b>
+    </div>
+
+    <script>
+        const GL_ADV_AR = { accountCode: '1-1030-13' };
+        const GL_ADV_INV_AP = { accountCode: '2-2060-10' };
+
+        function n(v) { return Number(v) || 0; }
+        function m(v) {
+            return 'Rs. ' + n(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        async function loadLoanSummary() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const loanId = urlParams.get('id');
+
+            if (!loanId) {
+                document.getElementById('loading').textContent = 'අවලංගු ලින්ක් එකකි. (Invalid Link)';
+                return;
+            }
+
+            try {
+                let db = window.db;
+                if (!db) {
+                    for (let i = 0; i < 20; i++) {
+                        await new Promise(r => setTimeout(r, 200));
+                        if (window.db) { db = window.db; break; }
+                    }
+                }
+                if (!db) throw new Error("Database not ready.");
+
+                const loanSnap = await db.collection('loan_advanced_entries').doc(loanId).get();
+                if (!loanSnap.exists) {
+                    document.getElementById('loading').textContent = 'ණය දත්ත සොයාගත නොහැකි විය. (Loan not found)';
+                    return;
+                }
+
+                const loanData = loanSnap.data();
+                const businessId = loanData.businessId;
+                const customerName = loanData.customerName;
+
+                // Fetch manual repayment journal entries
+                const snapJournal = await db.collection('journal').doc(businessId).collection('entries')
+                    .where('loanCollection', '==', 'loan_advanced_entries')
+                    .where('loanDocId', '==', loanId)
+                    .get();
+
+                const docs = snapJournal.docs.map(d => ({ docId: d.id, ...d.data() }));
+
+                // Fetch linked journal entries by ID
+                if (Array.isArray(loanData.linkedJournalEntryIds) && loanData.linkedJournalEntryIds.length > 0) {
+                    const fetchPromises = loanData.linkedJournalEntryIds.map(async (jid) => {
+                        try {
+                            const jdoc = await db.collection('journal').doc(businessId).collection('entries').doc(jid).get();
+                            return jdoc.exists ? { docId: jdoc.id, ...jdoc.data() } : null;
+                        } catch (err) {
+                            return null;
+                        }
+                    });
+                    const fetchedDocs = await Promise.all(fetchPromises);
+                    fetchedDocs.forEach(fd => {
+                        if (fd) {
+                            const exists = docs.some(d => d.docId === fd.docId);
+                            if (!exists) docs.push(fd);
+                        }
+                    });
+                }
+
+                // Fetch all SCRAP_BUYING journal entries for this supplier retrospectively
+                if (customerName) {
+                    try {
+                        const billsSnap = await db.collection('journal').doc(businessId).collection('entries')
+                            .where('referenceType', '==', 'SCRAP_BUYING')
+                            .get();
+                        const targetName = String(customerName).trim().toLowerCase();
+                        billsSnap.docs.forEach(doc => {
+                            const fd = { docId: doc.id, ...doc.data() };
+                            const desc = String(fd.description || '').toLowerCase();
+                            if (desc.includes(`scrap buying - ${targetName}`) || desc === `scrap buying - ${targetName}`) {
+                                const exists = docs.some(d => d.docId === fd.docId);
+                                if (!exists) docs.push(fd);
+                            }
+                        });
+                    } catch (err) {
+                        console.warn("Retrospective bill matching failed:", err);
+                    }
+                }
+
+                const filteredDocs = docs.filter(d => d && d.referenceType !== 'ADV_INVESTOR_REMIT');
+
+                const createDate = loanData.createdAt ? (loanData.createdAt.toDate ? loanData.createdAt.toDate() : new Date(loanData.createdAt)) : new Date();
+                const start = new Date(createDate.getFullYear(), createDate.getMonth(), createDate.getDate());
+                const now = new Date();
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+                const lastCalc = loanData.lastInterestCalcAt ? new Date(loanData.lastInterestCalcAt) : createDate;
+                const lastCalcDate = new Date(lastCalc.getFullYear(), lastCalc.getMonth(), lastCalc.getDate());
+
+                // 1. Extract capital payments to simulate balance over time
+                const capPayments = [];
+                filteredDocs.forEach(data => {
+                    const date = data.date && data.date.toDate ? data.date.toDate() : new Date(data.date);
+                    const dDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                    let dailyCapChange = 0;
+                    (data.entries || []).forEach(e => {
+                        if (e.accountCode === GL_ADV_AR.accountCode) {
+                            dailyCapChange += n(e.debit) - n(e.credit); 
+                        }
+                    });
+                    if (dailyCapChange !== 0) {
+                        capPayments.push({ date: dDate.getTime(), change: dailyCapChange });
+                    }
+                });
+
+                let sumJournalCapitalChanges = 0;
+                capPayments.forEach(p => { sumJournalCapitalChanges += p.change; });
+
+                const currentBal = n(loanData.balance != null ? loanData.balance : loanData.principalOutstanding);
+                const openingCapital = loanData.source === 'SPREADSHEET_IMPORT' 
+                    ? (currentBal - sumJournalCapitalChanges) 
+                    : (currentBal + n(loanData.collectedPrincipal));
+
+                // Synthesize Capital Opening (if import)
+                if (loanData.source === 'SPREADSHEET_IMPORT') {
+                    filteredDocs.push({
+                        date: createDate,
+                        description: "Data Import (Opening Capital)",
+                        entries: [{ accountCode: GL_ADV_AR.accountCode, accountName: 'Principal Balance', debit: openingCapital, credit: 0 }],
+                        totalDebit: openingCapital,
+                        totalCredit: 0,
+                        isSynthetic: true,
+                        synthType: 'CAPITAL'
+                    });
+                }
+
+                // Simulate daily interest accruals
+                let currentCapital = loanData.source === 'SPREADSHEET_IMPORT' ? openingCapital : 0;
+                const dailyRate = n(loanData.dailyRatePercent) / 100;
+                let accruedUpToLastCalc = 0;
+                const syntheticInterestRows = [];
+
+                capPayments.filter(p => p.date === start.getTime()).forEach(p => {
+                    currentCapital += p.change;
+                });
+
+                let iterDate = new Date(start);
+                iterDate.setDate(iterDate.getDate() + 1);
+
+                while (iterDate <= today) {
+                    if (currentCapital > 0.0001 && String(loanData.status).toLowerCase() !== 'closed') {
+                        const dailyInt = currentCapital * dailyRate;
+                        if (iterDate <= lastCalcDate) {
+                            accruedUpToLastCalc += dailyInt;
+                        }
+                        syntheticInterestRows.push({
+                            date: new Date(iterDate),
+                            description: `Daily Interest Accrual (${m(currentCapital)} @ ${(dailyRate*100).toFixed(2)}%)`,
+                            entries: [{ accountCode: 'SYNTH_INT', accountName: 'Interest Arrears', debit: dailyInt, credit: 0 }],
+                            totalDebit: dailyInt,
+                            totalCredit: 0,
+                            isSynthetic: true,
+                            synthType: 'INTEREST'
+                        });
+                    }
+
+                    const iterTime = iterDate.getTime();
+                    capPayments.filter(p => p.date === iterTime).forEach(p => {
+                        currentCapital += p.change;
+                    });
+
+                    iterDate.setDate(iterDate.getDate() + 1);
+                }
+
+                const totalSavedInterest = n(loanData.interestOutstanding) + n(loanData.collectedInterest);
+                const openingInterest = totalSavedInterest - accruedUpToLastCalc;
+
+                if (Math.abs(openingInterest) > 0.0001) {
+                    filteredDocs.push({
+                        date: createDate,
+                        description: loanData.source === 'SPREADSHEET_IMPORT' ? "Imported Interest Balance" : "Initial/Adjusted Interest",
+                        entries: [{ accountCode: 'SYNTH_INT', accountName: 'Interest Arrears', debit: openingInterest > 0 ? openingInterest : 0, credit: openingInterest < 0 ? -openingInterest : 0 }],
+                        totalDebit: openingInterest > 0 ? openingInterest : 0,
+                        totalCredit: openingInterest < 0 ? -openingInterest : 0,
+                        isSynthetic: true,
+                        synthType: 'INTEREST'
+                    });
+                }
+
+                filteredDocs.push(...syntheticInterestRows);
+
+                // Sort chronological
+                filteredDocs.sort((a, b) => {
+                    const msA = a.date && a.date.toDate ? a.date.toDate().getTime() : new Date(a.date).getTime();
+                    const msB = b.date && b.date.toDate ? b.date.toDate().getTime() : new Date(b.date).getTime();
+                    if (msA === msB) {
+                        if (a.isSynthetic && !b.isSynthetic) return -1;
+                        if (!a.isSynthetic && b.isSynthetic) return 1;
+                    }
+                    return msA - msB;
+                });
+
+                let runningCapital = 0;
+                let runningInterest = 0;
+
+                filteredDocs.forEach(data => {
+                    let capChange = 0;
+                    let intChange = 0;
+
+                    if (data.isSynthetic) {
+                        if (data.synthType === 'CAPITAL') {
+                            capChange += n(data.totalDebit) - n(data.totalCredit);
+                        } else if (data.synthType === 'INTEREST') {
+                            intChange += n(data.totalDebit) - n(data.totalCredit);
+                        }
+                    } else {
+                        (data.entries || []).forEach(e => {
+                            if (e.accountCode === GL_ADV_AR.accountCode) {
+                                capChange += n(e.debit) - n(e.credit);
+                            } else if (e.accountCode === GL_ADV_INV_AP.accountCode) {
+                                if (data.referenceType !== 'ADV_LOAN_ISSUE') {
+                                    intChange += n(e.debit) - n(e.credit);
+                                }
+                            }
+                        });
+                    }
+
+                    runningCapital += capChange;
+                    runningInterest += intChange;
+
+                    data.capChange = capChange;
+                    data.intChange = intChange;
+                    data.runningCapital = runningCapital;
+                    data.runningInterest = runningInterest;
+                    data.runningTotal = runningCapital + runningInterest;
+                });
+
+                // Sort reverse chronological
+                filteredDocs.sort((a, b) => {
+                    const msA = a.date && a.date.toDate ? a.date.toDate().getTime() : new Date(a.date).getTime();
+                    const msB = b.date && b.date.toDate ? b.date.toDate().getTime() : new Date(b.date).getTime();
+                    if (msA === msB) {
+                        if (a.isSynthetic && !b.isSynthetic) return 1;
+                        if (!a.isSynthetic && b.isSynthetic) return -1;
+                    }
+                    return msB - msA;
+                });
+
+                // Render Info and Stats
+                document.getElementById('customerName').textContent = customerName;
+                document.getElementById('loanId').textContent = `Loan Ref: ${loanId.slice(-8)}`;
+
+                const totalRepaid = n(loanData.collectedPrincipal) + n(loanData.collectedInterest);
+                document.getElementById('valOriginal').textContent = m(loanData.originalLoan);
+                document.getElementById('valCapital').textContent = m(currentBal);
+                document.getElementById('valInterest').textContent = m(runningInterest);
+                document.getElementById('valPaid').textContent = m(totalRepaid);
+                document.getElementById('valRemain').textContent = m(currentBal + runningInterest);
+
+                const ledgerRows = document.getElementById('ledgerRows');
+                if (filteredDocs.length === 0) {
+                    ledgerRows.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#64748b; padding:20px;">No transaction records found.</td></tr>`;
+                } else {
+                    ledgerRows.innerHTML = filteredDocs.map(row => {
+                        const rowDateStr = row.date && row.date.toDate ? row.date.toDate().toLocaleDateString() : new Date(row.date).toLocaleDateString();
+                        const totalDebit = (row.capChange > 0 ? row.capChange : 0) + (row.intChange > 0 ? row.intChange : 0);
+                        const totalCredit = (row.capChange < 0 ? -row.capChange : 0) + (row.intChange < 0 ? -row.intChange : 0);
+
+                        let descHtml = escapeHtml(row.description);
+                        if (!row.isSynthetic && row.entries && row.entries.length > 0) {
+                            const codes = row.entries.map(e => escapeHtml(e.accountName)).join(', ');
+                            descHtml += `<br><small class="muted">${codes}</small>`;
+                        }
+
+                        let rowBg = '';
+                        if (totalDebit > 0.01) rowBg = 'background:#fffbeb;';
+                        if (totalCredit > 0.01) rowBg = 'background:#eff6ff;';
+
+                        return `
+                            <tr style="${rowBg}">
+                                <td>${rowDateStr}</td>
+                                <td style="white-space:normal;">${descHtml}</td>
+                                <td class="text-right">${totalDebit > 0.001 ? m(totalDebit) : 'Rs. 0.00'}</td>
+                                <td class="text-right">${totalCredit > 0.001 ? m(totalCredit) : 'Rs. 0.00'}</td>
+                                <td class="text-right">${m(row.runningCapital)}</td>
+                                <td class="text-right">${m(row.runningInterest)}</td>
+                                <td class="text-right">${m(row.runningTotal)}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('mainCard').style.display = 'block';
+
+            } catch (e) {
+                console.error("[ViewAdvancedLoan] Error:", e);
+                document.getElementById('loading').textContent = 'Error loading data: ' + e.message;
+            }
+        }
+
+        window.onload = loadLoanSummary;
+    </script>
+</body>
+</html>

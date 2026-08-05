@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deliveries - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=2"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/auth-roles.js?v=2"></script>
+    <script src="/core/business-types.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=2"></script>
+    <script src="/core/subscription-manager.js?v=2"></script>
+    <script src="/core/sidebar.js?v=1008"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #f3f4f6;
+        }
+        .main-content {
+            padding: 24px;
+            min-height: 100vh;
+        }
+        .page-header {
+            margin-bottom: 24px;
+        }
+        .page-header h1 {
+            font-size: 24px;
+            color: #111827;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stat-title {
+            font-size: 14px;
+            color: #6b7280;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #10b981;
+        }
+        .delivery-card {
+            background: white;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .delivery-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .status-dispatched {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        .status-delivered {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .btn {
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .btn-primary {
+            background: #10b981;
+            color: white;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+        }
+        select, input, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #9ca3af;
+        }
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .main-content {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="page-header">
+            <h1>🚚 Delivery Management</h1>
+            <p>Assign vehicles, track deliveries, and manage drivers</p>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-title">📦 Ready for Dispatch</div>
+                <div class="stat-value" id="readyCount">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">🚚 On Delivery</div>
+                <div class="stat-value" id="dispatchedCount">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">✅ Delivered Today</div>
+                <div class="stat-value" id="deliveredCount">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">🚐 Active Vehicles</div>
+                <div class="stat-value" id="vehicleCount">-</div>
+            </div>
+        </div>
+
+        <div id="deliveriesContainer" class="loading">Loading deliveries...</div>
+    </div>
+
+    <!-- Assign Delivery Modal -->
+    <div id="assignModal" class="modal">
+        <div class="modal-content">
+            <h3>🚚 Assign Delivery</h3>
+            <input type="text" id="driverName" placeholder="Driver Name">
+            <input type="tel" id="driverPhone" placeholder="Driver Phone">
+            <input type="text" id="vehicleNo" placeholder="Vehicle Number">
+            <textarea id="deliveryNotes" placeholder="Delivery Notes" rows="3"></textarea>
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+                <button class="btn btn-primary" onclick="confirmDispatch()">Dispatch Now</button>
+                <button onclick="closeAssignModal()" style="padding: 6px 12px;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Delivery Modal -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content">
+            <h3>✅ Confirm Delivery</h3>
+            <textarea id="deliveryProof" placeholder="Delivery notes / Proof" rows="3"></textarea>
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+                <button class="btn btn-primary" onclick="confirmDelivery()">Confirm Delivered</button>
+                <button onclick="closeConfirmModal()" style="padding: 6px 12px;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentBusinessId = null;
+        let currentDeliveryOrder = null;
+
+        async function loadStats() {
+            try {
+                const deliveriesSnap = await db.collection('deliveries')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                
+                let ready = 0, dispatched = 0, delivered = 0;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                
+                deliveriesSnap.docs.forEach(doc => {
+                    const delivery = doc.data();
+                    if (delivery.status === 'pending') ready++;
+                    if (delivery.status === 'dispatched') dispatched++;
+                    if (delivery.status === 'delivered') {
+                        const deliveredAt = delivery.deliveredTime?.toDate();
+                        if (deliveredAt && deliveredAt >= today) delivered++;
+                    }
+                });
+                
+                document.getElementById('readyCount').innerText = ready;
+                document.getElementById('dispatchedCount').innerText = dispatched;
+                document.getElementById('deliveredCount').innerText = delivered;
+                
+                const vehiclesSnap = await db.collection('vehicles')
+                    .where('businessId', '==', currentBusinessId)
+                    .where('isActive', '==', true)
+                    .get();
+                document.getElementById('vehicleCount').innerText = vehiclesSnap.docs.length;
+                
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        async function loadDeliveries() {
+            const container = document.getElementById('deliveriesContainer');
+            container.innerHTML = '<div class="loading">Loading...</div>';
+            
+            try {
+                const ordersSnap = await db.collection('orders')
+                    .where('businessId', '==', currentBusinessId)
+                    .where('warehouseStatus', '==', 'picked')
+                    .get();
+                
+                const readyOrders = [];
+                for (const doc of ordersSnap.docs) {
+                    const order = doc.data();
+                    const shopDoc = await db.collection('shops').doc(order.shopId).get();
+                    readyOrders.push({
+                        id: doc.id,
+                        ...order,
+                        shopName: shopDoc.exists ? shopDoc.data().name : 'Unknown'
+                    });
+                }
+                
+                const deliveriesSnap = await db.collection('deliveries')
+                    .where('businessId', '==', currentBusinessId)
+                    .where('status', 'in', ['dispatched', 'pending'])
+                    .orderBy('dispatchedTime', 'desc')
+                    .get();
+                
+                const activeDeliveries = [];
+                for (const doc of deliveriesSnap.docs) {
+                    const delivery = doc.data();
+                    const orderDoc = await db.collection('orders').doc(delivery.orderId).get();
+                    const order = orderDoc.data();
+                    const shopDoc = await db.collection('shops').doc(order?.shopId).get();
+                    activeDeliveries.push({
+                        id: doc.id,
+                        ...delivery,
+                        orderNumber: order?.orderNumber,
+                        shopName: shopDoc.exists ? shopDoc.data().name : 'Unknown'
+                    });
+                }
+                
+                if (readyOrders.length === 0 && activeDeliveries.length === 0) {
+                    container.innerHTML = '<div class="loading">No deliveries to show</div>';
+                    return;
+                }
+                
+                container.innerHTML = `
+                    ${readyOrders.length > 0 ? `
+                        <h3 style="margin-bottom: 16px;">📦 Ready for Dispatch (${readyOrders.length})</h3>
+                        ${readyOrders.map(order => `
+                            <div class="delivery-card">
+                                <div class="delivery-header">
+                                    <strong>${order.orderNumber || order.id.slice(-8)}</strong>
+                                    <span class="status status-pending">Ready for Dispatch</span>
+                                </div>
+                                <div>🏪 ${order.shopName}</div>
+                                <div>💰 Amount: Rs ${(order.totalAmount || 0).toLocaleString()}</div>
+                                <div style="margin-top: 12px;">
+                                    <button class="btn btn-primary" onclick="openAssignModal('${order.id}')">🚚 Assign & Dispatch</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    ` : ''}
+                    
+                    ${activeDeliveries.length > 0 ? `
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin: 24px 0 16px;">
+                            <h3 style="margin:0;">🚚 Active Deliveries (${activeDeliveries.length})</h3>
+                            <button class="btn btn-lite" onclick="printAllLoadSheets()">🖨️ Print Load Sheets</button>
+                        </div>
+                        ${activeDeliveries.map(delivery => `
+                            <div class="delivery-card">
+                                <div class="delivery-header">
+                                    <strong>${delivery.orderNumber || delivery.id.slice(-8)}</strong>
+                                    <span class="status status-${delivery.status}">${delivery.status === 'dispatched' ? 'On Delivery' : delivery.status}</span>
+                                </div>
+                                <div>🏪 ${delivery.shopName}</div>
+                                <div>🚐 Vehicle: ${delivery.vehicleNo}</div>
+                                <div>👤 Driver: ${delivery.driverName} (${delivery.driverPhone})</div>
+                                <div>📅 Dispatched: ${delivery.dispatchedTime?.toDate ? new Date(delivery.dispatchedTime.toDate()).toLocaleString() : '-'}</div>
+                                <div style="margin-top: 12px;">
+                                    ${delivery.status === 'dispatched' ? 
+                                        `<button class="btn btn-primary" onclick="openConfirmModal('${delivery.id}')">✅ Confirm Delivery</button>
+                                         <button class="btn btn-lite" onclick="printDeliveryNote('${delivery.id}')">🖨️ Delivery Note</button>` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    ` : ''}
+                `;
+                
+            } catch (error) {
+                console.error('Error:', error);
+                container.innerHTML = '<div class="loading">Error loading deliveries</div>';
+            }
+        }
+
+        function openAssignModal(orderId) {
+            currentDeliveryOrder = orderId;
+            document.getElementById('assignModal').style.display = 'flex';
+        }
+
+        async function confirmDispatch() {
+            const driverName = document.getElementById('driverName').value;
+            const driverPhone = document.getElementById('driverPhone').value;
+            const vehicleNo = document.getElementById('vehicleNo').value;
+            const notes = document.getElementById('deliveryNotes').value;
+            
+            if (!driverName || !vehicleNo) {
+                alert('Please enter driver name and vehicle number');
+                return;
+            }
+            
+            try {
+                await db.collection('deliveries').add({
+                    orderId: currentDeliveryOrder,
+                    businessId: currentBusinessId,
+                    driverName: driverName,
+                    driverPhone: driverPhone,
+                    vehicleNo: vehicleNo,
+                    deliveryNotes: notes,
+                    status: 'dispatched',
+                    dispatchedTime: new Date(),
+                    createdAt: new Date()
+                });
+                
+                await db.collection('orders').doc(currentDeliveryOrder).update({
+                    deliveryStatus: 'dispatched',
+                    dispatchedAt: new Date(),
+                    status: 'dispatched'
+                });
+                
+                closeAssignModal();
+                alert('✅ Delivery dispatched!');
+                loadStats();
+                loadDeliveries();
+                
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error dispatching delivery');
+            }
+        }
+
+        function openConfirmModal(deliveryId) {
+            currentDeliveryOrder = deliveryId;
+            document.getElementById('confirmModal').style.display = 'flex';
+        }
+
+        async function confirmDelivery() {
+            const proof = document.getElementById('deliveryProof').value;
+            
+            try {
+                await db.collection('deliveries').doc(currentDeliveryOrder).update({
+                    status: 'delivered',
+                    deliveredTime: new Date(),
+                    deliveryProof: proof
+                });
+                
+                const deliveryDoc = await db.collection('deliveries').doc(currentDeliveryOrder).get();
+                const orderId = deliveryDoc.data().orderId;
+                
+                await db.collection('orders').doc(orderId).update({
+                    deliveryStatus: 'delivered',
+                    deliveredAt: new Date(),
+                    status: 'delivered'
+                });
+                
+                closeConfirmModal();
+                alert('✅ Delivery confirmed!');
+                loadStats();
+                loadDeliveries();
+                
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error confirming delivery');
+            }
+        }
+
+        function closeAssignModal() {
+            document.getElementById('assignModal').style.display = 'none';
+            document.getElementById('driverName').value = '';
+            document.getElementById('driverPhone').value = '';
+            document.getElementById('vehicleNo').value = '';
+            document.getElementById('deliveryNotes').value = '';
+        }
+
+        async function printDeliveryNote(deliveryId) {
+            const deliveryDoc = await db.collection('deliveries').doc(deliveryId).get();
+            if (!deliveryDoc.exists) return;
+            const delivery = deliveryDoc.data();
+            const orderDoc = await db.collection('orders').doc(delivery.orderId).get();
+            const order = orderDoc.data();
+            const shopDoc = await db.collection('shops').doc(order.shopId).get();
+            const shop = shopDoc.data();
+
+            const bizDoc = await db.collection('businesses').doc(currentBusinessId).get();
+            const bizData = bizDoc.exists ? bizDoc.data() : {};
+            const allS = bizData.documentSettings || {};
+            const ds = allS['delivery_note'] || {};
+
+            const header = ds.header || bizData.name || 'BUSINESS NAME';
+            const agent = ds.agent || '';
+            const footer = ds.footer || '';
+            const title = ds.title || 'DELIVERY NOTE';
+            const showLogo = ds.showLogo !== undefined ? ds.showLogo : (allS.showLogo !== false);
+
+            const w = window.open('', '_blank');
+            if (!w) return alert('Please allow popups.');
+
+            let itemsHtml = (order.items || []).map(it => `
+                <tr>
+                    <td>${it.productName || '—'}</td>
+                    <td style="text-align:right;">${it.quantity || 0}</td>
+                </tr>
+            `).join('');
+
+            const html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>Delivery Note ${order.orderNumber || delivery.id}</title>
+                    <style>
+                        body { font-family: sans-serif; padding: 20px; color: #333; }
+                        .header { text-align: center; margin-bottom: 20px; }
+                        .company { font-size: 20px; font-weight: bold; text-transform: uppercase; }
+                        .title { font-size: 16px; margin-top: 10px; border-bottom: 2px solid #000; padding-bottom: 5px; }
+                        .meta { width: 100%; margin: 20px 0; font-size: 13px; }
+                        .table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        .table th, .table td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 13px; }
+                        .table th { background: #f2f2f2; }
+                        .footer { margin-top: 40px; text-align: center; font-size: 11px; border-top: 1px solid #ddd; padding-top: 10px; }
+                        .sig { display: flex; justify-content: space-between; margin-top: 60px; font-size: 12px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:60px; margin-bottom:10px;"><br>` : ''}
+                        <div class="company">${header}</div>
+                        ${agent ? `<div style="font-size:13px; margin-top:5px;">${agent}</div>` : ''}
+                        <div class="title">${title}</div>
+                    </div>
+                    <table class="meta">
+                        <tr><td><strong>Order No:</strong> ${order.orderNumber || '—'}</td><td style="text-align:right;"><strong>Date:</strong> ${new Date().toLocaleDateString()}</td></tr>
+                        <tr><td><strong>Customer:</strong> ${shop.name}</td><td style="text-align:right;"><strong>Vehicle:</strong> ${delivery.vehicleNo}</td></tr>
+                        <tr><td><strong>Address:</strong> ${shop.address || '—'}</td><td style="text-align:right;"><strong>Driver:</strong> ${delivery.driverName}</td></tr>
+                    </table>
+                    <table class="table">
+                        <thead><tr><th>Product Description</th><th style="text-align:right;">Qty</th></tr></thead>
+                        <tbody>${itemsHtml}</tbody>
+                    </table>
+                    <div class="sig">
+                        <div>________________________<br>Dispatcher Signature</div>
+                        <div>________________________<br>Customer Acknowledgment</div>
+                    </div>
+                    <div class="footer">
+                        ${footer ? `<div style="margin-bottom:10px;">${footer.replace(/\n/g, '<br>')}</div>` : ''}
+                        <div>Software by DIGIBIZ</div>
+                    </div>
+                    <script>window.print();<\/script>
+                </body>
+                </html>
+            `;
+            w.document.open();
+            w.document.write(html);
+            w.document.close();
+        }
+
+        async function printAllLoadSheets() {
+            const deliveriesSnap = await db.collection('deliveries')
+                .where('businessId', '==', currentBusinessId)
+                .where('status', '==', 'dispatched')
+                .get();
+            
+            const byVehicle = {};
+            for (const doc of deliveriesSnap.docs) {
+                const d = doc.data();
+                if (!byVehicle[d.vehicleNo]) byVehicle[d.vehicleNo] = [];
+                const orderDoc = await db.collection('orders').doc(d.orderId).get();
+                if (orderDoc.exists) {
+                    const order = orderDoc.data();
+                    const shopDoc = await db.collection('shops').doc(order.shopId).get();
+                    byVehicle[d.vehicleNo].push({
+                        orderNo: order.orderNumber || doc.id,
+                        shopName: shopDoc.exists ? shopDoc.data().name : 'Unknown',
+                        items: order.items || [],
+                        driver: d.driverName
+                    });
+                }
+            }
+
+            const bizDoc = await db.collection('businesses').doc(currentBusinessId).get();
+            const bizData = bizDoc.exists ? bizDoc.data() : {};
+            const allS = bizData.documentSettings || {};
+            const ds = allS['load_sheet'] || {};
+
+            const header = ds.header || bizData.name || 'BUSINESS NAME';
+            const agent = ds.agent || '';
+            const footer = ds.footer || '';
+            const title = ds.title || 'LOAD SHEET / TRIP SHEET';
+            const showLogo = ds.showLogo !== undefined ? ds.showLogo : (allS.showLogo !== false);
+
+            const w = window.open('', '_blank');
+            if (!w) return alert('Please allow popups.');
+
+            let pagesHtml = Object.keys(byVehicle).map(vNo => {
+                const trips = byVehicle[vNo];
+                const driver = trips[0].driver;
+                
+                // Aggregate items for the whole vehicle
+                const totalItems = {};
+                trips.forEach(t => {
+                    t.items.forEach(it => {
+                        const k = it.productName || 'Unknown';
+                        totalItems[k] = (totalItems[k] || 0) + (Number(it.quantity) || 0);
+                    });
+                });
+
+                let itemsRows = Object.keys(totalItems).map(name => `
+                    <tr><td>${name}</td><td style="text-align:right;">${totalItems[name]}</td></tr>
+                `).join('');
+
+                let orderSummary = trips.map(t => `<li>${t.orderNo} - ${t.shopName}</li>`).join('');
+
+                return `
+                    <div class="page" style="page-break-after: always;">
+                        <div class="header">
+                            ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:50px;"><br>` : ''}
+                            <div class="company">${header}</div>
+                            <div class="title">${title}</div>
+                        </div>
+                        <div class="meta" style="display:flex; justify-content:space-between; margin-bottom:20px; font-size:14px;">
+                            <div><strong>Vehicle:</strong> ${vNo}</div>
+                            <div><strong>Driver:</strong> ${driver}</div>
+                            <div><strong>Date:</strong> ${new Date().toLocaleDateString()}</div>
+                        </div>
+                        <h4 style="margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:5px;">Consolidated Load Summary</h4>
+                        <table class="table">
+                            <thead><tr><th>Item Name</th><th style="text-align:right;">Total Qty</th></tr></thead>
+                            <tbody>${itemsRows}</tbody>
+                        </table>
+                        <h4 style="margin: 20px 0 10px; border-bottom:1px solid #eee; padding-bottom:5px;">Orders Included</h4>
+                        <ul style="font-size:13px; column-count:2;">${orderSummary}</ul>
+                        <div class="footer" style="margin-top:auto; padding-top:20px; text-align:center; font-size:11px; border-top:1px solid #eee;">
+                            ${footer ? `<div>${footer}</div>` : ''}
+                            <div>Software by DIGIBIZ</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>Load Sheets</title>
+                    <style>
+                        body { font-family: sans-serif; padding: 0; margin: 0; color: #333; }
+                        .page { padding: 40px; min-height: 100vh; display: flex; flex-direction: column; }
+                        .header { text-align: center; margin-bottom: 20px; }
+                        .company { font-size: 18px; font-weight: bold; text-transform: uppercase; }
+                        .title { font-size: 14px; margin-top: 5px; color: #666; }
+                        .table { width: 100%; border-collapse: collapse; }
+                        .table th, .table td { border: 1px solid #eee; padding: 8px; text-align: left; font-size: 13px; }
+                        .table th { background: #f9fafb; }
+                    </style>
+                </head>
+                <body>
+                    ${pagesHtml}
+                    <script>window.print();<\/script>
+                </body>
+                </html>
+            `;
+            w.document.open();
+            w.document.write(html);
+            w.document.close();
+        }
+            if (user) {
+                currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                if (!currentBusinessId) {
+                    const context = window.dashboardCore ? await window.dashboardCore.getContext(user) : null;
+                    currentBusinessId = context ? context.businessId : null;
+                }
+                if (!currentBusinessId) {
+                    alert('Please select a business first');
+                    window.location.href = '/modules/core/dashboard.html';
+                    return;
+                }
+                localStorage.setItem('currentBusinessId', currentBusinessId);
+                sessionStorage.setItem('currentBusinessId', currentBusinessId);
+                await loadStats();
+                await loadDeliveries();
+            } else {
+                window.location.href = '/';
+            }
+        });
+    </script>
+</body>
+</html>
