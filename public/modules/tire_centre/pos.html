@@ -559,7 +559,12 @@
             </button>
         </div>
         <div id="recentSalesSection" class="recent-sales-section">
-            <h2 data-i18n="Recent Sales">Recent Sales (Last 30 Days)</h2>
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+                <h2 style="margin:0;" data-i18n="Recent Sales">Recent Sales (Last 30 Days)</h2>
+                <a href="/modules/tire_centre/sales-history.html" style="background:#0f3b2c; color:white; padding:7px 15px; border-radius:10px; font-weight:800; font-size:12.5px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
+                    📜 View All Sales History ➔
+                </a>
+            </div>
             <div class="recent-sales-table-wrap" style="width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;">
                 <table class="recent-sales-table" style="width:100%; min-width:540px; border-collapse:collapse;">
                     <thead>
@@ -570,10 +575,11 @@
                             <th class="numeric" data-i18n="Outstanding">Balance</th>
                             <th data-i18n="Status">Status</th>
                             <th data-i18n="Due Date">Due Date</th>
+                            <th style="text-align:center;">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="recentSalesBody">
-                        <tr><td colspan="6" style="text-align:center;">No records available</td></tr>
+                        <tr><td colspan="7" style="text-align:center;">No records available</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1902,50 +1908,334 @@
         }
         
         async function loadRecentSales() {
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-            
-            const snap = await db.collection('orders').doc(currentBusinessId).collection('list')
-                               .where('createdAt', '>', thirtyDaysAgo)
-                               .orderBy('createdAt', 'desc')
-                               .get();
-            
-            const sales = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            let sales = [];
+            try {
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                
+                const snap = await db.collection('orders').doc(currentBusinessId).collection('list')
+                                   .where('createdAt', '>', thirtyDaysAgo)
+                                   .orderBy('createdAt', 'desc')
+                                   .get();
+                sales = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            } catch (e) {
+                console.warn('[POS] Fallback sales query without orderBy:', e);
+                try {
+                    const snap = await db.collection('orders').doc(currentBusinessId).collection('list').get();
+                    sales = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    sales.sort((a, b) => {
+                        const da = a.createdAt && a.createdAt.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+                        const dbDate = b.createdAt && b.createdAt.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+                        return dbDate - da;
+                    });
+                } catch (e2) {
+                    console.error('[POS] Sales fetch error:', e2);
+                }
+            }
+            window.posSalesCache = sales;
             renderRecentSalesTable(sales);
         }
         
         function renderRecentSalesTable(sales) {
             const body = document.getElementById('recentSalesBody');
+            if (!body) return;
             if (sales.length === 0) {
-                body.innerHTML = '<tr><td colspan="6" style="text-align:center;">No sales in last 30 days.</td></tr>';
+                body.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#64748b;">No sales recorded in last 30 days.</td></tr>';
                 return;
             }
             
             const today = new Date(); today.setHours(0, 0, 0, 0);
             
             body.innerHTML = sales.map(s => {
+                if (s.status === 'cancelled' || s.isReversed === true) {
+                    return `
+                    <tr style="background:#fef2f2; opacity:0.65;">
+                        <td style="font-family:monospace; font-weight:700;"><del>${s.invoiceNo || 'N/A'}</del></td>
+                        <td><del>${s.customer ? (s.customer.name || s.customer.fullName) : 'Guest'}</del></td>
+                        <td class="numeric"><del>${formatCurrency(s.total)}</del></td>
+                        <td class="numeric"><del>${formatCurrency(s.balanceDue || 0)}</del></td>
+                        <td><span class="status-pill" style="background:#ef4444; color:white; font-size:10.5px; padding:2px 7px;">Cancelled</span></td>
+                        <td>-</td>
+                        <td style="text-align:center;">
+                            <button type="button" class="action-icon-btn" title="View Cancelled Order Details" onclick="openOrderDetailsModal('${s.id}')" style="background:#fff; border:1px solid #cbd5e1; border-radius:6px; padding:4px 8px; cursor:pointer; color:#64748b;"><i class="fa-solid fa-eye"></i></button>
+                        </td>
+                    </tr>`;
+                }
+
                 const balance = s.balanceDue || 0;
                 const isPaid = balance < 0.01;
                 const dueDate = s.dueDate ? new Date(s.dueDate) : null;
-                const createdAtDate = s.createdAt ? s.createdAt.toDate() : new Date();
+                const createdAtDate = s.createdAt && s.createdAt.toDate ? s.createdAt.toDate() : (s.createdAt ? new Date(s.createdAt) : new Date());
                 
                 let rowStyle = '';
-                if (createdAtDate.toDateString() === today.toDateString()) rowStyle = 'style="background-color:#e0f2fe;"';
+                if (createdAtDate.toDateString() === today.toDateString()) rowStyle = 'style="background-color:#f0fdf4;"';
                 if (!isPaid && dueDate && dueDate < today) rowStyle = 'style="background-color:#fee2e2; font-weight:600;"';
                 
-                const formattedDate = s.dueDate ? s.dueDate : 'N/A';
+                const formattedDate = s.dueDate ? s.dueDate : (s.createdAt ? createdAtDate.toLocaleDateString() : 'N/A');
+                const custName = s.customer ? (s.customer.name || s.customer.fullName || 'Guest') : 'Guest';
                 
                 return `
                 <tr ${rowStyle}>
-                    <td style="font-family:monospace; font-weight:700;">${s.invoiceNo || 'N/A'}</td>
-                    <td>${s.customer ? s.customer.name : 'Guest'}</td>
-                    <td class="numeric">${formatCurrency(s.total)}</td>
-                    <td class="numeric" style="color:${balance > 0 ? '#ef4444' : '#1e293b'}">${formatCurrency(balance)}</td>
+                    <td style="font-family:monospace; font-weight:700; color:#0284c7; cursor:pointer;" onclick="openOrderDetailsModal('${s.id}')" title="Click to view full order breakdown">${s.invoiceNo || 'N/A'}</td>
+                    <td>
+                        <span style="color:#0f172a; font-weight:700; cursor:pointer; text-decoration:underline; text-decoration-color:#cbd5e1;" onclick="openOrderDetailsModal('${s.id}')" title="Click to view full customer sale breakdown">
+                            <i class="fa-solid fa-user-tag" style="color:#3b82f6; margin-right:4px;"></i> ${custName}
+                        </span>
+                    </td>
+                    <td class="numeric" style="font-weight:700;">${formatCurrency(s.total)}</td>
+                    <td class="numeric" style="color:${balance > 0 ? '#ef4444' : '#1e293b'}; font-weight:700;">${formatCurrency(balance)}</td>
                     <td><span class="status-pill ${isPaid ? 'status-paid' : 'status-unpaid'}">${isPaid ? 'Paid' : 'Unpaid'}</span></td>
                     <td>${formattedDate}</td>
+                    <td style="text-align:center;">
+                        <div style="display:flex; gap:6px; justify-content:center;">
+                            <button type="button" class="action-icon-btn" title="View Full Order Details" onclick="openOrderDetailsModal('${s.id}')" style="background:#fff; border:1px solid #cbd5e1; border-radius:6px; padding:4px 8px; cursor:pointer; color:#0284c7;"><i class="fa-solid fa-eye"></i></button>
+                            <button type="button" class="action-icon-btn" title="Edit Order Details" onclick="openEditOrderModal('${s.id}')" style="background:#fff; border:1px solid #cbd5e1; border-radius:6px; padding:4px 8px; cursor:pointer; color:#d97706;"><i class="fa-solid fa-pen-to-square"></i></button>
+                            <button type="button" class="action-icon-btn" title="Delete / Cancel Order & Restore Stock" onclick="deletePosOrder('${s.id}', '${s.invoiceNo || 'N/A'}')" style="background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; padding:4px 8px; cursor:pointer; color:#ef4444;"><i class="fa-solid fa-trash-can"></i></button>
+                        </div>
+                    </td>
                 </tr>`;
             }).join('');
         }
+
+        window.openOrderDetailsModal = async (orderId) => {
+            let order = (window.posSalesCache || []).find(o => o.id === orderId);
+            if (!order) {
+                try {
+                    const doc = await db.collection('orders').doc(currentBusinessId).collection('list').doc(orderId).get();
+                    if (doc.exists) order = { id: doc.id, ...doc.data() };
+                } catch (e) {}
+            }
+            if (!order) {
+                showToast('Order details not found!', true);
+                return;
+            }
+
+            window.currentActiveOrderModal = order;
+
+            const invTitle = document.getElementById('detModalInvoiceNo');
+            const dateSub = document.getElementById('detModalDate');
+            const body = document.getElementById('detModalContent');
+
+            if (invTitle) invTitle.textContent = `Invoice: ${order.invoiceNo || 'N/A'}`;
+            const dt = order.createdAt && order.createdAt.toDate ? order.createdAt.toDate().toLocaleString() : (order.date || '-');
+            if (dateSub) dateSub.textContent = `Date: ${dt} · Payment: ${String(order.paymentMethod || 'cash').toUpperCase()}`;
+
+            const cust = order.customer || {};
+            const custName = cust.name || cust.fullName || 'Guest';
+            const custPhone = cust.phone || '-';
+
+            const items = Array.isArray(order.items) ? order.items : [];
+            const isCancelled = order.status === 'cancelled' || order.isReversed === true;
+
+            if (body) {
+                body.innerHTML = `
+                    <div style="background:#f8fafc; border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:16px; display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:13px;">
+                        <div>
+                            <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Customer Details</div>
+                            <div style="font-weight:800; color:#0f172a; font-size:14.5px; margin-top:2px;"><i class="fa-solid fa-user" style="color:#3b82f6; margin-right:6px;"></i> ${custName}</div>
+                            <div style="color:#64748b; font-size:12px; margin-top:2px;">Phone: ${custPhone}</div>
+                        </div>
+                        <div>
+                            <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Payment Status</div>
+                            <div style="font-weight:800; font-size:14.5px; margin-top:2px; color:${isCancelled ? '#ef4444' : ((order.balanceDue || 0) <= 0 ? '#10b981' : '#f59e0b')};">
+                                ${isCancelled ? 'CANCELLED' : ((order.balanceDue || 0) <= 0 ? 'PAID IN FULL' : 'UNPAID BALANCE')}
+                            </div>
+                            <div style="color:#64748b; font-size:12px; margin-top:2px;">Balance: ${formatCurrency(order.balanceDue || 0)}</div>
+                        </div>
+                    </div>
+
+                    <h4 style="margin:0 0 10px 0; font-family:'Outfit',sans-serif; font-size:15px; color:#0f3b2c; font-weight:800;">Items Breakdown</h4>
+                    <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:16px;">
+                        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                            <thead>
+                                <tr style="background:#f1f5f9; text-transform:uppercase; font-size:10.5px; font-weight:800; color:#64748b;">
+                                    <th style="padding:8px 12px; text-align:left;">Item</th>
+                                    <th style="padding:8px 12px; text-align:center;">Qty</th>
+                                    <th style="padding:8px 12px; text-align:right;">Price</th>
+                                    <th style="padding:8px 12px; text-align:right;">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${items.map(it => {
+                                    const q = Number(it.quantity || it.qty || 0);
+                                    const p = Number(it.price || it.unitPrice || 0);
+                                    const isServ = it.isService === true || it.category === 'Services' || String(it.category || '').toLowerCase().includes('service');
+                                    return `
+                                    <tr style="border-bottom:1px solid #f1f5f9;">
+                                        <td style="padding:8px 12px;">
+                                            <div style="font-weight:700; color:#0f172a;">${it.name || 'Item'}</div>
+                                            <div style="font-size:11px; color:#64748b;">
+                                                ${isServ ? '<span style="background:#f5f3ff; color:#6d28d9; padding:1px 5px; border-radius:4px; font-weight:800;">Service</span>' : '<span style="background:#eff6ff; color:#1d4ed8; padding:1px 5px; border-radius:4px; font-weight:800;">Product</span>'}
+                                                ${it.code || it.productCode ? '· ' + (it.code || it.productCode) : ''}
+                                            </div>
+                                        </td>
+                                        <td style="padding:8px 12px; text-align:center; font-weight:700;">${q}</td>
+                                        <td style="padding:8px 12px; text-align:right; font-family:monospace;">${formatCurrency(p)}</td>
+                                        <td style="padding:8px 12px; text-align:right; font-family:monospace; font-weight:800; color:#0f172a;">${formatCurrency(q * p)}</td>
+                                    </tr>`;
+                                }).join('') || '<tr><td colspan="4" style="text-align:center; padding:15px;">No items.</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="background:#fafbfc; border:1px solid var(--border); border-radius:12px; padding:12px 16px; font-size:13px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#64748b;">
+                            <span>Subtotal:</span>
+                            <span style="font-family:monospace; font-weight:700; color:#0f172a;">${formatCurrency(order.subtotal || order.total || 0)}</span>
+                        </div>
+                        ${(order.discountAmount || 0) > 0 ? `
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#ef4444;">
+                            <span>Discount:</span>
+                            <span style="font-family:monospace; font-weight:700;">- ${formatCurrency(order.discountAmount)}</span>
+                        </div>` : ''}
+                        <div style="display:flex; justify-content:space-between; margin-top:6px; border-top:1px dashed #cbd5e1; padding-top:6px; font-size:15px; font-weight:800; color:#0f3b2c;">
+                            <span>Grand Total:</span>
+                            <span style="font-family:'Outfit',sans-serif; color:#10b981;">${formatCurrency(order.total || 0)}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const printBtn = document.getElementById('detPrintBtn');
+            const editBtn = document.getElementById('detEditBtn');
+            const delBtn = document.getElementById('detDeleteBtn');
+
+            if (printBtn) printBtn.onclick = () => printReceipt(order, order.invoiceNo || 'N/A');
+            if (editBtn) editBtn.onclick = () => openEditOrderModal(order.id);
+            if (delBtn) delBtn.onclick = () => deletePosOrder(order.id, order.invoiceNo || 'N/A');
+
+            const modal = document.getElementById('orderDetailsModal');
+            if (modal) modal.style.display = 'flex';
+        };
+
+        window.closeOrderDetailsModal = () => {
+            const modal = document.getElementById('orderDetailsModal');
+            if (modal) modal.style.display = 'none';
+        };
+
+        window.openEditOrderModal = (orderId) => {
+            let order = (window.posSalesCache || []).find(o => o.id === orderId);
+            if (!order && window.currentActiveOrderModal && window.currentActiveOrderModal.id === orderId) {
+                order = window.currentActiveOrderModal;
+            }
+            if (!order) return;
+
+            document.getElementById('editOrderId').value = order.id;
+            document.getElementById('editModalInvoiceNo').textContent = `Edit Invoice: ${order.invoiceNo || 'N/A'}`;
+            document.getElementById('editCustomerName').value = order.customer ? (order.customer.name || order.customer.fullName || '') : 'Guest';
+            document.getElementById('editCustomerPhone').value = order.customer ? (order.customer.phone || '') : '';
+            document.getElementById('editPaymentMethod').value = order.paymentMethod || 'cash';
+            document.getElementById('editAmountPaid').value = Number(order.amountPaid != null ? order.amountPaid : (order.total || 0)).toFixed(2);
+            document.getElementById('editBalanceDue').value = Number(order.balanceDue || 0).toFixed(2);
+            document.getElementById('editDueDate').value = order.dueDate || '';
+
+            const modal = document.getElementById('editOrderModal');
+            if (modal) modal.style.display = 'flex';
+        };
+
+        window.closeEditOrderModal = () => {
+            const modal = document.getElementById('editOrderModal');
+            if (modal) modal.style.display = 'none';
+        };
+
+        window.deletePosOrder = async (orderId, invoiceNo) => {
+            if (!confirm(`⚠️ Are you sure you want to DELETE / CANCEL invoice ${invoiceNo}?\n\nThis will restore product stock levels in inventory and mark the invoice as cancelled.`)) return;
+
+            try {
+                const orderDoc = await db.collection('orders').doc(currentBusinessId).collection('list').doc(orderId).get();
+                if (!orderDoc.exists) {
+                    showToast('Order not found!', true);
+                    return;
+                }
+
+                const orderData = orderDoc.data();
+                const items = Array.isArray(orderData.items) ? orderData.items : [];
+
+                // 1. Revert Inventory Stock for products
+                const batch = db.batch();
+                items.forEach(item => {
+                    const isServ = item.isService === true || item.category === 'Services' || String(item.category || '').toLowerCase().includes('service');
+                    const pId = item.id || item.productId;
+                    const qty = Number(item.quantity || item.qty || 0);
+
+                    if (!isServ && pId && qty > 0) {
+                        const pRef = db.collection('products').doc(currentBusinessId).collection('list').doc(pId);
+                        batch.update(pRef, {
+                            stock: firebase.firestore.FieldValue.increment(qty)
+                        });
+                    }
+                });
+
+                // 2. Mark order as cancelled & reversed
+                const orderRef = db.collection('orders').doc(currentBusinessId).collection('list').doc(orderId);
+                batch.update(orderRef, {
+                    status: 'cancelled',
+                    isReversed: true,
+                    cancelledAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                // 3. Reverse associated journal entry
+                const journalSnap = await db.collection('journal').doc(currentBusinessId).collection('entries').where('ref', '==', orderId).get();
+                journalSnap.docs.forEach(jDoc => {
+                    batch.update(jDoc.ref, { isReversed: true, reversalDate: new Date() });
+                });
+
+                await batch.commit();
+
+                showToast(`Invoice ${invoiceNo} deleted & stock restored!`, false);
+                closeOrderDetailsModal();
+                await loadRecentSales();
+                await loadProducts();
+            } catch (err) {
+                console.error('Delete order error:', err);
+                showToast('Failed to delete order: ' + err.message, true);
+            }
+        };
+
+        window.saveEditedOrder = async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('editOrderId').value;
+            const name = document.getElementById('editCustomerName').value.trim();
+            const phone = document.getElementById('editCustomerPhone').value.trim();
+            const pm = document.getElementById('editPaymentMethod').value;
+            const paid = parseFloat(document.getElementById('editAmountPaid').value) || 0;
+            const due = parseFloat(document.getElementById('editBalanceDue').value) || 0;
+            const dueDate = document.getElementById('editDueDate').value;
+
+            try {
+                const orderRef = db.collection('orders').doc(currentBusinessId).collection('list').doc(id);
+                const orderDoc = await orderRef.get();
+                if (!orderDoc.exists) {
+                    showToast('Order not found!', true);
+                    return;
+                }
+
+                const oldData = orderDoc.data();
+                const updatedCustomer = {
+                    ...(oldData.customer || {}),
+                    name: name,
+                    phone: phone
+                };
+
+                await orderRef.update({
+                    customer: updatedCustomer,
+                    paymentMethod: pm,
+                    amountPaid: paid,
+                    balanceDue: due,
+                    dueDate: dueDate || null,
+                    status: due > 0 ? 'unpaid' : 'completed',
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                showToast('Order updated successfully!');
+                closeEditOrderModal();
+                closeOrderDetailsModal();
+                await loadRecentSales();
+            } catch (err) {
+                console.error('Save edited order error:', err);
+                showToast('Failed to update order: ' + err.message, true);
+            }
+        };
         
         // Search filter logic
         document.getElementById('productSearch').oninput = (e) => {
@@ -2303,6 +2593,84 @@
         </div>
         <div style="background:#10b981; color:white; padding:8px 16px; border-radius:10px; font-weight:800; font-size:13px; display:flex; align-items:center; gap:6px;">
             View Cart <i class="fas fa-arrow-right"></i>
+        </div>
+    </div>
+    <!-- Full Order Details Modal -->
+    <div id="orderDetailsModal" class="modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.6); backdrop-filter:blur(4px); align-items:center; justify-content:center; z-index:9999; padding:15px;">
+        <div class="modal-content" style="background:#fff; border-radius:20px; max-width:650px; width:100%; max-height:85vh; overflow-y:auto; padding:24px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1.5px solid #f1f5f9; padding-bottom:12px; margin-bottom:16px;">
+                <div>
+                    <h3 id="detModalInvoiceNo" style="margin:0; font-family:'Outfit',sans-serif; font-size:20px; font-weight:800; color:#0f3b2c;">Invoice Details</h3>
+                    <div id="detModalDate" style="font-size:12px; color:#64748b; margin-top:2px;">-</div>
+                </div>
+                <button type="button" onclick="closeOrderDetailsModal()" style="background:#f1f5f9; border:none; width:32px; height:32px; border-radius:8px; cursor:pointer; font-weight:800; color:#64748b;">✕</button>
+            </div>
+            
+            <div id="detModalContent">
+                <!-- Dynamic Order Content Injected Here -->
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; border-top:1.5px solid #f1f5f9; padding-top:16px; flex-wrap:wrap; gap:10px;">
+                <div style="display:flex; gap:8px;">
+                    <button type="button" id="detPrintBtn" class="btn btn-outline" style="padding:8px 14px; font-size:13px;"><i class="fa-solid fa-print"></i> Print Receipt</button>
+                    <button type="button" id="detEditBtn" class="btn btn-outline" style="padding:8px 14px; font-size:13px; color:#d97706; border-color:#fcd34d;"><i class="fa-solid fa-pen-to-square"></i> Edit Order</button>
+                    <button type="button" id="detDeleteBtn" class="btn btn-outline" style="padding:8px 14px; font-size:13px; color:#ef4444; border-color:#fca5a5;"><i class="fa-solid fa-trash-can"></i> Delete Order</button>
+                </div>
+                <button type="button" onclick="closeOrderDetailsModal()" class="btn btn-outline" style="padding:8px 16px; font-size:13px;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Order Modal -->
+    <div id="editOrderModal" class="modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.6); backdrop-filter:blur(4px); align-items:center; justify-content:center; z-index:10000; padding:15px;">
+        <div class="modal-content" style="background:#fff; border-radius:20px; max-width:500px; width:100%; padding:24px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1.5px solid #f1f5f9; padding-bottom:12px; margin-bottom:16px;">
+                <h3 id="editModalInvoiceNo" style="margin:0; font-family:'Outfit',sans-serif; font-size:18px; font-weight:800; color:#0f3b2c;">Edit Order</h3>
+                <button type="button" onclick="closeEditOrderModal()" style="background:#f1f5f9; border:none; width:32px; height:32px; border-radius:8px; cursor:pointer; font-weight:800; color:#64748b;">✕</button>
+            </div>
+
+            <form id="editOrderForm" onsubmit="saveEditedOrder(event)">
+                <input type="hidden" id="editOrderId">
+                <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:20px;">
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569;">Customer Name</label>
+                        <input type="text" id="editCustomerName" required style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569;">Customer Phone</label>
+                        <input type="text" id="editCustomerPhone" style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569;">Payment Method</label>
+                        <select id="editPaymentMethod" style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                            <option value="cash">Cash Payment</option>
+                            <option value="credit">On Credit / Pay Later</option>
+                            <option value="cheque">Cheque Payment</option>
+                            <option value="bank">Bank Transfer</option>
+                            <option value="card">Card Payment</option>
+                        </select>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                        <div>
+                            <label style="font-size:12px; font-weight:700; color:#475569;">Amount Paid (Rs)</label>
+                            <input type="number" step="0.01" id="editAmountPaid" required style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                        </div>
+                        <div>
+                            <label style="font-size:12px; font-weight:700; color:#475569;">Balance Due (Rs)</label>
+                            <input type="number" step="0.01" id="editBalanceDue" required style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569;">Credit Due Date</label>
+                        <input type="date" id="editDueDate" style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                    </div>
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; gap:10px;">
+                    <button type="button" onclick="closeEditOrderModal()" class="btn btn-outline">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Save Changes</button>
+                </div>
+            </form>
         </div>
     </div>
 </body>

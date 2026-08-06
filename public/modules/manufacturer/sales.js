@@ -333,6 +333,26 @@ async function saveMfgSale() {
         // 3. Record sale document
         await db.collection('manufacturer_sales').doc(saleId).set(salePayload);
 
+        // 3.5. Schedule 7-day revisit route plan in manufacturer_route_plans
+        if (customerName) {
+            const nextVisit = new Date();
+            nextVisit.setDate(nextVisit.getDate() + 7);
+            const routeDocId = (bid + '__' + customerName).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+            await db.collection('manufacturer_route_plans').doc(routeDocId).set({
+                businessId: bid,
+                customerName: customerName,
+                customerPhone: customerPhone || '',
+                area: customerArea || '',
+                lastSaleDate: new Date(),
+                nextVisitDate: nextVisit,
+                lastProductName: item.name,
+                lastQty: soldQty,
+                lastAmount: totalAmount,
+                visitStatus: 'SCHEDULED',
+                updatedAt: new Date()
+            }, { merge: true }).catch(eRoute => console.warn('[Sales] Route plan save warn:', eRoute));
+        }
+
         // 4. Deduct sold stock from manufacturer_finished_products
         await db.collection('manufacturer_finished_products').doc(pid).set({
             stockQty: firebase.firestore.FieldValue.increment(-Math.abs(soldQty)),

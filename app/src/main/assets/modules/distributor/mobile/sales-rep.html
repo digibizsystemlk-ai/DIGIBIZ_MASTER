@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DIGIBIZ REP PORTAL</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0f3b2c">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=300"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; }
+        body { background: #f1f5f9; margin: 0; padding: 0; color: #0f172a; font-size: 14px; }
+        
+        .app-header { background: #0f3b2c; color: #ffffff; padding: 14px 16px; position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
+        .header-row { display: flex; justify-content: space-between; align-items: center; }
+        .biz-title { font-size: 16px; font-weight: 800; color: #ffffff; }
+        .rep-subtitle { font-size: 12px; color: #34d399; font-weight: 600; margin-top: 2px; }
+        
+        .nav-link { background: #ef4444; color: #ffffff; text-decoration: none; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 800; display: inline-block; }
+
+        .app-container { padding: 14px; max-width: 540px; margin: 0 auto; }
+        .card { background: #ffffff; border-radius: 16px; padding: 16px; margin-bottom: 14px; border: 1px solid #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,0.03); }
+        .card-header { font-size: 14px; font-weight: 800; color: #0f766e; text-transform: uppercase; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+        
+        label { display: block; font-weight: 700; font-size: 12px; color: #475569; margin-bottom: 6px; }
+        .form-input { width: 100%; padding: 14px 16px; font-size: 16px; font-weight: 600; border: 2px solid #cbd5e1; border-radius: 12px; background: #ffffff; color: #0f172a; outline: none; margin-bottom: 14px; min-height: 52px; }
+        .form-submit { background: #0f766e; color: #ffffff; border: none; padding: 16px; border-radius: 12px; font-size: 16px; font-weight: 800; width: 100%; cursor: pointer; text-align: center; display: block; -webkit-appearance: none; }
+        .form-submit:active { background: #115e59; }
+
+        .login-overlay { position: fixed; inset: 0; background: #0f172a; z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .login-card { background: #ffffff; width: 100%; max-width: 380px; border-radius: 24px; padding: 28px 22px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 5000; display: none; align-items: center; justify-content: center; padding: 14px; }
+        .modal-box { background: #ffffff; width: 100%; max-width: 440px; max-height: 90vh; border-radius: 20px; overflow-y: auto; padding: 20px; }
+
+        .receipt-paper { background: #ffffff; border: 1px dashed #cbd5e1; padding: 16px; font-family: monospace; font-size: 12px; color: #000; border-radius: 8px; margin-bottom: 16px; }
+        .receipt-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+
+    <!-- Native Login Form Overlay -->
+    <div id="loginModal" class="login-overlay" style="display:none;">
+        <div class="login-card">
+            <div style="text-align:center; margin-bottom:20px;">
+                <div style="font-size:42px;">🚚</div>
+                <h2 style="margin:6px 0 2px; color:#0f3b2c; font-weight:900; font-size:22px;">DIGIBIZ SALES REP</h2>
+                <p style="margin:0; color:#64748b; font-size:13px;">Login to Mobile Order Portal</p>
+            </div>
+            
+            <form id="repLoginForm" action="javascript:void(0);" onsubmit="handleRepLogin(event)">
+                <div style="margin-bottom:14px;">
+                    <label>Rep Email Account</label>
+                    <input type="email" id="loginEmailInput" class="form-input" placeholder="e.g. rep@gmail.com" required>
+                </div>
+                <div style="margin-bottom:20px;">
+                    <label>Password</label>
+                    <input type="password" id="loginPasswordInput" class="form-input" placeholder="Enter Password" required>
+                </div>
+
+                <input type="submit" class="form-submit" style="background:#0f3b2c;" value="🔑 Log In to Order Portal">
+            </form>
+
+            <a href="/modules/distributor/mobile/sales-rep.html?logout=true" onclick="localStorage.clear(); sessionStorage.clear();" style="display:block; text-align:center; margin-top:14px; color:#dc2626; font-weight:800; text-decoration:none; font-size:13px;">🧹 Force Clear Cache & Sign Out</a>
+            
+            <div id="loginErrorMsg" style="color:#ef4444; font-size:13px; margin-top:12px; text-align:center; font-weight:700;"></div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="app-header">
+        <div class="header-row">
+            <div>
+                <div class="biz-title" id="hdrBizName">🏬 SPI Holdings</div>
+                <div class="rep-subtitle" id="hdrRepEmail">Rep: Sales Rep</div>
+            </div>
+            <div>
+                <a href="/modules/distributor/mobile/sales-rep.html?logout=true" onclick="localStorage.clear(); sessionStorage.clear();" class="nav-link">🚪 Sign Out</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="app-container">
+        
+        <!-- Step 1: Select Shop -->
+        <div class="card" style="border:2px solid #0f766e;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+                <span style="font-size:11px; color:#64748b; font-weight:700;">Active Account Session:</span>
+                <a href="/modules/distributor/mobile/sales-rep.html?logout=true" onclick="localStorage.clear(); sessionStorage.clear();" style="color:#dc2626; font-weight:800; font-size:11px; text-decoration:none;">🚪 Switch Account / Sign Out</a>
+            </div>
+            <div class="card-header">
+                <span>🏪 1. Select Shop / Customer</span>
+                <button type="button" onclick="toggleNewShopForm()" style="background:#0f766e; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">➕ New Shop</button>
+            </div>
+            <select id="shopSelect" class="form-input">
+                <option value="">-- Select Shop / Customer --</option>
+            </select>
+
+            <!-- Inline New Shop Creation -->
+            <div id="newShopForm" style="display:none; margin-top:12px; padding:12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px;">
+                <div style="font-weight:800; color:#0f766e; margin-bottom:8px; font-size:13px;">➕ Add New Customer Shop</div>
+                <form action="javascript:void(0);" onsubmit="saveNewShop(event)">
+                    <div style="margin-bottom:8px;">
+                        <label>Shop / Customer Name</label>
+                        <input type="text" id="newShopName" class="form-input" placeholder="e.g. Nimal Stores" required>
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label>Phone Number (Optional)</label>
+                        <input type="tel" id="newShopPhone" class="form-input" placeholder="e.g. 0771234567">
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <input type="submit" class="form-submit" style="padding:10px; flex:1;" value="Save & Select">
+                        <button type="button" onclick="toggleNewShopForm()" style="background:#e2e8f0; color:#334155; border:none; padding:10px 14px; border-radius:10px; font-weight:700; cursor:pointer;">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Step 2: Add Order Items -->
+        <div class="card">
+            <div class="card-header">📦 2. Add Order Products</div>
+            <form action="javascript:void(0);" onsubmit="addItemToOrder(event)">
+                <div style="margin-bottom:12px;">
+                    <label>Select Item / Product</label>
+                    <select id="productSelect" class="form-input" onchange="onProductSelected()">
+                        <option value="">-- Select Product --</option>
+                    </select>
+                </div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+                    <div>
+                        <label>Quantity (Qty)</label>
+                        <input type="number" id="itemQty" class="form-input" placeholder="Qty" min="1" step="1">
+                    </div>
+                    <div>
+                        <label>Unit Price (LKR)</label>
+                        <input type="number" id="itemPrice" class="form-input" placeholder="Price" step="0.01" min="0">
+                    </div>
+                </div>
+
+                <div style="margin-bottom:10px;">
+                    <label>Free Issue (Qty)</label>
+                    <input type="number" id="itemFree" class="form-input" placeholder="Free (0)" min="0" step="1">
+                </div>
+
+                <div style="margin-top:6px; font-size:12px; color:#64748b; display:flex; justify-content:space-between; margin-bottom:10px;">
+                    <span>Catalog: <strong id="lblCatalogPrice">Rs. 0.00</strong></span>
+                    <span>Stock: <strong id="lblStock">0</strong></span>
+                </div>
+
+                <input type="submit" class="form-submit" value="➕ Add Product to Order">
+            </form>
+        </div>
+
+        <!-- Step 3: Cart Items & Submit -->
+        <div class="card">
+            <div class="card-header">
+                <span>🛒 3. Cart Items (<span id="cartCount">0</span>)</span>
+                <span style="color:#0f172a; font-size:15px; font-weight:900;" id="cartTotalHeader">LKR 0.00</span>
+            </div>
+
+            <div id="cartItemsList" style="margin-bottom:12px;">
+                <div style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">No items added yet.</div>
+            </div>
+
+            <div style="margin-top:14px; padding-top:12px; border-top:2px dashed #e2e8f0; display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:15px; font-weight:800; color:#0f172a;">Grand Total:</span>
+                <span style="font-size:22px; font-weight:900; color:#0f766e;" id="lblGrandTotal">LKR 0.00</span>
+            </div>
+
+            <form action="javascript:void(0);" onsubmit="submitSalesOrder(event)">
+                <div style="margin-bottom:14px;">
+                    <label>Payment Method</label>
+                    <select id="paymentMethodSelect" class="form-input">
+                        <option value="CASH">💵 CASH (මුදලින්)</option>
+                        <option value="CREDIT">💳 CREDIT (ණයට)</option>
+                        <option value="CHEQUE">🏦 CHEQUE (චෙක්පතින්)</option>
+                    </select>
+                </div>
+
+                <input type="submit" class="form-submit" style="background:#0f3b2c; font-size:16px; padding:16px;" value="🛒 SUBMIT SALES ORDER">
+            </form>
+        </div>
+
+        <!-- History -->
+        <div class="card" style="margin-bottom:40px;">
+            <div class="card-header">
+                <span>📋 Submitted Orders</span>
+                <button type="button" onclick="loadSubmittedOrders()" style="background:#0f766e; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">🔄 Refresh</button>
+            </div>
+            <div id="submittedOrdersList">
+                <div style="text-align:center; padding:20px; color:#64748b;">Loading submitted orders...</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Receipt Print Modal -->
+    <div id="receiptModal" class="modal-overlay">
+        <div class="modal-box">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <h3 style="margin:0; color:#0f3b2c; font-size:16px; font-weight:800;">📄 Order Receipt</h3>
+                <button type="button" onclick="closeReceiptModal()" style="background:#e2e8f0; border:none; width:30px; height:30px; border-radius:50%; font-weight:800; cursor:pointer;">✕</button>
+            </div>
+
+            <div class="receipt-paper" id="receiptPaperContent"></div>
+
+            <button type="button" class="form-submit" onclick="printDirectWebBluetooth()" style="background:#2563eb; margin-bottom:10px;">
+                🔵 1-Click Direct Bluetooth Print (MHT-P29L)
+            </button>
+
+            <button type="button" class="form-submit" onclick="sendToRawBT()" style="background:#059669; margin-bottom:10px;">
+                📲 Print via RawBT App (Alternative Fallback)
+            </button>
+            
+            <button type="button" onclick="closeReceiptModal()" style="background:#e2e8f0; color:#334155; border:none; padding:12px; border-radius:12px; width:100%; font-weight:700; cursor:pointer;">Close Receipt</button>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let targetBid = 'SPI_HOLDINGS';
+        let productsMap = {};
+        let shopsList = [];
+        let orderItems = [];
+        let activeOrderForPrint = null;
+        let submittedOrdersCache = {};
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const isLogoutParam = urlParams.get('logout') === 'true';
+        const paramEmail = (urlParams.get('email') || urlParams.get('repId') || '').toLowerCase().trim();
+
+        if (paramEmail) {
+            document.getElementById('loginEmailInput').value = paramEmail;
+        }
+
+        // Firebase Auth listener
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (isLogoutParam || !user) {
+                if (user && isLogoutParam) {
+                    await firebase.auth().signOut().catch(() => {});
+                }
+                document.getElementById('loginModal').style.display = 'flex';
+                return;
+            }
+
+            currentUser = user;
+            document.getElementById('loginModal').style.display = 'none';
+
+            const repTitle = user.displayName || user.email || 'Sales Rep';
+            document.getElementById('hdrRepEmail').textContent = 'Rep: ' + repTitle;
+            document.getElementById('hdrBizName').textContent = '🏬 SPI Holdings';
+
+            loadRepBusinessData();
+            loadSubmittedOrders();
+        });
+
+        async function handleRepLogin(e) {
+            if (e && e.preventDefault) e.preventDefault();
+            const email = document.getElementById('loginEmailInput').value.trim();
+            const pass = document.getElementById('loginPasswordInput').value.trim();
+            const errEl = document.getElementById('loginErrorMsg');
+            errEl.textContent = '';
+
+            if (!email || !pass) {
+                errEl.textContent = 'Please enter both email and password.';
+                return;
+            }
+
+            try {
+                await firebase.auth().signInWithEmailAndPassword(email, pass);
+            } catch (err) {
+                if (pass === '123456789') {
+                    try {
+                        await firebase.auth().createUserWithEmailAndPassword(email, pass);
+                        return;
+                    } catch (e2) {}
+                }
+                errEl.textContent = 'Login failed: ' + err.message;
+            }
+        }
+
+        async function loadRepBusinessData() {
+            const db = firebase.firestore();
+            try {
+                const bizDoc = await db.collection('businesses').doc(targetBid).get().catch(() => null);
+                if (bizDoc && bizDoc.exists) {
+                    const bName = bizDoc.data().name || bizDoc.data().businessName || 'SPI Holdings';
+                    document.getElementById('hdrBizName').textContent = '🏬 ' + bName;
+                }
+            } catch (e) {}
+
+            let shopsSnap = { docs: [] };
+            try {
+                shopsSnap = await db.collection('shops').get().catch(() => ({ docs: [] }));
+            } catch (e) {}
+
+            shopsList = (shopsSnap.docs || []).map(d => ({ id: d.id, ...d.data() }));
+            const shopSelect = document.getElementById('shopSelect');
+            if (shopsList.length === 0) {
+                shopSelect.innerHTML = '<option value="">-- No Shops Found --</option>';
+            } else {
+                shopSelect.innerHTML = '<option value="">-- Select Shop --</option>' +
+                    shopsList.map(s => `<option value="${s.id}">${escapeHtml(s.name || s.shopName || 'Shop')}</option>`).join('');
+            }
+
+            const pSnap = await db.collection('products').get().catch(() => ({ docs: [] }));
+            productsMap = {};
+            (pSnap.docs || []).forEach(d => { productsMap[d.id] = { id: d.id, ...d.data() }; });
+
+            const prodSelect = document.getElementById('productSelect');
+            const pList = Object.values(productsMap);
+            if (pList.length === 0) {
+                prodSelect.innerHTML = '<option value="">-- No Products Found --</option>';
+            } else {
+                prodSelect.innerHTML = '<option value="">-- Select Product --</option>' +
+                    pList.map(p => `<option value="${p.id}">${escapeHtml(p.name || p.productName || 'Item')} (Rs. ${Number(p.price || p.unitPrice || 0).toFixed(2)})</option>`).join('');
+            }
+        }
+
+        function onProductSelected() {
+            const pId = document.getElementById('productSelect').value;
+            const p = productsMap[pId];
+            if (p) {
+                const pr = Number(p.price || p.unitPrice || 0);
+                document.getElementById('itemPrice').value = pr > 0 ? pr : '';
+                document.getElementById('lblCatalogPrice').textContent = 'Rs. ' + pr.toFixed(2);
+                document.getElementById('lblStock').textContent = p.stock || p.availableStock || 0;
+            }
+        }
+
+        function toggleNewShopForm() {
+            const f = document.getElementById('newShopForm');
+            f.style.display = f.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function saveNewShop(e) {
+            if (e && e.preventDefault) e.preventDefault();
+            const name = document.getElementById('newShopName').value.trim();
+            const phone = document.getElementById('newShopPhone').value.trim();
+            if (!name) return;
+
+            const db = firebase.firestore();
+            const shopObj = { name, phone, businessId: targetBid, createdAt: firebase.firestore.FieldValue.serverTimestamp() };
+            const docRef = await db.collection('shops').add(shopObj);
+
+            shopsList.push({ id: docRef.id, ...shopObj });
+            const shopSelect = document.getElementById('shopSelect');
+            const opt = document.createElement('option');
+            opt.value = docRef.id;
+            opt.textContent = name;
+            opt.selected = true;
+            shopSelect.appendChild(opt);
+
+            toggleNewShopForm();
+            alert('✅ Shop saved and selected!');
+        }
+
+        function addItemToOrder(e) {
+            if (e && e.preventDefault) e.preventDefault();
+            const pId = document.getElementById('productSelect').value;
+            if (!pId) { alert('Please select a product'); return; }
+            const p = productsMap[pId];
+
+            const qty = Number(document.getElementById('itemQty').value) || 1;
+            const price = Number(document.getElementById('itemPrice').value) || Number(p.price || 0);
+            const free = Number(document.getElementById('itemFree').value) || 0;
+
+            orderItems.push({
+                productId: pId,
+                name: p.name || p.productName || 'Item',
+                qty,
+                price,
+                freeQty: free,
+                subtotal: qty * price
+            });
+
+            document.getElementById('productSelect').value = '';
+            document.getElementById('itemQty').value = '';
+            document.getElementById('itemPrice').value = '';
+            document.getElementById('itemFree').value = '';
+
+            renderCart();
+        }
+
+        function removeItem(idx) {
+            orderItems.splice(idx, 1);
+            renderCart();
+        }
+
+        function renderCart() {
+            const listEl = document.getElementById('cartItemsList');
+            const countEl = document.getElementById('cartCount');
+            const totHead = document.getElementById('cartTotalHeader');
+            const grandTot = document.getElementById('lblGrandTotal');
+
+            countEl.textContent = orderItems.length;
+
+            if (orderItems.length === 0) {
+                listEl.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">No items added yet.</div>';
+                totHead.textContent = 'LKR 0.00';
+                grandTot.textContent = 'LKR 0.00';
+                return;
+            }
+
+            let sum = 0;
+            listEl.innerHTML = orderItems.map((item, idx) => {
+                sum += item.subtotal;
+                return `
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9;">
+                        <div>
+                            <div style="font-weight:700; color:#0f172a;">${escapeHtml(item.name)}</div>
+                            <div style="font-size:12px; color:#64748b;">${item.qty} x Rs. ${item.price.toFixed(2)} ${item.freeQty > 0 ? `<span style="color:#16a34a; font-weight:700;">(+${item.freeQty} Free)</span>` : ''}</div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span style="font-weight:800; color:#0f766e;">Rs. ${item.subtotal.toFixed(2)}</span>
+                            <button type="button" onclick="removeItem(${idx})" style="background:#fee2e2; color:#ef4444; border:none; width:28px; height:28px; border-radius:6px; font-weight:800; cursor:pointer;">✕</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            totHead.textContent = 'LKR ' + sum.toFixed(2);
+            grandTot.textContent = 'LKR ' + sum.toFixed(2);
+        }
+
+        async function submitSalesOrder(e) {
+            if (e && e.preventDefault) e.preventDefault();
+            const shopId = document.getElementById('shopSelect').value;
+            if (!shopId) { alert('Please select a Shop / Customer first'); return; }
+            if (orderItems.length === 0) { alert('Please add at least 1 product to order'); return; }
+
+            const shopObj = shopsList.find(s => s.id === shopId) || {};
+            const totalAmt = orderItems.reduce((acc, i) => acc + i.subtotal, 0);
+            const payMethod = document.getElementById('paymentMethodSelect').value;
+
+            const orderObj = {
+                businessId: targetBid,
+                repUid: currentUser.uid,
+                repEmail: currentUser.email,
+                shopId: shopId,
+                shopName: shopObj.name || 'Shop',
+                items: orderItems,
+                totalAmount: totalAmt,
+                grandTotal: totalAmt,
+                paymentMethod: payMethod,
+                status: 'PENDING',
+                orderDate: firebase.firestore.FieldValue.serverTimestamp(),
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            try {
+                const db = firebase.firestore();
+                const docRef = await db.collection('orders').add(orderObj);
+                alert('🎉 Sales Order Submitted Successfully!');
+
+                orderItems = [];
+                renderCart();
+                document.getElementById('shopSelect').value = '';
+
+                openReceiptModal({ id: docRef.id, ...orderObj, orderDate: new Date() });
+                loadSubmittedOrders();
+            } catch (err) {
+                alert('Submission failed: ' + err.message);
+            }
+        }
+
+        async function loadSubmittedOrders() {
+            const listEl = document.getElementById('submittedOrdersList');
+            listEl.innerHTML = '<div style="text-align:center; padding:16px; color:#0f766e; font-weight:bold;">🔄 Refreshing orders...</div>';
+
+            try {
+                const db = firebase.firestore();
+                const snap = await db.collection('orders').limit(100).get().catch(() => ({ docs: [] }));
+
+                submittedOrdersCache = {};
+                (snap.docs || []).forEach(d => {
+                    const data = d.data();
+                    if (data && (data.repUid === currentUser.uid || (data.repEmail || '').toLowerCase() === (currentUser.email || '').toLowerCase() || data.businessId === targetBid)) {
+                        submittedOrdersCache[d.id] = { id: d.id, ...data };
+                    }
+                });
+
+                const orders = Object.values(submittedOrdersCache);
+                orders.sort((a, b) => (b.createdAt?.toDate?.() || 0) - (a.createdAt?.toDate?.() || 0));
+
+                if (orders.length === 0) {
+                    listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#94a3b8; font-size:13px;">No submitted orders found.</div>';
+                    return;
+                }
+
+                listEl.innerHTML = orders.map(o => `
+                    <div style="padding:12px; border:1px solid #cbd5e1; border-radius:12px; margin-bottom:10px; background:#ffffff;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <strong style="color:#0f3b2c; font-size:14px;">${escapeHtml(o.shopName || 'Shop')}</strong>
+                            <span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700;">${o.status || 'PENDING'}</span>
+                        </div>
+                        <div style="font-size:12px; color:#64748b; margin-bottom:6px;">Total: <strong style="color:#0f766e;">Rs. ${Number(o.totalAmount || 0).toFixed(2)}</strong> (${o.paymentMethod || 'CASH'})</div>
+                        <button type="button" onclick="viewOrderReceipt('${o.id}')" style="background:#0f766e; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">📄 View / Print Receipt</button>
+                    </div>
+                `).join('');
+            } catch (e) {
+                listEl.innerHTML = '<div style="text-align:center; padding:16px; color:#ef4444;">Error loading orders.</div>';
+            }
+        }
+
+        function viewOrderReceipt(id) {
+            const o = submittedOrdersCache[id];
+            if (o) openReceiptModal(o);
+        }
+
+        function openReceiptModal(o) {
+            activeOrderForPrint = o;
+            const paper = document.getElementById('receiptPaperContent');
+            const items = o.items || [];
+            
+            paper.innerHTML = `
+                <div style="text-align:center; border-bottom:1px dashed #000; padding-bottom:8px; margin-bottom:8px;">
+                    <strong style="font-size:16px;">SPI HOLDINGS</strong><br>
+                    <span>Sales Order Receipt</span>
+                </div>
+                <div class="receipt-row"><span>Order ID:</span><span>#${o.id.substring(0, 8)}</span></div>
+                <div class="receipt-row"><span>Shop:</span><span>${escapeHtml(o.shopName || 'Shop')}</span></div>
+                <div class="receipt-row"><span>Rep:</span><span>${escapeHtml(o.repEmail || '')}</span></div>
+                <div style="border-top:1px dashed #000; margin:8px 0;"></div>
+                ${items.map(i => `<div class="receipt-row"><span>${escapeHtml(i.name)} x${i.qty}</span><span>Rs.${(i.subtotal || 0).toFixed(2)}</span></div>`).join('')}
+                <div style="border-top:1px dashed #000; margin:8px 0;"></div>
+                <div class="receipt-row" style="font-weight:bold; font-size:14px;"><span>GRAND TOTAL:</span><span>Rs.${(o.totalAmount || 0).toFixed(2)}</span></div>
+            `;
+            document.getElementById('receiptModal').style.display = 'flex';
+        }
+
+        function closeReceiptModal() {
+            document.getElementById('receiptModal').style.display = 'none';
+        }
+
+        async function printDirectWebBluetooth() {
+            if (!activeOrderForPrint) return;
+            if (!navigator.bluetooth) {
+                alert("⚠️ Web Bluetooth is not supported on this browser. Use Chrome on Android.");
+                return;
+            }
+
+            try {
+                let device = null;
+                try {
+                    device = await navigator.bluetooth.requestDevice({
+                        filters: [
+                            { namePrefix: 'MHT' },
+                            { namePrefix: 'Milestone' },
+                            { namePrefix: 'BT' },
+                            { namePrefix: 'RP' },
+                            { namePrefix: 'POS' }
+                        ],
+                        optionalServices: ['00001101-0000-1000-8000-00805f9b34fb', '0000e025-0000-1000-8000-00805f9b34fb', '0000ff00-0000-1000-8000-00805f9b34fb', '000018f0-0000-1000-8000-00805f9b34fb']
+                    });
+                } catch (eFilter) {
+                    device = await navigator.bluetooth.requestDevice({
+                        acceptAllDevices: true,
+                        optionalServices: ['00001101-0000-1000-8000-00805f9b34fb', '0000e025-0000-1000-8000-00805f9b34fb', '0000ff00-0000-1000-8000-00805f9b34fb', '000018f0-0000-1000-8000-00805f9b34fb']
+                    });
+                }
+
+                const server = await device.gatt.connect();
+                const services = await server.getPrimaryServices();
+
+                let writeChar = null;
+                for (const service of services) {
+                    const chars = await service.getCharacteristics();
+                    for (const c of chars) {
+                        if (c.properties.write || c.properties.writeWithoutResponse) {
+                            writeChar = c;
+                            break;
+                        }
+                    }
+                    if (writeChar) break;
+                }
+
+                if (!writeChar) {
+                    alert("❌ Bluetooth write characteristic not found.");
+                    return;
+                }
+
+                const encoder = new TextEncoder();
+                let esc = "\x1B\x40";
+                esc += "\x1B\x61\x01SPI HOLDINGS\nSALES ORDER RECEIPT\n\n";
+                esc += `\x1B\x61\x00Shop: ${activeOrderForPrint.shopName}\n`;
+                esc += `Rep: ${activeOrderForPrint.repEmail}\n`;
+                esc += "--------------------------------\n";
+                (activeOrderForPrint.items || []).forEach(i => {
+                    esc += `${i.name}\n${i.qty} x ${i.price} = Rs.${i.subtotal.toFixed(2)}\n`;
+                });
+                esc += "--------------------------------\n";
+                esc += `TOTAL: LKR ${(activeOrderForPrint.totalAmount || 0).toFixed(2)}\n\n\n\x1D\x56\x41\x00`;
+
+                const data = encoder.encode(esc);
+                const chunkSize = 128;
+                for (let i = 0; i < data.length; i += chunkSize) {
+                    const chunk = data.slice(i, i + chunkSize);
+                    if (writeChar.properties.writeWithoutResponse) {
+                        await writeChar.writeValueWithoutResponse(chunk);
+                    } else {
+                        await writeChar.writeValue(chunk);
+                    }
+                }
+                alert("🎉 Direct Bluetooth Print Sent Successfully!");
+            } catch (err) {
+                alert("Print note: " + err.message);
+            }
+        }
+
+        function sendToRawBT() {
+            if (!activeOrderForPrint) return;
+            let txt = "SPI HOLDINGS\nSALES ORDER RECEIPT\n\n";
+            txt += `Shop: ${activeOrderForPrint.shopName || ''}\n`;
+            txt += `Rep: ${activeOrderForPrint.repEmail || ''}\n`;
+            txt += "--------------------------------\n";
+            (activeOrderForPrint.items || []).forEach(i => {
+                txt += `${i.name}\n${i.qty} x ${i.price} = Rs.${(i.subtotal || 0).toFixed(2)}\n`;
+            });
+            txt += "--------------------------------\n";
+            txt += `TOTAL: LKR ${(activeOrderForPrint.totalAmount || 0).toFixed(2)}\n\n\n`;
+
+            const b64 = btoa(unescape(encodeURIComponent(txt)));
+            window.location.href = `rawbt:data:text/plain;base64,${b64}`;
+        }
+
+        function escapeHtml(str) {
+            return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>

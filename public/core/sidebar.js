@@ -561,7 +561,7 @@ class Sidebar {
     async checkOnboardingStatus(user) {
         if (!user) return;
         const bizType = localStorage.getItem('currentBusinessType') || '';
-        const isRetail = bizType === 'retail' || window.location.pathname.includes('/retail/') || window.location.pathname.includes('pos.html') || window.location.pathname.includes('inventory.html') || window.location.pathname.includes('purchases.html') || window.location.pathname.includes('grn.html') || window.location.pathname.includes('credit-aging.html');
+        const isRetail = bizType === 'retail' || window.location.pathname.includes('/retail/') || window.location.pathname.includes('pos.html') || window.location.pathname.includes('inventory.html') || window.location.pathname.includes('purchases.html') || window.location.pathname.includes('grn.html') || window.location.pathname.includes('credit-aging.html') || window.location.pathname.includes('sales-history.html');
         if (!isRetail) return;
 
         try {
@@ -1877,6 +1877,7 @@ class Sidebar {
                     { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
                     { icon: '🗑️', name: 'Wasted Goods Log', link: '/modules/manufacturer/wastage.html' },
                     { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
+                    { icon: '🗺️', name: 'Sales Route Plan', link: '/modules/manufacturer/route-plan.html' },
                     { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
                     { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
                 ];
@@ -2106,6 +2107,7 @@ class Sidebar {
             { icon: '🎨', name: 'Sidebar Config', link: '/modules/core/sidebar-config.html', isNew: true },
             { icon: '🔐', name: 'Change Password', link: '/modules/core/change-password.html' },
             { icon: '⚙️', name: 'Settings', link: '/modules/company/settings.html' },
+            { icon: '🖨️', name: 'Print Settings', link: '/modules/company/print-settings.html', isNew: true },
             { icon: '📲', name: 'SMS Settings', link: '/modules/company/sms-settings.html' },
             { icon: '🧾', name: 'SMS Log', link: '/modules/company/sms-log.html' },
             { icon: '💳', name: 'Billing & Charges', link: '/modules/core/billing.html' },
@@ -2174,8 +2176,9 @@ class Sidebar {
                             const isExpenses = item.name === 'EXPENSES';
                             const isScrapPage = window.location.pathname.includes('/scrap-');
                             const showScrapBadge = isDashboard && (this.businessType === 'scrap_collection_center' || isScrapPage);
-                            const showRetailRevenueBadge = isDashboard && (['retail', 'tire_centre'].includes(String(this.businessType).toLowerCase().trim()));
-                            const showDistributorRevenueBadge = isDashboard && (String(this.businessType).toLowerCase().trim() === 'distributor');
+                            const bTypeCurrent = String(this.businessType || localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase().trim();
+                            const showRetailRevenueBadge = isDashboard && (['retail', 'tire_centre'].includes(bTypeCurrent) || window.location.pathname.includes('/tire_centre/') || window.location.pathname.includes('/retail/'));
+                            const showDistributorRevenueBadge = isDashboard && (bTypeCurrent === 'distributor' || window.location.pathname.includes('/distributor/'));
                             
                             let html = `
                             <a href="${item.link}" target="${SIDEBAR_NAV_LINK_TARGET}" rel="${SIDEBAR_NAV_LINK_REL}" class="menu-item ${this.isMenuActive(item.link, pathname) ? 'active' : ''}" style="position: relative;">
@@ -2319,30 +2322,39 @@ class Sidebar {
     }
 
     async initRetailRevenueBadge(retryCount = 0) {
-        const bid = this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
-        if (!bid) return;
+        const u = typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser;
+        const bid = this.businessId || localStorage.getItem('selectedBusinessId') || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || (u && u.uid);
+        if (!bid) {
+            if (retryCount < 10) setTimeout(() => this.initRetailRevenueBadge(retryCount + 1), 300);
+            return;
+        }
 
-        // Ensure this is a retail or tire center business
-        if (!['retail', 'tire_centre'].includes(String(this.businessType).toLowerCase().trim())) return;
-
-        // Ensure the current user is the owner (Owner-only check)
-        const roleNorm = String(this.currentRole || '').toUpperCase();
-        const isOwner = this.currentUserId === bid || roleNorm === 'BUSINESS_OWNER' || roleNorm === 'SUPER_ADMIN';
-        if (!isOwner) return;
+        const bType = String(this.businessType || localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase().trim();
+        const isTireOrRetail = ['retail', 'tire_centre'].includes(bType) || window.location.pathname.includes('/tire_centre/') || window.location.pathname.includes('/retail/');
+        if (!isTireOrRetail) return;
 
         const el = document.getElementById('sidebarRetailRevenueBadge');
         if (!el) {
-            if (retryCount < 5) {
-                setTimeout(() => this.initRetailRevenueBadge(retryCount + 1), 200);
+            if (retryCount < 10) {
+                setTimeout(() => this.initRetailRevenueBadge(retryCount + 1), 300);
             }
             return;
         }
 
-        // Today's boundaries
-        const startOfToday = new Date();
-        startOfToday.setHours(0,0,0,0);
-        const endOfToday = new Date();
-        endOfToday.setHours(23,59,59,999);
+        const extractDateStr = (v) => {
+            const now = new Date();
+            const todayFallback = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            if (!v) return todayFallback;
+            if (typeof v.toDate === 'function') { const d = v.toDate(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+            if (v.seconds) { const d = new Date(v.seconds * 1000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+            if (typeof v === 'number') { const d = new Date(v); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+            if (typeof v === 'string') {
+                if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+                const d = new Date(v);
+                if (!isNaN(d.getTime())) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            }
+            return todayFallback;
+        };
 
         // Listen in real-time to today's sales (orders)
         if (typeof this.retailRevenueUnsubscribe === 'function') {
@@ -2351,16 +2363,25 @@ class Sidebar {
 
         try {
             const fs = (typeof db !== 'undefined' && db) ? db : (window.db || (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore()));
-            this.retailRevenueUnsubscribe = fs.collection('orders').doc(bid).collection('list')
-                .where('createdAt', '>=', startOfToday)
-                .where('createdAt', '<=', endOfToday)
-                .onSnapshot(snapshot => {
+            
+            const handleOrderSnap = () => {
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                
+                Promise.all([
+                    fs.collection('orders').doc(bid).collection('list').get().catch(() => ({ docs: [] })),
+                    fs.collection('orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] }))
+                ]).then(([nestedSnap, flatSnap]) => {
+                    const docsMap = {};
+                    [...nestedSnap.docs, ...flatSnap.docs].forEach(d => { docsMap[d.id] = d.data(); });
+                    
                     let totalRevenue = 0;
-                    snapshot.forEach(doc => {
-                        const d = doc.data();
-                        // Only add if not voided/reversed
-                        if (!d.isReversed) {
-                            totalRevenue += parseFloat(d.total || 0);
+                    Object.values(docsMap).forEach(d => {
+                        const status = String(d.status || '').toLowerCase();
+                        if (status === 'cancelled' || d.isReversed) return;
+                        const dtStr = extractDateStr(d.createdAt || d.orderDate || d.date);
+                        if (dtStr === todayStr) {
+                            totalRevenue += parseFloat(d.total || d.totalAmount || d.netTotal || 0);
                         }
                     });
 
@@ -2375,9 +2396,12 @@ class Sidebar {
                         el.style.background = 'rgba(239, 68, 68, 0.15)';
                     }
                     el.style.display = 'inline-block';
-                }, error => {
-                    console.warn('[Sidebar] Retail revenue listener error:', error);
-                });
+                }).catch(() => {});
+            };
+
+            this.retailRevenueUnsubscribe = fs.collection('orders').doc(bid).collection('list').onSnapshot(handleOrderSnap);
+            this.retailRevenueUnsubscribeFlat = fs.collection('orders').where('businessId', '==', bid).onSnapshot(handleOrderSnap);
+            handleOrderSnap();
         } catch (e) {
             console.warn('[Sidebar] Retail revenue badge initialization failed:', e);
         }
@@ -2474,36 +2498,43 @@ class Sidebar {
     }
 
     async initLiveCashBadge(retryCount = 0) {
-        const bid = this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
-        if (!bid) return;
+        const u = typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser;
+        const bid = this.businessId || localStorage.getItem('selectedBusinessId') || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || (u && u.uid);
+        if (!bid) {
+            if (retryCount < 10) setTimeout(() => this.initLiveCashBadge(retryCount + 1), 300);
+            return;
+        }
 
-        // Ensure this is a retail or tire center business
-        if (!['retail', 'tire_centre'].includes(String(this.businessType).toLowerCase().trim())) return;
-
-        // Ensure the current user is the owner/staff
-        const roleNorm = String(this.currentRole || '').toUpperCase();
-        const isOwner = this.currentUserId === bid || roleNorm === 'BUSINESS_OWNER' || roleNorm === 'SUPER_ADMIN' || roleNorm === 'BUSINESS_STAFF';
-        if (!isOwner) return;
+        const bType = String(this.businessType || localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase().trim();
+        const isTireOrRetail = ['retail', 'tire_centre'].includes(bType) || window.location.pathname.includes('/tire_centre/') || window.location.pathname.includes('/retail/');
+        if (!isTireOrRetail) return;
 
         const el = document.getElementById('sidebarLiveCashBadge');
         if (!el) {
-            if (retryCount < 5) {
-                setTimeout(() => this.initLiveCashBadge(retryCount + 1), 200);
+            if (retryCount < 10) {
+                setTimeout(() => this.initLiveCashBadge(retryCount + 1), 300);
             }
             return;
         }
 
         const fs = (typeof db !== 'undefined' && db) ? db : (window.db || (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore()));
         
-        // Listen to today's data
-        const startOfToday = new Date();
-        startOfToday.setHours(0,0,0,0);
-        const endOfToday = new Date();
-        endOfToday.setHours(23,59,59,999);
-        const dateStr = new Date().toISOString().split('T')[0];
+        const extractDateStr = (v) => {
+            const now = new Date();
+            const todayFallback = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            if (!v) return todayFallback;
+            if (typeof v.toDate === 'function') { const d = v.toDate(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+            if (v.seconds) { const d = new Date(v.seconds * 1000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+            if (typeof v === 'number') { const d = new Date(v); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+            if (typeof v === 'string') {
+                if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+                const d = new Date(v);
+                if (!isNaN(d.getTime())) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            }
+            return todayFallback;
+        };
 
         try {
-            // Setup real-time listeners for cash sales, expenses, deposits, and onboarding cash
             let initCash = 0;
             let cashSales = 0;
             let cashExp = 0;
@@ -2541,29 +2572,48 @@ class Sidebar {
 
             // 2. Cash Sales today
             if (typeof this.liveCashUnsubscribeSales === 'function') this.liveCashUnsubscribeSales();
-            this.liveCashUnsubscribeSales = fs.collection('orders').doc(bid).collection('list')
-                .where('createdAt', '>=', startOfToday)
-                .where('createdAt', '<=', endOfToday)
-                .onSnapshot(snap => {
+            
+            const handleCashSalesSnap = () => {
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                
+                Promise.all([
+                    fs.collection('orders').doc(bid).collection('list').get().catch(() => ({ docs: [] })),
+                    fs.collection('orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] }))
+                ]).then(([nestedSnap, flatSnap]) => {
+                    const docsMap = {};
+                    [...nestedSnap.docs, ...flatSnap.docs].forEach(d => { docsMap[d.id] = d.data(); });
+                    
                     cashSales = 0;
-                    snap.forEach(dDoc => {
-                        const d = dDoc.data();
-                        if (!d.isReversed && (d.paymentMethod || 'CASH').toUpperCase() === 'CASH') {
-                            cashSales += parseFloat(d.total || 0);
+                    Object.values(docsMap).forEach(d => {
+                        const status = String(d.status || '').toLowerCase();
+                        if (status === 'cancelled' || d.isReversed) return;
+                        const dtStr = extractDateStr(d.createdAt || d.orderDate || d.date);
+                        const pm = String(d.paymentMethod || 'cash').toLowerCase();
+                        if (dtStr === todayStr && pm === 'cash') {
+                            cashSales += parseFloat(d.total || d.totalAmount || d.netTotal || 0);
                         }
                     });
                     updateDisplay();
-                });
+                }).catch(() => {});
+            };
+
+            this.liveCashUnsubscribeSales = fs.collection('orders').doc(bid).collection('list').onSnapshot(handleCashSalesSnap);
+            this.liveCashUnsubscribeSalesFlat = fs.collection('orders').where('businessId', '==', bid).onSnapshot(handleCashSalesSnap);
+            handleCashSalesSnap();
 
             // 3. Cash Expenses today
             if (typeof this.liveCashUnsubscribeExp === 'function') this.liveCashUnsubscribeExp();
             this.liveCashUnsubscribeExp = fs.collection('expenses').doc(bid).collection('list')
-                .where('expenseDate', '==', dateStr)
                 .onSnapshot(snap => {
+                    const now = new Date();
+                    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                     cashExp = 0;
                     snap.forEach(dDoc => {
-                        const d = dDoc.data();
-                        if ((d.paymentMethod || 'CASH').toUpperCase() === 'CASH') {
+                        const d = dDoc.data() || {};
+                        const dtStr = extractDateStr(d.expenseDate || d.createdAt || d.date);
+                        const pm = String(d.paymentMethod || 'cash').toLowerCase();
+                        if (dtStr === todayStr && pm === 'cash') {
                             cashExp += parseFloat(d.amount || 0);
                         }
                     });
@@ -3103,6 +3153,7 @@ function runPageTranslation() {
                         window.location.pathname.includes('receivables.html') || 
                         window.location.pathname.includes('payables.html') ||
                         window.location.pathname.includes('credit-aging.html') ||
+                        window.location.pathname.includes('sales-history.html') ||
                         window.location.pathname.includes('workbench.html');
     
     // Retail system is 100% Pure International English; Scrap system retains full Sinhala support

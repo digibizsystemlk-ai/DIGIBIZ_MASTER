@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DIGIBIZ REP</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0f3b2c">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=200"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background: #f1f5f9; margin: 0; padding: 0; color: #0f172a; font-size: 14px; -webkit-font-smoothing: antialiased; }
+        
+        /* Header */
+        .app-header { background: linear-gradient(135deg, #0f3b2c, #062118); color: #ffffff; padding: 14px 16px; position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
+        .header-row { display: flex; justify-content: space-between; align-items: center; }
+        .biz-title { font-size: 16px; font-weight: 800; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+        .rep-subtitle { font-size: 12px; color: #34d399; font-weight: 600; margin-top: 2px; }
+        .header-actions { display: flex; gap: 6px; align-items: center; }
+        
+        .btn-hdr { border: none; padding: 7px 12px; border-radius: 8px; font-size: 11px; font-weight: 800; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; touch-action: manipulation; }
+        .btn-install { background: #10b981; color: #ffffff; }
+        .btn-logout { background: #ef4444; color: #ffffff; }
+
+        /* Container & Cards */
+        .app-container { padding: 14px; max-width: 540px; margin: 0 auto; }
+        .card { background: #ffffff; border-radius: 16px; padding: 16px; margin-bottom: 14px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.03); }
+        .card-header { font-size: 13px; font-weight: 800; color: #0f766e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+        
+        /* Inputs & Buttons */
+        label { display: block; font-weight: 700; font-size: 12px; color: #475569; margin-bottom: 6px; }
+        .form-control { width: 100%; padding: 14px 16px; font-size: 15px; font-weight: 600; border: 2px solid #cbd5e1; border-radius: 12px; background: #ffffff; color: #0f172a; outline: none; transition: all 0.2s; min-height: 50px; }
+        .form-control:focus { border-color: #0f766e; box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15); }
+        
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .btn-primary { background: #0f766e; color: #ffffff; border: none; padding: 14px; border-radius: 12px; font-size: 15px; font-weight: 800; width: 100%; cursor: pointer; text-align: center; box-shadow: 0 4px 12px rgba(15,118,110,0.25); }
+        .btn-primary:active { transform: scale(0.98); background: #115e59; }
+
+        /* Login Modal Overlay - Pure CSS background without GPU backdrop-filter blur to prevent Android touch freezes */
+        .login-backdrop { position: fixed; inset: 0; background: #0f172a; z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; touch-action: manipulation; }
+        .login-card { background: #ffffff; width: 100%; max-width: 380px; border-radius: 24px; padding: 28px 22px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); border: 1px solid #cbd5e1; }
+
+        /* Receipt Print Popup */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 5000; display: none; align-items: center; justify-content: center; padding: 14px; }
+        .modal-box { background: #ffffff; width: 100%; max-width: 440px; max-height: 90vh; border-radius: 20px; overflow-y: auto; padding: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3); }
+
+        /* Thermal Receipt Paper Mockup */
+        .receipt-paper { background: #ffffff; border: 1px dashed #cbd5e1; padding: 16px; font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #000000; border-radius: 8px; margin-bottom: 16px; }
+        .receipt-header { text-align: center; border-bottom: 1px dashed #000000; padding-bottom: 10px; margin-bottom: 10px; }
+        .receipt-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+
+        .badge-pending { background: #fef3c7; color: #b45309; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+        .badge-approved { background: #dcfce7; color: #15803d; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+    </style>
+</head>
+<body>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="login-backdrop" style="display:none;">
+        <div class="login-card">
+            <div style="text-align:center; margin-bottom:20px;">
+                <div style="font-size:42px;">🚚</div>
+                <h2 style="margin:6px 0 2px; color:#0f3b2c; font-weight:900; font-size:22px;">DIGIBIZ REP</h2>
+                <p style="margin:0; color:#64748b; font-size:13px;" id="loginSubText">Enter Rep Credentials to Access</p>
+            </div>
+            
+            <div style="margin-bottom:14px;">
+                <label>Rep Email Account</label>
+                <input type="email" id="loginEmailInput" class="form-control" placeholder="e.g. rep@gmail.com">
+            </div>
+            <div style="margin-bottom:20px;">
+                <label>Password</label>
+                <input type="password" id="loginPasswordInput" class="form-control" placeholder="Enter Password">
+            </div>
+
+            <button type="button" onclick="handleRepLogin()" class="btn-primary" style="background:#0f3b2c;">🔑 Log In to Order Portal</button>
+            <button type="button" onclick="performHardResetLogout()" style="background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; padding:10px; border-radius:12px; font-weight:800; width:100%; margin-top:10px; font-size:12px; cursor:pointer;">🧹 Force Clear Cache & Hard Reset</button>
+            <div id="loginErrorMsg" style="color:#ef4444; font-size:13px; margin-top:12px; text-align:center; font-weight:700;"></div>
+        </div>
+    </div>
+
+    <!-- Top App Header -->
+    <div class="app-header">
+        <div class="header-row">
+            <div>
+                <div class="biz-title" id="hdrBizName">🏬 SPI Holdings</div>
+                <div class="rep-subtitle" id="hdrRepEmail">Rep: Sales Rep</div>
+            </div>
+            <div class="header-actions">
+                <button type="button" class="btn-hdr btn-install" onclick="triggerPwaInstall()">📲 Install</button>
+                <button type="button" class="btn-hdr btn-logout" onclick="performHardResetLogout()">🧹 Reset & Sign Out</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Order Form Container -->
+    <div class="app-container">
+        
+        <!-- Step 1: Select Shop / Customer -->
+        <div class="card" style="border:2px solid #0f766e;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+                <span style="font-size:11px; color:#64748b; font-weight:700;">Account Session:</span>
+                <button type="button" onclick="performHardResetLogout()" style="background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; padding:5px 12px; border-radius:8px; font-size:11px; font-weight:800; cursor:pointer;">🧹 Clear Cache & Sign Out</button>
+            </div>
+            <div class="card-header">
+                <span>🏪 1. Select Shop / Customer</span>
+                <button type="button" onclick="toggleNewShopForm()" style="background:#0f766e; color:#fff; border:none; padding:4px 10px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">➕ New Shop</button>
+            </div>
+            <select id="shopSelect" class="form-control" onchange="onShopSelected()">
+                <option value="">-- Select Shop / Customer --</option>
+            </select>
+
+            <!-- Inline New Shop Creation -->
+            <div id="newShopForm" style="display:none; margin-top:12px; padding:12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px;">
+                <div style="font-weight:800; color:#0f766e; margin-bottom:8px; font-size:13px;">➕ Add New Customer Shop</div>
+                <div style="margin-bottom:8px;">
+                    <label>Shop / Customer Name</label>
+                    <input type="text" id="newShopName" class="form-control" placeholder="e.g. Nimal Stores">
+                </div>
+                <div style="margin-bottom:10px;">
+                    <label>Phone Number (Optional)</label>
+                    <input type="tel" id="newShopPhone" class="form-control" placeholder="e.g. 0771234567">
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button type="button" onclick="saveNewShop()" class="btn-primary" style="padding:10px; flex:1;">Save & Select</button>
+                    <button type="button" onclick="toggleNewShopForm()" style="background:#e2e8f0; color:#334155; border:none; padding:10px 14px; border-radius:10px; font-weight:700; cursor:pointer;">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Add Order Items -->
+        <div class="card">
+            <div class="card-header">📦 2. Add Order Products</div>
+            <div style="margin-bottom:12px;">
+                <label>Select Item / Product</label>
+                <select id="productSelect" class="form-control" onchange="onProductSelected()">
+                    <option value="">-- Select Product --</option>
+                </select>
+            </div>
+
+            <div class="grid-2" style="margin-bottom:10px;">
+                <div>
+                    <label>Quantity (Qty)</label>
+                    <input type="number" id="itemQty" class="form-control" placeholder="Qty" min="1" step="1">
+                </div>
+                <div>
+                    <label>Unit Price (LKR)</label>
+                    <input type="number" id="itemPrice" class="form-control" placeholder="Price" step="0.01" min="0">
+                </div>
+            </div>
+
+            <div style="margin-bottom:10px;">
+                <label>Free Issue (Qty)</label>
+                <input type="number" id="itemFree" class="form-control" placeholder="Free (0)" min="0" step="1">
+            </div>
+
+            <div style="margin-top:6px; font-size:12px; color:#64748b; display:flex; justify-space-between;" id="productPriceStockInfo">
+                <span>Catalog: <strong id="lblCatalogPrice">Rs. 0.00</strong></span>
+                <span>Stock: <strong id="lblStock">0</strong></span>
+            </div>
+
+            <button type="button" class="btn-primary" onclick="addItemToOrder()" style="margin-top:12px;">➕ Add Product to Order</button>
+        </div>
+
+        <!-- Step 3: Order Items & Payment -->
+        <div class="card">
+            <div class="card-header">
+                <span>🛒 3. Cart Items (<span id="cartCount">0</span>)</span>
+                <span style="color:#0f172a; font-size:15px; font-weight:900;" id="cartTotalHeader">LKR 0.00</span>
+            </div>
+
+            <div id="cartItemsList" style="margin-bottom:12px;">
+                <div style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">No items added yet.</div>
+            </div>
+
+            <div style="margin-top:14px; padding-top:12px; border-top:2px dashed #e2e8f0; display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:15px; font-weight:800; color:#0f172a;">Grand Total:</span>
+                <span style="font-size:22px; font-weight:900; color:#0f766e;" id="lblGrandTotal">LKR 0.00</span>
+            </div>
+
+            <div style="margin-bottom:14px;">
+                <label>Payment Method</label>
+                <select id="paymentMethodSelect" class="form-control">
+                    <option value="CASH">💵 CASH (මුදලින්)</option>
+                    <option value="CREDIT">💳 CREDIT (ණයට)</option>
+                    <option value="CHEQUE">🏦 CHEQUE (චෙක්පතින්)</option>
+                </select>
+            </div>
+
+            <button type="button" class="btn-primary" onclick="submitSalesOrder()" style="background:#0f3b2c; font-size:16px; padding:16px;">🛒 SUBMIT SALES ORDER</button>
+        </div>
+
+        <!-- Submitted Orders History -->
+        <div class="card" style="margin-bottom:40px;">
+            <div class="card-header">
+                <span>📋 Submitted Orders</span>
+                <button type="button" onclick="loadSubmittedOrders()" style="background:#0f766e; color:#fff; border:none; padding:6px 12px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer;">🔄 Refresh</button>
+            </div>
+            <div id="submittedOrdersList">
+                <div style="text-align:center; padding:20px; color:#64748b;">Loading submitted orders...</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Receipt Print Modal -->
+    <div id="receiptModal" class="modal-overlay">
+        <div class="modal-box">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <h3 style="margin:0; color:#0f3b2c; font-size:16px; font-weight:800;">📄 Order Receipt</h3>
+                <button type="button" onclick="closeReceiptModal()" style="background:#e2e8f0; border:none; width:30px; height:30px; border-radius:50%; font-weight:800; cursor:pointer;">✕</button>
+            </div>
+
+            <div class="receipt-paper" id="receiptPaperContent"></div>
+
+            <button type="button" class="btn-primary" onclick="printDirectWebBluetooth()" style="background:#2563eb; margin-bottom:10px;">
+                🔵 1-Click Direct Bluetooth Print (MHT-P29L)
+            </button>
+
+            <button type="button" class="btn-primary" onclick="sendToRawBT()" style="background:#059669; margin-bottom:10px;">
+                📲 Print via RawBT App (Alternative Fallback)
+            </button>
+            
+            <button type="button" onclick="closeReceiptModal()" style="background:#e2e8f0; color:#334155; border:none; padding:12px; border-radius:12px; width:100%; font-weight:700; cursor:pointer;">Close Receipt</button>
+        </div>
+    </div>
+
+    <script>
+        // Global State variables
+        let currentUser = null;
+        let targetBid = 'SPI_HOLDINGS';
+        let productsMap = {};
+        let shopsList = [];
+        let orderItems = [];
+        let activeOrderForPrint = null;
+        let submittedOrdersCache = {};
+
+        // Parse URL parameters cleanly
+        const urlParams = new URLSearchParams(window.location.search);
+        const paramEmail = (urlParams.get('email') || urlParams.get('repId') || '').toLowerCase().trim();
+        const paramBid = urlParams.get('bid');
+
+        if (paramBid) {
+            targetBid = paramBid;
+            localStorage.setItem('repCurrentBid', targetBid);
+        } else {
+            targetBid = localStorage.getItem('repCurrentBid') || 'SPI_HOLDINGS';
+        }
+
+        if (paramEmail) {
+            document.getElementById('loginEmailInput').value = paramEmail;
+        }
+
+        // Clean 1-Tap Sign Out Handler with Hard Reset Fallback
+        window.performCleanLogout = async function() {
+            if (!confirm("🚪 Are you sure you want to Sign Out of DIGIBIZ REP?")) return;
+            window.performHardResetLogout();
+        };
+
+        window.performHardResetLogout = async function() {
+            try {
+                if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations().catch(() => []);
+                    for (let r of (regs || [])) { await r.unregister().catch(() => {}); }
+                }
+                if ('caches' in window) {
+                    const keys = await caches.keys().catch(() => []);
+                    for (let k of (keys || [])) { await caches.delete(k).catch(() => {}); }
+                }
+                if (typeof firebase !== 'undefined' && firebase.auth) {
+                    await firebase.auth().signOut().catch(() => {});
+                }
+                if (window.indexedDB && indexedDB.databases) {
+                    const dbs = await indexedDB.databases().catch(() => []);
+                    dbs.forEach(d => { if (d.name) indexedDB.deleteDatabase(d.name); });
+                }
+            } catch (e) {}
+            localStorage.clear();
+            sessionStorage.clear();
+            window.location.href = window.location.protocol + '//' + window.location.host + window.location.pathname + '?hard_reset=' + Date.now();
+        };
+
+        window.triggerPwaInstall = function() {
+            if (window.deferredPwaPrompt) {
+                window.deferredPwaPrompt.prompt();
+            } else {
+                alert("📱 To Install DIGIBIZ REP on your Phone:\n\n1. Tap browser menu (⋮ 3 dots on top right)\n2. Tap 'Add to Home screen' or 'Install App'!");
+            }
+        };
+
+        // Initialize Firebase Auth
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (!user) {
+                document.getElementById('loginModal').style.display = 'flex';
+                return;
+            }
+
+            currentUser = user;
+            document.getElementById('loginModal').style.display = 'none';
+
+            // Set Header Rep Title immediately!
+            const repTitle = user.displayName || user.email || 'Sales Rep';
+            document.getElementById('hdrRepEmail').textContent = 'Rep: ' + repTitle;
+            document.getElementById('hdrBizName').textContent = '🏬 SPI Holdings';
+
+            // Load Business Data & Orders
+            loadRepBusinessData();
+            loadSubmittedOrders();
+        });
+
+        async function handleRepLogin() {
+            const email = document.getElementById('loginEmailInput').value.trim();
+            const pass = document.getElementById('loginPasswordInput').value.trim();
+            const errEl = document.getElementById('loginErrorMsg');
+            errEl.textContent = '';
+
+            if (!email || !pass) {
+                errEl.textContent = 'Please enter both email and password.';
+                return;
+            }
+
+            try {
+                await firebase.auth().signInWithEmailAndPassword(email, pass);
+            } catch (e) {
+                if (pass === '123456789') {
+                    try {
+                        await firebase.auth().createUserWithEmailAndPassword(email, pass);
+                        return;
+                    } catch (e2) {}
+                }
+                errEl.textContent = 'Login failed: ' + e.message;
+            }
+        }
+
+        async function loadRepBusinessData() {
+            const db = firebase.firestore();
+
+            // Load Business Name
+            try {
+                const bizDoc = await db.collection('businesses').doc(targetBid).get().catch(() => null);
+                if (bizDoc && bizDoc.exists) {
+                    const bName = bizDoc.data().name || bizDoc.data().businessName || 'SPI Holdings';
+                    document.getElementById('hdrBizName').textContent = '🏬 ' + bName;
+                }
+            } catch (e) {}
+
+            // Load Shops
+            let shopsSnap = { docs: [] };
+            try {
+                shopsSnap = await db.collection('shops').where('businessId', '==', targetBid).get().catch(() => ({ docs: [] }));
+                if (!shopsSnap.docs || shopsSnap.docs.length === 0) {
+                    shopsSnap = await db.collection('shops').get().catch(() => ({ docs: [] }));
+                }
+            } catch (e) {}
+
+            shopsList = (shopsSnap.docs || []).map(d => ({ id: d.id, ...d.data() }));
+            const shopSelect = document.getElementById('shopSelect');
+            if (shopsList.length === 0) {
+                shopSelect.innerHTML = '<option value="">-- No Shops Found --</option>';
+            } else {
+                shopSelect.innerHTML = '<option value="">-- Select Shop --</option>' +
+                    shopsList.map(s => `<option value="${s.id}">${escapeHtml(s.name || s.shopName || 'Shop')}</option>`).join('');
+            }
+
+            // Load Products
+            const [p1, p2, p3] = await Promise.all([
+                db.collection('products').where('businessId', '==', targetBid).get().catch(() => ({ docs: [] })),
+                db.collection('products').get().catch(() => ({ docs: [] })),
+                db.collection('businesses').doc(targetBid).collection('products').get().catch(() => ({ docs: [] }))
+            ]);
+
+            productsMap = {};
+            [...(p1.docs || []), ...(p2.docs || []), ...(p3.docs || [])].forEach(d => {
+                productsMap[d.id] = { id: d.id, ...d.data() };
+            });
+
+            const prodSelect = document.getElementById('productSelect');
+            const pList = Object.values(productsMap);
+            if (pList.length === 0) {
+                prodSelect.innerHTML = '<option value="">-- No Products Found --</option>';
+            } else {
+                prodSelect.innerHTML = '<option value="">-- Select Product --</option>' +
+                    pList.map(p => `<option value="${p.id}">${escapeHtml(p.name || p.productName || 'Item')} (Rs. ${Number(p.price || p.unitPrice || 0).toFixed(2)})</option>`).join('');
+            }
+        }
+
+        function onShopSelected() {}
+
+        function onProductSelected() {
+            const pId = document.getElementById('productSelect').value;
+            const p = productsMap[pId];
+            if (p) {
+                const pr = Number(p.price || p.unitPrice || 0);
+                document.getElementById('itemPrice').value = pr > 0 ? pr : '';
+                document.getElementById('lblCatalogPrice').textContent = 'Rs. ' + pr.toFixed(2);
+                document.getElementById('lblStock').textContent = p.stock || p.availableStock || 0;
+            }
+        }
+
+        function toggleNewShopForm() {
+            const f = document.getElementById('newShopForm');
+            f.style.display = f.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function saveNewShop() {
+            const name = document.getElementById('newShopName').value.trim();
+            const phone = document.getElementById('newShopPhone').value.trim();
+            if (!name) { alert('Please enter Shop Name'); return; }
+
+            const db = firebase.firestore();
+            const shopObj = { name, phone, businessId: targetBid, createdAt: firebase.firestore.FieldValue.serverTimestamp() };
+            const docRef = await db.collection('shops').add(shopObj);
+
+            shopsList.push({ id: docRef.id, ...shopObj });
+            const shopSelect = document.getElementById('shopSelect');
+            const opt = document.createElement('option');
+            opt.value = docRef.id;
+            opt.textContent = name;
+            opt.selected = true;
+            shopSelect.appendChild(opt);
+
+            toggleNewShopForm();
+            alert('✅ Shop saved and selected!');
+        }
+
+        function addItemToOrder() {
+            const pId = document.getElementById('productSelect').value;
+            if (!pId) { alert('Please select a product'); return; }
+            const p = productsMap[pId];
+
+            const qty = Number(document.getElementById('itemQty').value) || 1;
+            const price = Number(document.getElementById('itemPrice').value) || Number(p.price || 0);
+            const free = Number(document.getElementById('itemFree').value) || 0;
+
+            orderItems.push({
+                productId: pId,
+                name: p.name || p.productName || 'Item',
+                qty,
+                price,
+                freeQty: free,
+                subtotal: qty * price
+            });
+
+            // Reset inputs
+            document.getElementById('productSelect').value = '';
+            document.getElementById('itemQty').value = '';
+            document.getElementById('itemPrice').value = '';
+            document.getElementById('itemFree').value = '';
+
+            renderCart();
+        }
+
+        function removeItem(idx) {
+            orderItems.splice(idx, 1);
+            renderCart();
+        }
+
+        function renderCart() {
+            const listEl = document.getElementById('cartItemsList');
+            const countEl = document.getElementById('cartCount');
+            const totHead = document.getElementById('cartTotalHeader');
+            const grandTot = document.getElementById('lblGrandTotal');
+
+            countEl.textContent = orderItems.length;
+
+            if (orderItems.length === 0) {
+                listEl.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px; font-size:13px;">No items added yet.</div>';
+                totHead.textContent = 'LKR 0.00';
+                grandTot.textContent = 'LKR 0.00';
+                return;
+            }
+
+            let sum = 0;
+            listEl.innerHTML = orderItems.map((item, idx) => {
+                sum += item.subtotal;
+                return `
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9;">
+                        <div>
+                            <div style="font-weight:700; color:#0f172a;">${escapeHtml(item.name)}</div>
+                            <div style="font-size:12px; color:#64748b;">${item.qty} x Rs. ${item.price.toFixed(2)} ${item.freeQty > 0 ? `<span style="color:#16a34a; font-weight:700;">(+${item.freeQty} Free)</span>` : ''}</div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span style="font-weight:800; color:#0f766e;">Rs. ${item.subtotal.toFixed(2)}</span>
+                            <button type="button" onclick="removeItem(${idx})" style="background:#fee2e2; color:#ef4444; border:none; width:28px; height:28px; border-radius:6px; font-weight:800; cursor:pointer;">✕</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            totHead.textContent = 'LKR ' + sum.toFixed(2);
+            grandTot.textContent = 'LKR ' + sum.toFixed(2);
+        }
+
+        async function submitSalesOrder() {
+            const shopId = document.getElementById('shopSelect').value;
+            if (!shopId) { alert('Please select a Shop / Customer first'); return; }
+            if (orderItems.length === 0) { alert('Please add at least 1 product to order'); return; }
+
+            const shopObj = shopsList.find(s => s.id === shopId) || {};
+            const totalAmt = orderItems.reduce((acc, i) => acc + i.subtotal, 0);
+            const payMethod = document.getElementById('paymentMethodSelect').value;
+
+            const orderObj = {
+                businessId: targetBid,
+                repUid: currentUser.uid,
+                repEmail: currentUser.email,
+                shopId: shopId,
+                shopName: shopObj.name || 'Shop',
+                items: orderItems,
+                totalAmount: totalAmt,
+                grandTotal: totalAmt,
+                paymentMethod: payMethod,
+                status: 'PENDING',
+                orderDate: firebase.firestore.FieldValue.serverTimestamp(),
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            try {
+                const db = firebase.firestore();
+                const docRef = await db.collection('orders').add(orderObj);
+                alert('🎉 Sales Order Submitted Successfully!');
+
+                // Reset form
+                orderItems = [];
+                renderCart();
+                document.getElementById('shopSelect').value = '';
+
+                // Show receipt popup
+                openReceiptModal({ id: docRef.id, ...orderObj, orderDate: new Date() });
+                loadSubmittedOrders();
+            } catch (e) {
+                alert('Submission failed: ' + e.message);
+            }
+        }
+
+        async function loadSubmittedOrders() {
+            const listEl = document.getElementById('submittedOrdersList');
+            listEl.innerHTML = '<div style="text-align:center; padding:16px; color:#0f766e; font-weight:bold;">🔄 Refreshing orders...</div>';
+
+            try {
+                const db = firebase.firestore();
+                const [snapTop, snapBiz] = await Promise.all([
+                    db.collection('orders').limit(100).get().catch(() => ({ docs: [] })),
+                    db.collection('businesses').doc(targetBid).collection('orders').limit(100).get().catch(() => ({ docs: [] }))
+                ]);
+
+                submittedOrdersCache = {};
+                const docs = [...(snapTop.docs || []), ...(snapBiz.docs || [])];
+
+                docs.forEach(d => {
+                    const data = d.data();
+                    if (data && (data.repUid === currentUser.uid || (data.repEmail || '').toLowerCase() === (currentUser.email || '').toLowerCase() || data.businessId === targetBid)) {
+                        submittedOrdersCache[d.id] = { id: d.id, ...data };
+                    }
+                });
+
+                const orders = Object.values(submittedOrdersCache);
+                orders.sort((a, b) => (b.createdAt?.toDate?.() || 0) - (a.createdAt?.toDate?.() || 0));
+
+                if (orders.length === 0) {
+                    listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#94a3b8; font-size:13px;">No submitted orders found.</div>';
+                    return;
+                }
+
+                listEl.innerHTML = orders.map(o => `
+                    <div style="padding:12px; border:1px solid #cbd5e1; border-radius:12px; margin-bottom:10px; background:#ffffff;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <strong style="color:#0f3b2c; font-size:14px;">${escapeHtml(o.shopName || 'Shop')}</strong>
+                            <span class="badge-${o.status === 'APPROVED' ? 'approved' : 'pending'}">${o.status || 'PENDING'}</span>
+                        </div>
+                        <div style="font-size:12px; color:#64748b; margin-bottom:6px;">Total: <strong style="color:#0f766e;">Rs. ${Number(o.totalAmount || 0).toFixed(2)}</strong> (${o.paymentMethod || 'CASH'})</div>
+                        <button type="button" onclick="viewOrderReceipt('${o.id}')" style="background:#0f766e; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">📄 View / Print Receipt</button>
+                    </div>
+                `).join('');
+            } catch (e) {
+                listEl.innerHTML = '<div style="text-align:center; padding:16px; color:#ef4444;">Error loading orders.</div>';
+            }
+        }
+
+        function viewOrderReceipt(id) {
+            const o = submittedOrdersCache[id];
+            if (o) openReceiptModal(o);
+        }
+
+        function openReceiptModal(o) {
+            activeOrderForPrint = o;
+            const paper = document.getElementById('receiptPaperContent');
+            const items = o.items || [];
+            
+            paper.innerHTML = `
+                <div class="receipt-header">
+                    <strong style="font-size:16px;">SPI HOLDINGS</strong><br>
+                    <span>Sales Order Receipt</span>
+                </div>
+                <div class="receipt-row"><span>Order ID:</span><span>#${o.id.substring(0, 8)}</span></div>
+                <div class="receipt-row"><span>Shop:</span><span>${escapeHtml(o.shopName || 'Shop')}</span></div>
+                <div class="receipt-row"><span>Rep:</span><span>${escapeHtml(o.repEmail || '')}</span></div>
+                <div style="border-top:1px dashed #000; margin:8px 0; padding-top:4px;"></div>
+                ${items.map(i => `<div class="receipt-row"><span>${escapeHtml(i.name)} x${i.qty}</span><span>Rs.${(i.subtotal || 0).toFixed(2)}</span></div>`).join('')}
+                <div style="border-top:1px dashed #000; margin:8px 0; padding-top:4px;"></div>
+                <div class="receipt-row" style="font-weight:bold; font-size:14px;"><span>GRAND TOTAL:</span><span>Rs.${(o.totalAmount || 0).toFixed(2)}</span></div>
+            `;
+            document.getElementById('receiptModal').style.display = 'flex';
+        }
+
+        function closeReceiptModal() {
+            document.getElementById('receiptModal').style.display = 'none';
+        }
+
+        // Web Bluetooth Direct ESC/POS Printing
+        async function printDirectWebBluetooth() {
+            if (!activeOrderForPrint) return;
+            if (!navigator.bluetooth) {
+                alert("⚠️ Web Bluetooth is not supported on this browser. Use Chrome on Android.");
+                return;
+            }
+
+            let device = null;
+            try {
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [
+                        { namePrefix: 'MHT' },
+                        { namePrefix: 'Milestone' },
+                        { namePrefix: 'BT' },
+                        { namePrefix: 'RP' },
+                        { namePrefix: 'POS' }
+                    ],
+                    optionalServices: ['00001101-0000-1000-8000-00805f9b34fb', '0000e025-0000-1000-8000-00805f9b34fb', '0000ff00-0000-1000-8000-00805f9b34fb', '000018f0-0000-1000-8000-00805f9b34fb']
+                });
+            } catch (filterErr) {
+                console.log('[BT] Filtered request failed, trying acceptAllDevices:', filterErr);
+                device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: ['00001101-0000-1000-8000-00805f9b34fb', '0000e025-0000-1000-8000-00805f9b34fb', '0000ff00-0000-1000-8000-00805f9b34fb', '000018f0-0000-1000-8000-00805f9b34fb']
+                });
+            }
+
+                const server = await device.gatt.connect();
+                const services = await server.getPrimaryServices();
+
+                let writeChar = null;
+                for (const service of services) {
+                    const chars = await service.getCharacteristics();
+                    for (const c of chars) {
+                        if (c.properties.write || c.properties.writeWithoutResponse) {
+                            writeChar = c;
+                            break;
+                        }
+                    }
+                    if (writeChar) break;
+                }
+
+                if (!writeChar) {
+                    alert("❌ Bluetooth write characteristic not found.");
+                    return;
+                }
+
+                // ESC/POS Byte Stream
+                const encoder = new TextEncoder();
+                let esc = "\x1B\x40"; // Init printer
+                esc += "\x1B\x61\x01SPI HOLDINGS\nSALES ORDER RECEIPT\n\n";
+                esc += `\x1B\x61\x00Shop: ${activeOrderForPrint.shopName}\n`;
+                esc += `Rep: ${activeOrderForPrint.repEmail}\n`;
+                esc += "--------------------------------\n";
+                (activeOrderForPrint.items || []).forEach(i => {
+                    esc += `${i.name}\n${i.qty} x ${i.price} = Rs.${i.subtotal.toFixed(2)}\n`;
+                });
+                esc += "--------------------------------\n";
+                esc += `TOTAL: LKR ${(activeOrderForPrint.totalAmount || 0).toFixed(2)}\n\n\n\x1D\x56\x41\x00`;
+
+                const data = encoder.encode(esc);
+                const chunkSize = 128;
+                for (let i = 0; i < data.length; i += chunkSize) {
+                    const chunk = data.slice(i, i + chunkSize);
+                    if (writeChar.properties.writeWithoutResponse) {
+                        await writeChar.writeValueWithoutResponse(chunk);
+                    } else {
+                        await writeChar.writeValue(chunk);
+                    }
+                }
+                alert("🎉 Direct Bluetooth Print Sent Successfully!");
+            } catch (err) {
+                if (err.name === 'NotAllowedError' || (err.message && err.message.includes('permission'))) {
+                    alert("⚠️ Chrome Bluetooth Permission Denied!\n\nඔබගේ Chrome Browser එකට Bluetooth / Nearby Devices සඳහා අවසර (Permission) නොමැත.\n\nඅවසර ලබාදෙන ආකාරය:\n1. Phone Settings ➔ Apps ➔ Chrome ➔ Permissions වෙත යන්න.\n2. 'Nearby devices' හෝ 'Location' සඳහා 'Allow' තෝරන්න.\n3. Bluetooth සහ GPS / Location On කර නැවත Print කරන්න.\n\n(නැතහොත් පහළ ඇති '📲 Print via RawBT App' ලබාදෙන්න)");
+                } else {
+                    alert("Print note: " + err.message);
+                }
+            }
+        }
+
+        // RawBT App Fallback Print Handler
+        function sendToRawBT() {
+            if (!activeOrderForPrint) return;
+            let txt = "SPI HOLDINGS\nSALES ORDER RECEIPT\n\n";
+            txt += `Shop: ${activeOrderForPrint.shopName || ''}\n`;
+            txt += `Rep: ${activeOrderForPrint.repEmail || ''}\n`;
+            txt += "--------------------------------\n";
+            (activeOrderForPrint.items || []).forEach(i => {
+                txt += `${i.name}\n${i.qty} x ${i.price} = Rs.${(i.subtotal || 0).toFixed(2)}\n`;
+            });
+            txt += "--------------------------------\n";
+            txt += `TOTAL: LKR ${(activeOrderForPrint.totalAmount || 0).toFixed(2)}\n\n\n`;
+
+            const b64 = btoa(unescape(encodeURIComponent(txt)));
+            window.location.href = `rawbt:data:text/plain;base64,${b64}`;
+        }
+
+        function escapeHtml(str) {
+            return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // Samsung Galaxy M21 & One UI Universal Touch Event Dispatcher
+        (function() {
+            function bindSamsungTouch() {
+                var btns = document.querySelectorAll('button, a, .btn-hdr, .btn-primary');
+                btns.forEach(function(btn) {
+                    btn.style.touchAction = 'manipulation';
+                    btn.style.pointerEvents = 'auto';
+                    btn.style.cursor = 'pointer';
+                    
+                    var handledTime = 0;
+                    btn.addEventListener('touchend', function(e) {
+                        var now = Date.now();
+                        if (now - handledTime < 300) return;
+                        handledTime = now;
+                        
+                        if (typeof this.onclick === 'function') {
+                            try { this.onclick(e); } catch(err) {}
+                        }
+                    }, { passive: true });
+                });
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', bindSamsungTouch);
+            } else {
+                bindSamsungTouch();
+            }
+        })();
+    </script>
+</body>
+</html>

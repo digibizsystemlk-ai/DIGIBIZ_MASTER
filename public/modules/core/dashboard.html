@@ -156,6 +156,8 @@
             <div class="hero-kpi-grid" id="heroKpiGrid"></div>
 
             <div class="dynamic-widgets" id="dynamicWidgets"></div>
+
+
             <div class="accounting-widget" id="coreAccountingSummaryWidget">
                 <div class="rep-summary-head">
                     <div class="rep-summary-title">📒 Accounting Summary</div>
@@ -187,6 +189,49 @@
                     <tbody id="repSummaryBody"></tbody>
                 </table>
             </div>
+            <!-- Low Stock Alerts Widget (Clickable Block) -->
+            <div id="coreLowStockWidget" onclick="openLowStockAlertModal()" style="background:linear-gradient(135deg, #7f1d1d, #991b1b); color:#fff; border-radius:14px; padding:16px 20px; margin-bottom:15px; cursor:pointer; box-shadow:0 4px 14px rgba(153,27,27,0.25); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; transition:transform 0.2s;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <div style="font-size:28px;">⚠️</div>
+                    <div>
+                        <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#fca5a5; font-weight:800;">Low Stock Alerts (අඩු තොග අනතුරු ඇඟවීම්)</div>
+                        <div id="coreLowStockCountText" style="font-size:18px; font-weight:800; color:#ffffff; margin-top:2px;">Loading stock alerts...</div>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.15); padding:8px 14px; border-radius:8px; font-weight:700; font-size:12px; border:1px solid rgba(255,255,255,0.3);">
+                    <span>🔍 View Alert List (ලැයිස්තුව බලන්න)</span> ➔
+                </div>
+            </div>
+
+            <!-- Low Stock Modal -->
+            <div id="lowStockModal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.65); z-index:99999; padding:20px; align-items:center; justify-content:center;">
+                <div style="background:#fff; border-radius:16px; max-width:760px; width:100%; max-height:85vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 40px rgba(0,0,0,0.3);">
+                    <div style="background:#991b1b; color:#fff; padding:16px 20px; display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0; font-size:16px; font-weight:800; display:flex; align-items:center; gap:8px;">⚠️ Low Stock Items Below Reorder Threshold</h3>
+                        <button onclick="closeLowStockAlertModal()" style="background:none; border:none; color:#fff; font-size:20px; font-weight:bold; cursor:pointer;">&times;</button>
+                    </div>
+                    <div style="padding:16px; overflow-y:auto; flex:1;">
+                        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                            <thead>
+                                <tr style="background:#fef2f2; color:#991b1b;">
+                                    <th style="padding:10px; text-align:left;">Item Name</th>
+                                    <th style="padding:10px; text-align:left;">Type</th>
+                                    <th style="padding:10px; text-align:right;">Current Stock</th>
+                                    <th style="padding:10px; text-align:right;">Alert Threshold</th>
+                                    <th style="padding:10px; text-align:center;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lowStockModalBody">
+                                <tr><td colspan="5" style="text-align:center; padding:20px; color:#64748b;">Loading low stock list...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="background:#f8fafc; padding:12px 20px; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end;">
+                        <button onclick="closeLowStockAlertModal()" style="padding:8px 16px; background:#64748b; color:#fff; border:none; border-radius:8px; font-weight:700; cursor:pointer;">Close</button>
+                    </div>
+                </div>
+            </div>
+
             <div class="due-payments-widget">
                 <div><i class="fas fa-clock" style="color:#ff6b6b;"></i> Payment Reminders</div>
                 <div class="due-stats">
@@ -380,9 +425,9 @@
 
         function renderCharts(metrics) {
             const type = dashboardContext.businessType;
-            const today = Number(metrics.todaySales) || Number(metrics.todayAppointments) || 0;
-            const month = Number(metrics.monthSales) || Number(metrics.todaySales) || 0;
-            const pending = Number(metrics.pendingOrders) || Number(metrics.upcomingAppointments) || 0;
+            const today = Number(metrics.todaySales ?? 0);
+            const month = Number(metrics.monthSales ?? 0);
+            const pending = Number(metrics.pendingOrders ?? 0);
             const cashFlow = Number(metrics.cashFlow) || 0;
             const quoteCount = Number(metrics.quotationCount) || 0;
             const salesDocCount = Number(metrics.hardwareSalesVsQuotations?.sales) || 0;
@@ -713,6 +758,11 @@
             `).join('');
         }
 
+        function renderCashFlowSummaryWidget(metrics) {
+            const widgetEl = document.getElementById('cashFlowBankingWidget');
+            if (widgetEl) widgetEl.style.display = 'none';
+        }
+
         function renderRepSummary(metrics) {
             const card = document.getElementById('repSummaryCard');
             const filter = document.getElementById('repSummaryFilter');
@@ -806,11 +856,13 @@
                 document.getElementById('coreAccStockValue').textContent = formatRs(stockValue);
                 document.getElementById('coreAccNetProfit').textContent = formatRs(netProfit);
                 // Stock value KPI id varies by dashboard structure; update all known candidates.
-                setKpiByCandidateIds(['kpi-stockValue', 'kpi-totalStockValue', 'stockValue'], stockValue, true);
-                // Cash flow KPI id can vary by case/legacy naming.
-                setKpiByCandidateIds(['kpi-cashFlow', 'kpi-cashflow', 'cashFlow'], cashFlow, true);
-                const dueCash = document.getElementById('cashFlowCount');
-                if (dueCash) dueCash.textContent = formatLKR(cashFlow);
+                if (stockValue > 0) setKpiByCandidateIds(['kpi-stockValue', 'kpi-totalStockValue', 'stockValue'], stockValue, true);
+                // Cash flow KPI id can vary by case/legacy naming. Preserve metrics.cashFlow if set.
+                if (cashFlow > 0) {
+                    setKpiByCandidateIds(['kpi-cashFlow', 'kpi-cashflow', 'cashFlow'], cashFlow, true);
+                    const dueCash = document.getElementById('cashFlowCount');
+                    if (dueCash) dueCash.textContent = formatLKR(cashFlow);
+                }
             } catch (e) {
                 console.warn('Core dashboard accounting widget failed', e);
             }
@@ -938,6 +990,7 @@
 
             renderCharts(metrics);
             renderDynamicWidgets(metrics);
+            renderCashFlowSummaryWidget(metrics);
             renderRepSummary(metrics);
             await loadCoreAccountingWidget();
 
@@ -1205,17 +1258,19 @@
                 }
 
                 function getCost(pRef, item) {
-                    if (pRef) {
-                        if (pRef.buyingPrice != null && !isNaN(Number(pRef.buyingPrice)) && Number(pRef.buyingPrice) > 0) return Number(pRef.buyingPrice);
-                        if (pRef.buyPrice != null && !isNaN(Number(pRef.buyPrice)) && Number(pRef.buyPrice) > 0) return Number(pRef.buyPrice);
-                        if (pRef.costPrice != null && !isNaN(Number(pRef.costPrice)) && Number(pRef.costPrice) > 0) return Number(pRef.costPrice);
-                    }
                     if (item) {
-                        if (item.buyingPrice != null && !isNaN(Number(item.buyingPrice)) && Number(item.buyingPrice) > 0) return Number(item.buyingPrice);
-                        if (item.costPrice != null && !isNaN(Number(item.costPrice)) && Number(item.costPrice) > 0) return Number(item.costPrice);
+                        if (item.cost != null && !isNaN(Number(item.cost)) && Number(item.cost) >= 0) return Number(item.cost);
+                        if (item.buyingPrice != null && !isNaN(Number(item.buyingPrice)) && Number(item.buyingPrice) >= 0) return Number(item.buyingPrice);
+                        if (item.costPrice != null && !isNaN(Number(item.costPrice)) && Number(item.costPrice) >= 0) return Number(item.costPrice);
                     }
-                    const unitP = Number(item && item.unitPrice || pRef && pRef.unitPrice || 0);
-                    return unitP > 0 ? unitP * 0.93 : 0;
+                    if (pRef) {
+                        if (pRef.cost != null && !isNaN(Number(pRef.cost)) && Number(pRef.cost) >= 0) return Number(pRef.cost);
+                        if (pRef.buyingPrice != null && !isNaN(Number(pRef.buyingPrice)) && Number(pRef.buyingPrice) >= 0) return Number(pRef.buyingPrice);
+                        if (pRef.buyPrice != null && !isNaN(Number(pRef.buyPrice)) && Number(pRef.buyPrice) >= 0) return Number(pRef.buyPrice);
+                        if (pRef.costPrice != null && !isNaN(Number(pRef.costPrice)) && Number(pRef.costPrice) >= 0) return Number(pRef.costPrice);
+                    }
+                    const unitP = Number(item && (item.price ?? item.unitPrice) || pRef && (pRef.price ?? pRef.unitPrice) || 0);
+                    return unitP > 0 ? unitP * 0.70 : 0;
                 }
 
                 allOrderDocs.forEach(doc => {
@@ -1223,27 +1278,29 @@
                     const status = String(b.status || '').toLowerCase();
                     if (status === 'rejected' || status === 'cancelled') return;
 
-                    const dt = parseDateAny(b.orderDate || b.createdAt);
+                    const dt = parseDateAny(b.orderDate || b.createdAt || b.date);
                     if (!dt || isNaN(dt.getTime())) return;
                     if (dt < startOfYear) return;
 
                     let orderRevenue = 0, orderCogs = 0;
                     const items = Array.isArray(b.items) ? b.items : [];
                     items.forEach(line => {
-                        const soldQty = Math.max(0, Number(line.orderedQty != null ? line.orderedQty : line.qty) || 0);
+                        const soldQty = Math.max(0, Number(line.quantity != null ? line.quantity : (line.orderedQty != null ? line.orderedQty : line.qty)) || 0);
                         const freeQty = Math.max(0, Number(line.freeQty) || 0);
                         const returnQty = Math.max(0, Number(line.returnResellQty != null ? line.returnResellQty : line.returnQty) || 0);
                         const billedQty = Math.max(0, soldQty - returnQty);
-                        const unitPrice = Number(line.unitPrice) || 0;
+                        const unitPrice = Number(line.price != null ? line.price : (line.unitPrice != null ? line.unitPrice : 0)) || 0;
+                        const isService = line.isService === true || line.category === 'Services' || String(line.category || '').toLowerCase().includes('service');
+
                         const pRef = prodMap[line.productId] || prodMap[line.productCode] || prodMap[line.id];
-                        const buyPrice = getCost(pRef, line);
+                        const buyPrice = isService ? 0 : getCost(pRef, line);
 
                         orderRevenue += billedQty * unitPrice;
                         orderCogs += (billedQty + freeQty) * buyPrice;
                     });
 
-                    const orderTotal = Number(b.totalAmount || b.orderLinesTotal || orderRevenue);
-                    const grossMargin = orderTotal - orderCogs;
+                    const orderTotal = Number(b.total ?? b.totalAmount ?? b.netTotal ?? b.orderLinesTotal ?? orderRevenue ?? 0);
+                    const grossMargin = isNaN(orderTotal - orderCogs) ? 0 : Math.max(0, orderTotal - orderCogs);
 
                     if (dt >= startOfYear) profitYear += grossMargin;
                     if (dt >= startOfMonth) profitMonth += grossMargin;
@@ -1329,9 +1386,90 @@
             }
         }
 
+        let lowStockItemsCache = [];
+
+        async function loadCoreLowStockAlerts() {
+            const bid = (dashboardContext && dashboardContext.businessId) || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            if (!bid || !window.db) return;
+            try {
+                const [rmSnap, fgSnap] = await Promise.all([
+                    db.collection('manufacturer_raw_materials').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('manufacturer_finished_products').where('businessId', '==', bid).get().catch(() => ({ docs: [] }))
+                ]);
+
+                const items = [];
+                rmSnap.docs.forEach(doc => {
+                    const d = doc.data() || {};
+                    const q = Number(d.stockQty || 0);
+                    const threshold = Number(d.minStockLevel || d.reorderLevel || 5);
+                    if (d.isActive !== false && d.name && q <= threshold) {
+                        items.push({ id: doc.id, name: d.name, type: 'RAW_MATERIAL', unit: d.unit || 'Kg', stockQty: q, minStockLevel: threshold });
+                    }
+                });
+
+                fgSnap.docs.forEach(doc => {
+                    const d = doc.data() || {};
+                    const q = Number(d.stockQty || 0);
+                    const threshold = Number(d.minStockLevel || d.reorderLevel || 5);
+                    if (d.isActive !== false && d.name && q <= threshold) {
+                        items.push({ id: doc.id, name: d.name, type: 'FINISHED_PRODUCT', unit: d.unit || 'Units', stockQty: q, minStockLevel: threshold });
+                    }
+                });
+
+                lowStockItemsCache = items;
+                const txtEl = document.getElementById('coreLowStockCountText');
+                const widgetEl = document.getElementById('coreLowStockWidget');
+
+                if (!items.length) {
+                    if (txtEl) txtEl.textContent = '✅ All stock levels are sufficient (තොග මට්ටම් ප්‍රමාණවත්ය)';
+                    if (widgetEl) widgetEl.style.background = 'linear-gradient(135deg, #065f46, #047857)';
+                } else {
+                    if (txtEl) txtEl.textContent = `🚨 ${items.length} Item(s) Running Below Reorder Threshold (අඩු මට්ටමක පවතී)`;
+                    if (widgetEl) widgetEl.style.background = 'linear-gradient(135deg, #7f1d1d, #991b1b)';
+                }
+            } catch (e) {
+                console.warn('[Dashboard] Error loading low stock alerts:', e);
+            }
+        }
+
+        function openLowStockAlertModal() {
+            const modal = document.getElementById('lowStockModal');
+            const tbody = document.getElementById('lowStockModalBody');
+            if (!modal || !tbody) return;
+
+            modal.style.display = 'flex';
+            if (!lowStockItemsCache.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#10b981; font-weight:700;">✅ No low stock items detected! All materials have sufficient stock.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = lowStockItemsCache.map(x => `
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px; font-weight:700; color:#0f172a;">${x.name}</td>
+                    <td style="padding:10px;"><span style="background:${x.type === 'RAW_MATERIAL' ? '#e0f2fe' : '#fef3c7'}; color:${x.type === 'RAW_MATERIAL' ? '#0369a1' : '#b45309'}; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">${x.type}</span></td>
+                    <td style="padding:10px; text-align:right; font-weight:800; color:#dc2626;">${x.stockQty} ${x.unit}</td>
+                    <td style="padding:10px; text-align:right; font-weight:700; color:#475569;">${x.minStockLevel} ${x.unit}</td>
+                    <td style="padding:10px; text-align:center;">
+                        <a href="${x.type === 'RAW_MATERIAL' ? '/modules/manufacturer/inbound.html' : '/modules/manufacturer/outbound.html'}" style="padding:4px 10px; background:#0f766e; color:#fff; text-decoration:none; border-radius:6px; font-weight:700; font-size:11px;">
+                            ${x.type === 'RAW_MATERIAL' ? '📥 Restock (Inbound)' : '🏭 Produce (Outbound)'}
+                        </a>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function closeLowStockAlertModal() {
+            const modal = document.getElementById('lowStockModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        window.openLowStockAlertModal = openLowStockAlertModal;
+        window.closeLowStockAlertModal = closeLowStockAlertModal;
+
         async function startDashboardForUser(user) {
             if (!user) return;
             await refreshDashboardContextAndRender(user);
+            loadCoreLowStockAlerts();
             if (!window.__DIGIBIZ_CORE_DASHBOARD_WATCHERS_BOUND__) {
                 window.__DIGIBIZ_CORE_DASHBOARD_WATCHERS_BOUND__ = true;
                 window.addEventListener('storage', (ev) => {

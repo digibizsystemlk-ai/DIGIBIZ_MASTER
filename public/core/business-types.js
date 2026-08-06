@@ -25,6 +25,7 @@ const BUSINESS_TYPES = {
         menus: [
             { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "CASHIER", "VIEWER"] },
             { icon: "🛒", name: "Point of Sale", link: "/modules/tire_centre/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "CASHIER"] },
+            { icon: "📜", name: "Sales History", link: "/modules/tire_centre/sales-history.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "CASHIER"] },
             { icon: "📦", name: "Stock", link: "/modules/tire_centre/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
             { icon: "🛠️", name: "Services", link: "/modules/tire_centre/services.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STAFF"] },
             { icon: "📅", name: "Appointments", link: "/modules/tire_centre/appointments.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STAFF"] },
@@ -264,6 +265,7 @@ const BUSINESS_TYPES = {
             { icon: "📊", name: "Dashboard", link: "/modules/attendance_payroll/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
             { icon: "⏱️", name: "Attendance Log", link: "/modules/attendance_payroll/attendance.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
             { icon: "📱", name: "QR Mobile Scanner", link: "/modules/attendance_payroll/mobile-scan.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
+            { icon: "🚗", name: "Gate Pass & Outings", link: "/modules/attendance_payroll/gate-pass.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
             { icon: "🔄", name: "Shift Roster", link: "/modules/attendance_payroll/shifts.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
             { icon: "👥", name: "Employees", link: "/modules/attendance_payroll/employees.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },
             { icon: "💵", name: "Payroll & Payslips", link: "/modules/attendance_payroll/payroll.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "HR_MANAGER", "ACCOUNTANT", "VIEWER", "CASHIER", "STAFF", "STORE_KEEPER"] },

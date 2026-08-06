@@ -81,6 +81,7 @@
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
             <button class="btn-qr" onclick="openQrModal()"><i class="fa-solid fa-qrcode"></i> Print Company QR Poster</button>
+            <button class="btn-outline" onclick="window.location.href='gate-pass.html'"><i class="fa-solid fa-car"></i> Gate Pass & Outings</button>
             <button class="btn-outline" onclick="window.location.href='mobile-scan.html'"><i class="fa-solid fa-mobile-screen"></i> Mobile QR Scanner</button>
             <button class="btn-primary" onclick="loadEmployeeDirectory()"><i class="fa-solid fa-rotate"></i> Refresh Sync</button>
         </div>
@@ -89,7 +90,7 @@
     <!-- Shift & OT Calculation Policy Banner -->
     <div class="rules-card">
         <h4><i class="fa-solid fa-calculator"></i> නිල සේවක වැඩ පැය සහ අතිකාල පැය (OT) ගණනය කිරීමේ සූත්‍රය (Work & OT Policy):</h4>
-        <div class="rules-grid">
+        <div class="rules-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
             <div>
                 <strong>☀️ පැය 12 ෂිෆ්ට් එක (Day/Night Shift):</strong><br>
                 • මුළු කාලය: පැය 12 | විවේකය: පැය 1 (දිවා/රාත්‍රී ආහාර)<br>
@@ -101,6 +102,12 @@
                 • මුළු කාලය: පැය 24 | විවේකය: පැය 2<br>
                 • සැබෑ වැඩ පැය: <strong>පැය 22</strong> (24 - 2) | සාමාන්‍ය වැඩ පැය: පැය 8<br>
                 • 🎯 <strong>හිමිවන අතිකාල (OT): පැය 14.0</strong> (22 - 8)
+            </div>
+            <div>
+                <strong>🇱🇰 වෙළඳ/පොදු නිවාඩු (Mercantile Holiday):</strong><br>
+                • මුළු කාලයෙන් <strong>පැය 1ක Lunch Hour</strong> ඉවත් කරනු ලැබේ.<br>
+                • 🎯 <strong>100% සියලුම වැඩ පැය සඳහා Double OT (2.0x Rate) හිමිවේ.</strong><br>
+                • (උදා: පැය 12 වැඩ කළහොත්: $12 - 1 = \text{පැය 11ම Double OT}$)
             </div>
         </div>
     </div>
@@ -194,6 +201,7 @@
                             <th>Basic Duty</th>
                             <th>OT Hours</th>
                             <th>Method</th>
+                            <th>Admin Action</th>
                         </tr>
                     </thead>
                     <tbody id="empReportTableBody">
@@ -538,6 +546,7 @@
                         curTotalNightAllowance += 200;
                     }
 
+                    const logIdStr = l.id || '';
                     tableHtml += `
                         <tr>
                             <td>${l.date}</td>
@@ -550,13 +559,18 @@
                             <td>${metrics.basicHoursStr}</td>
                             <td><strong style="color:#2563eb;">${metrics.otHoursStr}</strong></td>
                             <td><span class="badge badge-mobile"><i class="fa-solid fa-qrcode"></i> ${l.method || 'Mobile QR Scan'}</span></td>
+                            <td>
+                                <button onclick="deleteAttendanceLog('${logIdStr}', '${l.date}', '${empId}')" style="background:#fee2e2;color:#b91c1c;border:none;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;">
+                                    <i class="fa-solid fa-trash"></i> Delete Log
+                                </button>
+                            </td>
                         </tr>
                     `;
                 });
             } else {
                 tableHtml = `
                     <tr>
-                        <td colspan="10" style="text-align:center;color:#64748b;padding:24px;font-weight:600;">
+                        <td colspan="11" style="text-align:center;color:#64748b;padding:24px;font-weight:600;">
                             ⚠️ මෙම සේවකයා (${selectedMonthVal}) මාසය තුළ මෙතෙක් කිසිදු දිනයක සේවයට වාර්තා කර නොමැත.
                         </td>
                     </tr>
@@ -590,6 +604,33 @@
 
         function closeEmpReportModal() {
             document.getElementById('empReportModal').style.display = 'none';
+        }
+
+        function deleteAttendanceLog(logId, logDate, empId) {
+            if (confirm(`ඔබට (${logDate}) දිනට අදාළ පැමිණීමේ/පිටවීමේ සටහන පද්ධතියෙන් ස්ථිරවම ඉවත් (Delete) කිරීමට අවශ්‍ය බව තහවුරු කරන්න?`)) {
+                let logs = [];
+                try {
+                    const stored = localStorage.getItem('digibiz_attendance_logs');
+                    if (stored) logs = JSON.parse(stored);
+                } catch(e) {}
+
+                logs = logs.filter(l => (logId && l.id !== logId) || (!logId && !(l.date === logDate && (l.empId === empId || l.phone === selectedEmpPhone))));
+                localStorage.setItem('digibiz_attendance_logs', JSON.stringify(logs));
+
+                // Sync deletion to Cloud Firestore
+                const firestoreDb = window.db || (window.firebase && window.firebase.firestore ? window.firebase.firestore() : null);
+                if (firestoreDb) {
+                    const targetBid = localStorage.getItem('currentBusinessId') || 'ATTENDANCE_BIZ_001';
+                    if (logId) {
+                        firestoreDb.collection('attendance_logs').doc(logId).delete().catch(e => console.warn(e));
+                        firestoreDb.collection('businesses').doc(targetBid).collection('attendance_logs').doc(logId).delete().catch(e => console.warn(e));
+                    }
+                }
+
+                // Refresh Timesheet & Main Dashboard
+                openEmpReportModal(selectedEmpId, selectedEmpName, selectedEmpPhone);
+                loadEmployeeDirectory();
+            }
         }
 
         function downloadIndividualPdf() {

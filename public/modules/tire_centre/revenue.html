@@ -12,6 +12,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
     <script src="../../core/firebase-init.js?v=58"></script>
     <script src="../../core/auth-roles.js?v=58"></script>
+    <script src="../../core/business-types.js?v=100"></script>
+    <script src="../../core/dashboard-core.js?v=100"></script>
     <script src="../../core/sidebar.js?v=1010"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -167,6 +169,41 @@
         <div class="mix-legend">
             <div class="mix-legend-item"><span class="dot" style="background:#3b82f6;"></span> Tire & Parts Sales: <span id="legProductVal" style="color:var(--text);">Rs. 0.00</span></div>
             <div class="mix-legend-item"><span class="dot" style="background:#8b5cf6;"></span> Auto Services Income: <span id="legServiceVal" style="color:var(--text);">Rs. 0.00</span></div>
+        </div>
+    </div>
+
+    <!-- Cash Flow & Cash Banking Movement Summary -->
+    <div class="revenue-mix-card" style="margin-top: 16px; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #fff;">
+        <div class="mix-title" style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+            <span><i class="fa-solid fa-money-bill-transfer" style="color:#38bdf8; margin-right:8px;"></i> Cash Flow & Cash Banking Summary (මුදල් සංසරණ සාරාංශය)</span>
+            <span id="revCfbStatus" style="font-size:12px; font-weight:700; color:#38bdf8; background:rgba(56,189,248,0.15); padding:3px 10px; border-radius:12px;">Real-Time Liquidity</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 14px;">
+            <div style="background: rgba(255,255,255,0.06); padding: 12px; border-radius: 10px; border-left: 3.5px solid #10b981;">
+                <div style="font-size: 10.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase;">💵 Cash in Drawer</div>
+                <div id="revCashBal" style="font-size: 18px; font-weight: 900; color: #34d399; margin-top: 2px;">LKR 0.00</div>
+                <div id="revCashSub" style="font-size: 9.5px; color: #cbd5e1; margin-top: 2px;">Sales - Exp - Deposits</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.06); padding: 12px; border-radius: 10px; border-left: 3.5px solid #3b82f6;">
+                <div style="font-size: 10.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase;">🏦 Bank Balance</div>
+                <div id="revBankBal" style="font-size: 18px; font-weight: 900; color: #60a5fa; margin-top: 2px;">LKR 0.00</div>
+                <div id="revBankSub" style="font-size: 9.5px; color: #cbd5e1; margin-top: 2px;">Deposits + Cheques</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.06); padding: 12px; border-radius: 10px; border-left: 3.5px solid #f59e0b;">
+                <div style="font-size: 10.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase;">📥 Cash Sales (කෑෂ් අලෙවිය)</div>
+                <div id="revCashSales" style="font-size: 17px; font-weight: 800; color: #fbbf24; margin-top: 2px;">LKR 0.00</div>
+                <div style="font-size: 9.5px; color: #cbd5e1; margin-top: 2px;">Direct drawer cash</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.06); padding: 12px; border-radius: 10px; border-left: 3.5px solid #a855f7;">
+                <div style="font-size: 10.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase;">🏦 Bank Deposits (බැංකුගත කිරීම්)</div>
+                <div id="revCashDeposits" style="font-size: 17px; font-weight: 800; color: #c084fc; margin-top: 2px;">LKR 0.00</div>
+                <div style="font-size: 9.5px; color: #cbd5e1; margin-top: 2px;">Transferred to bank</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.06); padding: 12px; border-radius: 10px; border-left: 3.5px solid #ec4899;">
+                <div style="font-size: 10.5px; font-weight: 700; color: #94a3b8; text-transform: uppercase;">🔄 Net Liquid Cash Flow</div>
+                <div id="revTotalCashFlow" style="font-size: 18px; font-weight: 900; color: #f472b6; margin-top: 2px;">LKR 0.00</div>
+                <div style="font-size: 9.5px; color: #cbd5e1; margin-top: 2px;">Cash + Bank Total</div>
+            </div>
         </div>
     </div>
 
@@ -329,10 +366,20 @@ async function refresh() {
         const todayK = localDateKey();
         const opt = navigator.onLine ? {} : { source: 'cache' };
 
-        const [salesSnap, expSnap] = await Promise.all([
-            db.collection('orders').doc(TIRE_BUSINESS_ID).collection('list').orderBy('createdAt', 'desc').limit(1500).get(opt).catch(() => ({ docs: [] })),
-            db.collection('expenses').doc(TIRE_BUSINESS_ID).collection('list').orderBy('expenseDate', 'desc').limit(1500).get(opt).catch(() => ({ docs: [] }))
-        ]);
+        let salesSnap, expSnap;
+        try {
+            salesSnap = await db.collection('orders').doc(TIRE_BUSINESS_ID).collection('list').orderBy('createdAt', 'desc').limit(1500).get(opt);
+        } catch (e1) {
+            console.warn('[Revenue] Sales orderBy fallback:', e1);
+            salesSnap = await db.collection('orders').doc(TIRE_BUSINESS_ID).collection('list').get(opt).catch(() => ({ docs: [] }));
+        }
+
+        try {
+            expSnap = await db.collection('expenses').doc(TIRE_BUSINESS_ID).collection('list').orderBy('expenseDate', 'desc').limit(1500).get(opt);
+        } catch (e2) {
+            console.warn('[Revenue] Expenses orderBy fallback:', e2);
+            expSnap = await db.collection('expenses').doc(TIRE_BUSINESS_ID).collection('list').get(opt).catch(() => ({ docs: [] }));
+        }
 
         let salesTotal = 0;
         let productSalesTotal = 0;
@@ -455,7 +502,7 @@ async function refresh() {
         const expRows = [];
         expSnap.docs.forEach((d) => {
             const r = d.data() || {};
-            if (String(r.expenseDate || '') === todayK) {
+            if (isTodayRow(r) || String(r.expenseDate || '').slice(0,10) === todayK) {
                 const a = Number(r.amount) || 0;
                 expTotal += a;
                 expRows.push({ 
@@ -483,6 +530,18 @@ async function refresh() {
         document.getElementById('mixPctLabel').textContent = `Tire/Parts ${prodPct}% · Services ${servPct}%`;
         document.getElementById('legProductVal').textContent = fmt(productSalesTotal);
         document.getElementById('legServiceVal').textContent = fmt(serviceSalesTotal);
+
+        // Update Cash Banking Metrics
+        if (window.dashboardCore && window.dashboardCore.getTireCentreMetrics) {
+            window.dashboardCore.getTireCentreMetrics({ businessId: TIRE_BUSINESS_ID, businessType: 'tire_centre' }).then(m => {
+                if (!m) return;
+                document.getElementById('revCashBal').textContent = fmt(m.cashBalance || 0);
+                document.getElementById('revBankBal').textContent = fmt(m.bankBalance || 0);
+                document.getElementById('revCashSales').textContent = fmt(m.cashSales || 0);
+                document.getElementById('revCashDeposits').textContent = fmt(m.cashDepositsTotal || 0);
+                document.getElementById('revTotalCashFlow').textContent = fmt(m.cashFlow || 0);
+            }).catch(e => console.warn('Revenue CF error:', e));
+        }
 
         // 3. Render Top Services Table
         const serviceListToday = Object.values(serviceMapToday).sort((a, b) => b.revenue - a.revenue);
@@ -633,8 +692,18 @@ function closeModal() {
 
 auth.onAuthStateChanged(async (user) => {
     if (!user) { window.location.href = '/'; return; }
-    const userDoc = await db.collection('users').doc(user.uid).get();
-    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    let businessId = '';
+    if (window.dashboardCore && window.dashboardCore.getContext) {
+        try {
+            const ctx = await window.dashboardCore.getContext(user);
+            if (ctx && ctx.businessId) businessId = ctx.businessId;
+        } catch (e) {}
+    }
+    if (!businessId) {
+        const preferred = localStorage.getItem('selectedBusinessId') || localStorage.getItem('currentBusinessId');
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        businessId = preferred || (userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid);
+    }
     TIRE_BUSINESS_ID = businessId;
     
     await refresh();

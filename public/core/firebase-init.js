@@ -77,6 +77,7 @@ const auth = window.auth;
                            window.location.pathname.includes('receivables.html') ||
                            window.location.pathname.includes('payables.html') ||
                            window.location.pathname.includes('credit-aging.html') ||
+                           window.location.pathname.includes('sales-history.html') ||
                            localStorage.getItem('currentBusinessType') === 'retail' ||
                            sessionStorage.getItem('currentBusinessType') === 'retail';
 
@@ -250,7 +251,7 @@ const auth = window.auth;
                 const now = new Date();
                 const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                 
-                // 1. Update master users/{uid} document
+                // 1. Update master users/{uid} document asynchronously without awaiting
                 window.db.collection('users').doc(user.uid).set({
                     lastActiveAt: firebase.firestore.FieldValue.serverTimestamp(),
                     lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),

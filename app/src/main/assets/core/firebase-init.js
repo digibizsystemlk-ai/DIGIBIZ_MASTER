@@ -243,6 +243,36 @@ const auth = window.auth;
             } catch (e) { /* ignore */ }
             return;
         }
+
+        // Automatic user access heartbeat tracking (records page visit/access on master user doc and sub-user doc)
+        try {
+            if (window.db && user && user.uid) {
+                const now = new Date();
+                const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                
+                // 1. Update master users/{uid} document asynchronously without awaiting
+                window.db.collection('users').doc(user.uid).set({
+                    lastActiveAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    lastLoginAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    activeDates: firebase.firestore.FieldValue.arrayUnion(todayKey),
+                    email: user.email || '',
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true }).catch(() => {});
+
+                // 2. Update business membership doc if businessId exists
+                const storedBid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                if (storedBid) {
+                    window.db.collection('businesses').doc(storedBid).collection('users').doc(user.uid).set({
+                        lastActiveAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        activeDates: firebase.firestore.FieldValue.arrayUnion(todayKey),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true }).catch(() => {});
+                }
+            }
+        } catch (eActive) {
+            console.warn('[DigiBiz] Active heartbeat log warn:', eActive);
+        }
+
         const email = String(user.email || '').trim().toLowerCase();
         try { window.ensureDefaultTestBusinessProfile(); } catch (e) { /* ignore */ }
         const storedBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');

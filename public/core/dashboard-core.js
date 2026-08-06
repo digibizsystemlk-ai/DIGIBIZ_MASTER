@@ -849,11 +849,43 @@ class DashboardCore {
     }
 
     async getTireCentreMetrics(context) {
-        const startToday = new Date();
-        startToday.setHours(0, 0, 0, 0);
-        const endToday = new Date();
-        endToday.setHours(23, 59, 59, 999);
-        const startMonth = new Date(startToday.getFullYear(), startToday.getMonth(), 1);
+        const extractDate = (val) => {
+            if (!val) return null;
+            if (typeof val.toDate === 'function') {
+                const d = val.toDate();
+                return isNaN(d.getTime()) ? null : d;
+            }
+            if (val.seconds !== undefined) {
+                const d = new Date(val.seconds * 1000);
+                return isNaN(d.getTime()) ? null : d;
+            }
+            if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+            if (typeof val === 'number') {
+                const d = new Date(val);
+                return isNaN(d.getTime()) ? null : d;
+            }
+            if (typeof val === 'string') {
+                if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                    const [y, m, day] = val.split('-').map(Number);
+                    return new Date(y, m - 1, day, 12, 0, 0);
+                }
+                const d = new Date(val);
+                return isNaN(d.getTime()) ? null : d;
+            }
+            return null;
+        };
+
+        const toLocalDateStr = (d) => {
+            if (!d || isNaN(d.getTime())) return '';
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        };
+
+        const now = new Date();
+        const todayStr = toLocalDateStr(now);
+        const monthStr = todayStr.slice(0, 7);
 
         // 1. Fetch Orders / Sales
         let todaySales = 0;
@@ -861,24 +893,39 @@ class DashboardCore {
         let completedOrdersCount = 0;
         let pendingOrdersCount = 0;
         let creditOrdersSum = 0;
+        let cashSales = 0;
+        let bankSales = 0;
 
         try {
             const orderSnapshot = await window.db.collection('orders').doc(context.businessId).collection('list').get();
             orderSnapshot.docs.forEach(doc => {
-                const order = doc.data();
+                const order = doc.data() || {};
                 if (order.isReversed === true || order.status === 'cancelled') return;
                 
-                const amt = Number(order.netTotal || order.total || order.grandTotal || order.amount) || 0;
-                let oDate = null;
-                if (order.createdAt) {
-                    oDate = order.createdAt.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
-                } else if (order.date) {
-                    oDate = order.date.toDate ? order.date.toDate() : new Date(order.date);
+                let lineTotal = 0;
+                if (Array.isArray(order.items)) {
+                    order.items.forEach(item => {
+                        const q = Number(item.quantity || item.qty || 0);
+                        const p = Number(item.price || item.unitPrice || 0);
+                        lineTotal += (q * p);
+                    });
+                }
+                const amt = Number(order.total ?? order.netTotal ?? order.grandTotal ?? order.amount ?? lineTotal ?? 0);
+                const oDate = extractDate(order.createdAt) || extractDate(order.date) || extractDate(order.invoiceDate) || extractDate(order.orderDate) || extractDate(order.timestamp);
+                const oDateStr = toLocalDateStr(oDate);
+
+                if (oDateStr) {
+                    if (oDateStr.startsWith(monthStr)) monthSales += amt;
+                    if (oDateStr === todayStr) todaySales += amt;
                 }
 
-                if (oDate && !isNaN(oDate.getTime())) {
-                    if (oDate >= startMonth) monthSales += amt;
-                    if (oDate >= startToday && oDate <= endToday) todaySales += amt;
+                const pm = String(order.paymentMethod || 'cash').toLowerCase();
+                if (order.status !== 'credit' && order.paymentStatus !== 'UNPAID') {
+                    if (pm === 'bank' || pm === 'card' || pm === 'online' || pm === 'cheque') {
+                        bankSales += amt;
+                    } else {
+                        cashSales += amt;
+                    }
                 }
 
                 if (['pending', 'hold', 'credit', 'UNPAID'].includes(order.status) || order.paymentStatus === 'UNPAID') {
@@ -898,16 +945,15 @@ class DashboardCore {
         try {
             const journalSnapshot = await window.db.collection('journal').doc(context.businessId).collection('entries').get();
             journalSnapshot.docs.forEach(doc => {
-                const entry = doc.data();
+                const entry = doc.data() || {};
                 if (entry.isReversed || (entry.refType !== 'SALE' && entry.referenceType !== 'SALE')) return;
                 const amt = Number(entry.totalCredit || entry.totalDebit || entry.amount) || 0;
-                let eDate = null;
-                if (entry.date) eDate = entry.date.toDate ? entry.date.toDate() : new Date(entry.date);
-                else if (entry.createdAt) eDate = entry.createdAt.toDate ? entry.createdAt.toDate() : new Date(entry.createdAt);
+                const eDate = extractDate(entry.date) || extractDate(entry.createdAt);
+                const eDateStr = toLocalDateStr(eDate);
 
-                if (eDate && !isNaN(eDate.getTime())) {
-                    if (eDate >= startMonth && monthSales === 0) monthSales += amt;
-                    if (eDate >= startToday && eDate <= endToday && todaySales === 0) todaySales += amt;
+                if (eDateStr) {
+                    if (eDateStr.startsWith(monthStr) && monthSales === 0) monthSales += amt;
+                    if (eDateStr === todayStr && todaySales === 0) todaySales += amt;
                 }
             });
         } catch (e) {}
@@ -1030,38 +1076,43 @@ class DashboardCore {
             });
         } catch (e) {}
 
-        // 7. Calculate Cash vs Bank Sales
-        let cashSales = 0;
-        let bankSales = 0;
+        // 7. Bank Transactions for Cash Deposits, Withdrawals, Cheques, Loans
+
+        // 7b. Fetch Bank Transactions for Cash Deposits, Withdrawals, Cheques, Loans
+        let cashDepositsTotal = 0;
+        let cashWithdrawalsTotal = 0;
+        let chequeDepositsTotal = 0;
+        let bankLoanAdditions = 0;
+        let bankLoanRepayments = 0;
         try {
-            const salesSnapshot = await window.db.collection('orders').doc(context.businessId).collection('list').get();
-            salesSnapshot.docs.forEach(doc => {
-                const s = doc.data();
-                if (s.isReversed === true || s.status === 'cancelled') return;
-                const amt = Number(s.netTotal || s.total || s.grandTotal || s.amount) || 0;
-                const pm = String(s.paymentMethod || 'cash').toLowerCase();
-                if (s.status !== 'credit' && s.paymentStatus !== 'UNPAID') {
-                    if (pm === 'bank' || pm === 'card' || pm === 'online' || pm === 'cheque') {
-                        bankSales += amt;
-                    } else {
-                        cashSales += amt;
+            const bankTxSnap = await window.db.collection('banks').doc(context.businessId).collection('transactions').get();
+            bankTxSnap.docs.forEach(doc => {
+                const tx = doc.data() || {};
+                const amt = Number(tx.amount) || 0;
+                const type = String(tx.type || '').toUpperCase();
+                if (type === 'CASH_DEPOSIT') {
+                    cashDepositsTotal += amt;
+                } else if (type === 'CASH_WITHDRAWAL' || type === 'WITHDRAWAL') {
+                    cashWithdrawalsTotal += amt;
+                } else if (type === 'CHEQUE_DEPOSIT' || type === 'CHEQUE_CLEARANCE') {
+                    chequeDepositsTotal += amt;
+                } else if (type === 'LOAN' || type === 'LINK_LOAN' || type === 'LOAN_ADDITION') {
+                    if (tx.isExistingLiabilityOnly !== true) {
+                        bankLoanAdditions += amt;
                     }
+                } else if (type === 'LOAN_REPAYMENT' || type === 'REPAY_LOAN') {
+                    bankLoanRepayments += amt;
                 }
             });
         } catch (e) {}
 
-        // 7b. Fetch Bank Transactions for Cash Deposits transferred from drawer to bank
-        let cashDepositsTotal = 0;
-        try {
-            const depSnap = await window.db.collection('banks').doc(context.businessId).collection('transactions')
-                .where('type', '==', 'CASH_DEPOSIT').get();
-            depSnap.docs.forEach(doc => {
-                cashDepositsTotal += (Number(doc.data().amount) || 0);
-            });
-        } catch (e) {}
+        const cashInflows = cashSales + cashWithdrawalsTotal;
+        const cashOutflows = cashExpenses + cashPurchases + cashDepositsTotal;
+        const cashBalance = Math.max(0, initCash + cashInflows - cashOutflows);
 
-        const cashBalance = Math.max(0, initCash + cashSales - cashExpenses - cashPurchases - cashDepositsTotal);
-        const bankBalance = Math.max(0, initBank + bankSales + cashDepositsTotal - bankExpenses - bankPurchases);
+        const bankInflows = bankSales + cashDepositsTotal + chequeDepositsTotal + bankLoanAdditions;
+        const bankOutflows = bankExpenses + bankPurchases + cashWithdrawalsTotal + bankLoanRepayments;
+        const bankBalance = Math.max(0, initBank + bankInflows - bankOutflows);
         const cashFlow = cashBalance + bankBalance;
 
         // 8. Receivables & Payables
@@ -1129,6 +1180,21 @@ class DashboardCore {
             cashFlow,
             cashBalance,
             bankBalance,
+            cashInflows,
+            cashOutflows,
+            bankInflows,
+            bankOutflows,
+            cashDepositsTotal,
+            cashWithdrawalsTotal,
+            chequeDepositsTotal,
+            bankLoanAdditions,
+            bankLoanRepayments,
+            cashSales,
+            bankSales,
+            cashExpenses,
+            bankExpenses,
+            cashPurchases,
+            bankPurchases,
             cashFlowWeeks,
             stockValue,
             supplierOutstanding,

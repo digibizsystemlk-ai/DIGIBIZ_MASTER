@@ -1875,6 +1875,7 @@ class Sidebar {
                     { icon: '🧱', name: 'Raw Materials', link: '/modules/manufacturer/inbound.html' },
                     { icon: '🏭', name: 'Production / Manufacturing', link: '/modules/manufacturer/outbound.html' },
                     { icon: '📦', name: 'Finished Goods', link: '/modules/manufacturer/stock.html' },
+                    { icon: '🗑️', name: 'Wasted Goods Log', link: '/modules/manufacturer/wastage.html' },
                     { icon: '🛍️', name: 'Sales', link: '/modules/manufacturer/sales.html' },
                     { icon: '🧾', name: 'Expenses', link: '/modules/manufacturer/expenses.html' },
                     { icon: '📚', name: 'History', link: '/modules/manufacturer/history.html' }
@@ -2105,6 +2106,7 @@ class Sidebar {
             { icon: '🎨', name: 'Sidebar Config', link: '/modules/core/sidebar-config.html', isNew: true },
             { icon: '🔐', name: 'Change Password', link: '/modules/core/change-password.html' },
             { icon: '⚙️', name: 'Settings', link: '/modules/company/settings.html' },
+            { icon: '🖨️', name: 'Print Settings', link: '/modules/company/print-settings.html', isNew: true },
             { icon: '📲', name: 'SMS Settings', link: '/modules/company/sms-settings.html' },
             { icon: '🧾', name: 'SMS Log', link: '/modules/company/sms-log.html' },
             { icon: '💳', name: 'Billing & Charges', link: '/modules/core/billing.html' },
