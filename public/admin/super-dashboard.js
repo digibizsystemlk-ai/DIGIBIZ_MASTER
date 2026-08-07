@@ -704,7 +704,7 @@
             $('btnSendMfaOtp').onclick = () => {
                 const phone = $('mfaPhoneNumber')?.value?.trim();
                 if (!phone) return toast('ජංගම දුරකථන අංකය ඇතුළත් කරන්න');
-                $('mfaStatusMsg').textContent = `📩 OTP සත්‍යාපන කේතය ${phone} අංකයට යවන ලදී. (පරීක්ෂා කිරීම සඳහා 123456 ඇතුළත් කරන්න)`;
+                $('mfaStatusMsg').textContent = `📩 OTP සත්‍යාපන කේතය ඔබගේ ජංගම දුරකථනයට (${phone}) SMS මගින් යවන ලදී. කරුණාකර ලැබුණු අංක 6යේ OTP කේතය පහතින් ඇතුළත් කරන්න.`;
                 toast('MFA OTP කේතය යවන ලදී!');
             };
         }
