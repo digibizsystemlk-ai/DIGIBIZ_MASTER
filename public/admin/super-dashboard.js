@@ -295,6 +295,148 @@
         $('assignPreview').textContent = `Assign ${user?.email || '-'} -> ${bizLabel} | type: ${btype || '-'} | role: ${role || '-'}`;
     }
 
+    let activeTrendChartInstance = null;
+
+    async function loadActiveAccountsMetrics() {
+        const todayEl = $('actToday');
+        const yestEl = $('actYesterday');
+        const weekEl = $('actWeek');
+        const monthEl = $('actMonth');
+        if (!todayEl || !yestEl || !weekEl || !monthEl) return;
+
+        const formatSldateKey = (d) => {
+            const dateObj = (d && d.toDate) ? d.toDate() : (d ? new Date(d) : null);
+            if (!dateObj || Number.isNaN(dateObj.getTime())) return null;
+            return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(dateObj);
+        };
+
+        const nowSl = new Date();
+        const todayStr = formatSldateKey(nowSl);
+        const yestObj = new Date(nowSl.getTime() - 24 * 60 * 60 * 1000);
+        const yestStr = formatSldateKey(yestObj);
+
+        const weekStartObj = new Date(nowSl.getTime() - 6 * 24 * 60 * 60 * 1000);
+        const weekStartStr = formatSldateKey(weekStartObj);
+
+        const currentYear = nowSl.getFullYear();
+        const currentMonth = nowSl.getMonth();
+        const monthStartStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+
+        const last30Days = [];
+        for (let i = 29; i >= 0; i--) {
+            const dt = new Date(nowSl.getTime() - i * 24 * 60 * 60 * 1000);
+            const key = formatSldateKey(dt);
+            if (key) last30Days.push(key);
+        }
+
+        const dailyActiveUsersMap = new Map();
+        last30Days.forEach((dt) => dailyActiveUsersMap.set(dt, new Set()));
+
+        const addActivity = (userIdentifier, dateVal) => {
+            const dtKey = formatSldateKey(dateVal);
+            if (!dtKey || !userIdentifier) return;
+            if (dailyActiveUsersMap.has(dtKey)) {
+                dailyActiveUsersMap.get(dtKey).add(userIdentifier);
+            }
+        };
+
+        (state.users || []).forEach((u) => {
+            const uid = u.id || u.email;
+            if (u.lastActiveAt) addActivity(uid, u.lastActiveAt);
+            if (u.lastLoginAt) addActivity(uid, u.lastLoginAt);
+            if (u.updatedAt) addActivity(uid, u.updatedAt);
+            if (u.createdAt) addActivity(uid, u.createdAt);
+        });
+
+        try {
+            const auditSnap = await db.collection('audit_logs').limit(1000).get();
+            auditSnap.docs.forEach((doc) => {
+                const data = doc.data() || {};
+                const uid = data.performedByUid || data.performedByEmail || data.businessId;
+                if (uid && data.timestamp) {
+                    addActivity(uid, data.timestamp);
+                }
+            });
+        } catch (e) {
+            console.warn('[Active Metrics] audit_logs fetch skipped:', e);
+        }
+
+        const todayUsersSet = dailyActiveUsersMap.get(todayStr) || new Set();
+        const yestUsersSet = dailyActiveUsersMap.get(yestStr) || new Set();
+
+        const weekUsersSet = new Set();
+        const monthUsersSet = new Set();
+
+        dailyActiveUsersMap.forEach((userSet, dateKey) => {
+            if (dateKey >= weekStartStr && dateKey <= todayStr) {
+                userSet.forEach((u) => weekUsersSet.add(u));
+            }
+            if (dateKey >= monthStartStr && dateKey <= todayStr) {
+                userSet.forEach((u) => monthUsersSet.add(u));
+            }
+        });
+
+        todayEl.textContent = String(todayUsersSet.size);
+        yestEl.textContent = String(yestUsersSet.size);
+        weekEl.textContent = String(weekUsersSet.size);
+        monthEl.textContent = String(monthUsersSet.size);
+
+        const chartLabels = last30Days.map((d) => {
+            const parts = d.split('-');
+            return `${parts[1]}/${parts[2]}`;
+        });
+        const chartData = last30Days.map((d) => (dailyActiveUsersMap.get(d) ? dailyActiveUsersMap.get(d).size : 0));
+
+        const canvas = $('activeTrendChart');
+        if (canvas && window.Chart) {
+            if (activeTrendChartInstance) {
+                activeTrendChartInstance.destroy();
+            }
+            const ctx = canvas.getContext('2d');
+            activeTrendChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartLabels,
+                    datasets: [{
+                        label: 'Daily Unique Active Accounts',
+                        data: chartData,
+                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(14, 165, 233, 0.12)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.35,
+                        pointBackgroundColor: '#0284c7',
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => ` ${ctx.parsed.y} Unique Active Account(s)`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { font: { size: 10 }, color: '#64748b' }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { precision: 0, font: { size: 10 }, color: '#64748b' },
+                            grid: { color: '#f1f5f9' }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
     async function loadMetrics() {
         const [salesSnap, journalSnap] = await Promise.all([
             db.collection('manufacturer_sales').limit(2000).get().catch(() => ({ size: 0 })),
@@ -306,6 +448,7 @@
             const d = b.updatedAt.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt);
             return `${d.getFullYear()}-${d.getMonth() + 1}`;
         })).size || 0);
+        await loadActiveAccountsMetrics();
     }
 
     function bindTableActions() {
@@ -547,6 +690,7 @@
         $('assignCreateBusinessName').oninput = updateAssignPreview;
         $('btnRefreshAll').onclick = async () => { await bootstrapData(); toast('Refreshed'); };
         if ($('btnRefreshAuditLogs')) $('btnRefreshAuditLogs').onclick = loadAuditLogs;
+        if ($('btnRefreshActiveMetrics')) $('btnRefreshActiveMetrics').onclick = loadActiveAccountsMetrics;
         $('btnTheme').onclick = () => document.documentElement.classList.toggle('light');
         $('btnSuperBizSwitch').onclick = switchBusinessFromSuperAdmin;
         $('btnSwitchUserBusiness').onclick = switchTargetUserBusiness;
