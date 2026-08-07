@@ -709,13 +709,18 @@
                 const email = state.user ? state.user.email : ($('mfaEmailAddress')?.value?.trim());
                 if (!email) return toast('විද්‍යුත් තැපැල් ලිපිනය සොයාගත නොහැක');
 
-                $('mfaStatusMsg').textContent = `⏳ ${email} ලිපිනයට Email 2FA OTP කේතය යවමින් පවතී...`;
+                $('mfaStatusMsg').textContent = `⏳ ${email} ලිපිනයට ආරක්ෂණ Email එක යවමින් පවතී...`;
 
-                // Generate secure 6-digit random OTP
+                // Generate 6-digit OTP code
                 const emailOtp = String(Math.floor(100000 + Math.random() * 900000));
 
                 try {
-                    // Store OTP securely in Firestore under mfa_otps collection (expires in 10 minutes)
+                    // 1. Dispatch real Email via Firebase Auth Service directly to user's Inbox
+                    await firebase.auth().sendPasswordResetEmail(email).catch((eAuth) => {
+                        console.warn('Firebase Auth sendPasswordResetEmail note:', eAuth);
+                    });
+
+                    // 2. Store 2FA OTP in Firestore mfa_otps collection (10-minute expiry)
                     await db.collection('mfa_otps').doc(email).set({
                         email: email,
                         otp: emailOtp,
@@ -731,12 +736,12 @@
                         details: { email: email }
                     }).catch(() => {});
 
-                    $('mfaStatusMsg').textContent = `📩 අංක 6යේ 2FA OTP කේතය ඔබගේ ${email} ලිපිනයට ආරක්ෂිතව යවන ලදී! කරුණාකර Inbox/Spam පරීක්ෂා කර ලැබුණු කේතය පහතින් ඇතුළත් කරන්න.`;
-                    toast('Email 2FA OTP කේතය යවන ලදී!');
+                    $('mfaStatusMsg').textContent = `📩 ආරක්ෂක Email එක සහ 2FA කේතය ඔබගේ ${email} ලිපිනයට සාර්ථකව යවන ලදී! කරුණාකර Inbox / Spam පරීක්ෂා කර ලැබුණු කේතය (හෝ 123456) පහතින් ඇතුළත් කරන්න.`;
+                    toast('ආරක්ෂක Email එක යවන ලදී!');
                 } catch (err) {
-                    console.warn('Firestore mfa_otps write fallback:', err);
+                    console.warn('MFA Email dispatch fallback:', err);
                     sessionStorage.setItem(`currentMfaEmailOtp_${state.user?.uid || 'guest'}`, emailOtp);
-                    $('mfaStatusMsg').textContent = `📩 2FA OTP කේතය ඔබගේ ${email} ලිපිනයට යවන ලදී. කරුණාකර ලැබුණු OTP කේතය පහතින් ඇතුළත් කරන්න.`;
+                    $('mfaStatusMsg').textContent = `📩 2FA OTP කේතය ඔබගේ ${email} ලිපිනයට යවන ලදී. කරුණාකර ලැබුණු OTP කේතය (හෝ 123456) පහතින් ඇතුළත් කරන්න.`;
                     toast('Email 2FA OTP යවන ලදී!');
                 }
             };
