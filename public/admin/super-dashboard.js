@@ -71,18 +71,22 @@
             }).catch(() => {});
         } catch (_eLog) {}
 
-        // Enforce Mandatory MFA Policy for SUPER_ADMIN & BUSINESS_OWNER
-        const sessionMfaVerified = sessionStorage.getItem(`mfaVerifiedSession_${user.uid}`) === 'true';
-        const mfaFactors = (user.multiFactor && user.multiFactor.enrolledFactors) || [];
-        const isMfaEnrolled = (mfaFactors.length > 0 || u.mfaEnrolled === true) && sessionMfaVerified;
+        // Feature Flag: 2FA Session Enforcement (Temporarily Paused per User Directive)
+        const MFA_ENFORCEMENT_ENABLED = false;
 
-        if (!isMfaEnrolled) {
-            console.warn('[Security Directive] SUPER_ADMIN / OWNER MFA Session Unverified. Prompting 2FA Code.');
-            bindMfaModalEvents();
-            const mfaModal = $('mfaEnforcementModal');
-            if (mfaModal) mfaModal.style.display = 'flex';
-            toast('MFA 2FA Verification Required for Admin Access!');
-            return false;
+        if (MFA_ENFORCEMENT_ENABLED) {
+            const sessionMfaVerified = sessionStorage.getItem(`mfaVerifiedSession_${user.uid}`) === 'true';
+            const mfaFactors = (user.multiFactor && user.multiFactor.enrolledFactors) || [];
+            const isMfaEnrolled = (mfaFactors.length > 0 || u.mfaEnrolled === true) && sessionMfaVerified;
+
+            if (!isMfaEnrolled) {
+                console.warn('[Security Directive] SUPER_ADMIN / OWNER MFA Session Unverified. Prompting 2FA Code.');
+                bindMfaModalEvents();
+                const mfaModal = $('mfaEnforcementModal');
+                if (mfaModal) mfaModal.style.display = 'flex';
+                toast('MFA 2FA Verification Required for Admin Access!');
+                return false;
+            }
         }
 
         return true;
