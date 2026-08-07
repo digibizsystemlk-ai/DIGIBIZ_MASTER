@@ -78,6 +78,7 @@
 
         if (!isMfaEnrolled) {
             console.warn('[Security Directive] SUPER_ADMIN / OWNER MFA Session Unverified. Prompting 2FA Code.');
+            bindMfaModalEvents();
             const mfaModal = $('mfaEnforcementModal');
             if (mfaModal) mfaModal.style.display = 'flex';
             toast('MFA 2FA Verification Required for Admin Access!');
@@ -698,6 +699,47 @@
         toast('Saved');
     }
 
+    function bindMfaModalEvents() {
+        if ($('btnSendMfaOtp')) {
+            $('btnSendMfaOtp').onclick = () => {
+                const phone = $('mfaPhoneNumber')?.value?.trim();
+                if (!phone) return toast('ජංගම දුරකථන අංකය ඇතුළත් කරන්න');
+                $('mfaStatusMsg').textContent = `📩 OTP සත්‍යාපන කේතය ${phone} අංකයට යවන ලදී. (පරීක්ෂා කිරීම සඳහා 123456 ඇතුළත් කරන්න)`;
+                toast('MFA OTP කේතය යවන ලදී!');
+            };
+        }
+        if ($('btnVerifyMfaEnrollment')) {
+            $('btnVerifyMfaEnrollment').onclick = async () => {
+                const code = $('mfaOtpCode')?.value?.trim();
+                if (!code) {
+                    $('mfaStatusMsg').textContent = 'කරුණාකර ලැබුණු OTP කේතය ඇතුළත් කරන්න.';
+                    return;
+                }
+                $('mfaStatusMsg').textContent = 'OTP කේතය සත්‍යාපනය වෙමින් පවතී...';
+                if (state.user && state.user.uid) {
+                    sessionStorage.setItem(`mfaVerifiedSession_${state.user.uid}`, 'true');
+                    await db.collection('users').doc(state.user.uid).set({
+                        mfaEnrolled: true,
+                        mfaEnrolledAt: new Date(),
+                        mfaMethod: 'SMS_OTP'
+                    }, { merge: true });
+                }
+                $('mfaStatusMsg').textContent = '✅ MFA සත්‍යාපනය සාර්ථකයි! පද්ධතියට ඇතුළු වෙමින් පවතී...';
+                toast('MFA සත්‍යාපනය සාර්ථකයි!');
+                setTimeout(() => {
+                    $('mfaEnforcementModal').style.display = 'none';
+                    window.location.reload();
+                }, 800);
+            };
+        }
+        if ($('btnSignOutMfa')) {
+            $('btnSignOutMfa').onclick = async () => {
+                await firebase.auth().signOut();
+                window.location.href = '/auth/login.html';
+            };
+        }
+    }
+
     function bindUi() {
         document.querySelectorAll('.tab').forEach((b) => b.onclick = () => setTab(b.dataset.tab));
         $('userSearch').oninput = loadUsers;
@@ -731,45 +773,7 @@
         $('btnCloseModal').onclick = () => $('editModal').classList.remove('show');
         $('btnSaveModal').onclick = saveEditModal;
 
-        if ($('btnSendMfaOtp')) {
-            $('btnSendMfaOtp').onclick = () => {
-                const phone = $('mfaPhoneNumber')?.value?.trim();
-                if (!phone) return toast('Enter valid phone number');
-                $('mfaStatusMsg').textContent = `OTP verification code sent to ${phone}. (Enter test code 123456)`;
-                toast('MFA OTP Code Sent!');
-            };
-        }
-        if ($('btnVerifyMfaEnrollment')) {
-            $('btnVerifyMfaEnrollment').onclick = async () => {
-                const code = $('mfaOtpCode')?.value?.trim();
-                if (!code) {
-                    $('mfaStatusMsg').textContent = 'Please enter OTP code to complete MFA enrollment.';
-                    return;
-                }
-                $('mfaStatusMsg').textContent = 'Verifying MFA Token & Enrolling...';
-                if (state.user && state.user.uid) {
-                    sessionStorage.setItem(`mfaVerifiedSession_${state.user.uid}`, 'true');
-                    await db.collection('users').doc(state.user.uid).set({
-                        mfaEnrolled: true,
-                        mfaEnrolledAt: new Date(),
-                        mfaMethod: 'SMS_OTP'
-                    }, { merge: true });
-                }
-                $('mfaStatusMsg').textContent = '✅ MFA Verified & Session Authorized!';
-                toast('MFA Authorized Successfully!');
-                setTimeout(() => {
-                    $('mfaEnforcementModal').style.display = 'none';
-                    window.location.reload();
-                }, 800);
-            };
-        }
-        if ($('btnSignOutMfa')) {
-            $('btnSignOutMfa').onclick = async () => {
-                await firebase.auth().signOut();
-                window.location.href = '/auth/login.html';
-            };
-        }
-
+        bindMfaModalEvents();
         $('btnExportUsers').onclick = () => exportJson('users-export.json', state.users);
         $('btnExportBiz').onclick = () => exportJson('businesses-export.json', state.businesses);
         $('btnSendAnnouncement').onclick = async () => {
