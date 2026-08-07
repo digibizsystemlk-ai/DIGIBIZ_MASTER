@@ -8,10 +8,12 @@ const BUSINESS_TYPES = {
         icon: "🛒",
         description: "POS, Inventory, Sales management",
         menus: [
-            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "CASHIER", "VIEWER"] },
-            { icon: "🛒", name: "Point of Sale", link: "/modules/retail/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "CASHIER"] },
-            { icon: "📦", name: "Stock", link: "/modules/retail/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
-            { icon: "📥", name: "GRN", link: "/modules/retail/grn.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] }
+            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "VIEWER", "STAFF", "BUSINESS_STAFF"] },
+            { icon: "🛒", name: "Point of Sale", link: "/modules/retail/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "CASHIER", "STAFF", "BUSINESS_STAFF"] },
+            { icon: "📜", name: "Sales History", link: "/modules/retail/sales-history.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "BUSINESS_STAFF"] },
+            { icon: "📦", name: "Stock", link: "/modules/retail/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF"] },
+            { icon: "📥", name: "Purchases / GRN", link: "/modules/retail/grn.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF"] },
+            { icon: "🚚", name: "Suppliers", link: "/modules/retail/suppliers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF"] }
         ],
         dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
         demoEmail: "test@retail.com",
@@ -56,6 +58,7 @@ const BUSINESS_TYPES = {
             { icon: "📄", name: "Estimations", link: "/modules/auto_care/estimations.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
             { icon: "🧾", name: "Invoicing", link: "/modules/auto_care/invoicing.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
             { icon: "⚙️", name: "Spare Parts Stock", link: "/modules/auto_care/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📥", name: "Stock Purchases / GRN", link: "/modules/auto_care/purchases.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
             { icon: "🚘", name: "Customers & History", link: "/modules/auto_care/customers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
             { icon: "💰", name: "Finance", link: "/modules/auto_care/finance.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
             { icon: "🏛️", name: "Banking", link: "/modules/tire_centre/banking.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },

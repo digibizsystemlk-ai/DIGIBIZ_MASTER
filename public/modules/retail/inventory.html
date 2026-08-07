@@ -143,9 +143,31 @@
             <label style="display:block; margin-top:12px; margin-bottom:4px; font-size:12px; font-weight:600; color:#64748b; text-align: left;">Product Category</label>
             <input type="text" id="productCategory" list="categoryOptions" placeholder="Type or Select Category">
             <datalist id="categoryOptions"></datalist>
-            <input type="number" id="productPrice" placeholder="Selling Price (Rs.)">
-            <input type="number" id="productCost" placeholder="Cost Price (Rs.)">
-            <input type="number" id="productStock" placeholder="Initial Stock">
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <div style="flex: 1;">
+                    <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:4px; text-align: left;">Selling Type (මාදිලිය)</label>
+                    <select id="productSellType" style="width:100%; padding:10px; border:1px solid #e9ecef; border-radius:8px;" onchange="onSellTypeChange()">
+                        <option value="pcs">Unit (ගණන් කර - Pcs)</option>
+                        <option value="weight">Weight (කිරා මැන - Kg/g)</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:4px; text-align: left;">Unit (ඒකකය)</label>
+                    <select id="productUnit" style="width:100%; padding:10px; border:1px solid #e9ecef; border-radius:8px;">
+                        <option value="Pcs">Pcs (ගණන් කර)</option>
+                        <option value="kg">Kilograms (kg)</option>
+                        <option value="g">Grams (g)</option>
+                        <option value="Pack">Pack</option>
+                        <option value="Box">Box</option>
+                        <option value="Bottle">Bottle</option>
+                    </select>
+                </div>
+            </div>
+
+            <input type="number" id="productPrice" placeholder="Selling Price (Rs.)" step="any">
+            <input type="number" id="productCost" placeholder="Cost Price (Rs.)" step="any">
+            <input type="number" id="productStock" placeholder="Initial Stock" step="any">
             <input type="text" id="productBarcode" placeholder="Barcode (optional)">
             <div class="modal-buttons">
                 <button class="btn-outline" id="closeModalBtn">Cancel</button>
@@ -159,7 +181,13 @@
         <div class="modal-content">
             <h3>Adjust Stock</h3>
             <p id="stockProductName"></p>
-            <input type="number" id="stockAdjustment" placeholder="Quantity to add/subtract">
+            <div style="display:flex; gap:10px; margin-bottom:15px; align-items:center;">
+                <input type="number" id="stockAdjustment" placeholder="Quantity to add/subtract" step="any" style="flex:2; margin-bottom:0;">
+                <select id="stockAdjUnit" style="flex:1; margin-bottom:0; padding:10px; border:1px solid #e9ecef; border-radius:8px;">
+                    <option value="unit">Units / kg</option>
+                    <option value="g">Grams (g)</option>
+                </select>
+            </div>
             <select id="stockReason">
                 <option value="purchase">New Purchase</option>
                 <option value="sale">Sale</option>
@@ -248,6 +276,20 @@
             updateStats(filtered);
         }
         
+        function onSellTypeChange() {
+            const sellType = document.getElementById('productSellType').value;
+            const unitSelect = document.getElementById('productUnit');
+            if (sellType === 'weight') {
+                if (unitSelect.value !== 'kg' && unitSelect.value !== 'g') {
+                    unitSelect.value = 'kg';
+                }
+            } else {
+                if (unitSelect.value === 'kg' || unitSelect.value === 'g') {
+                    unitSelect.value = 'Pcs';
+                }
+            }
+        }
+        
         function renderProducts(productsList){
             const tbody = document.getElementById('productList');
             if(productsList.length === 0){
@@ -262,13 +304,18 @@
                 else if(p.stock < 10){ stockClass = 'low-stock'; stockText = 'Low Stock'; stockBadge = '<span class="badge badge-low">Low</span>'; }
                 else{ stockClass = 'in-stock'; stockText = 'In Stock'; stockBadge = '<span class="badge badge-in">In</span>'; }
                 
+                const unitStr = p.unit || (p.sellType === 'weight' ? 'kg' : 'Pcs');
+                const formattedStock = (unitStr === 'kg' && p.stock > 0 && p.stock < 1) 
+                    ? `${(p.stock * 1000).toFixed(0)} g` 
+                    : `${p.stock} ${unitStr}`;
+
                 return `<tr>
                     <td><code>${p.code || p.id}</code></td>
                     <td><strong>${p.name}</strong></td>
                     <td>${p.category}</td>
                     <td>${formatCurrency(p.price)}</td>
                     <td>${formatCurrency(p.cost)}</td>
-                    <td class="${stockClass}">${p.stock}</td>
+                    <td class="${stockClass}">${formattedStock}</td>
                     <td>${formatCurrency((p.stock || 0) * (p.cost || 0))}</td>
                     <td>${stockBadge}</td>
                     <td>
@@ -300,6 +347,8 @@
             document.getElementById('productCode').value = '';
             document.getElementById('productName').value = '';
             document.getElementById('productCategory').value = '';
+            document.getElementById('productSellType').value = 'pcs';
+            document.getElementById('productUnit').value = 'Pcs';
             document.getElementById('productPrice').value = '';
             document.getElementById('productCost').value = '';
             document.getElementById('productStock').value = '';
@@ -315,6 +364,8 @@
                 document.getElementById('productCode').value = product.code || product.id;
                 document.getElementById('productName').value = product.name;
                 document.getElementById('productCategory').value = product.category;
+                document.getElementById('productSellType').value = product.sellType || (product.unit === 'kg' || product.unit === 'g' ? 'weight' : 'pcs');
+                document.getElementById('productUnit').value = product.unit || (product.sellType === 'weight' ? 'kg' : 'Pcs');
                 document.getElementById('productPrice').value = product.price;
                 document.getElementById('productCost').value = product.cost;
                 document.getElementById('productStock').value = product.stock;
@@ -327,9 +378,11 @@
             const rawCode = document.getElementById('productCode').value.trim();
             const name = document.getElementById('productName').value.trim();
             const category = document.getElementById('productCategory').value.trim();
+            const sellType = document.getElementById('productSellType').value;
+            const unit = document.getElementById('productUnit').value;
             const price = parseFloat(document.getElementById('productPrice').value);
             const cost = parseFloat(document.getElementById('productCost').value || 0);
-            const stock = parseInt(document.getElementById('productStock').value) || 0;
+            const stock = parseFloat(document.getElementById('productStock').value) || 0;
             const barcode = document.getElementById('productBarcode').value.trim();
             
             if(!name || isNaN(price)){
@@ -339,7 +392,19 @@
             
             const cleanDocId = rawCode ? rawCode.replace(/[\/\\#\$\.\[\]]/g, '_') : ('P' + Date.now());
             const productId = editingProductId || cleanDocId;
-            const productData = { id: productId, code: rawCode || productId, name, category, price, cost, stock, barcode, updatedAt: new Date() };
+            const productData = { 
+                id: productId, 
+                code: rawCode || productId, 
+                name, 
+                category, 
+                sellType, 
+                unit, 
+                price, 
+                cost, 
+                stock, 
+                barcode, 
+                updatedAt: new Date() 
+            };
             
             const btn = document.getElementById('saveProductBtn');
             try {
@@ -377,19 +442,30 @@
         window.adjustStock = (id) => {
             currentStockProduct = products.find(p => p.id === id);
             if(currentStockProduct){
-                document.getElementById('stockProductName').innerHTML = `<strong>${currentStockProduct.name}</strong><br>Current Stock: ${currentStockProduct.stock}`;
+                const unitStr = currentStockProduct.unit || (currentStockProduct.sellType === 'weight' ? 'kg' : 'Pcs');
+                const formattedCurrent = (unitStr === 'kg' && currentStockProduct.stock > 0 && currentStockProduct.stock < 1)
+                    ? `${(currentStockProduct.stock * 1000).toFixed(0)} g (${currentStockProduct.stock} kg)`
+                    : `${currentStockProduct.stock} ${unitStr}`;
+                document.getElementById('stockProductName').innerHTML = `<strong>${currentStockProduct.name}</strong><br>Current Stock: ${formattedCurrent}`;
                 document.getElementById('stockAdjustment').value = '';
+                document.getElementById('stockAdjUnit').value = 'unit';
                 document.getElementById('stockModal').style.display = 'flex';
             }
         };
         
         async function updateStock(){
-            const adjustment = parseInt(document.getElementById('stockAdjustment').value);
+            let adjustment = parseFloat(document.getElementById('stockAdjustment').value);
+            const adjUnit = document.getElementById('stockAdjUnit').value;
             const reason = document.getElementById('stockReason').value;
+            const unitStr = currentStockProduct.unit || (currentStockProduct.sellType === 'weight' ? 'kg' : 'Pcs');
             
             if(isNaN(adjustment)){
                 showToast('Please enter a valid quantity', true);
                 return;
+            }
+            
+            if (adjUnit === 'g' && unitStr === 'kg') {
+                adjustment = adjustment / 1000;
             }
             
             const newStock = currentStockProduct.stock + adjustment;

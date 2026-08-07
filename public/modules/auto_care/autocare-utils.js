@@ -2,7 +2,8 @@
  * DIGIBIZ Auto Care - Global Utility Helper Functions
  * Includes: Company Name Resolver, DD/MM/YYYY Date Formatter,
  * Tenant Auto-Increment Number Generators (EST-00001, INS-00001, JOB-00001),
- * Auto-Remembering Technician Directory, and Vehicle Brand/Model Auto-Memory.
+ * Auto-Remembering Technician Directory, Vehicle Brand/Model Auto-Memory,
+ * and Persistent Customer Name & Phone Directory Auto-Memory.
  */
 
 window.AutoCareUtils = {
@@ -159,7 +160,55 @@ window.AutoCareUtils = {
         }
     },
 
-    // 6. Auto-Increment Estimations Number (EST-00001, EST-00002...)
+    // 6. Persistent Customer Directory & Auto-Memory
+    getCustomers: function() {
+        const bizId = this.getBizId();
+        const key = `autocare_customers_${bizId}`;
+        const cached = localStorage.getItem(key);
+        if (cached) {
+            try { return JSON.parse(cached); } catch(e) {}
+        }
+        return [];
+    },
+
+    saveCustomerMemory: function(name, phone, regNo = '', brand = '', model = '') {
+        if (!name || !name.trim()) return;
+        const cName = name.trim();
+        const cPhone = (phone || '').trim();
+        const cReg = (regNo || '').trim().toUpperCase();
+        const cBrand = (brand || '').trim();
+        const cModel = (model || '').trim();
+
+        let customers = this.getCustomers();
+        const existingIdx = customers.findIndex(c => c.name.toLowerCase() === cName.toLowerCase() || (cPhone && c.phone === cPhone));
+
+        if (existingIdx >= 0) {
+            if (cPhone) customers[existingIdx].phone = cPhone;
+            if (cReg) customers[existingIdx].reg = cReg;
+            if (cBrand) customers[existingIdx].brand = cBrand;
+            if (cModel) customers[existingIdx].model = cModel;
+        } else {
+            customers.unshift({
+                id: 'CUST-' + Date.now(),
+                name: cName,
+                phone: cPhone,
+                reg: cReg,
+                brand: cBrand,
+                model: cModel,
+                totalSpent: 0,
+                history: []
+            });
+        }
+
+        const bizId = this.getBizId();
+        localStorage.setItem(`autocare_customers_${bizId}`, JSON.stringify(customers));
+
+        // Save brand & model memory as well!
+        if (cBrand) this.saveVehicleBrand(cBrand);
+        if (cModel) this.saveVehicleModel(cModel);
+    },
+
+    // 7. Auto-Increment Estimations Number (EST-00001, EST-00002...)
     getNextEstNumber: function() {
         const bizId = this.getBizId();
         const counterKey = `autocare_est_counter_${bizId}`;
@@ -175,7 +224,7 @@ window.AutoCareUtils = {
         localStorage.setItem(counterKey, String(current));
     },
 
-    // 7. Auto-Increment Inspection Number (INS-00001, INS-00002...)
+    // 8. Auto-Increment Inspection Number (INS-00001, INS-00002...)
     getNextInspNumber: function() {
         const bizId = this.getBizId();
         const counterKey = `autocare_insp_counter_${bizId}`;
@@ -191,7 +240,7 @@ window.AutoCareUtils = {
         localStorage.setItem(counterKey, String(current));
     },
 
-    // 8. Auto-Increment Job Card Number (JOB-00001, JOB-00002...)
+    // 9. Auto-Increment Job Card Number (JOB-00001, JOB-00002...)
     getNextJobNumber: function() {
         const bizId = this.getBizId();
         const counterKey = `autocare_job_counter_${bizId}`;

@@ -159,13 +159,20 @@
             </div>
 
             <div id="poItemsList">
-                <div class="purchase-item">
-                    <select class="po-product-select" style="flex:2;">
+                <div class="purchase-item" style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+                    <select class="po-product-select" style="flex:2; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
                         <option value="">Select Product</option>
                     </select>
-                    <input type="number" class="po-qty" placeholder="Qty" value="1" style="width:70px;">
-                    <input type="number" class="po-price" placeholder="Unit Price" style="width:100px;">
-                    <input type="number" class="po-restock" placeholder="Restock Lvl" style="width:100px;">
+                    <input type="number" class="po-qty" placeholder="Qty / Wt" value="1" step="any" style="width:80px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
+                    <select class="po-unit-select" style="width:75px; padding:8px; border:1px solid #cbd5e1; border-radius:8px; font-size:12px;">
+                        <option value="Pcs">Pcs</option>
+                        <option value="kg">kg</option>
+                        <option value="g">g</option>
+                        <option value="Pack">Pack</option>
+                        <option value="Box">Box</option>
+                    </select>
+                    <input type="number" class="po-price" placeholder="Unit Price" step="any" style="width:100px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
+                    <input type="number" class="po-restock" placeholder="Restock Lvl" style="width:90px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
                     <button class="remove-item-btn" disabled>✕</button>
                 </div>
             </div>
@@ -203,10 +210,32 @@
             <label style="display:block; margin-top:12px; margin-bottom:4px; font-size:12px; font-weight:600; color:#64748b; text-align: left;">Product Category</label>
             <input type="text" id="newProductCategory" list="categoryOptions" placeholder="Type or Select Category">
             <datalist id="categoryOptions"></datalist>
-            <input type="number" id="newProductPrice" placeholder="Selling / Discount Price (Rs.)">
-            <input type="number" id="newProductNormalPrice" placeholder="Normal Price / MRP (Rs.) (optional)">
-            <input type="number" id="newProductCost" placeholder="Cost Price (Rs.)">
-            <input type="number" id="newProductStock" placeholder="Initial Stock" value="0">
+
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <div style="flex: 1;">
+                    <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:4px; text-align: left;">Selling Type (මාදිලිය)</label>
+                    <select id="newProductSellType" style="width:100%; padding:10px; border:1.5px solid #e2e8f0; border-radius:10px;" onchange="onNewProductSellTypeChange()">
+                        <option value="pcs">Unit (ගණන් කර - Pcs)</option>
+                        <option value="weight">Weight (කිරා මැන - Kg/g)</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:4px; text-align: left;">Unit (ඒකකය)</label>
+                    <select id="newProductUnit" style="width:100%; padding:10px; border:1.5px solid #e2e8f0; border-radius:10px;">
+                        <option value="Pcs">Pcs (ගණන් කර)</option>
+                        <option value="kg">Kilograms (kg)</option>
+                        <option value="g">Grams (g)</option>
+                        <option value="Pack">Pack</option>
+                        <option value="Box">Box</option>
+                        <option value="Bottle">Bottle</option>
+                    </select>
+                </div>
+            </div>
+
+            <input type="number" id="newProductPrice" placeholder="Selling / Discount Price (Rs.)" step="any">
+            <input type="number" id="newProductNormalPrice" placeholder="Normal Price / MRP (Rs.) (optional)" step="any">
+            <input type="number" id="newProductCost" placeholder="Cost Price (Rs.)" step="any">
+            <input type="number" id="newProductStock" placeholder="Initial Stock" value="0" step="any">
             <input type="number" id="newProductRestockLevel" placeholder="Restock Level (Reorder Alert Limit)">
             <input type="text" id="newProductBarcode" placeholder="Barcode (optional)">
             <div class="modal-buttons">
@@ -375,13 +404,36 @@
             document.getElementById('pendingOrders').innerHTML = pending;
         }
         
+        function onNewProductSellTypeChange() {
+            const sellType = document.getElementById('newProductSellType').value;
+            const unitSelect = document.getElementById('newProductUnit');
+            if (sellType === 'weight') {
+                if (unitSelect.value !== 'kg' && unitSelect.value !== 'g') {
+                    unitSelect.value = 'kg';
+                }
+            } else {
+                if (unitSelect.value === 'kg' || unitSelect.value === 'g') {
+                    unitSelect.value = 'Pcs';
+                }
+            }
+        }
+
         // Purchase Order items management
         function updatePOTotal(){
             let total = 0;
             document.querySelectorAll('.purchase-item').forEach(item => {
                 const qty = parseFloat(item.querySelector('.po-qty').value) || 0;
+                const unit = item.querySelector('.po-unit-select')?.value || 'Pcs';
                 const price = parseFloat(item.querySelector('.po-price').value) || 0;
-                total += qty * price;
+                const productId = item.querySelector('.po-product-select')?.value;
+                const product = products.find(p => p.id === productId);
+                const prodUnit = product?.unit || (product?.sellType === 'weight' ? 'kg' : 'Pcs');
+                
+                let calcQty = qty;
+                if (unit === 'g' && prodUnit === 'kg') {
+                    calcQty = qty / 1000;
+                }
+                total += calcQty * price;
             });
             document.getElementById('poTotal').innerHTML = formatCurrency(total);
         }
@@ -393,7 +445,8 @@
                    '<option value="ADD_NEW_PRODUCT" style="font-weight:bold;color:#10b981;">+ Add New Product...</option>' + 
                    products.map(p => {
                        const brandModelStr = (p.brand || p.model) ? ` [${p.brand || ''}${p.brand && p.model ? ' - ' : ''}${p.model || ''}]` : '';
-                       return `<option value="${p.id}" data-price="${p.cost || p.price}">${p.name}${brandModelStr} (${p.code || p.id})</option>`;
+                       const unitStr = p.unit || (p.sellType === 'weight' ? 'kg' : 'Pcs');
+                       return `<option value="${p.id}" data-price="${p.cost || p.price}" data-unit="${unitStr}">${p.name}${brandModelStr} (${p.code || p.id}) - ${unitStr}</option>`;
                    }).join('');
         }
 
@@ -401,11 +454,19 @@
             const container = document.getElementById('poItemsList');
             const newItem = document.createElement('div');
             newItem.className = 'purchase-item';
+            newItem.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:10px;';
             newItem.innerHTML = `
-                <select class="po-product-select" style="flex:2;">${getProductOptionsHTML()}</select>
-                <input type="number" class="po-qty" placeholder="Qty" value="1" style="width:70px;">
-                <input type="number" class="po-price" placeholder="Unit Price" style="width:100px;">
-                <input type="number" class="po-restock" placeholder="Restock Lvl" style="width:100px;">
+                <select class="po-product-select" style="flex:2; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">${getProductOptionsHTML()}</select>
+                <input type="number" class="po-qty" placeholder="Qty / Wt" value="1" step="any" style="width:80px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
+                <select class="po-unit-select" style="width:75px; padding:8px; border:1px solid #cbd5e1; border-radius:8px; font-size:12px;">
+                    <option value="Pcs">Pcs</option>
+                    <option value="kg">kg</option>
+                    <option value="g">g</option>
+                    <option value="Pack">Pack</option>
+                    <option value="Box">Box</option>
+                </select>
+                <input type="number" class="po-price" placeholder="Unit Price" step="any" style="width:100px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
+                <input type="number" class="po-restock" placeholder="Restock Lvl" style="width:90px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
                 <button class="remove-item-btn">✕</button>
             `;
             container.appendChild(newItem);
@@ -416,6 +477,7 @@
         function attachItemEvents(item){
             const select = item.querySelector('.po-product-select');
             const qtyInput = item.querySelector('.po-qty');
+            const unitSelect = item.querySelector('.po-unit-select');
             const priceInput = item.querySelector('.po-price');
             const restockInput = item.querySelector('.po-restock');
             const removeBtn = item.querySelector('.remove-item-btn');
@@ -432,14 +494,20 @@
                 if(price) priceInput.value = price;
                 
                 const product = products.find(p => p.id === select.value);
-                if (product && product.restockLevel !== undefined && product.restockLevel !== null) {
-                    restockInput.value = product.restockLevel;
-                } else {
-                    restockInput.value = '';
+                if (product) {
+                    if (unitSelect) {
+                        unitSelect.value = product.unit || (product.sellType === 'weight' ? 'kg' : 'Pcs');
+                    }
+                    if (product.restockLevel !== undefined && product.restockLevel !== null) {
+                        restockInput.value = product.restockLevel;
+                    } else {
+                        restockInput.value = '';
+                    }
                 }
                 updatePOTotal();
             };
             qtyInput.oninput = () => updatePOTotal();
+            if(unitSelect) unitSelect.onchange = () => updatePOTotal();
             priceInput.oninput = () => updatePOTotal();
             restockInput.oninput = () => updatePOTotal();
             if(removeBtn) {
@@ -453,6 +521,8 @@
             document.getElementById('newProductModel').value = '';
             document.getElementById('newProductName').value = '';
             document.getElementById('newProductCategory').value = '';
+            document.getElementById('newProductSellType').value = 'pcs';
+            document.getElementById('newProductUnit').value = 'Pcs';
             document.getElementById('newProductPrice').value = '';
             document.getElementById('newProductNormalPrice').value = '';
             document.getElementById('newProductCost').value = '';
@@ -468,10 +538,12 @@
             const model = document.getElementById('newProductModel').value.trim();
             const name = document.getElementById('newProductName').value.trim();
             const category = document.getElementById('newProductCategory').value.trim();
+            const sellType = document.getElementById('newProductSellType').value;
+            const unit = document.getElementById('newProductUnit').value;
             const price = parseFloat(document.getElementById('newProductPrice').value);
             const normalPrice = parseFloat(document.getElementById('newProductNormalPrice').value) || null;
             const cost = parseFloat(document.getElementById('newProductCost').value || 0);
-            const stock = parseInt(document.getElementById('newProductStock').value) || 0;
+            const stock = parseFloat(document.getElementById('newProductStock').value) || 0;
             const restockLevel = parseInt(document.getElementById('newProductRestockLevel').value) || null;
             const barcode = document.getElementById('newProductBarcode').value.trim();
 
@@ -488,6 +560,8 @@
                 model,
                 name,
                 category,
+                sellType,
+                unit,
                 price,
                 normalPrice,
                 cost,
@@ -512,7 +586,9 @@
                     const container = activeSelectElement.closest('.purchase-item');
                     const priceInput = container.querySelector('.po-price');
                     const restockInput = container.querySelector('.po-restock');
+                    const unitSelect = container.querySelector('.po-unit-select');
                     if (priceInput) priceInput.value = cost || price;
+                    if (unitSelect) unitSelect.value = unit;
                     if (restockInput && restockLevel !== null) restockInput.value = restockLevel;
                     updatePOTotal();
                 }
@@ -537,11 +613,29 @@
                 const productId = item.querySelector('.po-product-select').value;
                 const product = products.find(p => p.id === productId);
                 const qty = parseFloat(item.querySelector('.po-qty').value) || 0;
+                const unit = item.querySelector('.po-unit-select')?.value || 'Pcs';
                 const price = parseFloat(item.querySelector('.po-price').value) || 0;
                 const restockLevelVal = item.querySelector('.po-restock').value;
                 const restockLevel = restockLevelVal !== '' ? parseInt(restockLevelVal) : null;
+                const prodUnit = product?.unit || (product?.sellType === 'weight' ? 'kg' : 'Pcs');
+                
+                let actualQty = qty;
+                if (unit === 'g' && prodUnit === 'kg') {
+                    actualQty = qty / 1000;
+                }
+                
                 if(productId && qty > 0){
-                    items.push({ productId, productName: product.name, quantity: qty, unitPrice: price, restockLevel, total: qty * price });
+                    items.push({ 
+                        productId, 
+                        productName: product.name, 
+                        quantity: actualQty, 
+                        inputQty: qty,
+                        unit: unit,
+                        prodUnit: prodUnit,
+                        unitPrice: price, 
+                        restockLevel, 
+                        total: actualQty * price 
+                    });
                 }
             });
             if(items.length === 0){ showToast('Add at least one item', true); return; }
@@ -583,7 +677,8 @@
             document.getElementById('receivePONo').innerHTML = `<strong>GRN: ${po.poNo}</strong><br>Supplier: ${po.supplierName}`;
             let itemsHtml = '';
             po.items.forEach(item => {
-                itemsHtml += `<div class="purchase-item"><span style="flex:2;">${item.productName}</span><input type="number" class="receive-qty" data-product="${item.productId}" value="${item.quantity}" style="width:100px;"></div>`;
+                const labelQty = item.unit === 'g' && item.inputQty ? `${item.inputQty} g` : `${item.quantity} ${item.unit || 'Pcs'}`;
+                itemsHtml += `<div class="purchase-item" style="display:flex; align-items:center; gap:10px; margin-bottom:10px;"><span style="flex:2;">${item.productName} (${labelQty})</span><input type="number" step="any" class="receive-qty" data-product="${item.productId}" value="${item.inputQty || item.quantity}" style="width:100px;"><span style="font-size:12px; font-weight:600;">${item.unit || 'Pcs'}</span></div>`;
             });
             document.getElementById('receiveItems').innerHTML = itemsHtml;
             document.getElementById('receiveModal').style.display = 'flex';
@@ -598,14 +693,18 @@
             const receiveQtys = document.querySelectorAll('.receive-qty');
             for(let i = 0; i < po.items.length; i++){
                 const item = po.items[i];
-                const receivedQty = parseInt(receiveQtys[i]?.value) || 0;
-                if(receivedQty > 0){
+                const receivedQtyInput = parseFloat(receiveQtys[i]?.value) || 0;
+                let actualReceivedQty = receivedQtyInput;
+                if (item.unit === 'g' && (item.prodUnit === 'kg' || item.quantity !== item.inputQty)) {
+                    actualReceivedQty = receivedQtyInput / 1000;
+                }
+                if(actualReceivedQty > 0){
                     const productRef = db.collection('products').doc(currentBusinessId).collection('list').doc(item.productId);
                     const productDoc = await productRef.get();
                     if(productDoc.exists){
                         const currentStock = productDoc.data().stock || 0;
                         const updateData = { 
-                            stock: currentStock + receivedQty,
+                            stock: currentStock + actualReceivedQty,
                             cost: item.unitPrice
                         };
                         if (item.restockLevel !== undefined && item.restockLevel !== null && item.restockLevel !== '') {

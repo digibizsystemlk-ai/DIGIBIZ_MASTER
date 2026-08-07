@@ -16,10 +16,16 @@ window.i18n = function(key) {
             "Estimations": "Estimations (ඇස්තමේන්තු / මිල ගණන්)",
             "Invoicing": "Invoicing (ඉන්වොයිස්)",
             "Spare Parts Stock": "Spare Parts Stock (අමතර කොටස් තොගය)",
+            "Stock Purchases / GRN": "Stock Purchases / GRN (මිලදී ගැනීම් / GRN)",
             "Customers & History": "Customers & History (පාරිභෝගිකයින් සහ සේවා ඉතිහාසය)",
             "SMS Alerts": "SMS Alerts (කෙටි පණිවිඩ සේවා)",
             "Point of Sale": "Point of Sale (විකුණුම් පර්යන්තය)",
+            "Purchases / GRN": "Purchases / GRN (මිලදී ගැනීම්)",
             "Stock purchases": "Stock purchases (මිලදී ගැනීම්)",
+            "Purchases": "Purchases (මිලදී ගැනීම්)",
+            "GRN": "GRN (මිලදී ගැනීම් / Goods Received Note)",
+            "Suppliers": "Suppliers (සැපයුම්කරුවන්)",
+            "Sales History": "Sales History (විකුණුම් ඉතිහාසය)",
             "Stock": "Stock (තොගය)",
             "Customers": "Customers (පාරිභෝගිකයින්)",
             "Finance": "Finance (මූල්‍ය)",
@@ -1900,8 +1906,10 @@ class Sidebar {
         } else {
             menus = [
                 { icon: '🛒', name: 'Point of Sale', link: '/modules/retail/pos.html' },
-                { icon: '📦', name: 'Inventory', link: '/modules/retail/inventory.html' },
-                { icon: '📥', name: 'GRN', link: '/modules/retail/grn.html' }
+                { icon: '📜', name: 'Sales History', link: '/modules/retail/sales-history.html' },
+                { icon: '📦', name: 'Stock', link: '/modules/retail/inventory.html' },
+                { icon: '📥', name: 'Purchases / GRN', link: '/modules/retail/grn.html' },
+                { icon: '🚚', name: 'Suppliers', link: '/modules/retail/suppliers.html' }
             ];
         }
         const isKduManufacturer = menuBusinessType === 'manufacturer' && this.businessId === this.kduTeaBusinessId;
@@ -2121,7 +2129,7 @@ class Sidebar {
             { icon: '🔑', name: 'Staff Permissions', link: '/modules/core/permissions-config.html', isNew: true },
             { icon: '🎨', name: 'Sidebar Config', link: '/modules/core/sidebar-config.html', isNew: true },
             { icon: '🔐', name: 'Change Password', link: '/modules/core/change-password.html' },
-            { icon: '⚙️', name: 'Settings', link: '/modules/company/settings.html' },
+            { icon: '⚙️', name: 'General Settings', link: '/modules/company/settings.html' },
             { icon: '🖨️', name: 'Print Settings', link: '/modules/company/print-settings.html', isNew: true },
             { icon: '📲', name: 'SMS Settings', link: '/modules/company/sms-settings.html' },
             { icon: '🧾', name: 'SMS Log', link: '/modules/company/sms-log.html' },
@@ -2143,7 +2151,7 @@ class Sidebar {
                 if (item.name === 'Business Profile') return !!p.canBusinessInfoEdit;
                 if (item.name === 'Staff' || item.name === 'Staff Management') return true;
                 if (item.name === 'Staff Permissions') return rb === 'OWNER';
-                if (item.name === 'Settings') return !!p.canSettingsChange;
+                if (item.name === 'Settings' || item.name === 'General Settings') return !!p.canSettingsChange;
                 if (item.name === 'SMS Settings') return !!p.canSettingsChange;
                 if (item.name === 'SMS Log') return smsLogOk;
                 if (item.name === 'Billing & Charges') return !!p.canViewFinancialsProfit;
@@ -3188,6 +3196,7 @@ function runPageTranslation() {
             "Accounting": "Accounting (ගිණුම්කරණය)",
             "Reports": "Reports (වාර්තා)",
             "Settings": "Settings (සැකසුම්)",
+            "General Settings": "General Settings (පද්ධති සැකසුම්)",
             "Debts to be received by us": "අපිට එන්න තියන ණය",
             "Debts to be paid by us": "අපි ගෙවන්න තියන ණය",
             "Expenses": "වියදම් (Expenses)",
