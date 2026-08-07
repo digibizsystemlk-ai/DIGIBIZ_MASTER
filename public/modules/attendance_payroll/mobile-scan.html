@@ -2,170 +2,173 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#0f172a">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="DIGIBIZ Scan">
-    <title>DIGIBIZ QR Mobile Attendance</title>
+    <title>Mobile QR Attendance Scanner - DIGIBIZ</title>
     
-    <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3595/3595568.png">
-    
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- HTML5 QR Code Scanner Library -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+    <!-- Firebase Compat SDKs -->
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
-    
     <script src="../../core/firebase-init.js?v=3"></script>
 
     <style>
         *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-        body{font-family:'Inter',sans-serif;background:#0f172a;color:#f8fafc;min-height:100vh;display:flex;flex-direction:column;justify-content:space-between;padding:16px;overflow-x:hidden;}
+        body{font-family:'Inter',sans-serif;background:#0f172a;color:#f8fafc;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:16px;}
         
-        .header-bar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);border-radius:16px;border:1px solid rgba(255,255,255,0.1);margin-bottom:16px;}
-        .brand-title{font-family:'Outfit',sans-serif;font-size:18px;font-weight:900;color:#60a5fa;letter-spacing:0.5px;}
-        .user-chip{font-size:12px;font-weight:800;background:rgba(16,185,129,0.2);color:#34d399;padding:6px 12px;border-radius:30px;border:1px solid rgba(52,211,153,0.3);display:inline-flex;align-items:center;gap:6px;}
+        .pwa-header{width:100%;max-width:480px;display:flex;align-items:center;justify-content:space-between;background:rgba(30,41,59,0.8);padding:12px 18px;border-radius:16px;border:1px solid rgba(255,255,255,0.1);backdrop-filter:blur(10px);margin-bottom:12px;}
+        .pwa-title h1{font-size:16px;font-weight:800;color:#f8fafc;display:flex;align-items:center;gap:6px;}
+        .pwa-title p{font-size:12px;color:#94a3b8;margin-top:2px;}
+        
+        .status-pill{background:#1e293b;border:1px solid #334155;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:700;color:#38bdf8;display:flex;align-items:center;gap:6px;}
+        .status-dot{width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 10px #10b981;}
 
-        .scan-card{background:rgba(30,41,59,0.8);backdrop-filter:blur(16px);border-radius:24px;border:1px solid rgba(255,255,255,0.1);padding:20px 16px;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,0.4);margin-bottom:16px;}
-        .scan-card h2{font-family:'Outfit',sans-serif;font-size:20px;font-weight:800;color:#fff;margin-bottom:4px;}
-        .scan-card p{font-size:12.5px;color:#94a3b8;margin-bottom:12px;}
-
-        .live-status-pill{background:rgba(15,23,42,0.8);border:1px solid rgba(59,130,246,0.3);color:#93c5fd;padding:10px 14px;border-radius:14px;font-size:12.5px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:8px;}
+        .mode-selector{width:100%;max-width:480px;display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:12px;}
+        .mode-btn{padding:14px;border-radius:14px;border:2px solid transparent;font-weight:800;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:all 0.2s;box-shadow:0 4px 12px rgba(0,0,0,0.2);}
+        .mode-btn.active-in{background:#10b981;color:white;border-color:#059669;box-shadow:0 6px 16px rgba(16,185,129,0.35);}
+        .mode-btn.active-out{background:#ef4444;color:white;border-color:#dc2626;box-shadow:0 6px 16px rgba(239,68,68,0.35);}
+        .mode-btn.active-gp{background:#f59e0b;color:white;border-color:#d97706;box-shadow:0 6px 16px rgba(245,158,11,0.35);}
 
         /* Scanner Frame */
-        #reader{width:100%;max-width:320px;margin:0 auto;border-radius:20px;overflow:hidden;border:3px solid #3b82f6;box-shadow:0 0 25px rgba(59,130,246,0.3);min-height:250px;background:#1e293b;}
-        #reader video{object-fit:cover;border-radius:16px;}
+        .scanner-card{width:100%;max-width:480px;background:#1e293b;border-radius:24px;border:1px solid rgba(255,255,255,0.1);padding:16px;display:flex;flex-direction:column;align-items:center;position:relative;overflow:hidden;box-shadow:0 20px 25px -5px rgba(0,0,0,0.5);}
+        
+        #reader{width:100%!important;border-radius:16px;overflow:hidden;background:#000;}
+        #reader video{width:100%!important;border-radius:16px;object-fit:cover;}
 
-        .mode-toggle{display:flex;flex-direction:column;gap:10px;margin-top:16px;}
-        .mode-btn{padding:14px 12px;border-radius:14px;border:1.5px solid transparent;font-weight:800;font-size:14px;cursor:pointer;transition:all 0.2s;color:white;display:flex;align-items:center;justify-content:center;gap:8px;background:rgba(15,23,42,0.6);}
-        .mode-btn.active-in{background:#10b981;border-color:#34d399;box-shadow:0 4px 16px rgba(16,185,129,0.4);}
-        .mode-btn.active-out{background:#ef4444;border-color:#f87171;box-shadow:0 4px 16px rgba(239,68,68,0.4);}
-        .mode-btn.active-gp{background:#8b5cf6;border-color:#a78bfa;box-shadow:0 4px 16px rgba(139,92,246,0.4);}
+        /* Today Summary Panel */
+        .today-card{width:100%;max-width:480px;background:rgba(30,41,59,0.9);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:16px;margin-top:12px;}
+        .today-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid #334155;padding-bottom:6px;}
+        .today-header h3{font-size:13.5px;font-weight:800;color:#f8fafc;display:flex;align-items:center;gap:6px;}
+        .today-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;text-align:center;}
+        .today-stat{background:#0f172a;padding:8px 4px;border-radius:10px;border:1px solid #334155;}
+        .today-stat label{display:block;font-size:10px;font-weight:700;color:#94a3b8;margin-bottom:2px;}
+        .today-stat span{font-size:13px;font-weight:800;color:#38bdf8;}
 
-        /* Today Summary Bottom Card */
-        .today-card{background:rgba(30,41,59,0.9);backdrop-filter:blur(12px);border-radius:20px;border:1px solid rgba(255,255,255,0.1);padding:18px;margin-top:8px;box-shadow:0 10px 25px rgba(0,0,0,0.3);}
-        .today-card h3{font-family:'Outfit',sans-serif;font-size:14px;font-weight:800;color:#93c5fd;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
-        .summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-        .summary-item{background:rgba(15,23,42,0.7);padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,0.05);}
-        .summary-item .lbl{font-size:11px;color:#94a3b8;font-weight:600;display:block;margin-bottom:2px;}
-        .summary-item .val{font-size:13.5px;color:#f8fafc;font-weight:800;}
+        /* Success Result Overlay */
+        .success-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,0.95);z-index:9999999;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;backdrop-filter:blur(8px);}
+        .success-icon{width:80px;height:80px;background:#10b981;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:40px;color:white;margin-bottom:20px;box-shadow:0 0 30px rgba(16,185,129,0.6);animation:popIn 0.3s ease;}
+        .success-title{font-size:22px;font-weight:900;color:white;margin-bottom:8px;}
+        .success-sub{font-size:14px;color:#94a3b8;margin-bottom:24px;line-height:1.6;}
+        .btn-continue{background:#38bdf8;color:#0f172a;border:none;padding:14px 32px;border-radius:14px;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 4px 16px rgba(56,189,248,0.4);}
 
-        /* Success Overlay */
-        .success-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,0.98);z-index:9999999;flex-direction:column;justify-content:center;align-items:center;padding:30px;backdrop-filter:blur(10px);}
-        .success-icon{font-size:72px;color:#10b981;margin-bottom:20px;animation:pulse 1s infinite;}
-        .success-overlay h3{font-family:'Outfit',sans-serif;font-size:26px;font-weight:900;color:white;margin-bottom:8px;}
-        .success-overlay p{font-size:14px;color:#94a3b8;margin-bottom:24px;text-align:center;line-height:1.6;}
-        .btn-done{background:#3b82f6;color:white;border:none;padding:14px 32px;border-radius:14px;font-weight:700;font-size:15px;cursor:pointer;}
-
-        @keyframes pulse{0%{transform:scale(1);}50%{transform:scale(1.1);}100%{transform:scale(1);}}
+        @keyframes popIn {
+            0%{transform:scale(0.5);opacity:0;}
+            100%{transform:scale(1);opacity:1;}
+        }
     </style>
 </head>
 <body>
-    <div>
-        <div class="header-bar">
-            <div class="brand-title"><i class="fa-solid fa-qrcode"></i> DIGIBIZ SCAN</div>
-            <div class="user-chip" id="empChip"><i class="fa-solid fa-user-check"></i> <span id="chipName">Employee</span></div>
+
+    <!-- Header Section -->
+    <div class="pwa-header">
+        <div class="pwa-title">
+            <h1><i class="fa-solid fa-qrcode" style="color:#38bdf8;"></i> DIGIBIZ Scanner</h1>
+            <p id="empNamePill">Loading profile...</p>
         </div>
-
-        <div class="scan-card">
-            <h2 id="mainEmpHeader">Scan Workplace QR Code</h2>
-            <p id="subEmpTitle">ආයතන පරිශ්‍රයේ ඇති QR Code එක කැමරාවට පෙන්වන්න</p>
-
-            <div class="live-status-pill" id="statusPill">
-                <i class="fa-solid fa-circle-dot" style="color:#ef4444;"></i> <span id="statusPillText">Status: 🔴 Off-Duty</span>
-            </div>
-
-            <div id="reader" onclick="onScanSuccess('DIGIBIZ_WORKPLACE_ATTENDANCE', null)" style="cursor:pointer;" title="Point camera at QR poster or tap screen to scan"></div>
-
-            <div class="mode-toggle">
-                <button class="mode-btn active-in" id="btnModeIn" onclick="setScanMode('IN')">☀️ CHECK IN (පැමිණීම સටහන් කරන්න)</button>
-                <button class="mode-btn" id="btnModeOut" onclick="setScanMode('OUT')" style="display:none;">🌙 CHECK OUT (පිටවීම સටහන් කරන්න)</button>
-                <button class="mode-btn" id="btnModeGP" onclick="setScanMode('GATE_PASS_OUT')" style="display:none;">🚗 SHORT LEAVE / GATE PASS (එළියට යෑම)</button>
-                <button class="mode-btn" id="btnModeGPReturn" onclick="setScanMode('GATE_PASS_IN')" style="display:none;">🏢 RETURN FROM SHORT LEAVE (නැවත පැමිණීම)</button>
-            </div>
+        <div class="status-pill">
+            <div class="status-dot"></div>
+            <span id="statusPillText">Online</span>
         </div>
+    </div>
 
-        <!-- Today Summary Card -->
-        <div class="today-card">
-            <h3><i class="fa-solid fa-calendar-day"></i> අද දිනයේ පැමිණීමේ තත්ත්වය (Today Summary)</h3>
-            <div class="summary-grid">
-                <div class="summary-item">
-                    <span class="lbl">☀️ Check-In වේලාව</span>
-                    <span class="val" id="todayInTime">--:--</span>
-                </div>
-                <div class="summary-item">
-                    <span class="lbl">🌙 Check-Out වේලාව</span>
-                    <span class="val" id="todayOutTime">--:--</span>
-                </div>
-                <div class="summary-item">
-                    <span class="lbl">⏱️ සේවය කළ පැය ගණන</span>
-                    <span class="val" id="todayWorkHrs">0.0 hrs</span>
-                </div>
-                <div class="summary-item">
-                    <span class="lbl">🚗 Short Outings</span>
-                    <span class="val" id="todayGatePasses">0</span>
-                </div>
+    <!-- Mode Selector Buttons (Context Aware) -->
+    <div class="mode-selector">
+        <button id="btnModeIn" class="mode-btn active-in" onclick="setScanMode('IN')">
+            <i class="fa-solid fa-sun"></i> ☀️ CHECK IN
+        </button>
+        <button id="btnModeOut" class="mode-btn active-out" onclick="setScanMode('OUT')" style="display:none;">
+            <i class="fa-solid fa-moon"></i> 🌙 CHECK OUT
+        </button>
+        <button id="btnModeGP" class="mode-btn active-gp" onclick="setScanMode('GATE_PASS_OUT')" style="display:none;">
+            <i class="fa-solid fa-car"></i> 🚗 SHORT LEAVE / GATE PASS
+        </button>
+        <button id="btnModeGPReturn" class="mode-btn active-gp" onclick="setScanMode('GATE_PASS_IN')" style="display:none;">
+            <i class="fa-solid fa-building"></i> 🏢 RETURN FROM SHORT LEAVE
+        </button>
+    </div>
+
+    <!-- Camera Viewfinder Card -->
+    <div class="scanner-card">
+        <div id="reader"></div>
+        <p style="font-size:11.5px;color:#94a3b8;margin-top:12px;text-align:center;">
+            <i class="fa-solid fa-camera"></i> QR සංකේතය කැමරාවට පෙන්වන්න (Point QR code inside frame)
+        </p>
+    </div>
+
+    <!-- Live Today Summary Panel -->
+    <div class="today-card">
+        <div class="today-header">
+            <h3><i class="fa-solid fa-calendar-day" style="color:#38bdf8;"></i> අද දිනයේ තත්ත්වය (Today Summary)</h3>
+            <span style="font-size:11px;color:#94a3b8;" id="summaryDate">2026-08-07</span>
+        </div>
+        <div class="today-grid">
+            <div class="today-stat">
+                <label>Check In</label>
+                <span id="todayInTime">--:--</span>
+            </div>
+            <div class="today-stat">
+                <label>Check Out</label>
+                <span id="todayOutTime">--:--</span>
+            </div>
+            <div class="today-stat">
+                <label>Work Hours</label>
+                <span id="todayWorkHrs">0.0 hrs</span>
+            </div>
+            <div class="today-stat">
+                <label>Outings</label>
+                <span id="todayGatePasses">0</span>
             </div>
         </div>
     </div>
 
-    <!-- Success Result Screen -->
+    <!-- Confirmation Modal Overlay -->
     <div class="success-overlay" id="successOverlay">
-        <i class="fa-solid fa-circle-check success-icon"></i>
-        <h3 id="resultTitle">ATTENDANCE MARKED!</h3>
-        <p id="resultSub">Check-In Successful</p>
-        <button class="btn-done" onclick="closeSuccess()">Done / Scan Again</button>
+        <div class="success-icon">
+            <i class="fa-solid fa-check"></i>
+        </div>
+        <div class="success-title" id="resultTitle">SCAN SUCCESSFUL!</div>
+        <div class="success-sub" id="resultSub">Attendance record saved successfully.</div>
+        <button class="btn-continue" onclick="closeSuccess()">
+            <i class="fa-solid fa-rotate-right"></i> Continue Scanning
+        </button>
     </div>
 
     <script>
-        let scanMode = 'IN';
         let html5QrCode = null;
+        let scanMode = 'IN'; // 'IN', 'OUT', 'GATE_PASS_OUT', 'GATE_PASS_IN'
+        let activeEmp = { empId: 'EMP-001', name: 'Employee Profile', phone: '' };
         let isProcessing = false;
 
-        let activeEmp = {
-            empId: 'EMP-001',
-            name: 'Employee',
-            phone: '',
-            bid: 'ATTENDANCE_BIZ_001'
-        };
-
         document.addEventListener('DOMContentLoaded', () => {
-            initEmpSession();
+            parseUrlParams();
             updateLiveStatusAndTodaySummary();
             initScanner();
+
+            // Real-time Firestore sync
+            const firestoreDb = window.db || (window.firebase && window.firebase.firestore ? window.firebase.firestore() : null);
+            if (firestoreDb) {
+                const targetBid = activeEmp.bid || localStorage.getItem('currentBusinessId') || 'ATTENDANCE_BIZ_001';
+                firestoreDb.collection('attendance_logs').onSnapshot(() => updateLiveStatusAndTodaySummary(), e => console.warn(e));
+                firestoreDb.collection('businesses').doc(targetBid).collection('attendance_logs').onSnapshot(() => updateLiveStatusAndTodaySummary(), e => console.warn(e));
+            }
         });
 
-        function initEmpSession() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const urlEmpId = urlParams.get('empId') || '';
-            const urlPhone = (urlParams.get('phone') || '').replace(/[^0-9]/g, '');
-            const urlName = urlParams.get('name') ? decodeURIComponent(urlParams.get('name')) : '';
-            const urlBid = urlParams.get('bid') || localStorage.getItem('currentBusinessId') || 'ATTENDANCE_BIZ_001';
+        function parseUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            const empId = params.get('empId') || params.get('id') || 'EMP-454';
+            const phone = params.get('phone') || '0773145820';
+            const name = params.get('name') || 'Champika De Silva';
+            const bid = params.get('bid') || 'ATTENDANCE_BIZ_001';
 
-            if (urlBid) localStorage.setItem('currentBusinessId', urlBid);
-
-            if (urlEmpId || urlPhone) {
-                activeEmp = {
-                    empId: urlEmpId || 'EMP-001',
-                    name: urlName || 'Employee',
-                    phone: urlPhone || '',
-                    bid: urlBid
-                };
-                localStorage.setItem('digibiz_emp_session', JSON.stringify(activeEmp));
-            } else {
-                const stored = localStorage.getItem('digibiz_emp_session');
-                if (stored) {
-                    try { activeEmp = JSON.parse(stored); } catch(e) {}
-                }
-            }
-
-            document.getElementById('chipName').textContent = activeEmp.name || 'Employee';
-            document.getElementById('mainEmpHeader').textContent = `Welcome, ${activeEmp.name || 'Employee'}`;
-            document.getElementById('subEmpTitle').innerHTML = `Emp ID: <strong>${activeEmp.empId}</strong> | Phone: <strong>${activeEmp.phone}</strong>`;
+            activeEmp = { empId, phone, name, bid };
+            document.getElementById('empNamePill').textContent = `${name} (${empId})`;
+            document.getElementById('summaryDate').textContent = new Date().toISOString().split('T')[0];
         }
 
         function updateLiveStatusAndTodaySummary() {
@@ -182,11 +185,16 @@
             } catch(e) {}
 
             const todayStr = new Date().toISOString().split('T')[0];
-            const empLogsToday = logs.filter(l => (l && (l.empId === activeEmp.empId || l.phone === activeEmp.phone)) && l.date === todayStr);
+
+            // Filter ALL logs for this employee across calendar dates to track night shifts accurately!
+            const empLogsAll = logs.filter(l => l && (l.empId === activeEmp.empId || l.phone === activeEmp.phone));
             const empGPToday = gatePasses.filter(gp => (gp && (gp.empId === activeEmp.empId || gp.empName === activeEmp.name)) && gp.date === todayStr);
 
             const openGP = empGPToday.find(gp => gp.outTime && (!gp.inTime || gp.inTime === '--:--'));
-            const lastLog = empLogsToday.length > 0 ? empLogsToday[0] : null;
+            
+            // Find open shift (Checked In, but outTime is '--:--' or missing) regardless of whether it started yesterday or today!
+            const openShiftLog = empLogsAll.find(l => (l.inTime && l.inTime !== '--:--') && (!l.outTime || l.outTime === '--:--'));
+            const lastLog = empLogsAll.length > 0 ? empLogsAll[0] : null;
 
             const btnIn = document.getElementById('btnModeIn');
             const btnOut = document.getElementById('btnModeOut');
@@ -195,7 +203,7 @@
             const pillText = document.getElementById('statusPillText');
 
             if (openGP) {
-                // Currently Out on Short Leave / Gate Pass!
+                // Currently Out on Short Leave
                 scanMode = 'GATE_PASS_IN';
                 btnIn.style.display = 'none';
                 btnOut.style.display = 'none';
@@ -203,17 +211,8 @@
                 btnGPReturn.style.display = 'flex';
                 btnGPReturn.className = 'mode-btn active-gp';
                 pillText.innerHTML = `Status: 🚗 On Short Leave (Out at <strong>${openGP.outTime}</strong>)`;
-            } else if (!lastLog || lastLog.mode === 'OUT' || (lastLog.outTime && lastLog.outTime !== '--:--')) {
-                // Off-duty -> Primary action CHECK IN
-                scanMode = 'IN';
-                btnIn.style.display = 'flex';
-                btnIn.className = 'mode-btn active-in';
-                btnOut.style.display = 'none';
-                btnGP.style.display = 'none';
-                btnGPReturn.style.display = 'none';
-                pillText.innerHTML = `Status: 🔴 Off-Duty (👉 ඊළඟ පියවර: ☀️ CHECK IN)`;
-            } else {
-                // Checked In / On Duty -> Primary actions CHECK OUT and SHORT LEAVE!
+            } else if (openShiftLog) {
+                // Currently ON DUTY (Checked In yesterday night or today morning) -> Next Action MUST BE CHECK OUT or SHORT LEAVE!
                 scanMode = 'OUT';
                 btnIn.style.display = 'none';
                 btnOut.style.display = 'flex';
@@ -221,10 +220,20 @@
                 btnGP.style.display = 'flex';
                 btnGP.className = 'mode-btn active-gp';
                 btnGPReturn.style.display = 'none';
-                pillText.innerHTML = `Status: 🟢 Checked In at <strong>${lastLog.inTime || lastLog.time}</strong>`;
+                pillText.innerHTML = `Status: 🟢 Checked In at <strong>${openShiftLog.inTime || openShiftLog.time}</strong> (${openShiftLog.date})`;
+            } else {
+                // OFF DUTY -> Next Action MUST BE CHECK IN!
+                scanMode = 'IN';
+                btnIn.style.display = 'flex';
+                btnIn.className = 'mode-btn active-in';
+                btnOut.style.display = 'none';
+                btnGP.style.display = 'none';
+                btnGPReturn.style.display = 'none';
+                pillText.innerHTML = `Status: 🔴 Off-Duty (👉 ඊළඟ පියවර: ☀️ CHECK IN)`;
             }
 
             // Update Today Summary Numbers
+            const empLogsToday = empLogsAll.filter(l => l.date === todayStr);
             if (empLogsToday.length > 0) {
                 const firstLog = empLogsToday[empLogsToday.length - 1];
                 const latestLog = empLogsToday[0];
@@ -240,11 +249,11 @@
                         if (diff > 0) totalWorkMins += diff;
                     }
                 });
-                document.getElementById('todayWorkHrs').textContent = totalWorkMins > 0 ? (totalWorkMins / 60).toFixed(1) + ' hrs' : (lastLog && (!lastLog.outTime || lastLog.outTime === '--:--') ? 'In Progress' : '0.0 hrs');
+                document.getElementById('todayWorkHrs').textContent = totalWorkMins > 0 ? (totalWorkMins / 60).toFixed(1) + ' hrs' : (openShiftLog ? 'In Progress' : '0.0 hrs');
             } else {
-                document.getElementById('todayInTime').textContent = '--:--';
+                document.getElementById('todayInTime').textContent = openShiftLog ? openShiftLog.inTime : '--:--';
                 document.getElementById('todayOutTime').textContent = '--:--';
-                document.getElementById('todayWorkHrs').textContent = '0.0 hrs';
+                document.getElementById('todayWorkHrs').textContent = openShiftLog ? 'In Progress' : '0.0 hrs';
             }
 
             document.getElementById('todayGatePasses').textContent = empGPToday.length + (openGP ? ' (Active)' : '');
@@ -379,7 +388,7 @@
                         if (stored) passes = JSON.parse(stored);
                     } catch(e) {}
 
-                    const openGPIndex = passes.findIndex(gp => (gp && (gp.empId === empId || gp.empName === empName)) && gp.date === dateStr && (!gp.inTime || gp.inTime === '--:--'));
+                    const openGPIndex = passes.findIndex(gp => (gp && (gp.empId === empId || gp.empName === empName)) && (!gp.inTime || gp.inTime === '--:--'));
                     if (openGPIndex !== -1) {
                         const targetGP = passes[openGPIndex];
                         targetGP.inTime = timeStr;
@@ -416,7 +425,8 @@
                 const isOut = scanMode === 'OUT';
 
                 if (isOut) {
-                    const openLogIndex = logs.findIndex(l => (l && (l.empId === empId || l.phone === empPhone)) && l.date === dateStr && (l.inTime && l.inTime !== '--:--') && (!l.outTime || l.outTime === '--:--'));
+                    // Match the open shift across calendar dates (whether started yesterday night or today!)
+                    const openLogIndex = logs.findIndex(l => (l && (l.empId === empId || l.phone === empPhone)) && (l.inTime && l.inTime !== '--:--') && (!l.outTime || l.outTime === '--:--'));
                     if (openLogIndex !== -1) {
                         targetLog = logs[openLogIndex];
                         targetLog.outTime = timeStr;

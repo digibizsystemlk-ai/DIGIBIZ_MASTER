@@ -20,11 +20,13 @@ const SUPER_ADMIN_UIDS = (process.env.SUPER_ADMIN_UIDS || "")
     .map((x) => x.trim())
     .filter(Boolean);
 
-let rtdb = null;
-try {
-    rtdb = admin.database();
-} catch (e) {
-    logger.warn("Realtime Database not available for SMS gateway mirror", e && e.message);
+function getRtdb() {
+    try {
+        return admin.database();
+    } catch (e) {
+        logger.warn("Realtime Database not available for SMS gateway mirror", e && e.message);
+        return null;
+    }
 }
 
 /** When false: never queue investor portfolio accrual SMS (Firestore investorPhone is ignored). Set true and redeploy to re-enable. */
@@ -67,7 +69,13 @@ exports.sendNewUserNotification = onCall(
         const userEmail = String(data.userEmail || "").trim().toLowerCase();
         const userId = String(data.userId || "").trim();
         const timestampRaw = data.timestamp;
-        const assignedBusiness = String(data.assignedBusiness || "Demo Business (DEFAULT_TEST_BUSINESS)");
+        const ownerName = String(data.ownerName || "").trim();
+        const businessName = String(data.businessName || "").trim();
+        const businessType = String(data.businessType || "").trim();
+        const phone = String(data.phone || "").trim();
+        const description = String(data.description || "").trim();
+        const requestCall = !!data.requestCall;
+
         if (!userEmail || !userId) {
             throw new HttpsError("invalid-argument", "userEmail and userId are required.");
         }
@@ -79,18 +87,114 @@ exports.sendNewUserNotification = onCall(
         }
 
         const ts = timestampRaw ? new Date(timestampRaw) : new Date();
-        const timestampText = Number.isNaN(ts.getTime()) ? new Date().toISOString() : ts.toISOString();
-        const subject = "New User Registration - DIGIBIZ";
+        const sriLankaTime = new Intl.DateTimeFormat("en-US", {
+            timeZone: "Asia/Colombo",
+            dateStyle: "full",
+            timeStyle: "medium",
+        }).format(Number.isNaN(ts.getTime()) ? new Date() : ts);
+
+        const bTypeMap = {
+            retail: "Retail / Supermarket",
+            tire_centre: "Tire Center",
+            auto_care: "Auto Care & Repair Center",
+            pharmacy: "Pharmacy",
+            restaurant: "Restaurant / Cafe",
+            garment: "Garment / Fashion",
+            hardware: "Hardware / Construction",
+            service: "Service / Salon",
+            distributor: "Distributor / Wholesale",
+            manufacturer: "Manufacturer",
+            scrap_collection_center: "Scrap Collection Center"
+        };
+        const formattedType = bTypeMap[businessType] || businessType || "Custom / General Business";
+
+        const subject = `🎉 New Client Registration - DIGIBIZ: ${businessName || ownerName || userEmail}`;
+        
+        const html = `
+<div style="font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f7f6; padding: 20px; color: #1e293b;">
+  <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;">
+    
+    <!-- Header -->
+    <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 24px 28px; text-align: center; color: #ffffff;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">🎉 New User Registration Alert</h1>
+      <p style="margin: 6px 0 0 0; font-size: 13px; opacity: 0.9;">DIGIBIZ Universal Business Management System</p>
+    </div>
+
+    <!-- Body Content -->
+    <div style="padding: 24px 28px;">
+      <p style="font-size: 15px; font-weight: 600; color: #0f172a; margin-top: 0;">A new client has registered on DIGIBIZ!</p>
+      
+      <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px;">
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b; width: 140px;">👤 Client Name:</td>
+          <td style="padding: 10px 4px; font-weight: 800; color: #0f172a;">${ownerName || 'N/A'}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b;">🏢 Business Name:</td>
+          <td style="padding: 10px 4px; font-weight: 800; color: #059669;">${businessName || 'N/A'}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b;">🏷️ Business Type:</td>
+          <td style="padding: 10px 4px; font-weight: 700; color: #d97706;">${formattedType}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b;">✉️ Email Address:</td>
+          <td style="padding: 10px 4px; font-weight: 700; color: #2563eb;"><a href="mailto:${userEmail}" style="color:#2563eb; text-decoration:none;">${userEmail}</a></td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b;">📞 Phone Number:</td>
+          <td style="padding: 10px 4px; font-weight: 700; color: #0f172a;">${phone || 'Not provided'}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b;">📝 Notes / Info:</td>
+          <td style="padding: 10px 4px; color: #334155;">${description || 'None'}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b;">📞 Call Request:</td>
+          <td style="padding: 10px 4px; font-weight: 800;">${requestCall ? '<span style="color:#15803d; background:#dcfce7; padding:3px 8px; border-radius:12px;">✅ YES - Call Requested</span>' : '<span style="color:#64748b;">No</span>'}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b;">🕒 Registration Time:</td>
+          <td style="padding: 10px 4px; color: #475569;">${sriLankaTime} (Asia/Colombo)</td>
+        </tr>
+        <tr>
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b;">🆔 User ID:</td>
+          <td style="padding: 10px 4px; font-family: monospace; font-size: 12px; color: #64748b;">${userId}</td>
+        </tr>
+      </table>
+
+      <!-- CTA Button -->
+      <div style="text-align: center; margin-top: 24px; margin-bottom: 12px;">
+        <a href="https://digibiz-sys.web.app/admin/business-management.html?search=${encodeURIComponent(userEmail)}" 
+           style="display: inline-block; background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; font-weight: 800; font-size: 14px; text-decoration: none; padding: 12px 24px; border-radius: 12px; box-shadow: 0 4px 12px rgba(16,185,129,0.3);">
+          🔍 Inspect & Manage Account in Super Admin Panel
+        </a>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background: #f8fafc; padding: 16px 28px; text-align: center; border-top: 1px solid #f1f5f9; font-size: 11px; color: #94a3b8;">
+      DIGIBIZ Universal Business Management System &copy; 2026
+    </div>
+  </div>
+</div>
+        `;
+
         const text = [
-            "New user registered on DIGIBIZ system.",
+            "🎉 New User Registration - DIGIBIZ",
             "",
             "Registration Details:",
+            `- Owner / Name: ${ownerName || "N/A"}`,
+            `- Business Name: ${businessName || "N/A"}`,
+            `- Business Type: ${formattedType}`,
             `- Email: ${userEmail}`,
-            `- Registration Time: ${timestampText}`,
-            `- Assigned Business: ${assignedBusiness}`,
+            `- Phone: ${phone || "Not provided"}`,
+            `- Notes: ${description || "None"}`,
+            `- Call Preference: ${requestCall ? "YES" : "No"}`,
+            `- Registration Time: ${sriLankaTime} (Asia/Colombo)`,
             `- User ID: ${userId}`,
             "",
-            "Please log in to Super Dashboard to review and assign appropriate business if needed.",
+            "Manage account: https://digibiz-sys.web.app/admin/business-management.html?search=" + encodeURIComponent(userEmail),
             "",
             "DIGIBIZ System",
         ].join("\n");
@@ -100,8 +204,112 @@ exports.sendNewUserNotification = onCall(
             to: REG_NOTIFY_TO,
             subject,
             text,
+            html,
         });
-        logger.info("sendNewUserNotification sent", { userEmail, userId, to: REG_NOTIFY_TO });
+        logger.info("sendNewUserNotification sent", { userEmail, userId, ownerName, businessName, to: REG_NOTIFY_TO });
+        return { success: true };
+    }
+);
+
+exports.sendDemoLoginNotification = onCall(
+    {
+        timeoutSeconds: 60,
+        memory: "256MiB",
+    },
+    async (request) => {
+        const data = request.data || {};
+        const demoEmail = String(data.demoEmail || "").trim().toLowerCase();
+        const businessTypeName = String(data.businessTypeName || data.businessType || "Interactive Demo").trim();
+        const userAgent = String(data.userAgent || "").trim();
+
+        if (!demoEmail) {
+            throw new HttpsError("invalid-argument", "demoEmail is required.");
+        }
+
+        const transporter = registrationNotifierTransport();
+        if (!transporter) {
+            logger.warn("sendDemoLoginNotification skipped: SMTP env not configured");
+            return { success: false, skipped: true, reason: "SMTP not configured" };
+        }
+
+        const sriLankaTime = new Intl.DateTimeFormat("en-US", {
+            timeZone: "Asia/Colombo",
+            dateStyle: "full",
+            timeStyle: "medium",
+        }).format(new Date());
+
+        const subject = `🎮 Live Demo Inspection Alert - DIGIBIZ: ${businessTypeName} (${demoEmail})`;
+        
+        const html = `
+<div style="font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f7f6; padding: 20px; color: #1e293b;">
+  <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;">
+    
+    <!-- Header -->
+    <div style="background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%); padding: 24px 28px; text-align: center; color: #ffffff;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">🎮 Demo Account Testing Alert</h1>
+      <p style="margin: 6px 0 0 0; font-size: 13px; opacity: 0.9;">Prospective Client Live Demo Inspection</p>
+    </div>
+
+    <!-- Body Content -->
+    <div style="padding: 24px 28px;">
+      <p style="font-size: 15px; font-weight: 600; color: #0f172a; margin-top: 0;">A visitor is currently exploring and testing a DIGIBIZ Demo account!</p>
+      
+      <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px;">
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b; width: 140px;">💼 Demo Model:</td>
+          <td style="padding: 10px 4px; font-weight: 800; color: #7c3aed;">${businessTypeName}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b;">✉️ Demo Email Used:</td>
+          <td style="padding: 10px 4px; font-weight: 700; color: #0f172a;">${demoEmail}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b;">🕒 Test Login Time:</td>
+          <td style="padding: 10px 4px; color: #475569;">${sriLankaTime} (Asia/Colombo)</td>
+        </tr>
+        ${userAgent ? `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 10px 4px; font-weight: 700; color: #64748b;">📱 Device / Browser:</td>
+          <td style="padding: 10px 4px; font-size: 12px; color: #64748b;">${userAgent}</td>
+        </tr>
+        ` : ''}
+      </table>
+
+      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px; margin-top: 16px; font-size: 13px; color: #166534; line-height: 1.5;">
+        💡 <strong>Note:</strong> A prospective user clicked '1-Click Direct Test Login' or logged into <strong>${demoEmail}</strong> to test POS, stock, and reports features.
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background: #f8fafc; padding: 16px 28px; text-align: center; border-top: 1px solid #f1f5f9; font-size: 11px; color: #94a3b8;">
+      DIGIBIZ Universal Business Management System &copy; 2026
+    </div>
+  </div>
+</div>
+        `;
+
+        const text = [
+            "🎮 Live Demo Inspection Alert - DIGIBIZ",
+            "",
+            `- Business Model: ${businessTypeName}`,
+            `- Demo Email: ${demoEmail}`,
+            `- Test Login Time: ${sriLankaTime} (Asia/Colombo)`,
+            `- Device / Browser: ${userAgent || "N/A"}`,
+            "",
+            "A prospective client is actively testing DIGIBIZ features.",
+            "",
+            "DIGIBIZ System",
+        ].join("\n");
+
+        await transporter.sendMail({
+            from: String(process.env.DIGIBIZ_NOTIFY_EMAIL_FROM || process.env.DIGIBIZ_NOTIFY_EMAIL_USER || "").trim(),
+            to: REG_NOTIFY_TO,
+            subject,
+            text,
+            html,
+        });
+
+        logger.info("sendDemoLoginNotification sent", { demoEmail, businessTypeName, to: REG_NOTIFY_TO });
         return { success: true };
     }
 );
@@ -150,6 +358,7 @@ async function queueSms(businessId, mobile, message, createdBy = "cloudfunctions
     await db.collection("pending_sms").doc(id).set({
         ...payload,
     });
+    const rtdb = getRtdb();
     if (rtdb) {
         await rtdb.ref(`sms_gateway/${businessId}/pending_sms/${id}`).set({
             ...payload,

@@ -5,6 +5,7 @@ const finishedProductsMap = {};
 const loadedMfgSalesMap = {};
 let mfgCustomersList = [];
 let mfgAreasList = [];
+let saleCartItemsArray = [];
 
 function v(id){ return document.getElementById(id) ? document.getElementById(id).value : ''; }
 function n(id){ return Number(v(id)) || 0; }
@@ -69,12 +70,13 @@ async function loadFinishedProductsOptions() {
             if (data.isActive === false) return;
             const name = String(data.name || '').trim();
             const qty = Number(data.stockQty || 0);
-            const unitCost = Number(data.unitCost || data.unitPrice || 0);
+            const unitCost = Number(data.unitCost || 0);
+            const unitPrice = Number(data.unitPrice || (unitCost > 0 ? unitCost * 1.5 : 0));
             if (name) {
-                finishedProductsMap[doc.id] = { id: doc.id, name, qty, unitCost };
+                finishedProductsMap[doc.id] = { id: doc.id, name, qty, unitCost, unitPrice };
                 const opt = document.createElement('option');
                 opt.value = doc.id;
-                opt.textContent = `${name} (Available: ${qty} units @ Cost: Rs. ${unitCost.toFixed(2)})`;
+                opt.textContent = `${name} (Available: ${qty} units @ Price: Rs. ${unitPrice.toFixed(2)})`;
                 sel.appendChild(opt);
             }
         });
@@ -82,6 +84,22 @@ async function loadFinishedProductsOptions() {
         console.warn('[Sales] Error loading finished products options:', e);
     }
 }
+
+function handleProductSelectChange() {
+    const pid = v('mfgFgProductId');
+    if (pid && finishedProductsMap[pid]) {
+        const item = finishedProductsMap[pid];
+        if (item.unitPrice && (!n('mfgSellingUnitPrice') || n('mfgSellingUnitPrice') === 0)) {
+            document.getElementById('mfgSellingUnitPrice').value = item.unitPrice.toFixed(2);
+        }
+        if (!n('mfgSoldQty') || n('mfgSoldQty') === 0) {
+            document.getElementById('mfgSoldQty').value = 1;
+        }
+    }
+    recalcProfitPreview();
+}
+
+window.handleProductSelectChange = handleProductSelectChange;
 
 async function loadCustomerDatalist(filterArea = '') {
     const bid = ManufacturerModule.businessId;
@@ -152,33 +170,146 @@ function handlePaymentModeChange() {
     if (chequeGroup) chequeGroup.style.display = (mode === 'CHEQUE') ? 'block' : 'none';
 }
 
-function recalcProfitPreview() {
+function addSaleCartItem() {
     const pid = v('mfgFgProductId');
     const soldQty = n('mfgSoldQty');
-    const unitPrice = n('mfgSellingUnitPrice');
+    let unitPrice = n('mfgSellingUnitPrice');
+    const msgEl = document.getElementById('mfgSaleMsg');
+
+    if (msgEl) {
+        msgEl.className = 'mfg-msg';
+        msgEl.style.display = 'block';
+    }
+
+    if (!pid || !finishedProductsMap[pid]) {
+        if (msgEl) {
+            msgEl.classList.add('err');
+            msgEl.textContent = '❌ Please select a finished product from the dropdown first.';
+        }
+        return;
+    }
+    if (soldQty <= 0) {
+        if (msgEl) {
+            msgEl.classList.add('err');
+            msgEl.textContent = '❌ Please enter a valid quantity (> 0).';
+        }
+        return;
+    }
+
+    const item = finishedProductsMap[pid];
+    if (!unitPrice || unitPrice <= 0) {
+        unitPrice = item.unitPrice || (item.unitCost * 1.5) || 0;
+    }
+
+    const unitCost = Number(item.unitCost || 0);
+    const itemSubtotal = Number((soldQty * unitPrice).toFixed(4));
+    const itemCogs = Number((soldQty * unitCost).toFixed(4));
+
+    const isLowStock = (item.qty < soldQty);
+
+    saleCartItemsArray.push({
+        id: pid,
+        name: item.name,
+        qty: soldQty,
+        unitPrice: unitPrice,
+        unitCost: unitCost,
+        subtotal: itemSubtotal,
+        cogs: itemCogs,
+        isLowStock
+    });
+
+    document.getElementById('mfgFgProductId').value = '';
+    document.getElementById('mfgSoldQty').value = '';
+    document.getElementById('mfgSellingUnitPrice').value = '';
+
+    renderSaleCartTable();
+    recalcProfitPreview();
+
+    if (msgEl) {
+        msgEl.style.background = '#f0fdf4';
+        msgEl.style.color = '#166534';
+        msgEl.style.border = '1px solid #bbf7d0';
+        msgEl.style.padding = '8px 12px';
+        msgEl.style.borderRadius = '6px';
+        msgEl.style.marginTop = '10px';
+        msgEl.innerHTML = `✅ Added <strong>${escPrint(item.name)}</strong> (${soldQty} units @ Rs. ${unitPrice.toFixed(2)}) to invoice cart!` + (isLowStock ? ` <span style="color:#d97706; font-weight:700; font-size:11px;">(⚠️ Stock Notice: Available stock is ${item.qty} units)</span>` : '');
+    }
+}
+
+function removeSaleCartItem(index) {
+    if (index >= 0 && index < saleCartItemsArray.length) {
+        saleCartItemsArray.splice(index, 1);
+        renderSaleCartTable();
+        recalcProfitPreview();
+    }
+}
+
+function renderSaleCartTable() {
+    const tbody = document.getElementById('mfgSaleCartRows');
+    if (!tbody) return;
+
+    if (!saleCartItemsArray.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:12px; color:#94a3b8;">No items added yet. Select product above and click "+ Add Item".</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = saleCartItemsArray.map((x, idx) => `
+        <tr style="border-bottom:1px solid #e2e8f0;">
+            <td style="padding:6px; font-weight:700; color:#0f172a;">${escPrint(x.name)}</td>
+            <td style="padding:6px; text-align:right; font-weight:700; color:#0369a1;">${x.qty}</td>
+            <td style="padding:6px; text-align:right;">Rs. ${x.unitPrice.toFixed(2)}</td>
+            <td style="padding:6px; text-align:right; font-weight:800; color:#0f172a;">Rs. ${x.subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+            <td style="padding:6px; text-align:center;">
+                <button type="button" onclick="removeSaleCartItem(${idx})" style="background:#ef4444; color:#fff; border:none; padding:2px 6px; border-radius:4px; cursor:pointer; font-weight:bold; font-size:11px;">❌</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+window.addSaleCartItem = addSaleCartItem;
+window.removeSaleCartItem = removeSaleCartItem;
+window.renderSaleCartTable = renderSaleCartTable;
+
+function recalcProfitPreview() {
+    let combinedSubtotal = 0;
+    let combinedCogs = 0;
+    let totalItemTypes = 0;
+
+    if (saleCartItemsArray.length > 0) {
+        saleCartItemsArray.forEach(i => {
+            combinedSubtotal += i.subtotal;
+            combinedCogs += i.cogs;
+        });
+        totalItemTypes = saleCartItemsArray.length;
+    } else {
+        const pid = v('mfgFgProductId');
+        const soldQty = n('mfgSoldQty');
+        const unitPrice = n('mfgSellingUnitPrice');
+        const item = finishedProductsMap[pid] || { unitCost: 0 };
+        const unitCost = item.unitCost || 0;
+
+        combinedSubtotal = soldQty * unitPrice;
+        combinedCogs = soldQty * unitCost;
+        if (soldQty > 0) totalItemTypes = 1;
+    }
+
     const discountType = v('mfgDiscountType');
     const discountVal = n('mfgDiscountValue');
-
-    const item = finishedProductsMap[pid] || { unitCost: 0 };
-    const unitCost = item.unitCost || 0;
-
-    const subtotal = soldQty * unitPrice;
     let discountAmount = 0;
 
     if (discountType === 'PERCENT') {
-        discountAmount = (subtotal * discountVal) / 100;
+        discountAmount = (combinedSubtotal * discountVal) / 100;
     } else if (discountType === 'FLAT') {
         discountAmount = discountVal;
     }
-    if (discountAmount > subtotal) discountAmount = subtotal;
+    if (discountAmount > combinedSubtotal) discountAmount = combinedSubtotal;
 
-    const netSaleTotal = Math.max(0, subtotal - discountAmount);
-    const cogsTotal = soldQty * unitCost;
-    const profit = netSaleTotal - cogsTotal;
+    const netSaleTotal = Math.max(0, combinedSubtotal - discountAmount);
+    const profit = netSaleTotal - combinedCogs;
 
-    document.getElementById('mfgAbsorbedUnitCostDisp').textContent = `Rs. ${unitCost.toFixed(2)} / item`;
-    document.getElementById('mfgCogsDisp').textContent = `Rs. ${cogsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    document.getElementById('mfgSubtotalDisp').textContent = `Rs. ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('mfgAbsorbedUnitCostDisp').textContent = `${totalItemTypes} Item Type(s) in Cart`;
+    document.getElementById('mfgCogsDisp').textContent = `Rs. ${combinedCogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('mfgSubtotalDisp').textContent = `Rs. ${combinedSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     document.getElementById('mfgDiscountDisp').textContent = `- Rs. ${discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     document.getElementById('mfgSaleTotalDisp').textContent = `Rs. ${netSaleTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     
@@ -223,12 +354,9 @@ async function updateSalesSummaryCards() {
 
 async function saveMfgSale() {
     const bid = ManufacturerModule.businessId;
-    const pid = v('mfgFgProductId');
     const customerArea = v('mfgCustomerArea').trim();
     const customerName = v('mfgCustomerName').trim();
     const customerPhone = v('mfgCustomerPhone').trim();
-    const soldQty = n('mfgSoldQty');
-    const unitPrice = n('mfgSellingUnitPrice');
     const paymentMode = v('mfgPaymentMode');
     const dueDate = v('mfgDueDate');
     const chequeDate = v('mfgChequeDate');
@@ -236,50 +364,81 @@ async function saveMfgSale() {
     const msgEl = document.getElementById('mfgSaleMsg');
     msgEl.className = 'mfg-msg';
 
-    if (!pid || !finishedProductsMap[pid]) {
-        msgEl.classList.add('err');
-        msgEl.textContent = 'Please select a valid finished product.';
-        return;
-    }
     if (!customerName) {
         msgEl.classList.add('err');
         msgEl.textContent = 'Please enter customer / shop name.';
         return;
     }
-    if (soldQty <= 0) {
-        msgEl.classList.add('err');
-        msgEl.textContent = 'Please enter a valid quantity sold.';
-        return;
+
+    // Auto-add single item input to cart if cart is empty
+    if (!saleCartItemsArray.length) {
+        const pid = v('mfgFgProductId');
+        const soldQty = n('mfgSoldQty');
+        const unitPrice = n('mfgSellingUnitPrice');
+
+        if (pid && finishedProductsMap[pid] && soldQty > 0 && unitPrice >= 0) {
+            const item = finishedProductsMap[pid];
+            if (item.qty < soldQty) {
+                msgEl.classList.add('err');
+                msgEl.textContent = `Insufficient finished goods stock! Available: ${item.qty} units, Required: ${soldQty}.`;
+                return;
+            }
+            const unitCost = Number(item.unitCost || 0);
+            saleCartItemsArray.push({
+                id: pid,
+                name: item.name,
+                qty: soldQty,
+                unitPrice: unitPrice,
+                unitCost: unitCost,
+                subtotal: Number((soldQty * unitPrice).toFixed(4)),
+                cogs: Number((soldQty * unitCost).toFixed(4))
+            });
+        }
     }
-    if (unitPrice <= 0) {
+
+    if (!saleCartItemsArray.length) {
         msgEl.classList.add('err');
-        msgEl.textContent = 'Please enter a valid selling unit price.';
+        msgEl.textContent = 'Please select a finished product and click "+ Add Item to Invoice Cart" before completing sale.';
         return;
     }
 
-    const item = finishedProductsMap[pid];
-    if (item.qty < soldQty) {
-        msgEl.classList.add('err');
-        msgEl.textContent = `Insufficient finished goods stock! Available: ${item.qty} units, Required: ${soldQty}.`;
-        return;
-    }
+    let combinedSubtotal = 0;
+    let combinedCogs = 0;
+    let totalQtySum = 0;
+    const itemsPayload = [];
 
-    const fgUnitCost = item.unitCost || 0;
+    saleCartItemsArray.forEach(i => {
+        combinedSubtotal += i.subtotal;
+        combinedCogs += i.cogs;
+        totalQtySum += i.qty;
+        itemsPayload.push({
+            productId: i.id,
+            productName: i.name,
+            qty: i.qty,
+            unitPrice: i.unitPrice,
+            fgUnitCost: i.unitCost,
+            subtotal: i.subtotal,
+            cogsAmount: i.cogs
+        });
+    });
+
     const discountType = v('mfgDiscountType') || 'NONE';
     const discountValue = n('mfgDiscountValue');
-
-    const subtotal = Number((soldQty * unitPrice).toFixed(4));
     let discountAmount = 0;
+
     if (discountType === 'PERCENT') {
-        discountAmount = Number(((subtotal * discountValue) / 100).toFixed(4));
+        discountAmount = Number(((combinedSubtotal * discountValue) / 100).toFixed(4));
     } else if (discountType === 'FLAT') {
         discountAmount = Number(discountValue.toFixed(4));
     }
-    if (discountAmount > subtotal) discountAmount = subtotal;
+    if (discountAmount > combinedSubtotal) discountAmount = combinedSubtotal;
 
-    const cogsAmount = Number((soldQty * fgUnitCost).toFixed(4));
-    const totalAmount = Number((subtotal - discountAmount).toFixed(4));
-    const grossProfit = Number((totalAmount - cogsAmount).toFixed(4));
+    const totalAmount = Number((combinedSubtotal - discountAmount).toFixed(4));
+    const grossProfit = Number((totalAmount - combinedCogs).toFixed(4));
+
+    const mainProductName = saleCartItemsArray.length === 1 
+        ? saleCartItemsArray[0].name 
+        : `${saleCartItemsArray.length} items (${saleCartItemsArray.map(x => x.name).join(', ')})`;
 
     const btn = document.getElementById('saveMfgSaleBtn');
     btn.disabled = true;
@@ -294,15 +453,16 @@ async function saveMfgSale() {
             area: customerArea || 'N/A',
             companyName: customerName,
             customerMobile: customerPhone,
-            productName: item.name,
-            qty: soldQty,
-            unitPrice,
-            subtotal,
+            productName: mainProductName,
+            items: itemsPayload,
+            qty: totalQtySum,
+            unitPrice: saleCartItemsArray.length === 1 ? saleCartItemsArray[0].unitPrice : 0,
+            subtotal: combinedSubtotal,
             discountType,
             discountValue,
             discountAmount,
-            fgUnitCost,
-            cogsAmount,
+            fgUnitCost: 0,
+            cogsAmount: combinedCogs,
             grossProfit,
             amount: totalAmount,
             paymentMode,
@@ -313,12 +473,12 @@ async function saveMfgSale() {
             flatAccountingSyncedV1: false
         };
 
-        // 1. Save Area suggestion for future auto-completion
+        // 1. Save Area suggestion
         if (customerArea) {
             await ManufacturerModule.saveFieldSuggestion('mfg_area', customerArea).catch(() => {});
         }
 
-        // 2. Save/Update Customer record with Area in customers collection
+        // 2. Save/Update Customer record
         if (customerName) {
             const custDocId = (bid + '__' + customerName).toLowerCase().replace(/[^a-z0-9_]/g, '_');
             await db.collection('customers').doc(custDocId).set({
@@ -333,7 +493,7 @@ async function saveMfgSale() {
         // 3. Record sale document
         await db.collection('manufacturer_sales').doc(saleId).set(salePayload);
 
-        // 3.5. Schedule 7-day revisit route plan in manufacturer_route_plans
+        // 3.5. Schedule 7-day revisit
         if (customerName) {
             const nextVisit = new Date();
             nextVisit.setDate(nextVisit.getDate() + 7);
@@ -345,21 +505,23 @@ async function saveMfgSale() {
                 area: customerArea || '',
                 lastSaleDate: new Date(),
                 nextVisitDate: nextVisit,
-                lastProductName: item.name,
-                lastQty: soldQty,
+                lastProductName: mainProductName,
+                lastQty: totalQtySum,
                 lastAmount: totalAmount,
                 visitStatus: 'SCHEDULED',
                 updatedAt: new Date()
             }, { merge: true }).catch(eRoute => console.warn('[Sales] Route plan save warn:', eRoute));
         }
 
-        // 4. Deduct sold stock from manufacturer_finished_products
-        await db.collection('manufacturer_finished_products').doc(pid).set({
-            stockQty: firebase.firestore.FieldValue.increment(-Math.abs(soldQty)),
-            updatedAt: new Date()
-        }, { merge: true });
+        // 4. Deduct sold stock for all items
+        for (const item of saleCartItemsArray) {
+            await db.collection('manufacturer_finished_products').doc(item.id).set({
+                stockQty: firebase.firestore.FieldValue.increment(-Math.abs(item.qty)),
+                updatedAt: new Date()
+            }, { merge: true });
+        }
 
-        // 5. Mirror double-entry accounting
+        // 5. Mirror accounting
         try {
             await ManufacturerModule.syncFlatAccountingFinishedGoodSale(salePayload);
             await db.collection('manufacturer_sales').doc(saleId).update({ flatAccountingSyncedV1: true });
@@ -367,13 +529,12 @@ async function saveMfgSale() {
             console.warn('[Sales] Accounting sync warn:', eFlat);
         }
 
-        // Cache sale in memory for instant modal / printing
         loadedMfgSalesMap[saleId] = salePayload;
 
         msgEl.className = 'mfg-msg';
         msgEl.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                <span>✅ Sale completed! Sold ${soldQty} units of <strong>${escPrint(item.name)}</strong> for Rs. ${totalAmount.toLocaleString()} (Area: ${escPrint(customerArea || 'N/A')}).</span>
+                <span>✅ Sale completed! Sold ${totalQtySum} units (${itemsPayload.length} items) for Rs. ${totalAmount.toLocaleString()} (Area: ${escPrint(customerArea || 'N/A')}).</span>
                 <div style="display:flex; gap:8px;">
                     <button type="button" onclick="printMfgSaleA5('${saleId}')" style="background:#0284c7; color:#fff; border:none; padding:4px 10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">🖨️ Print A5 Bill</button>
                     <button type="button" onclick="sendMfgSaleWhatsApp('${saleId}')" style="background:#25D366; color:#fff; border:none; padding:4px 10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">📲 WhatsApp</button>
@@ -381,7 +542,8 @@ async function saveMfgSale() {
             </div>
         `;
 
-        // Clear form fields
+        saleCartItemsArray = [];
+        renderSaleCartTable();
         document.getElementById('mfgCustomerArea').value = '';
         document.getElementById('mfgCustomerName').value = '';
         document.getElementById('mfgCustomerPhone').value = '';
@@ -399,7 +561,7 @@ async function saveMfgSale() {
         msgEl.textContent = 'Error processing sale: ' + err.message;
     } finally {
         btn.disabled = false;
-        btn.textContent = '🛍️ Complete Sale & Deduct Stock';
+        btn.textContent = '🛍️ Complete Sale & Issue Invoice';
     }
 }
 
@@ -409,13 +571,18 @@ async function loadMfgSalesHistory() {
     try {
         const snap = await db.collection('manufacturer_sales')
             .where('businessId', '==', bid)
-            .limit(100)
+            .limit(200)
             .get()
             .catch(() => ({ docs: [] }));
 
         Object.keys(loadedMfgSalesMap).forEach(k => delete loadedMfgSalesMap[k]);
 
         const selectedFilterArea = v('mfgHistoryAreaFilter').trim().toLowerCase();
+        const fromDateVal = v('mfgHistoryFromDate');
+        const toDateVal = v('mfgHistoryToDate');
+
+        const fromMs = fromDateVal ? new Date(fromDateVal + 'T00:00:00').getTime() : null;
+        const toMs = toDateVal ? new Date(toDateVal + 'T23:59:59').getTime() : null;
 
         const rows = snap.docs
             .map(d => {
@@ -426,8 +593,14 @@ async function loadMfgSalesHistory() {
             })
             .filter(x => x.isActive !== false)
             .filter(x => {
-                if (!selectedFilterArea) return true;
-                return String(x.area || '').trim().toLowerCase() === selectedFilterArea;
+                if (selectedFilterArea && String(x.area || '').trim().toLowerCase() !== selectedFilterArea) {
+                    return false;
+                }
+                const t = x.createdAt?.toDate ? x.createdAt.toDate().getTime() : new Date(x.createdAt || 0).getTime();
+                if (isNaN(t)) return false;
+                if (fromMs != null && t < fromMs) return false;
+                if (toMs != null && t > toMs) return false;
+                return true;
             })
             .sort((a, b) => {
                 const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
@@ -449,6 +622,10 @@ async function loadMfgSalesHistory() {
                 ? `<span style="color:#d97706; font-weight:700;">- Rs. ${discountAmt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>` 
                 : '<span style="color:#94a3b8;">-</span>';
 
+            const prodDisp = (x.items && x.items.length > 1)
+                ? `<strong>${x.items.length} items:</strong> ${x.items.map(i => escPrint(i.productName) + ' (' + i.qty + ')').join(', ')}`
+                : `${escPrint(x.productName || '-')} (${x.qty || 0} units)`;
+
             return `
                 <tr>
                     <td>${ManufacturerModule.formatDate(x.createdAt)}</td>
@@ -456,17 +633,17 @@ async function loadMfgSalesHistory() {
                         <div style="font-weight:700; color:#1e293b;">${escPrint(x.companyName || '-')}</div>
                         ${areaDisp}
                     </td>
-                    <td>${escPrint(x.productName || '-')} (${x.qty || 0} units)</td>
+                    <td style="font-size:12px; max-width:200px;">${prodDisp}</td>
                     <td>Rs. ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td>${discountDisp}</td>
-                    <td style="font-weight:700; color:#0284c7;">Rs. ${amt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td style="color:#64748b;">Rs. ${cogs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td style="font-weight:800; color:#0284c7;">Rs. ${amt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td style="color:#ef4444;">Rs. ${cogs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td style="font-weight:800; color:${profit >= 0 ? '#059669' : '#dc2626'};">Rs. ${profit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td>${x.paymentMode || '-'} / ${x.paymentStatus || '-'}</td>
+                    <td><span style="background:${x.paymentMode === 'CREDIT' ? '#fef2f2' : '#f0fdf4'}; color:${x.paymentMode === 'CREDIT' ? '#991b1b' : '#166534'}; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">${x.paymentMode || 'CASH'}</span></td>
                     <td>
-                        <div style="display:flex; gap:6px; align-items:center;">
-                            <button type="button" onclick="printMfgSaleA5('${x.id}')" title="Print A5 Bill" style="background:#0284c7; color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold;">🖨️ A5</button>
-                            <button type="button" onclick="sendMfgSaleWhatsApp('${x.id}')" title="Send WhatsApp Bill" style="background:#25D366; color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold;">📲 WA</button>
+                        <div style="display:flex; gap:4px;">
+                            <button type="button" onclick="printMfgSaleA5('${x.id}')" title="Print A5 Invoice" style="background:#0284c7; color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px;">🖨️</button>
+                            <button type="button" onclick="sendMfgSaleWhatsApp('${x.id}')" title="Send WhatsApp Invoice" style="background:#25D366; color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px;">📲</button>
                             <button type="button" onclick="deleteMfgSale('${x.id}')" title="Delete Sale" style="background:#ef4444; color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px;">🗑️</button>
                         </div>
                     </td>
@@ -480,13 +657,9 @@ async function loadMfgSalesHistory() {
 
 function printMfgSaleA5(saleId) {
     const sale = loadedMfgSalesMap[saleId];
-    if (!sale) {
-        alert('Sale details not found!');
-        return;
-    }
+    if (!sale) { alert('Sale details not found!'); return; }
 
     const bizName = (ManufacturerModule.context && ManufacturerModule.context.businessName) || 'DIGIBIZ MANUFACTURER';
-    
     document.getElementById('a5BizName').textContent = bizName;
     document.getElementById('a5SaleId').textContent = sale.saleId || sale.id || '-';
     document.getElementById('a5Date').textContent = ManufacturerModule.formatDate(sale.createdAt);
@@ -494,28 +667,40 @@ function printMfgSaleA5(saleId) {
     document.getElementById('a5CustomerArea').textContent = sale.area || 'N/A';
     document.getElementById('a5CustomerPhone').textContent = sale.customerMobile || '-';
     document.getElementById('a5PaymentMode').textContent = `${sale.paymentMode || '-'} (${sale.paymentStatus || '-'})`;
-    document.getElementById('a5ProductName').textContent = sale.productName || '-';
-    document.getElementById('a5Qty').textContent = sale.qty || 0;
-    document.getElementById('a5UnitPrice').textContent = `Rs. ${Number(sale.unitPrice || 0).toFixed(2)}`;
+
+    const tableBody = document.getElementById('a5BillTableBody');
+    if (tableBody) {
+        if (sale.items && sale.items.length > 0) {
+            tableBody.innerHTML = sale.items.map(item => `
+                <tr>
+                    <td style="padding:8px 10px; font-weight:700; border-bottom:1px solid #e2e8f0;">${escPrint(item.productName || '-')}</td>
+                    <td style="padding:8px 10px; text-align:right; border-bottom:1px solid #e2e8f0;">${item.qty || 0}</td>
+                    <td style="padding:8px 10px; text-align:right; border-bottom:1px solid #e2e8f0;">Rs. ${Number(item.unitPrice || 0).toFixed(2)}</td>
+                    <td style="padding:8px 10px; text-align:right; font-weight:800; border-bottom:1px solid #e2e8f0; color:#0284c7;">Rs. ${Number(item.subtotal || (item.qty * item.unitPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                </tr>
+            `).join('');
+        } else {
+            tableBody.innerHTML = `
+                <tr>
+                    <td style="padding:8px 10px; font-weight:700; border-bottom:1px solid #e2e8f0;">${escPrint(sale.productName || '-')}</td>
+                    <td style="padding:8px 10px; text-align:right; border-bottom:1px solid #e2e8f0;">${sale.qty || 0}</td>
+                    <td style="padding:8px 10px; text-align:right; border-bottom:1px solid #e2e8f0;">Rs. ${Number(sale.unitPrice || 0).toFixed(2)}</td>
+                    <td style="padding:8px 10px; text-align:right; font-weight:800; border-bottom:1px solid #e2e8f0; color:#0284c7;">Rs. ${Number(sale.subtotal || (sale.qty * sale.unitPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                </tr>
+            `;
+        }
+    }
     
     const subtotal = Number(sale.subtotal || (Number(sale.qty || 0) * Number(sale.unitPrice || 0)));
     const discountAmt = Number(sale.discountAmount || 0);
     const amt = Number(sale.amount || (subtotal - discountAmt));
-
-    document.getElementById('a5TotalAmount').textContent = `Rs. ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     document.getElementById('a5NetTotal').textContent = `Rs. ${amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     const subRow = document.getElementById('a5SubtotalRow');
     const discRow = document.getElementById('a5DiscountRow');
     if (discountAmt > 0) {
-        if (subRow) {
-            subRow.style.display = 'block';
-            document.getElementById('a5SubtotalVal').textContent = `Rs. ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        }
-        if (discRow) {
-            discRow.style.display = 'block';
-            document.getElementById('a5DiscountVal').textContent = `- Rs. ${discountAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        }
+        if (subRow) { subRow.style.display = 'block'; document.getElementById('a5SubtotalVal').textContent = `Rs. ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+        if (discRow) { discRow.style.display = 'block'; document.getElementById('a5DiscountVal').textContent = `- Rs. ${discountAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
     } else {
         if (subRow) subRow.style.display = 'none';
         if (discRow) discRow.style.display = 'none';
@@ -574,10 +759,20 @@ function sendMfgSaleWhatsApp(saleId) {
     msg += `👤 *Customer:* ${sale.companyName || '-'}\n`;
     msg += `📍 *Area:* ${sale.area || 'N/A'}\n`;
     msg += `------------------------------------\n`;
-    msg += `📦 *Product:* ${sale.productName || '-'}\n`;
-    msg += `🔢 *Quantity:* ${sale.qty || 0} units\n`;
-    msg += `💵 *Unit Price:* Rs. ${Number(sale.unitPrice || 0).toFixed(2)}\n`;
+    if (sale.items && sale.items.length > 0) {
+        sale.items.forEach(i => {
+            msg += `📦 *${i.productName}*: ${i.qty} units @ Rs. ${Number(i.unitPrice).toFixed(2)} = Rs. ${Number(i.subtotal || (i.qty * i.unitPrice)).toFixed(2)}\n`;
+        });
+    } else {
+        msg += `📦 *Product:* ${sale.productName || '-'}\n`;
+        msg += `🔢 *Quantity:* ${sale.qty || 0} units\n`;
+        msg += `💵 *Unit Price:* Rs. ${Number(sale.unitPrice || 0).toFixed(2)}\n`;
+    }
     msg += `------------------------------------\n`;
+    if (sale.discountAmount > 0) {
+        msg += `🏷️ *Subtotal:* Rs. ${Number(sale.subtotal || 0).toFixed(2)}\n`;
+        msg += `🎁 *Discount:* - Rs. ${Number(sale.discountAmount || 0).toFixed(2)}\n`;
+    }
     msg += `💰 *Total Amount:* Rs. ${Number(sale.amount || 0).toFixed(2)}\n`;
     msg += `💳 *Payment Method:* ${sale.paymentMode || '-'} (${sale.paymentStatus || '-'})\n`;
     if (sale.dueDate) {

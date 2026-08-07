@@ -214,7 +214,20 @@
 
             <!-- Production History Table -->
             <div class="mfg-card">
-                <h3>📜 Recent Production Batches (නිෂ්පාදන ලැයිස්තුව)</h3>
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+                    <h3 style="margin:0; border:none; padding:0;">📜 Recent Production Batches (නිෂ්පාදන ලැයිස්තුව)</h3>
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <div>
+                            <label style="font-size:10px; font-weight:700; color:#64748b; margin:0;">From Date (සිට)</label>
+                            <input type="date" id="prodFilterFromDate" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px;">
+                        </div>
+                        <div>
+                            <label style="font-size:10px; font-weight:700; color:#64748b; margin:0;">To Date (දක්වා)</label>
+                            <input type="date" id="prodFilterToDate" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px;">
+                        </div>
+                        <button type="button" onclick="renderProductionHistoryTable()" style="padding:6px 12px; background:#0f766e; color:#fff; border:none; border-radius:6px; font-weight:700; font-size:12px; cursor:pointer; margin-top:14px;">Filter</button>
+                    </div>
+                </div>
                 <table>
                     <thead>
                         <tr>
@@ -703,14 +716,16 @@ async function transferBatchToStock(batchId) {
     }
 }
 
+let productionHistoryCache = [];
+
 async function refreshProductionHistory() {
     const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
     if (!bid) return;
     try {
         const snap = await db.collection('manufacturer_production_batches')
-            .where('businessId', '==', bid).limit(50).get().catch(() => ({ docs: [] }));
+            .where('businessId', '==', bid).limit(200).get().catch(() => ({ docs: [] }));
 
-        const rows = snap.docs
+        productionHistoryCache = snap.docs
             .map(d => ({ id: d.id, ...(d.data() || {}) }))
             .sort((a, b) => {
                 const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
@@ -718,30 +733,53 @@ async function refreshProductionHistory() {
                 return tb - ta;
             });
 
-        const tbody = document.getElementById('productionHistoryRows');
-        tbody.innerHTML = rows.map(x => {
-            const ingText = (x.ingredients || []).map(i => `${i.qty} ${i.unit || 'units'} of ${escPrint(i.name)}`).join('<br>') || `${x.consumedMaterialQty || 0} units of ${escPrint(x.consumedMaterialName || '-')}`;
-            const laborOverheadTotal = (Number(x.laborCost || 0) + Number(x.overheadCost || 0));
-            const actionBtn = x.transferredToStock
-                ? `<span style="background:#dcfce7; color:#15803d; padding:4px 8px; border-radius:12px; font-weight:800; font-size:11px;">✅ In Stock</span>`
-                : `<button type="button" onclick="transferBatchToStock('${x.id}')" style="background:#7c3aed; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; cursor:pointer; font-size:12px; white-space:nowrap;">📦 Transfer to Stock</button>`;
-
-            return `
-                <tr>
-                    <td>${ManufacturerModule.formatDate(x.createdAt)}</td>
-                    <td style="font-weight:700; color:#1e293b;">${escPrint(x.productName || '-')}</td>
-                    <td><span style="background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:12px; font-weight:700;">${Number(x.producedQty || 0).toLocaleString()} Units</span></td>
-                    <td style="font-size:11px; line-height:1.3;">${ingText}</td>
-                    <td style="font-weight:600; color:#d97706;">Rs. ${laborOverheadTotal.toFixed(2)}</td>
-                    <td style="font-weight:700; color:#059669;">Rs. ${Number(x.unitFgCost || 0).toFixed(2)}</td>
-                    <td style="font-weight:800; color:#0f172a;">Rs. ${Number(x.totalBatchCost || x.totalMaterialCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td style="text-align:center;">${actionBtn}</td>
-                </tr>
-            `;
-        }).join('');
+        renderProductionHistoryTable();
     } catch (e) {
         console.warn('[Production] History error:', e);
     }
+}
+
+function renderProductionHistoryTable() {
+    const fromVal = document.getElementById('prodFilterFromDate').value;
+    const toVal = document.getElementById('prodFilterToDate').value;
+
+    const fromMs = fromVal ? new Date(fromVal + 'T00:00:00').getTime() : null;
+    const toMs = toVal ? new Date(toVal + 'T23:59:59').getTime() : null;
+
+    const filtered = productionHistoryCache.filter(x => {
+        const t = x.createdAt?.toDate ? x.createdAt.toDate().getTime() : new Date(x.createdAt || 0).getTime();
+        if (isNaN(t)) return false;
+        if (fromMs != null && t < fromMs) return false;
+        if (toMs != null && t > toMs) return false;
+        return true;
+    });
+
+    const tbody = document.getElementById('productionHistoryRows');
+    if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:20px; color:#94a3b8;">No matching production batches found for selected date range.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = filtered.map(x => {
+        const ingText = (x.ingredients || []).map(i => `${i.qty} ${i.unit || 'units'} of ${escPrint(i.name)}`).join('<br>') || `${x.consumedMaterialQty || 0} units of ${escPrint(x.consumedMaterialName || '-')}`;
+        const laborOverheadTotal = (Number(x.laborCost || 0) + Number(x.overheadCost || 0));
+        const actionBtn = x.transferredToStock
+            ? `<span style="background:#dcfce7; color:#15803d; padding:4px 8px; border-radius:12px; font-weight:800; font-size:11px;">✅ In Stock</span>`
+            : `<button type="button" onclick="transferBatchToStock('${x.id}')" style="background:#7c3aed; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; cursor:pointer; font-size:12px; white-space:nowrap;">📦 Transfer to Stock</button>`;
+
+        return `
+            <tr>
+                <td>${ManufacturerModule.formatDate(x.createdAt)}</td>
+                <td style="font-weight:700; color:#1e293b;">${escPrint(x.productName || '-')}</td>
+                <td><span style="background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:12px; font-weight:700;">${Number(x.producedQty || 0).toLocaleString()} Units</span></td>
+                <td style="font-size:11px; line-height:1.3;">${ingText}</td>
+                <td style="font-weight:600; color:#d97706;">Rs. ${laborOverheadTotal.toFixed(2)}</td>
+                <td style="font-weight:700; color:#059669;">Rs. ${Number(x.unitFgCost || 0).toFixed(2)}</td>
+                <td style="font-weight:800; color:#0f172a;">Rs. ${Number(x.totalBatchCost || x.totalMaterialCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td style="text-align:center;">${actionBtn}</td>
+            </tr>
+        `;
+    }).join('');
 }
 
 async function refreshFinishedGoodsStockTable() {

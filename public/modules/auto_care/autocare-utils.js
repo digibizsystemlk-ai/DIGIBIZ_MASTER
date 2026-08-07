@@ -6,17 +6,31 @@
  */
 
 window.AutoCareUtils = {
-    // 1. Resolve Current Company Name
+    // 1. Resolve Current Company Name dynamically from Business Profile (Firestore / LocalStorage)
     getCompanyName: function() {
         const cached = localStorage.getItem('currentBusinessName') || sessionStorage.getItem('currentBusinessName');
-        if (cached && cached.trim()) return cached.trim();
+        if (cached && cached.trim() && cached.trim() !== 'My Business' && cached.trim() !== 'No Business Connected') {
+            return cached.trim();
+        }
         
         if (window.Sidebar && typeof window.Sidebar.getBusinessName === 'function') {
             const sidebarName = window.Sidebar.getBusinessName();
-            if (sidebarName) return sidebarName;
+            if (sidebarName && sidebarName !== 'My Business' && sidebarName !== 'No Business Connected') {
+                return sidebarName;
+            }
         }
 
-        return "DIGIBIZ Auto Care & Repair Center";
+        // Check if demo/test account
+        let isDemo = false;
+        try {
+            const email = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) ? firebase.auth().currentUser.email.toLowerCase() : '';
+            const bizId = this.getBizId();
+            if (email.includes('test') || email.includes('demo') || bizId === 'DEFAULT_BIZ' || bizId === 'DEMO_BIZ' || bizId.toLowerCase().includes('test') || bizId.toLowerCase().includes('demo')) {
+                isDemo = true;
+            }
+        } catch(e) {}
+
+        return isDemo ? "DEMO Motors & Auto Care" : "Auto Care Center";
     },
 
     // 2. Format Date as DD/MM/YYYY

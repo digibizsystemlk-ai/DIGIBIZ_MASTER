@@ -1262,9 +1262,16 @@ class Sidebar {
                     this.businessType = this.normalizeBusinessType(userData.businessType || 'retail');
                     this.sidebarConfig = null;
                 }
-                this.businessName = businessDoc.exists ? businessDoc.data().name : 'My Business';
-                if (businessDoc.exists && businessDoc.data().ownerName) this.ownerName = businessDoc.data().ownerName;
-                const logoFromDoc = businessDoc.exists ? String((businessDoc.data() || {}).logoUrl || '').trim() : '';
+                const bDocData = businessDoc.exists ? (businessDoc.data() || {}) : {};
+                this.businessName = bDocData.businessName || bDocData.name || bDocData.companyName || 'My Business';
+                try {
+                    if (this.businessName && this.businessName !== 'My Business') {
+                        localStorage.setItem('currentBusinessName', this.businessName);
+                        sessionStorage.setItem('currentBusinessName', this.businessName);
+                    }
+                } catch(e) {}
+                if (businessDoc.exists && bDocData.ownerName) this.ownerName = bDocData.ownerName;
+                const logoFromDoc = businessDoc.exists ? String(bDocData.logoUrl || '').trim() : '';
                 this.businessLogoUrl = logoFromDoc;
                 try {
                     if (logoFromDoc) {
