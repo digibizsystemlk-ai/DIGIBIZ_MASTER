@@ -11,6 +11,13 @@ window.i18n = function(key) {
     const translations = {
         si: {
             "Dashboard": "Dashboard (ප්‍රධාන පුවරුව)",
+            "Job Cards": "Job Cards (රැකියා කාඩ්පත්)",
+            "Inspections": "Inspections (වාහන පරීක්ෂාවන්)",
+            "Estimations": "Estimations (ඇස්තමේන්තු / මිල ගණන්)",
+            "Invoicing": "Invoicing (ඉන්වොයිස්)",
+            "Spare Parts Stock": "Spare Parts Stock (අමතර කොටස් තොගය)",
+            "Customers & History": "Customers & History (පාරිභෝගිකයින් සහ සේවා ඉතිහාසය)",
+            "SMS Alerts": "SMS Alerts (කෙටි පණිවිඩ සේවා)",
             "Point of Sale": "Point of Sale (විකුණුම් පර්යන්තය)",
             "Stock purchases": "Stock purchases (මිලදී ගැනීම්)",
             "Stock": "Stock (තොගය)",
@@ -136,29 +143,28 @@ const DIGIBIZ_UPDATE_POINTS = [
  */
 const DISTRIBUTOR_MENU_POOL = [
     { id: 'dashboard', permissionId: 'canViewDashboard', icon: '📊', name: 'Dashboard', link: '/modules/core/dashboard.html' },
+    { id: 'grn', permissionId: 'canStockEdit', icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
     { id: 'new_sales_order', permissionId: 'canInvoiceCreateEdit', icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
-    { id: 'shops', permissionId: 'canCustomerView', icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
-    { id: 'orders', permissionId: 'canOrderWorkflowApprove', icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
-    { id: 'order_history', permissionId: 'canSalesView', icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
-    { id: 'sales', permissionId: 'canSalesView', icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
+    { id: 'orders', permissionId: 'canOrderWorkflowApprove', icon: '📑', name: 'All Orders', link: '/modules/distributor/web/index.html?tab=pending' },
     { id: 'product_sales_history', permissionId: 'canSalesView', icon: '📊', name: 'Product Sales History', link: '/modules/distributor/web/sales-history.html' },
     { id: 'invoices', permissionId: 'canInvoiceCreateEdit', icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
-    { id: 'grn', permissionId: 'canStockEdit', icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
+    { id: 'order_history', permissionId: 'canSalesView', icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
     { id: 'products', permissionId: 'canProductView', icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
-    { id: 'reps', permissionId: 'canManageRepsWeb', icon: '👥', name: 'Reps', link: '/modules/distributor/web/reps.html' },
-    { id: 'warehouse', permissionId: 'canStockView', icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
-    { id: 'deliveries', permissionId: 'canDeliveriesManage', icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
     { id: 'free_issues', permissionId: 'canStockView', icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
     { id: 'returns', permissionId: 'canStockView', icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
+    { id: 'warehouse', permissionId: 'canStockView', icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
+    { id: 'deliveries', permissionId: 'canDeliveriesManage', icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
+    { id: 'shops', permissionId: 'canCustomerView', icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
+    { id: 'customers', permissionId: 'canCustomerView', icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
+    { id: 'reps', permissionId: 'canManageRepsWeb', icon: '👥', name: 'Reps', link: '/modules/distributor/web/reps.html' },
+    { id: 'distributor_revenue', permissionId: 'canViewFinancialsProfit', icon: '📈', name: 'Revenue', link: '/modules/distributor/web/revenue.html' },
+    { id: 'finance', permissionId: 'canViewFinancialsProfit', icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
+    { id: 'accounting', permissionId: 'canViewAccounting', icon: '📁', name: 'Accounting', link: '/modules/accounts/advanced-accounting-dashboard.html' },
     { id: 'cheques', permissionId: 'canChequesManage', icon: '🏦', name: 'Cheques', link: '/modules/distributor/web/cheques.html' },
     { id: 'credit_aging', permissionId: 'canCreditAgingView', icon: '📉', name: 'Credit Aging', link: '/modules/distributor/web/credit-aging.html' },
     { id: 'commission_config', permissionId: 'canSettingsChange', icon: '⚙️', name: 'Commission Config', link: '/modules/distributor/web/commission-config.html' },
     { id: 'rep_commission', permissionId: 'canRepCommissionView', icon: '💸', name: 'Rep Commission', link: '/modules/distributor/web/rep-commission-report.html' },
     { id: 'distributor_reports', permissionId: 'canViewReportsFull', icon: '📊', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' },
-    { id: 'customers', permissionId: 'canCustomerView', icon: '👥', name: 'Customers', link: '/modules/core/customers.html' },
-    { id: 'distributor_revenue', permissionId: 'canViewFinancialsProfit', icon: '📈', name: 'Revenue', link: '/modules/distributor/web/revenue.html' },
-    { id: 'finance', permissionId: 'canViewFinancialsProfit', icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
-    { id: 'accounting', permissionId: 'canViewAccounting', icon: '📁', name: 'Accounting', link: '/modules/accounts/advanced-accounting-dashboard.html' },
     { id: 'reports', permissionId: 'canViewReportsFull', icon: '📈', name: 'Reports', link: '/modules/reports/index.html' }
 ];
 /** Only the marketing root should skip the app sidebar — not module pages named index.html */
@@ -372,6 +378,7 @@ class Sidebar {
         if (compact === 'attendancepayroll') return 'attendance_payroll';
         if (compact === 'attendance_payroll') return 'attendance_payroll';
         if (compact === 'retail') return 'retail';
+        if (compact === 'autocare' || compact === 'vehiclerepair' || compact === 'auto_care') return 'auto_care';
         return raw;
     }
 
@@ -1495,21 +1502,20 @@ class Sidebar {
 
     getDistributorWebMenuBase() {
         const base = [
+            { icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
             { icon: '🛒', name: 'New sales order', link: '/modules/distributor/web/new-order.html' },
-            { icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
-            { icon: '📑', name: 'Orders', link: '/modules/distributor/web/index.html?tab=pending' },
-            { icon: '💰', name: 'Sales', link: '/modules/distributor/web/sales.html' },
+            { icon: '📑', name: 'All Orders', link: '/modules/distributor/web/index.html?tab=pending' },
             { icon: '📊', name: 'Product Sales History', link: '/modules/distributor/web/sales-history.html' },
             { icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
-            { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
-            { icon: '🧾', name: 'GRN', link: '/modules/distributor/web/grn.html' },
             { icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
-            { icon: '👥', name: 'Reps', link: '/modules/distributor/web/reps.html' },
-            { icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
-            { icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
             { icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
             { icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
+            { icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
+            { icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
+            { icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
+            { icon: '👥', name: 'Reps', link: '/modules/distributor/web/reps.html' },
             { icon: '📈', name: 'Revenue', link: '/modules/distributor/web/revenue.html' },
+            { icon: '💳', name: 'Finance', link: '/modules/core/finance-ledger.html' },
             { icon: '📊', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' }
         ];
         if (this.isBdkAccountingTenant()) {
@@ -1689,10 +1695,12 @@ class Sidebar {
 
         const pathLower = String(window.location.pathname || '').toLowerCase();
         const onManufacturerModule = pathLower.includes('/modules/manufacturer/');
+        const onAutoCareModule = pathLower.includes('/modules/auto_care/');
+        const onTireCentreModule = pathLower.includes('/modules/tire_centre/');
         const normalizedBusinessType = this.normalizeBusinessType(this.businessType || '');
         const menuBusinessType = (onManufacturerModule && this.businessType !== 'scrap_collection_center')
             ? 'manufacturer'
-            : normalizedBusinessType;
+            : (onAutoCareModule ? 'auto_care' : (onTireCentreModule ? 'tire_centre' : normalizedBusinessType));
 
         if (this.isScrapSuiteContext()) {
             const scrapPool = [
@@ -1814,14 +1822,14 @@ class Sidebar {
         if (dynamicConfig && dynamicConfig.menus && this.businessId !== this.kduTeaBusinessId && menuBusinessType !== 'distributor') {
             const role = this.currentRole || 'VIEWER';
             let menus = dynamicConfig.menus.filter(m => {
-                if (menuBusinessType === 'attendance_payroll') return true;
+                if (menuBusinessType === 'attendance_payroll' || menuBusinessType === 'auto_care') return true;
                 if (!m.role) return true;
                 return m.role.includes(role);
             });
             if (menuBusinessType === 'manufacturer') {
                 return [...this.getDashboardMenu(), ...menus];
             }
-            if (menuBusinessType === 'attendance_payroll') {
+            if (menuBusinessType === 'attendance_payroll' || menuBusinessType === 'auto_care') {
                 return this.dedupeMenus(menus);
             }
             return this.assembleSidebarMenus(menus);
@@ -2196,9 +2204,10 @@ class Sidebar {
                             </a>
                             `;
                             
-                            const isFullSuiteBiz = this.businessType === 'retail' || this.businessType === 'tire_centre' || this.businessType === 'manufacturer';
+                            const bTypeNorm = String(this.businessType || localStorage.getItem('currentBusinessType') || '').toLowerCase();
+                            const isFullSuiteBiz = bTypeNorm === 'retail' || bTypeNorm === 'tire_centre' || bTypeNorm === 'manufacturer' || window.location.pathname.includes('/tire_centre/');
                             if (item.name === 'Customers' && isFullSuiteBiz) {
-                                const bTypeModule = this.businessType === 'manufacturer' ? 'retail' : this.businessType;
+                                const bTypeModule = (bTypeNorm === 'manufacturer' || (!bTypeNorm && !window.location.pathname.includes('/tire_centre/'))) ? 'retail' : (window.location.pathname.includes('/tire_centre/') ? 'tire_centre' : bTypeNorm);
                                 const agingLink = `/modules/${bTypeModule}/credit-aging.html`;
                                 const receivablesLink = `/modules/${bTypeModule}/receivables.html`;
                                 const payablesLink = `/modules/${bTypeModule}/payables.html`;

@@ -26,7 +26,7 @@ window.RegistrationUI = {
             return;
         }
 
-        const types = ['retail', 'tire_centre', 'attendance_payroll'];
+        const types = ['retail', 'auto_care', 'tire_centre', 'attendance_payroll'];
         selectElement.innerHTML = '<option value="" disabled selected>Select your business type...</option>';
 
         const promises = types.map(async (key) => {

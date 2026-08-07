@@ -14,6 +14,7 @@ const BUSINESS_TYPES = {
             { icon: "📥", name: "GRN", link: "/modules/retail/grn.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] }
         ],
         dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
+        demoEmail: "test@retail.com",
         isReady: true
     },
     
@@ -30,9 +31,49 @@ const BUSINESS_TYPES = {
             { icon: "🛠️", name: "Services", link: "/modules/tire_centre/services.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STAFF"] },
             { icon: "📅", name: "Appointments", link: "/modules/tire_centre/appointments.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STAFF"] },
             { icon: "📥", name: "GRN", link: "/modules/tire_centre/grn.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
-            { icon: "🏛️", name: "Banking", link: "/modules/tire_centre/banking.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] }
+            { icon: "👥", name: "Customers", link: "/modules/tire_centre/customers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "CASHIER"] },
+            { icon: "🚚", name: "Suppliers", link: "/modules/tire_centre/suppliers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
+            { icon: "🏦", name: "Banking", link: "/modules/tire_centre/banking.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "💸", name: "EXPENSES", link: "/modules/tire_centre/expenses.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
+            { icon: "📈", name: "REVENUE", link: "/modules/tire_centre/revenue.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
+            { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
         ],
         dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
+        demoEmail: "test@tyrecentre.com",
+        isReady: true
+    },
+    
+    auto_care: {
+        id: "auto_care",
+        name: "Auto Care & Vehicle Repair Center",
+        icon: "🚗",
+        description: "Job cards, vehicle inspection, estimations, spare parts inventory, invoicing & SMS notifications",
+        menus: [
+            { icon: "📊", name: "Dashboard", link: "/modules/auto_care/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📋", name: "Job Cards", link: "/modules/auto_care/job-cards.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🔍", name: "Inspections", link: "/modules/auto_care/inspections.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📄", name: "Estimations", link: "/modules/auto_care/estimations.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🧾", name: "Invoicing", link: "/modules/auto_care/invoicing.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "⚙️", name: "Spare Parts Stock", link: "/modules/auto_care/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🚘", name: "Customers & History", link: "/modules/auto_care/customers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "💰", name: "Finance", link: "/modules/auto_care/finance.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🏛️", name: "Banking", link: "/modules/tire_centre/banking.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📈", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "💬", name: "SMS Alerts", link: "/modules/auto_care/sms.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] }
+        ],
+        dashboardComponents: ["activeJobs", "revenueToday", "completedJobsToday", "lowStockParts", "recentJobCards", "vehicleStatusOverview"],
+        features: {
+            jobCards: true,
+            vehicleInspection: true,
+            sparePartsInventory: true,
+            quotations: true,
+            smsAlerts: true,
+            serviceHistory: true
+        },
+        demoEmail: "test@autocare.com",
         isReady: true
     },
     
@@ -58,7 +99,8 @@ const BUSINESS_TYPES = {
             prescriptionUploads: true,
             batchTracking: true,
             dosageAwareInventory: true
-        }
+        },
+        demoEmail: "test@pharmacy.com"
     },
     
     restaurant: {
@@ -76,7 +118,8 @@ const BUSINESS_TYPES = {
             { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
             { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
         ],
-        dashboardComponents: ["todayOrders", "tableStatus", "topItems", "sales"]
+        dashboardComponents: ["todayOrders", "tableStatus", "topItems", "sales"],
+        demoEmail: "test@restaurant.com"
     },
     
     garment: {
@@ -94,7 +137,8 @@ const BUSINESS_TYPES = {
             { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
             { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
         ],
-        dashboardComponents: ["sales", "inventory", "topVariants", "recentSales"]
+        dashboardComponents: ["sales", "inventory", "topVariants", "recentSales"],
+        demoEmail: "test@garment.com"
     },
     
     hardware: {
@@ -119,7 +163,8 @@ const BUSINESS_TYPES = {
             bulkWeightPricing: true,
             mixedUnitInventory: true,
             quotationFlow: true
-        }
+        },
+        demoEmail: "test@hardware.com"
     },
     
     service: {
@@ -143,7 +188,8 @@ const BUSINESS_TYPES = {
             serviceBasedBilling: true,
             staffUtilizationTracking: true,
             reminders: true
-        }
+        },
+        demoEmail: "test@service.com"
     },
 
     distributor: {
@@ -188,6 +234,7 @@ const BUSINESS_TYPES = {
             creditControl: true
         },
         isReady: true,
+        demoEmail: "test@distributor.com",
         // Mobile specific settings
         mobile: {
             loginUrl: "/modules/distributor/mobile/order.html",
@@ -229,6 +276,7 @@ const BUSINESS_TYPES = {
             manufacturingCostSheets: true,
             supplierPriceTracking: true
         },
+        demoEmail: "test@manufacturer.com",
         isReady: true
     },
 
@@ -253,6 +301,7 @@ const BUSINESS_TYPES = {
             { icon: "📈", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] }
         ],
         dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
+        demoEmail: "test@scrap.com",
         isReady: true
     },
 
@@ -285,6 +334,7 @@ const BUSINESS_TYPES = {
             payslipGeneration: true,
             bankSummaryExport: true
         },
+        demoEmail: "test@attendance.com",
         isReady: true
     }
 };

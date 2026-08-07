@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spare Parts Inventory - DIGIBIZ Auto Care</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="autocare-theme.css?v=2">
+    
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    
+    <script src="../../core/firebase-init.js?v=3"></script>
+    <script src="../../core/event-validation.js?v=3"></script>
+    <script src="../../core/event-bus.js?v=3"></script>
+    <script src="../../core/accounts-core.js?v=3"></script>
+    <script src="../../core/auth-roles.js?v=3"></script>
+    <script src="../../core/business-types.js?v=4"></script>
+    <script src="../../core/dashboard-core.js?v=3"></script>
+    <script src="../../core/subscription-manager.js?v=3"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
+    <script src="autocare-utils.js?v=2"></script>
+    
+    <style>
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .controls-card { background: rgba(30, 41, 59, 0.85); border-radius: 16px; padding: 16px 20px; border: 1px solid #334155; margin-bottom: 25px; display: flex; gap: 15px; align-items: center; }
+        .search-box { flex: 1; position: relative; }
+        .search-box input { width: 100%; padding: 10px 14px 10px 40px; }
+        .search-box i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #64748b; }
+        .badge-low { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); padding: 4px 10px; border-radius: 12px; font-weight: 700; font-size: 11px; }
+        .badge-ok { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); padding: 4px 10px; border-radius: 12px; font-weight: 700; font-size: 11px; }
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div>
+            <h2 style="color:#38bdf8; font-size:24px; font-weight:800;"><i class="fa-solid fa-box-open"></i> Spare Parts Inventory Database</h2>
+            <p style="color:#94a3b8; font-size:14px; margin-top:4px;">වාහන අමතර කොටස් තොග සටහන් කිරීම, සංස්කරණය කිරීම (Edit) සහ මකා දැමීම (Delete)</p>
+        </div>
+        <button class="btn btn-primary" onclick="openAddModal()"><i class="fa-solid fa-plus"></i> Add New Spare Part</button>
+    </div>
+
+    <div class="controls-card">
+        <div class="search-box">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="partSearch" placeholder="Search Part Name, Part No, OEM Code, Category or Compatible Model..." onkeyup="filterParts()">
+        </div>
+        <select id="catFilter" onchange="filterParts()">
+            <option value="ALL">All Categories</option>
+            <option value="Oils & Fluids">Oils & Fluids</option>
+            <option value="Filters">Filters</option>
+            <option value="Brakes">Brakes</option>
+            <option value="Engine">Engine</option>
+            <option value="Electrical">Electrical</option>
+        </select>
+    </div>
+
+    <div class="table-card" style="padding:0; overflow:hidden;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Part No / OEM</th>
+                    <th>Part Name & Category</th>
+                    <th>Compatible Brand & Models</th>
+                    <th>Stock Qty</th>
+                    <th>Cost Price</th>
+                    <th>Selling Price</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="partsTableBody">
+                <!-- JS Populated -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Modal for Add / Edit Part -->
+    <div class="modal" id="partModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; justify-content:center; align-items:center; z-index:2000;">
+        <div class="modal-content" style="width:90%; max-width:600px; padding:24px; border-radius:20px;">
+            <h3 style="margin-bottom:15px; color:#38bdf8;" id="modalHeading">⚙️ Add New Spare Part</h3>
+            <form onsubmit="savePart(event)">
+                <input type="hidden" id="editingPartNo">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div>
+                        <label>Part Number / SKU *</label>
+                        <input type="text" id="pNo" required style="width:100%;">
+                    </div>
+                    <div>
+                        <label>Part Name *</label>
+                        <input type="text" id="pName" required style="width:100%;">
+                    </div>
+                    <div>
+                        <label>Category</label>
+                        <select id="pCat" style="width:100%;">
+                            <option value="Oils & Fluids">Oils & Fluids</option>
+                            <option value="Filters">Filters</option>
+                            <option value="Brakes">Brakes</option>
+                            <option value="Engine">Engine</option>
+                            <option value="Electrical">Electrical</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Compatible Brand & Models</label>
+                        <input type="text" id="pModel" placeholder="e.g. Toyota Prius, Axio" style="width:100%;">
+                    </div>
+                    <div>
+                        <label>Stock Qty *</label>
+                        <input type="number" id="pQty" required style="width:100%;">
+                    </div>
+                    <div>
+                        <label>Min Alert Level</label>
+                        <input type="number" id="pMin" value="5" style="width:100%;">
+                    </div>
+                    <div>
+                        <label>Cost Price (LKR)</label>
+                        <input type="number" id="pCost" style="width:100%;">
+                    </div>
+                    <div>
+                        <label>Selling Price (LKR) *</label>
+                        <input type="number" id="pPrice" required style="width:100%;">
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                    <button type="button" class="btn btn-outline" onclick="document.getElementById('partModal').style.display='none'">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Part</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let parts = [];
+
+        function getBizId() {
+            return window.AutoCareUtils ? window.AutoCareUtils.getBizId() : 'DEFAULT_BIZ';
+        }
+
+        function loadParts() {
+            const bizId = getBizId();
+            const storageKey = `autocare_parts_${bizId}`;
+            const cached = localStorage.getItem(storageKey);
+
+            if (cached) {
+                try { parts = JSON.parse(cached); } catch(e) { parts = []; }
+            } else {
+                parts = [];
+            }
+
+            renderPartsTable();
+        }
+
+        function renderPartsTable() {
+            const tbody = document.getElementById('partsTableBody');
+            const search = document.getElementById('partSearch').value.toLowerCase();
+            const cat = document.getElementById('catFilter').value;
+
+            tbody.innerHTML = '';
+            const filtered = parts.filter(p => {
+                const matchSearch = p.no.toLowerCase().includes(search) || p.name.toLowerCase().includes(search) || p.model.toLowerCase().includes(search);
+                const matchCat = cat === 'ALL' || p.cat === cat;
+                return matchSearch && matchCat;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" style="text-align:center; padding:40px; color:#64748b;">
+                            <i class="fa-solid fa-box-open" style="font-size:32px; color:#334155; margin-bottom:10px; display:block;"></i>
+                            <strong style="color:#cbd5e1;">තවම කිසිදු අමතර කොටසක් තොගයට එකතු කර නොමැත. (No spare parts in inventory)</strong><br>
+                            <small style="color:#64748b;">තොගයට එකතු කිරීමට "Add New Spare Part" ක්ලික් කරන්න.</small>
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            filtered.forEach(p => {
+                const isLow = p.qty <= p.min;
+                tbody.innerHTML += `
+                    <tr>
+                        <td><strong style="color:#38bdf8;">${p.no}</strong></td>
+                        <td><strong style="color:#ffffff;">${p.name}</strong><br><small style="color:#94a3b8;">${p.cat}</small></td>
+                        <td>${p.model || '-'}</td>
+                        <td>
+                            <span class="${isLow ? 'badge-low' : 'badge-ok'}">${p.qty} Units ${isLow ? '(LOW STOCK)' : ''}</span>
+                        </td>
+                        <td>Rs. ${p.cost.toLocaleString()}</td>
+                        <td><strong style="color:#fbbf24;">Rs. ${p.price.toLocaleString()}</strong></td>
+                        <td>
+                            <button class="btn btn-outline" style="padding:4px 8px; font-size:12px;" title="Adjust Stock" onclick="adjustStock('${p.no}')">+ Stock</button>
+                            <button class="btn btn-outline" style="padding:4px 8px; font-size:12px;" title="Edit Part" onclick="editPart('${p.no}')"><i class="fa-solid fa-pen-to-square"></i></button>
+                            <button class="btn-danger-icon" title="Delete Part" onclick="deletePart('${p.no}')"><i class="fa-solid fa-trash-can"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function filterParts() { renderPartsTable(); }
+
+        function openAddModal() {
+            document.getElementById('editingPartNo').value = '';
+            document.getElementById('modalHeading').innerText = '⚙️ Add New Spare Part';
+            document.getElementById('pNo').value = '';
+            document.getElementById('pNo').readOnly = false;
+            document.getElementById('pName').value = '';
+            document.getElementById('pModel').value = '';
+            document.getElementById('pQty').value = '';
+            document.getElementById('pMin').value = '5';
+            document.getElementById('pCost').value = '';
+            document.getElementById('pPrice').value = '';
+            document.getElementById('partModal').style.display = 'flex';
+        }
+
+        function savePart(e) {
+            e.preventDefault();
+            const editingNo = document.getElementById('editingPartNo').value;
+            const no = document.getElementById('pNo').value.toUpperCase().trim();
+            const name = document.getElementById('pName').value.trim();
+            const cat = document.getElementById('pCat').value;
+            const model = document.getElementById('pModel').value.trim();
+            const qty = parseInt(document.getElementById('pQty').value) || 0;
+            const min = parseInt(document.getElementById('pMin').value) || 5;
+            const cost = parseFloat(document.getElementById('pCost').value) || 0;
+            const price = parseFloat(document.getElementById('pPrice').value) || 0;
+
+            const newPart = { no, name, cat, model, qty, min, cost, price };
+
+            if (editingNo) {
+                const idx = parts.findIndex(x => x.no === editingNo);
+                if (idx >= 0) parts[idx] = newPart;
+            } else {
+                parts.unshift(newPart);
+            }
+
+            const bizId = getBizId();
+            localStorage.setItem(`autocare_parts_${bizId}`, JSON.stringify(parts));
+
+            document.getElementById('partModal').style.display = 'none';
+            renderPartsTable();
+            alert('✅ Spare Part saved to inventory!');
+        }
+
+        function editPart(no) {
+            const p = parts.find(x => x.no === no);
+            if (!p) return;
+            document.getElementById('editingPartNo').value = p.no;
+            document.getElementById('modalHeading').innerText = `✏️ Edit Part: ${p.name}`;
+            document.getElementById('pNo').value = p.no;
+            document.getElementById('pNo').readOnly = true;
+            document.getElementById('pName').value = p.name;
+            document.getElementById('pCat').value = p.cat;
+            document.getElementById('pModel').value = p.model || '';
+            document.getElementById('pQty').value = p.qty;
+            document.getElementById('pMin').value = p.min;
+            document.getElementById('pCost').value = p.cost;
+            document.getElementById('pPrice').value = p.price;
+            document.getElementById('partModal').style.display = 'flex';
+        }
+
+        function deletePart(no) {
+            if (confirm(`ඔබට ${no} අමතර කොටස තොගයෙන් මකා දැමීමට අවශ්‍ය බව තහවුරු කරන්න? (Delete ${no}?)`)) {
+                parts = parts.filter(p => p.no !== no);
+                const bizId = getBizId();
+                localStorage.setItem(`autocare_parts_${bizId}`, JSON.stringify(parts));
+                renderPartsTable();
+                alert(`✅ Part ${no} deleted successfully!`);
+            }
+        }
+
+        function adjustStock(no) {
+            const p = parts.find(x => x.no === no);
+            if(!p) return;
+            const add = prompt(`Add stock quantity for ${p.name}:`, "10");
+            if(add && !isNaN(add)) {
+                p.qty += parseInt(add);
+                const bizId = getBizId();
+                localStorage.setItem(`autocare_parts_${bizId}`, JSON.stringify(parts));
+                renderPartsTable();
+            }
+        }
+
+        window.onload = loadParts;
+    </script>
+</body>
+</html>

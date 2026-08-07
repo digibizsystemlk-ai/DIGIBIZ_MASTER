@@ -83,6 +83,8 @@ window.AuthUI = {
         
         if (businessType === 'scrap_collection_center') {
             window.location.href = '../modules/admin/scrap-master.html';
+        } else if (businessType === 'auto_care') {
+            window.location.href = '../modules/auto_care/dashboard.html';
         } else {
             window.location.href = '../modules/core/dashboard.html';
         }

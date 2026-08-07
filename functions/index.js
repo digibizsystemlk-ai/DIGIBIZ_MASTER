@@ -1175,3 +1175,135 @@ exports.scrapRiskPoolPayoffCron = onSchedule(
         }
     }
 );
+
+/**
+ * Hourly scheduled job to reset Demo Accounts data and auto-provision demo accounts for new business types.
+ * Schedule: Every 1 hour (Asia/Colombo).
+ */
+exports.scheduledDemoAccountReset = onSchedule(
+    {
+        schedule: "0 * * * *",
+        timeZone: "Asia/Colombo",
+        timeoutSeconds: 300,
+        memory: "512MiB",
+    },
+    async (event) => {
+        logger.info("Starting hourly Demo Accounts data reset & sync job...");
+
+        const DEFAULT_BUSINESS_TYPES = [
+            { type: "retail", email: "test@retail.com", name: "Demo Retail Store" },
+            { type: "distributor", email: "test@distributor.com", name: "Demo Distributor" },
+            { type: "attendance_payroll", email: "test@attendance.com", name: "Demo Attendance System" },
+            { type: "tire_centre", email: "test@tyrecentre.com", name: "Demo Tyre Centre" },
+            { type: "pharmacy", email: "test@pharmacy.com", name: "Demo Pharmacy" },
+            { type: "restaurant", email: "test@restaurant.com", name: "Demo Restaurant" },
+            { type: "garment", email: "test@garment.com", name: "Demo Garment Store" },
+            { type: "hardware", email: "test@hardware.com", name: "Demo Hardware Store" },
+            { type: "service", email: "test@service.com", name: "Demo Service & Salon" },
+            { type: "auto_care", email: "test@autocare.com", name: "Demo Auto Care Center" },
+            { type: "manufacturer", email: "test@manufacturer.com", name: "Demo Manufacturing Plant" },
+            { type: "scrap_collection_center", email: "test@scrap.com", name: "Demo Scrap Collection Center" }
+        ];
+
+        try {
+          // 1. Ensure all defined business types have an active demo account
+          for (const item of DEFAULT_BUSINESS_TYPES) {
+              const existingBizSnap = await db.collection("businesses")
+                  .where("businessType", "==", item.type)
+                  .where("isDemo", "==", true)
+                  .limit(1)
+                  .get();
+
+              if (existingBizSnap.empty) {
+                  logger.info(`Auto-creating missing demo account for business type: ${item.type} (${item.email})...`);
+                  let userRecord;
+                  try {
+                      userRecord = await admin.auth().getUserByEmail(item.email);
+                  } catch (e) {
+                      userRecord = await admin.auth().createUser({
+                          email: item.email,
+                          password: "123456",
+                          displayName: item.name
+                      });
+                  }
+                  
+                  const uid = userRecord.uid;
+                  await db.collection("users").doc(uid).set({
+                      uid,
+                      email: item.email,
+                      name: `${item.name} Owner`,
+                      role: "BUSINESS_OWNER",
+                      businessId: uid,
+                      mustChangePassword: false,
+                      subscriptionStatus: "ACTIVE",
+                      isDemo: true,
+                      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                  }, { merge: true });
+
+                  await db.collection("businesses").doc(uid).set({
+                      businessId: uid,
+                      businessName: item.name,
+                      businessType: item.type,
+                      email: item.email,
+                      ownerId: uid,
+                      isDemo: true,
+                      status: "ACTIVE",
+                      subscriptionStatus: "ACTIVE",
+                      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                  }, { merge: true });
+
+                  logger.info(`Successfully auto-provisioned demo account for ${item.type}`);
+              }
+          }
+
+          // 2. Fetch all Demo Businesses
+          const demoBizSnap = await db.collection("businesses")
+              .where("isDemo", "==", true)
+              .get();
+
+          const demoBusinessIds = new Set();
+          demoBizSnap.forEach(doc => demoBusinessIds.add(doc.id));
+
+          // Also add any doc where email starts with test@
+          const testEmailSnap = await db.collection("businesses")
+              .get();
+          testEmailSnap.forEach(doc => {
+              const email = String(doc.data().email || "").toLowerCase();
+              if (email.startsWith("test@")) {
+                  demoBusinessIds.add(doc.id);
+              }
+          });
+
+          logger.info(`Found ${demoBusinessIds.size} Demo Businesses to reset.`);
+
+          const collectionsToClean = [
+              "sales", "pos_sales", "invoices", "grns", "orders",
+              "attendance_logs", "gate_passes", "expenses", "daily_loans",
+              "scrap_buying", "scrap_selling"
+          ];
+
+          for (const bizId of demoBusinessIds) {
+              for (const colName of collectionsToClean) {
+                  const snap = await db.collection(colName)
+                      .where("businessId", "==", bizId)
+                      .get();
+
+                  if (!snap.empty) {
+                      const batch = db.batch();
+                      snap.forEach(d => batch.delete(d.ref));
+                      await batch.commit();
+                      logger.info(`Purged ${snap.size} entries from ${colName} for Demo Business ${bizId}`);
+                  }
+              }
+          }
+
+          logger.info("Hourly Demo Accounts data reset & sync completed successfully!");
+          return { success: true };
+
+        } catch (err) {
+            logger.error("Error in scheduledDemoAccountReset job:", err);
+            throw err;
+        }
+    }
+);
+
