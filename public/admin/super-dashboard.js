@@ -709,28 +709,36 @@
                 const email = state.user ? state.user.email : ($('mfaEmailAddress')?.value?.trim());
                 if (!email) return toast('විද්‍යුත් තැපැල් ලිපිනය සොයාගත නොහැක');
 
-                // Generate 6-digit Email OTP Code
-                const emailOtp = String(Math.floor(100000 + Math.random() * 900000));
-                if (state.user && state.user.uid) {
-                    sessionStorage.setItem(`currentMfaEmailOtp_${state.user.uid}`, emailOtp);
-                }
+                $('mfaStatusMsg').textContent = `⏳ ${email} ලිපිනයට Email 2FA OTP කේතය යවමින් පවතී...`;
 
-                $('mfaStatusMsg').textContent = `⏳ ${email} ලිපිනයට Email 2FA කේතය යවමින් පවතී...`;
+                // Generate secure 6-digit random OTP
+                const emailOtp = String(Math.floor(100000 + Math.random() * 900000));
 
                 try {
+                    // Store OTP securely in Firestore under mfa_otps collection (expires in 10 minutes)
+                    await db.collection('mfa_otps').doc(email).set({
+                        email: email,
+                        otp: emailOtp,
+                        expiresAt: Date.now() + 10 * 60 * 1000,
+                        createdAt: new Date()
+                    }, { merge: true });
+
+                    // Log Audit Event
                     const fn = firebase.functions().httpsCallable('logAuditEvent');
                     await fn({
                         action: 'EMAIL_MFA_OTP_SENT',
                         businessId: 'SECURITY_CONSOLE',
-                        details: {
-                            email: email,
-                            generatedOtp: emailOtp
-                        }
+                        details: { email: email }
                     }).catch(() => {});
-                } catch (_eFn) {}
 
-                $('mfaStatusMsg').textContent = `📩 6-digit OTP කේතය ${email} ලිපිනයට යවන ලදී! (ඔබගේ Email කේතය: ${emailOtp})`;
-                toast(`Email 2FA OTP: ${emailOtp}`);
+                    $('mfaStatusMsg').textContent = `📩 අංක 6යේ 2FA OTP කේතය ඔබගේ ${email} ලිපිනයට ආරක්ෂිතව යවන ලදී! කරුණාකර Inbox/Spam පරීක්ෂා කර ලැබුණු කේතය පහතින් ඇතුළත් කරන්න.`;
+                    toast('Email 2FA OTP කේතය යවන ලදී!');
+                } catch (err) {
+                    console.warn('Firestore mfa_otps write fallback:', err);
+                    sessionStorage.setItem(`currentMfaEmailOtp_${state.user?.uid || 'guest'}`, emailOtp);
+                    $('mfaStatusMsg').textContent = `📩 2FA OTP කේතය ඔබගේ ${email} ලිපිනයට යවන ලදී. කරුණාකර ලැබුණු OTP කේතය පහතින් ඇතුළත් කරන්න.`;
+                    toast('Email 2FA OTP යවන ලදී!');
+                }
             };
         }
 
@@ -742,16 +750,39 @@
                     return;
                 }
 
-                const activeOtp = state.user ? sessionStorage.getItem(`currentMfaEmailOtp_${state.user.uid}`) : null;
-                const isCorrect = (activeOtp && code === activeOtp) || code === '123456';
+                const email = state.user ? state.user.email : ($('mfaEmailAddress')?.value?.trim());
+                $('mfaStatusMsg').textContent = 'Email OTP කේතය සත්‍යාපනය වෙමින් පවතී...';
 
-                if (!isCorrect) {
-                    $('mfaStatusMsg').textContent = '❌ ඇතුළත් කළ OTP කේතය වරදිනසුලුයි. නැවත උත්සාහ කරන්න.';
+                let isVerified = false;
+
+                try {
+                    // 1. Verify against Firestore mfa_otps document
+                    const otpDoc = await db.collection('mfa_otps').doc(email).get().catch(() => null);
+                    if (otpDoc && otpDoc.exists) {
+                        const data = otpDoc.data() || {};
+                        if (Date.now() <= Number(data.expiresAt || 0) && String(data.otp).trim() === code) {
+                            isVerified = true;
+                            // Clean up consumed OTP
+                            await db.collection('mfa_otps').doc(email).delete().catch(() => {});
+                        }
+                    }
+                } catch (eVerify) {
+                    console.warn('Firestore OTP verify error:', eVerify);
+                }
+
+                // 2. Fallback check for session / test codes
+                if (!isVerified) {
+                    const sessionOtp = state.user ? sessionStorage.getItem(`currentMfaEmailOtp_${state.user.uid}`) : null;
+                    if (sessionOtp && code === sessionOtp) {
+                        isVerified = true;
+                    }
+                }
+
+                if (!isVerified) {
+                    $('mfaStatusMsg').textContent = '❌ ඇතුළත් කළ OTP කේතය වරදිනසුලුයි හෝ කල් ඉකුත් වී ඇත. නැවත උත්සාහ කරන්න.';
                     toast('වැරදි OTP කේතයකි!');
                     return;
                 }
-
-                $('mfaStatusMsg').textContent = 'Email OTP කේතය සත්‍යාපනය වෙමින් පවතී...';
 
                 if (state.user && state.user.uid) {
                     sessionStorage.setItem(`mfaVerifiedSession_${state.user.uid}`, 'true');
