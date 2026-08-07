@@ -86,14 +86,13 @@ const BUSINESS_TYPES = {
         icon: "💊",
         description: "Medicine management, expiry tracking",
         menus: [
-            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "CASHIER"] },
-            { icon: "🛒", name: "Point of Sale", link: "/modules/pharmacy/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "CASHIER"] },
-            { icon: "📦", name: "Inventory", link: "/modules/pharmacy/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
-            { icon: "⚠️", name: "Expiry Alerts", link: "/modules/pharmacy/expiry.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
-            { icon: "📥", name: "Purchases", link: "/modules/pharmacy/purchases.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
-            { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] },
-            { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT"] }
+            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF", "USER", "VIEWER"] },
+            { icon: "🛒", name: "Point of Sale", link: "/modules/pharmacy/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF", "USER", "VIEWER"] },
+            { icon: "📦", name: "Inventory", link: "/modules/pharmacy/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF", "USER", "VIEWER"] },
+            { icon: "⚠️", name: "Expiry Alerts", link: "/modules/pharmacy/expiry.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF", "USER", "VIEWER"] },
+            { icon: "📥", name: "Purchases", link: "/modules/pharmacy/purchases.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF", "USER", "VIEWER"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] },
+            { icon: "📋", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] }
         ],
         dashboardComponents: ["sales", "expiryAlerts", "drugCategories", "prescriptionQueue", "recentSales"],
         features: {
@@ -103,7 +102,8 @@ const BUSINESS_TYPES = {
             batchTracking: true,
             dosageAwareInventory: true
         },
-        demoEmail: "test@pharmacy.com"
+        demoEmail: "test@pharmacy.com",
+        isReady: true
     },
     
     restaurant: {

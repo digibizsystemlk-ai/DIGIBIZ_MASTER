@@ -4,8 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>DIGIBIZ REP PORTAL V2</title>
+    <!-- PWA & Mobile Install -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#0f3b2c">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(() => {});
+            });
+        }
+    </script>
     
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -16,7 +24,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; font-family: 'Inter', -apple-system, sans-serif; }
-        body { background: #f1f5f9; margin: 0; padding: 0; color: #0f172a; font-size: 14px; }
+        body { background: #f1f5f9; margin: 0; padding: 0; color: #0f172a; font-size: 14px; opacity: 0; transition: opacity 0.25s ease-in; }
+        .boot-loader { position: fixed; inset: 0; background: #0f172a; z-index: 100000; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #ffffff; }
+        .spinner { width: 36px; height: 36px; border: 4px solid rgba(255,255,255,0.2); border-top-color: #10b981; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
         
         .app-header { background: #0f3b2c; color: #ffffff; padding: 14px 16px; position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
         .header-row { display: flex; justify-content: space-between; align-items: center; }
@@ -46,12 +57,18 @@
 </head>
 <body>
 
+    <!-- Initial Smooth Boot Loader -->
+    <div id="appBootLoader" class="boot-loader">
+        <div class="spinner"></div>
+        <div style="font-weight:700; font-size:13px; color:#94a3b8;">Loading Portal...</div>
+    </div>
+
     <!-- Native Login Form Overlay -->
     <div id="loginModal" class="login-overlay" style="display:none;">
         <div class="login-card">
             <div style="text-align:center; margin-bottom:20px;">
                 <div style="font-size:42px;">🚚</div>
-                <h2 style="margin:6px 0 2px; color:#0f3b2c; font-weight:900; font-size:22px;">DIGIBIZ SALES REP V2</h2>
+                <h2 style="margin:6px 0 2px; color:#0f3b2c; font-weight:900; font-size:22px;">DIGIBIZ SALES REP PORTAL</h2>
                 <p style="margin:0; color:#64748b; font-size:13px;">Login to Mobile Order Portal</p>
             </div>
             
@@ -68,7 +85,9 @@
                 <input type="submit" class="form-submit" style="background:#0f3b2c;" value="🔑 Log In to Order Portal">
             </form>
 
-            <a href="/v2-rep.html?logout=true" onclick="localStorage.clear(); sessionStorage.clear();" style="display:block; text-align:center; margin-top:14px; color:#dc2626; font-weight:800; text-decoration:none; font-size:13px;">🧹 Force Clear Cache & Sign Out</a>
+            <button type="button" onclick="forceSignOutAndReset()" style="background:transparent; border:none; display:block; text-align:center; margin:14px auto 0; color:#dc2626; font-weight:800; font-size:13px; cursor:pointer;">
+                🧹 Reset Session & Clear Cache
+            </button>
             
             <div id="loginErrorMsg" style="color:#ef4444; font-size:13px; margin-top:12px; text-align:center; font-weight:700;"></div>
         </div>
@@ -90,6 +109,11 @@
     <!-- Main Container -->
     <div class="app-container">
         
+        <!-- PWA Install Banner -->
+        <div id="pwaInstallBanner" style="display:none; background:#0f766e; color:#ffffff; padding:12px 16px; border-radius:12px; text-align:center; font-weight:800; font-size:14px; margin-bottom:14px; cursor:pointer; box-shadow:0 4px 12px rgba(15,118,110,0.25);" onclick="installPWA()">
+            📲 INSTALL APP TO PHONE HOME SCREEN (Tap Here)
+        </div>
+
         <!-- Step 1: Select Shop -->
         <div class="card" style="border:2px solid #0f766e;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
@@ -213,19 +237,10 @@
 
             <div class="receipt-paper" id="receiptPaperContent"></div>
 
+            <!-- 1-Tap Instant Print Button -->
             <button type="button" class="form-submit" onclick="executeOneTapInstantPrint()" style="background:#0f766e; font-size:17px; padding:18px; margin-bottom:10px; box-shadow:0 6px 16px rgba(15,118,110,0.35);">
-                🖨️ 1-TAP INSTANT PRINT (කෙළින්ම මුද්‍රණය කරන්න)
+                🖨️ 1-TAP INSTANT PRINT (80mm Milestone)
             </button>
-
-            <button type="button" class="form-submit" onclick="testPrintBusinessName()" style="background:#d97706; font-size:14px; padding:12px; margin-bottom:10px;">
-                🧪 TEST PRINT BUSINESS NAME (SPI HOLDINGS)
-            </button>
-
-            <!-- Bluetooth Live Diagnostic Console -->
-            <div id="btDiagConsole" style="display:none; margin-top:10px; padding:10px; background:#0f172a; color:#38bdf8; font-family:monospace; font-size:11px; border-radius:10px; max-height:140px; overflow-y:auto; border:1px solid #334155; text-align:left;">
-                <div style="font-weight:bold; color:#f59e0b; margin-bottom:4px; border-bottom:1px solid #334155; padding-bottom:4px;">🛠️ Bluetooth Diagnostic Log:</div>
-                <div id="btDiagLogs">Waiting to start...</div>
-            </div>
             
             <button type="button" onclick="closeReceiptModal()" style="background:#e2e8f0; color:#334155; border:none; padding:12px; border-radius:12px; width:100%; font-weight:700; cursor:pointer; margin-top:10px;">Close Receipt</button>
         </div>
@@ -241,19 +256,40 @@
         let submittedOrdersCache = {};
 
         const urlParams = new URLSearchParams(window.location.search);
-        const isLogoutParam = urlParams.get('logout') === 'true';
+        let isLogoutParam = urlParams.get('logout') === 'true';
         const paramEmail = (urlParams.get('email') || urlParams.get('repId') || '').toLowerCase().trim();
 
         if (paramEmail) {
             document.getElementById('loginEmailInput').value = paramEmail;
         }
 
+        function forceSignOutAndReset() {
+            localStorage.clear();
+            sessionStorage.clear();
+            firebase.auth().signOut().then(() => {
+                window.location.href = '/v2-rep.html';
+            });
+        }
+
         // Firebase Auth listener
         firebase.auth().onAuthStateChanged(async (user) => {
-            if (isLogoutParam || !user) {
-                if (user && isLogoutParam) {
+            const bootLoader = document.getElementById('appBootLoader');
+            if (bootLoader) bootLoader.style.display = 'none';
+            document.body.style.opacity = '1';
+
+            if (isLogoutParam) {
+                isLogoutParam = false;
+                if (window.history && window.history.replaceState) {
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }
+                if (user) {
                     await firebase.auth().signOut().catch(() => {});
                 }
+                document.getElementById('loginModal').style.display = 'flex';
+                return;
+            }
+
+            if (!user) {
                 document.getElementById('loginModal').style.display = 'flex';
                 return;
             }
@@ -274,7 +310,7 @@
             const email = document.getElementById('loginEmailInput').value.trim();
             const pass = document.getElementById('loginPasswordInput').value.trim();
             const errEl = document.getElementById('loginErrorMsg');
-            errEl.textContent = '';
+            errEl.textContent = 'Logging in...';
 
             if (!email || !pass) {
                 errEl.textContent = 'Please enter both email and password.';
@@ -282,11 +318,14 @@
             }
 
             try {
+                await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
                 await firebase.auth().signInWithEmailAndPassword(email, pass);
+                errEl.textContent = '';
             } catch (err) {
-                if (pass === '123456789') {
+                if (pass === '123456789' || pass.length >= 6) {
                     try {
                         await firebase.auth().createUserWithEmailAndPassword(email, pass);
+                        errEl.textContent = '';
                         return;
                     } catch (e2) {}
                 }
@@ -705,42 +744,277 @@
                 }
             }
 
-            async function executeOneTapInstantPrint() {
-                if (!activeOrderForPrint) return;
-                const logsEl = document.getElementById('btDiagLogs');
-                if (logsEl) logsEl.innerHTML = '';
-                logBt("🚀 Starting Direct Print...");
+            function formatReadableOrderId(order) {
+                const raw = String(order.id || order.orderId || 'ORD');
+                let d = new Date();
+                if (order.createdAt) {
+                    d = new Date(order.createdAt.seconds ? order.createdAt.seconds * 1000 : order.createdAt);
+                }
+                const yyyy = d.getFullYear();
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                
+                let seq = '001';
+                if (raw.length > 3) {
+                    const num = Math.abs(raw.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)) % 900 + 100;
+                    seq = String(num);
+                }
+                return `ORD-${mm}${dd}-${seq}/${yyyy}`;
+            }
 
-                let txt = "SPI HOLDINGS\nSALES ORDER RECEIPT\n\n";
-                txt += `Shop: ${activeOrderForPrint.shopName || ''}\n`;
-                txt += `Rep: ${activeOrderForPrint.repEmail || ''}\n`;
-                txt += "--------------------------------\n";
-                (activeOrderForPrint.items || []).forEach(i => {
-                    const qty = Number(i.qty || i.quantity || 1);
-                    const pr = Number(i.price || i.unitPrice || 0);
-                    const sub = Number(i.subtotal || i.total || (qty * pr)) || 0;
-                    txt += `${i.name || 'Item'}\n${qty} x ${pr.toFixed(2)} = Rs.${sub.toFixed(2)}\n`;
+            function getRepDisplayName(order) {
+                if (order.repName && !order.repName.includes('@')) return order.repName;
+                let email = order.repName || order.repEmail || 'SALES REP';
+                if (email.includes('@')) email = email.split('@')[0];
+                email = email.replace(/[0-9]/g, '');
+                return email.replace(/[\._\-]/g, ' ').toUpperCase();
+            }
+
+            function buildUltraLight80mmReceipt(order) {
+                const W = 44;
+                const line = "--------------------------------------------\r\n";
+                const dline = "============================================\r\n";
+                
+                function row2(left, right) {
+                    left = String(left || '');
+                    right = String(right || '');
+                    const space = W - left.length - right.length;
+                    if (space > 0) return left + " ".repeat(space) + right + "\r\n";
+                    return left.substring(0, W - right.length - 1) + " " + right + "\r\n";
+                }
+
+                const repDisplay = getRepDisplayName(order);
+                const formattedOrdId = formatReadableOrderId(order);
+
+                // Initialize Printer + Reset Hardware Left Margin (24 dots = 2 chars offset) & Width to Full 80mm Canvas (576 dots)
+                let txt = "\x1B\x40\x1C\x2E\x1B\x74\x00\x1D\x4C\x18\x00\x1D\x57\x40\x02";
+
+                // ----------------------------------------------------
+                // 1. Header (Hardware Center Align + Large Font)
+                // ----------------------------------------------------
+                txt += "\x1B\x61\x01"; // Center Align
+                txt += "\x1D\x21\x11\x1B\x45\x01"; // Double Height + Double Width + Bold On
+                txt += "SPI HOLDINGS\r\n";
+                txt += "\x1D\x21\x00\x1B\x45\x00"; // Reset Size & Bold Off
+                txt += "Sales Order Receipt\r\n";
+                txt += dline;
+
+                // ----------------------------------------------------
+                // 2. Order Meta Details (Left Align)
+                // ----------------------------------------------------
+                txt += "\x1B\x61\x00"; // Left Align
+                txt += row2("Order ID:", formattedOrdId);
+                txt += row2("Shop:", String(order.shopName || 'Customer Shop').substring(0, 28));
+                txt += row2("Rep Name:", String(repDisplay).substring(0, 28));
+                txt += line;
+
+                // ----------------------------------------------------
+                // 3. Item Table (Exact Column Alignment) - 44 chars wide
+                // ----------------------------------------------------
+                // Item Name (20) + Qty (4) + Price (8) + Amount (12) = 44
+                txt += "Item Name            Qty   Price      Amount\r\n";
+                txt += line;
+
+                (order.items || []).forEach(i => {
+                    const name = String(i.name || i.productName || 'Item').substring(0, 19).padEnd(20, ' ');
+                    const qty = String(i.qty || i.quantity || 1).padStart(4, ' ');
+                    const pr = Number(i.price || i.unitPrice || 0).toFixed(2).padStart(8, ' ');
+                    const sub = Number(i.subtotal || i.total || (Number(qty) * Number(pr))).toFixed(2).padStart(12, ' ');
+                    txt += `${name}${qty}${pr}${sub}\r\n`;
                 });
-                txt += "--------------------------------\n";
-                const tot = Number(activeOrderForPrint.totalAmount || activeOrderForPrint.grandTotal || 0);
-                txt += `TOTAL: LKR ${tot.toFixed(2)}\n\n\n\n\n`;
 
-                const b64 = btoa(unescape(encodeURIComponent(txt)));
-                logBt("Sending to Printer Spooler Driver...");
-                window.location.href = `rawbt:data:text/plain;base64,${b64}`;
+                txt += line;
+                const tot = Number(order.totalAmount || order.grandTotal || 0);
+                txt += "\x1B\x45\x01"; // Bold On for Total
+                txt += row2("GRAND TOTAL:", `LKR ${tot.toFixed(2)}`);
+                txt += "\x1B\x45\x00"; // Bold Off
+                txt += dline;
+
+                // ----------------------------------------------------
+                // 4. Thank You Footer (Hardware Center Align)
+                // ----------------------------------------------------
+                txt += "\x1B\x61\x01"; // Center Align
+                txt += "Thank You For Your Business!\r\n";
+                txt += line;
+
+                // ----------------------------------------------------
+                // 5. Software Solution Credit (50% Small Font + Center Align)
+                // ----------------------------------------------------
+                txt += "\x1B\x4D\x01"; // Font B (50% Smaller Font Size)
+                txt += "Software solution by - DIGIBIZ - 0713446500\r\n";
+                txt += "\x1B\x4D\x00"; // Reset to Font A
+
+                txt += "\r\n\r\n\r\n\r\n";
+                txt += "\x1B\x64\x04\x1D\x56\x01"; // Feed 4 lines + Cut Paper
+
+                return txt;
+            }
+
+            function safeBtoa(str) {
+                try {
+                    return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function(match, p1) {
+                        return String.fromCharCode('0x' + p1);
+                    }));
+                } catch(e) {
+                    return btoa(str);
+                }
+            }
+
+            async function executeOneTapInstantPrint() {
+                if (!activeOrderForPrint) {
+                    alert("⚠️ කරුණාකර පළමුව බිල්පත (Receipt) විවෘත කරගන්න.");
+                    return;
+                }
+
+                const escPayload = buildUltraLight80mmReceipt(activeOrderForPrint);
+
+                // 1. Native Android WebView Bridge Integration (1-Tap MHT Print)
+                if (window.AndroidBridge && window.AndroidBridge.printReceipt) {
+                    logBt("🚀 Calling Native AndroidBridge.printReceipt()...");
+                    try {
+                        window.AndroidBridge.printReceipt(escPayload);
+                        logBt("✅ Native AndroidBridge print command sent!");
+                        return;
+                    } catch(eBridge) {
+                        logBt("Bridge Error: " + eBridge.message);
+                    }
+                }
+
+                logBt("🚀 1. Starting 80mm Instant Print...");
+                const b64 = safeBtoa(escPayload);
+                const printUrl = `rawbt:data:text/plain;base64,${b64}`;
+
+                if (navigator.bluetooth) {
+                    try {
+                        logBt("Scanning for MHT-P29L Printer...");
+                        let device = await navigator.bluetooth.requestDevice({
+                            filters: [
+                                { namePrefix: 'MHT' },
+                                { namePrefix: 'Milestone' },
+                                { namePrefix: 'BT' },
+                                { namePrefix: 'RP' },
+                                { namePrefix: 'POS' }
+                            ],
+                            optionalServices: [
+                                '0000ffe0-0000-1000-8000-00805f9b34fb',
+                                '000018f0-0000-1000-8000-00805f9b34fb',
+                                '0000e025-0000-1000-8000-00805f9b34fb',
+                                '0000ff00-0000-1000-8000-00805f9b34fb',
+                                '49535343-fe7d-41aa-8d12-3b708575765c'
+                            ]
+                        }).catch(() => null);
+
+                        if (device) {
+                            logBt("Connecting to " + (device.name || 'Printer'));
+                            const server = await device.gatt.connect().catch(() => null);
+                            if (server) {
+                                logBt("Transmitting 80mm ESC/POS...");
+
+                                const encoder = new TextEncoder();
+                                const data = encoder.encode(escPayload);
+
+                                let targetChar = null;
+                                const services = await server.getPrimaryServices().catch(() => []);
+                                for (const s of services) {
+                                    const chars = await s.getCharacteristics().catch(() => []);
+                                    for (const c of chars) {
+                                        const cUuid = c.uuid.toLowerCase();
+                                        if (c.properties.writeWithoutResponse || c.properties.write) {
+                                            if (!cUuid.includes('2af1') && !cUuid.includes('2a24')) {
+                                                targetChar = c;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (targetChar) break;
+                                }
+
+                                if (targetChar) {
+                                    logBt(`Writing to (${targetChar.uuid.substring(0,8)})...`);
+                                    for (let i = 0; i < data.length; i += 20) {
+                                        const chunk = data.slice(i, i + 20);
+                                        if (targetChar.properties.writeWithoutResponse) {
+                                            await targetChar.writeValueWithoutResponse(chunk);
+                                        } else {
+                                            await targetChar.writeValue(chunk);
+                                        }
+                                        await new Promise(r => setTimeout(r, 20));
+                                    }
+                                    logBt("✅ Transmitted! Releasing motor...");
+                                    await new Promise(r => setTimeout(r, 150));
+                                    try { server.disconnect(); } catch(e) {}
+                                    logBt("🎉 80mm Direct Print Complete!");
+                                    alert("🎉 Milestone MHT-P29L 80mm Receipt Printed Successfully!");
+                                    return;
+                                }
+                            }
+                        }
+                    } catch(eBT) {
+                        logBt("BT Direct Note: " + eBT.message);
+                    }
+                }
+
+                logBt("Launching Spooler Driver...");
+                window.location.href = printUrl;
+            }
+
+            // Option 1: Native Direct Bluetooth Print
+            async function executeNativeDirectPrint() {
+                executeOneTapInstantPrint();
+            }
+
+            // Option 2: MLabel App Intent Print
+            function executeMLabelIntentPrint() {
+                if (!activeOrderForPrint) {
+                    alert("⚠️ කරුණාකර පළමුව බිල්පත (Receipt) විවෘත කරගන්න.");
+                    return;
+                }
+                logBt("🏷️ Launching MLabel App Intent Engine...");
+                const escPayload = buildUltraLight80mmReceipt(activeOrderForPrint);
+                const b64Payload = safeBtoa(escPayload);
+                const intentUrl = `intent:#Intent;action=android.intent.action.SEND;type=text/plain;S.android.intent.extra.TEXT=${encodeURIComponent(escPayload)};S.data=${b64Payload};package=com.milestone.mlabel;end`;
+                window.location.href = intentUrl;
+            }
+
+            // Option 3: RawBT Driver Print
+            function executeRawBTSpoolerPrint() {
+                if (!activeOrderForPrint) {
+                    alert("⚠️ කරුණාකර පළමුව බිල්පත (Receipt) විවෘත කරගන්න.");
+                    return;
+                }
+                logBt("🖨️ Launching RawBT Driver Spooler...");
+                const escPayload = buildUltraLight80mmReceipt(activeOrderForPrint);
+                const b64Payload = safeBtoa(escPayload);
+                const rawbtUrl = `rawbt:data:text/plain;base64,${b64Payload}`;
+                window.location.href = rawbtUrl;
             }
 
             function escapeHtml(str) {
                 return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
             }
 
-            async function testPrintBusinessName() {
-                logBt("🧪 Testing Business Name Print (SPI HOLDINGS)...");
-                const testText = "SPI HOLDINGS\nTEST PRINT OK!\n\n\n\n\n";
-                const b64 = btoa(unescape(encodeURIComponent(testText)));
-                logBt("Sending 'SPI HOLDINGS' to Printer Spooler...");
-                window.location.href = `rawbt:data:text/plain;base64,${b64}`;
+            let deferredPrompt = null;
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredPrompt = e;
+                const banner = document.getElementById('pwaInstallBanner');
+                if (banner) banner.style.display = 'block';
+            });
+
+            function installPWA() {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    deferredPrompt.userChoice.then(() => {
+                        deferredPrompt = null;
+                        const banner = document.getElementById('pwaInstallBanner');
+                        if (banner) banner.style.display = 'none';
+                    });
+                } else {
+                    alert("📲 App එක ජංගම දුරකථනයේ Home Screen එකට Install කරගැනීමට:\n1. Mobile Chrome හි දකුණු පස උඩ ඇති 3 Dots Menu (⋮) මත Click කරන්න.\n2. එහි ඇති 'Add to Home screen' හෝ 'Install App' යන්න Select කරන්න.");
+                }
             }
+
+
     </script>
 </body>
 </html>

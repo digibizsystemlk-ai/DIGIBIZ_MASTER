@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Pharmacy Expiry & Batch Management</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="../../core/firebase-init.js?v=4"></script>
+    <script src="../../core/event-validation.js?v=4"></script>
+    <script src="../../core/event-bus.js?v=4"></script>
+    <script src="../../core/accounts-core.js?v=4"></script>
+    <script src="../../core/auth-roles.js?v=4"></script>
+    <script src="../../core/business-types.js?v=4"></script>
+    <script src="../../core/dashboard-core.js?v=4"></script>
+    <script src="../../core/subscription-manager.js?v=4"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #f4f7f6; color: #1e293b; min-height: 100vh; }
+        .main-content { padding: 24px; max-width: 1400px; margin: 0 auto; }
+        
+        .header-card {
+            background: linear-gradient(135deg, #0f3b2c 0%, #165b44 100%);
+            border-radius: 16px;
+            padding: 24px 28px;
+            color: #ffffff;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 25px -5px rgba(15, 59, 44, 0.25);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .header-title h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 4px; }
+        .header-title p { color: #a7f3d0; font-size: 13px; font-weight: 500; }
+        .header-btn {
+            background: #10b981; color: #fff; text-decoration: none; padding: 10px 18px; border-radius: 10px;
+            font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;
+        }
+        .header-btn:hover { background: #059669; transform: translateY(-1px); }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card {
+            background: #ffffff; border-radius: 14px; padding: 20px; border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03); transition: transform 0.2s;
+        }
+        .stat-card:hover { transform: translateY(-2px); }
+        .stat-card .label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 8px; }
+        .stat-card .val { font-size: 26px; font-weight: 800; color: #0f172a; }
+        .stat-card.expired { border-left: 5px solid #ef4444; }
+        .stat-card.expired .val { color: #dc2626; }
+        .stat-card.soon { border-left: 5px solid #f59e0b; }
+        .stat-card.soon .val { color: #d97706; }
+        .stat-card.warning { border-left: 5px solid #eab308; }
+        .stat-card.warning .val { color: #ca8a04; }
+        .stat-card.val-risk { border-left: 5px solid #059669; }
+        .stat-card.val-risk .val { color: #059669; }
+
+        .content-card { background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 20px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03); }
+        
+        .controls-bar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+        .tabs { display: flex; gap: 8px; background: #f1f5f9; padding: 4px; border-radius: 12px; }
+        .tab-btn {
+            padding: 8px 16px; border: none; background: transparent; border-radius: 8px;
+            font-size: 13px; font-weight: 600; color: #64748b; cursor: pointer; transition: all 0.2s;
+        }
+        .tab-btn.active { background: #ffffff; color: #0f3b2c; font-weight: 700; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06); }
+
+        .search-box { position: relative; min-width: 280px; }
+        .search-box input {
+            width: 100%; padding: 10px 14px 10px 36px; border: 1.5px solid #cbd5e1; border-radius: 10px;
+            font-size: 13px; font-weight: 500; outline: none; transition: border-color 0.2s;
+        }
+        .search-box input:focus { border-color: #10b981; }
+        .search-box::before {
+            content: "🔍"; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; opacity: 0.6;
+        }
+
+        .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid #f1f5f9; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+        th { background: #f8fafc; color: #475569; font-weight: 700; padding: 14px 16px; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+        td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+        tr:hover td { background: #f8fafc; }
+        
+        .badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+        .badge-expired { background: #fee2e2; color: #991b1b; }
+        .badge-soon { background: #ffedd5; color: #c2410c; }
+        .badge-warn { background: #fef9c3; color: #854d0e; }
+        .badge-valid { background: #d1fae5; color: #065f46; }
+
+        .btn-action {
+            padding: 6px 12px; border: none; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-danger { background: #fee2e2; color: #dc2626; }
+        .btn-danger:hover { background: #fca5a5; }
+
+        @media (max-width: 768px) {
+            .main-content { padding: 14px; }
+            .header-card { flex-direction: column; align-items: flex-start; }
+            .controls-bar { flex-direction: column; align-items: stretch; }
+            .tabs { overflow-x: auto; }
+            .search-box { min-width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="header-card">
+            <div class="header-title">
+                <h1>⚠️ Expiry & Batch Management</h1>
+                <p>කාලය ඉකුත් වන ඖෂධ පාලනය සහ ඛණ්ඩ (Batch) නිරීක්ෂණය</p>
+            </div>
+            <a href="inventory.html" class="header-btn">📦 View Full Stock</a>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card expired">
+                <div class="label">Expired Batches</div>
+                <div class="val" id="statExpired">0</div>
+            </div>
+            <div class="stat-card soon">
+                <div class="label">Expiring in 30 Days</div>
+                <div class="val" id="statSoon30">0</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="label">Expiring in 60 Days</div>
+                <div class="val" id="statSoon60">0</div>
+            </div>
+            <div class="stat-card val-risk">
+                <div class="label">Stock Value at Risk</div>
+                <div class="val" id="statValRisk">Rs. 0.00</div>
+            </div>
+        </div>
+
+        <div class="content-card">
+            <div class="controls-bar">
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="setFilter('all')">All Batches</button>
+                    <button class="tab-btn" onclick="setFilter('expired')">Expired</button>
+                    <button class="tab-btn" onclick="setFilter('30days')">&lt; 30 Days</button>
+                    <button class="tab-btn" onclick="setFilter('60days')">&lt; 60 Days</button>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search medicine, batch, or category..." oninput="renderTable()">
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Medicine Name</th>
+                            <th>Category</th>
+                            <th>Batch No.</th>
+                            <th>Expiry Date</th>
+                            <th>Status / Days Left</th>
+                            <th>Stock Qty</th>
+                            <th>Sell Price</th>
+                            <th>Value</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="expiryBody">
+                        <tr><td colspan="9" style="text-align:center; padding: 24px; color: #94a3b8;">Loading batch records...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let state = {
+            context: null,
+            products: [],
+            activeFilter: 'all'
+        };
+
+        function toDateSafe(input) {
+            if (!input) return null;
+            if (input.toDate) return input.toDate();
+            const d = new Date(input);
+            return Number.isNaN(d.getTime()) ? null : d;
+        }
+
+        function formatLKR(v) {
+            return `Rs. ${(Number(v) || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+
+        async function loadData() {
+            try {
+                const snap = await window.db.collection('products')
+                    .doc(state.context.businessId)
+                    .collection('list')
+                    .get();
+                
+                state.products = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                calculateStats();
+                renderTable();
+            } catch (e) {
+                console.error('Error loading data:', e);
+                document.getElementById('expiryBody').innerHTML = `<tr><td colspan="9" style="text-align:center; color:#ef4444; padding:20px;">Failed to load data: ${e.message}</td></tr>`;
+            }
+        }
+
+        function calculateStats() {
+            const now = new Date(); now.setHours(0, 0, 0, 0);
+            const in30 = new Date(now); in30.setDate(in30.getDate() + 30);
+            const in60 = new Date(now); in60.setDate(in60.getDate() + 60);
+
+            let expired = 0, soon30 = 0, soon60 = 0, valRisk = 0;
+
+            state.products.forEach(p => {
+                const exp = toDateSafe(p.expiryDate);
+                if (!exp) return;
+                const stock = Number(p.stock) || 0;
+                const price = Number(p.sellPrice || p.buyPrice) || 0;
+
+                if (exp < now) {
+                    expired++;
+                    valRisk += stock * price;
+                } else if (exp <= in30) {
+                    soon30++;
+                    valRisk += stock * price;
+                } else if (exp <= in60) {
+                    soon60++;
+                }
+            });
+
+            document.getElementById('statExpired').textContent = expired;
+            document.getElementById('statSoon30').textContent = soon30;
+            document.getElementById('statSoon60').textContent = soon60;
+            document.getElementById('statValRisk').textContent = formatLKR(valRisk);
+        }
+
+        function setFilter(filter) {
+            state.activeFilter = filter;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            if (event && event.target) event.target.classList.add('active');
+            renderTable();
+        }
+
+        function renderTable() {
+            const q = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+            const now = new Date(); now.setHours(0, 0, 0, 0);
+            const in30 = new Date(now); in30.setDate(in30.getDate() + 30);
+            const in60 = new Date(now); in60.setDate(in60.getDate() + 60);
+
+            const filtered = state.products.filter(p => {
+                const matchesSearch = !q || [p.name, p.batchNumber, p.drugCategory].join(' ').toLowerCase().includes(q);
+                if (!matchesSearch) return false;
+
+                const exp = toDateSafe(p.expiryDate);
+                if (state.activeFilter === 'expired') return exp && exp < now;
+                if (state.activeFilter === '30days') return exp && exp >= now && exp <= in30;
+                if (state.activeFilter === '60days') return exp && exp >= now && exp <= in60;
+                return true;
+            }).sort((a, b) => {
+                const da = toDateSafe(a.expiryDate) || new Date('9999-12-31');
+                const dbb = toDateSafe(b.expiryDate) || new Date('9999-12-31');
+                return da - dbb;
+            });
+
+            if (!filtered.length) {
+                document.getElementById('expiryBody').innerHTML = `<tr><td colspan="9" style="text-align:center; padding: 24px; color: #94a3b8;">No matching medicine batch records found.</td></tr>`;
+                return;
+            }
+
+            document.getElementById('expiryBody').innerHTML = filtered.map(p => {
+                const exp = toDateSafe(p.expiryDate);
+                let badgeClass = 'badge-valid';
+                let statusText = 'Valid';
+                
+                if (exp) {
+                    const diffTime = exp - now;
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    if (exp < now) {
+                        badgeClass = 'badge-expired';
+                        statusText = `Expired (${Math.abs(diffDays)}d ago)`;
+                    } else if (exp <= in30) {
+                        badgeClass = 'badge-soon';
+                        statusText = `Expiring in ${diffDays}d`;
+                    } else if (exp <= in60) {
+                        badgeClass = 'badge-warn';
+                        statusText = `Expiring in ${diffDays}d`;
+                    } else {
+                        statusText = `Valid (${diffDays}d left)`;
+                    }
+                }
+
+                const stock = Number(p.stock) || 0;
+                const price = Number(p.sellPrice || 0);
+                const totalVal = stock * price;
+
+                return `
+                    <tr>
+                        <td><strong>${p.name || '-'}</strong></td>
+                        <td>${p.drugCategory || '-'}</td>
+                        <td><code>${p.batchNumber || '-'}</code></td>
+                        <td>${exp ? exp.toLocaleDateString() : '-'}</td>
+                        <td><span class="badge ${badgeClass}">${statusText}</span></td>
+                        <td>${stock}</td>
+                        <td>${formatLKR(price)}</td>
+                        <td><strong>${formatLKR(totalVal)}</strong></td>
+                        <td>
+                            <button class="btn-action btn-danger" onclick="deleteItem('${p.id}')">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function deleteItem(id) {
+            if (!confirm('Are you sure you want to delete this medicine batch entry?')) return;
+            try {
+                await window.db.collection('products').doc(state.context.businessId).collection('list').doc(id).delete();
+                await loadData();
+            } catch (e) {
+                alert('Error deleting item: ' + e.message);
+            }
+        }
+
+        auth.onAuthStateChanged(async user => {
+            if (!user) { window.location.href = '/'; return; }
+            state.context = await window.dashboardCore.getContext(user);
+            if (!state.context || state.context.businessType !== 'pharmacy') {
+                alert('This page is only accessible for Pharmacy business.');
+                window.location.href = '../core/dashboard.html';
+                return;
+            }
+            await loadData();
+        });
+    </script>
+</body>
+</html>

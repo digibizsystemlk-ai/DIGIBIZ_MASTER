@@ -1710,10 +1710,11 @@ class Sidebar {
         const onManufacturerModule = pathLower.includes('/modules/manufacturer/');
         const onAutoCareModule = pathLower.includes('/modules/auto_care/');
         const onTireCentreModule = pathLower.includes('/modules/tire_centre/');
+        const onPharmacyModule = pathLower.includes('/modules/pharmacy/');
         const normalizedBusinessType = this.normalizeBusinessType(this.businessType || '');
         const menuBusinessType = (onManufacturerModule && this.businessType !== 'scrap_collection_center')
             ? 'manufacturer'
-            : (onAutoCareModule ? 'auto_care' : (onTireCentreModule ? 'tire_centre' : normalizedBusinessType));
+            : (onAutoCareModule ? 'auto_care' : (onTireCentreModule ? 'tire_centre' : (onPharmacyModule ? 'pharmacy' : normalizedBusinessType)));
 
         if (this.isScrapSuiteContext()) {
             const scrapPool = [
@@ -1853,7 +1854,9 @@ class Sidebar {
         if (menuBusinessType === 'pharmacy') {
             menus = [
                 { icon: '🛒', name: 'Point of Sale', link: '/modules/pharmacy/pos.html' },
-                { icon: '💊', name: 'Inventory', link: '/modules/pharmacy/inventory.html' }
+                { icon: '📦', name: 'Inventory', link: '/modules/pharmacy/inventory.html' },
+                { icon: '⚠️', name: 'Expiry Alerts', link: '/modules/pharmacy/expiry.html' },
+                { icon: '📥', name: 'Purchases', link: '/modules/pharmacy/purchases.html' }
             ];
         } else if (menuBusinessType === 'hardware') {
             menus = [

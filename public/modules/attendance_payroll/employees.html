@@ -39,6 +39,7 @@
         .emp-name strong{font-weight:700;color:#0f172a;font-size:14px;}
         .phone-badge{font-size:12px;font-weight:600;color:#2563eb;background:#eff6ff;padding:4px 8px;border-radius:6px;display:inline-flex;align-items:center;gap:4px;}
         .epf-badge{font-size:11px;font-weight:800;color:#7e22ce;background:#f3e8ff;padding:3px 7px;border-radius:6px;display:inline-block;margin-top:2px;}
+        .casual-badge{font-size:11px;font-weight:800;color:#b45309;background:#fef3c7;padding:3px 7px;border-radius:6px;display:inline-block;margin-top:2px;}
         
         .badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;display:inline-block;}
         .badge-active{background:#dcfce7;color:#15803d;}
@@ -81,7 +82,7 @@
     <div class="header-section">
         <div class="header-title">
             <h2>👥 Sunrose Lanka (Pvt) Ltd - Employee Profiles & Master Directory</h2>
-            <p>සේවක අංක (EMP ID & EPF No), ලිපින, NIC, DOB, වැටුප් වර්ධක ඉතිහාසය, චාර්ජ් ෂීට් සහ විශේෂ HR සටහන්</p>
+            <p>EPF/Casual වර්ගීකරණය, EMP ID, EPF No, වැටුප් අත්තිකාරම්, NIC, වැටුප් වර්ධක සහ විනය සටහන්</p>
         </div>
         <button class="btn-primary" onclick="openAddEmpModal()"><i class="fa-solid fa-user-plus"></i> Add New Employee</button>
     </div>
@@ -90,13 +91,13 @@
         <table class="table-custom">
             <thead>
                 <tr>
-                    <th>EPF No & EMP ID</th>
+                    <th>EMP ID & EPF/Casual</th>
                     <th>Full Name & EMP NIC</th>
                     <th>Mobile & Address</th>
-                    <th>Designation & Gender</th>
+                    <th>Designation & Category</th>
                     <th>Date of Join & DOB</th>
                     <th>Basic Salary</th>
-                    <th>Allowances</th>
+                    <th>Advance & Allowances</th>
                     <th>Bank Details</th>
                     <th>Actions & PWA Link</th>
                 </tr>
@@ -114,16 +115,25 @@
             <input type="hidden" id="editingEmpId" value="">
             
             <div class="form-grid">
-                <div class="section-header"><span><i class="fa-solid fa-address-card"></i> 1. Personal & Identity Master Details</span></div>
+                <div class="section-header"><span><i class="fa-solid fa-address-card"></i> 1. Personal & Category Details</span></div>
                 
-                <div class="form-group">
-                    <label style="color:#7e22ce;">EPF Number (සේවක අර්ථසාධක අංකය)*</label>
-                    <input type="text" id="empEpfNo" placeholder="e.g. 001 or 015" style="border-color:#a855f7;font-weight:700;">
+                <div class="form-group full-width">
+                    <label style="color:#d97706;font-weight:800;">Employment Type (සේවක වර්ගීකරණය)*</label>
+                    <select id="empType" onchange="handleEmpTypeChange()" style="border-color:#f59e0b;font-weight:700;">
+                        <option value="EPF">EPF Permanent Staff (ස්ථිර අර්ථසාධක හිමි සේවක)</option>
+                        <option value="Casual">Casual Staff (කැෂුවල් සේවක - C Prefix)</option>
+                    </select>
                 </div>
 
+                <!-- Swapped Inputs: Left = EMP ID (Auto-scheduled), Right = EPF Number -->
                 <div class="form-group">
-                    <label style="color:#2563eb;">EMP ID (සේවක හැඳුනුම් අංකය)*</label>
-                    <input type="text" id="empCustomId" placeholder="e.g. EMP-454" style="border-color:#3b82f6;font-weight:700;">
+                    <label style="color:#2563eb;">EMP ID (සේවක හැඳුනුම් අංකය - Auto-assigned)*</label>
+                    <input type="text" id="empCustomId" placeholder="1" style="border-color:#3b82f6;font-weight:700;background:#f8fafc;" readonly>
+                </div>
+
+                <div class="form-group" id="epfNoGroup">
+                    <label style="color:#7e22ce;">EPF Number (සේවක අර්ථසාධක අංකය)*</label>
+                    <input type="text" id="empEpfNo" placeholder="e.g. 001 or 015" style="border-color:#a855f7;font-weight:700;">
                 </div>
 
                 <div class="form-group full-width">
@@ -174,11 +184,16 @@
                     <input type="text" id="empBank" placeholder="Peoples Bank Kesbewa - 327200150012478">
                 </div>
 
-                <div class="section-header"><span><i class="fa-solid fa-hand-holding-dollar"></i> 2. Basic Salary & Individual Allowances (දීමනා)</span></div>
+                <div class="section-header"><span><i class="fa-solid fa-hand-holding-dollar"></i> 2. Basic Salary, Advance & Allowances (දීමනා)</span></div>
 
                 <div class="form-group">
                     <label>Basic Salary (මූලික වැටුප Rs.)</label>
                     <input type="number" id="empBasic" placeholder="33000">
+                </div>
+
+                <div class="form-group">
+                    <label style="color:#dc2626;font-weight:800;">Salary Advance (වැටුප් අත්තිකාරම් Rs.)</label>
+                    <input type="number" id="empSalaryAdvance" placeholder="5000" style="border-color:#ef4444;font-weight:700;">
                 </div>
 
                 <div class="form-group">
@@ -286,16 +301,18 @@
             const raw = localStorage.getItem('digibiz_registered_employees');
             if (raw !== null) {
                 try {
-                    return JSON.parse(raw);
+                    const list = JSON.parse(raw);
+                    if (Array.isArray(list) && list.length > 0) return list;
                 } catch(e) {}
             }
-            // Sunrose Lanka Official Seed List
+            // Sunrose Lanka Official Seed List with EPF & Casual classification
             const defaultSeed = [
-                { epfNo: '001', empId: 'EMP-454', name: 'K. Champika N. De Silva', nic: '751232454V', phone: '0773145820', designation: 'Director', gender: 'Male', dob: '1975-12-04', doj: '2020-01-01', basic: 100000, travel: 10000, prod: 60000, attnAllow: 30000, nightMeals: 1000, loanInstalment: 0, bank: '327200298012161', address: 'Piliyandala', increments: [{ date: '2025-01-01', amount: 10000, newBasic: 100000, reason: 'Annual Director Review' }], chargeSheets: [], specialNotes: 'Executive Board Member' },
-                { epfNo: '002', empId: 'EMP-002', name: 'T.M Sanka Thennakoon', nic: '910290517V', phone: '0772905820', designation: 'Manager', gender: 'Male', dob: '1991-01-29', doj: '2023-05-01', basic: 33000, travel: 5000, prod: 50000, attnAllow: 25000, nightMeals: 500, loanInstalment: 3000, bank: '327200150012478', address: 'No : 81, Hilcrest Waththa, Nungama, Piliyandala', increments: [{ date: '2026-01-01', amount: 3000, newBasic: 33000, reason: 'Promotion to Manager' }], chargeSheets: [], specialNotes: 'Key Operations In-Charge' },
-                { epfNo: '004', empId: 'EMP-004', name: 'Ruwani Suba Kumari H.G', nic: '897010208V', phone: '0752141740', designation: 'Quality Supervisor', gender: 'Female', dob: '1989-07-01', doj: '2022-03-15', basic: 40000, travel: 0, prod: 0, attnAllow: 10000, nightMeals: 200, loanInstalment: 0, bank: '327200158587651', address: 'Kesbewa', increments: [], chargeSheets: [], specialNotes: '' },
-                { epfNo: '005', empId: 'EMP-005', name: 'W.A Nuwan Tharaka', nic: '950623993V', phone: '0771861676', designation: 'Shift Supervisor', gender: 'Male', dob: '1995-06-23', doj: '2023-02-10', basic: 42000, travel: 0, prod: 0, attnAllow: 12000, nightMeals: 300, loanInstalment: 0, bank: '327200130023538', address: 'Piliyandala', increments: [], chargeSheets: [], specialNotes: '' },
-                { epfNo: '010', empId: 'EMP-010', name: 'K. Gimhani Tharaka', nic: '200185502650', phone: '0772384212', designation: 'Machine Operator', gender: 'Female', dob: '2001-08-15', doj: '2023-08-01', basic: 30000, travel: 0, prod: 0, attnAllow: 8000, nightMeals: 200, loanInstalment: 0, bank: '073200150070230', address: 'Makandana', increments: [], chargeSheets: [], specialNotes: '' }
+                { epfNo: '001', empId: '1', empType: 'EPF', name: 'K. Champika N. De Silva', nic: '751232454V', phone: '0773145820', designation: 'Director', gender: 'Male', dob: '1975-12-04', doj: '2020-01-01', basic: 100000, travel: 10000, prod: 60000, attnAllow: 30000, nightMeals: 1000, salaryAdvance: 0, loanInstalment: 0, bank: '327200298012161', address: 'Piliyandala', increments: [{ date: '2025-01-01', amount: 10000, newBasic: 100000, reason: 'Annual Director Review' }], chargeSheets: [], specialNotes: 'Executive Board Member' },
+                { epfNo: '002', empId: '2', empType: 'EPF', name: 'T.M Sanka Thennakoon', nic: '910290517V', phone: '0772905820', designation: 'Manager', gender: 'Male', dob: '1991-01-29', doj: '2023-05-01', basic: 33000, travel: 5000, prod: 50000, attnAllow: 25000, nightMeals: 500, salaryAdvance: 2500, loanInstalment: 3000, bank: '327200150012478', address: 'No : 81, Hilcrest Waththa, Nungama, Piliyandala', increments: [{ date: '2026-01-01', amount: 3000, newBasic: 33000, reason: 'Promotion to Manager' }], chargeSheets: [], specialNotes: 'Key Operations In-Charge' },
+                { epfNo: '004', empId: '3', empType: 'EPF', name: 'Ruwani Suba Kumari H.G', nic: '897010208V', phone: '0752141740', designation: 'Quality Supervisor', gender: 'Female', dob: '1989-07-01', doj: '2022-03-15', basic: 40000, travel: 0, prod: 0, attnAllow: 10000, nightMeals: 200, salaryAdvance: 0, loanInstalment: 0, bank: '327200158587651', address: 'Kesbewa', increments: [], chargeSheets: [], specialNotes: '' },
+                { epfNo: '005', empId: '4', empType: 'EPF', name: 'W.A Nuwan Tharaka', nic: '950623993V', phone: '0771861676', designation: 'Shift Supervisor', gender: 'Male', dob: '1995-06-23', doj: '2023-02-10', basic: 42000, travel: 0, prod: 0, attnAllow: 12000, nightMeals: 300, salaryAdvance: 0, loanInstalment: 0, bank: '327200130023538', address: 'Piliyandala', increments: [], chargeSheets: [], specialNotes: '' },
+                { epfNo: '010', empId: '5', empType: 'EPF', name: 'K. Gimhani Tharaka', nic: '200185502650', phone: '0772384212', designation: 'Machine Operator', gender: 'Female', dob: '2001-08-15', doj: '2023-08-01', basic: 30000, travel: 0, prod: 0, attnAllow: 8000, nightMeals: 200, salaryAdvance: 0, loanInstalment: 0, bank: '073200150070230', address: 'Makandana', increments: [], chargeSheets: [], specialNotes: '' },
+                { epfNo: 'N/A', empId: 'C-1', empType: 'Casual', name: 'Kamal Bandara (Casual)', nic: '981240129V', phone: '0712345678', designation: 'Casual Helper', gender: 'Male', dob: '1998-04-12', doj: '2024-01-10', basic: 25000, travel: 0, prod: 0, attnAllow: 5000, nightMeals: 0, salaryAdvance: 1000, loanInstalment: 0, bank: 'Cash Voucher', address: 'Kesbewa', increments: [], chargeSheets: [], specialNotes: 'Daily Wages / Casual Staff' }
             ];
             localStorage.setItem('digibiz_registered_employees', JSON.stringify(defaultSeed));
             return defaultSeed;
@@ -316,17 +333,24 @@
 
             let html = '';
             if (employees && employees.length > 0) {
-                employees.forEach(emp => {
+                employees.forEach((emp, idx) => {
+                    const isCasual = emp.empType === 'Casual';
+                    const displayId = emp.empId || (isCasual ? `C-${idx+1}` : String(idx + 1));
                     const basicStr = emp.basic ? `Rs. ${Number(emp.basic).toLocaleString('en-US', {minimumFractionDigits: 2})}` : 'Rs. 0.00';
-                    const attnAllowStr = emp.attnAllow ? `Attn: Rs. ${Number(emp.attnAllow).toLocaleString('en-US', {minimumFractionDigits: 2})}` : 'Attn: -';
+                    const advanceStr = emp.salaryAdvance ? `<span style="font-size:11px;color:#dc2626;font-weight:700;">Adv: Rs. ${Number(emp.salaryAdvance).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>` : '';
+                    const attnAllowStr = emp.attnAllow ? `Attn: Rs. ${Number(emp.attnAllow).toLocaleString('en-US', {minimumFractionDigits: 2})}` : '';
                     const safeName = (emp.name || '').replace(/'/g, "\\'");
-                    const safeNic = emp.nic || emp.empId || '';
+                    const safeNic = emp.nic || displayId;
+
+                    const catBadge = isCasual 
+                        ? `<span class="casual-badge"><i class="fa-solid fa-user-clock"></i> Casual Staff</span>` 
+                        : `<span class="epf-badge">EPF No: ${emp.epfNo || '000'}</span>`;
 
                     html += `
                         <tr>
                             <td>
-                                <strong>${emp.empId || 'EMP-000'}</strong><br>
-                                <span class="epf-badge">EPF No: ${emp.epfNo || '000'}</span>
+                                <strong>EMP ID: ${displayId}</strong><br>
+                                ${catBadge}
                             </td>
                             <td class="emp-name">
                                 <strong>${emp.name}</strong><br>
@@ -346,14 +370,15 @@
                             </td>
                             <td><strong style="color:#0f172a;">${basicStr}</strong></td>
                             <td>
-                                <span style="font-size:11.5px;color:#2563eb;font-weight:700;">${attnAllowStr}</span>
+                                <span style="font-size:11.5px;color:#2563eb;font-weight:700;">${attnAllowStr}</span><br>
+                                ${advanceStr}
                             </td>
                             <td><span style="font-size:11.5px;font-weight:600;">${emp.bank || 'N/A'}</span></td>
                             <td>
                                 <div class="action-btns">
-                                    <button class="btn-link" onclick="copyPwaLink('${emp.empId || safeNic}', '${emp.phone}', '${safeName}')"><i class="fa-solid fa-mobile-screen"></i> PWA Link</button>
-                                    <button class="btn-edit" onclick="openEditEmpModal('${emp.empId || safeNic}')"><i class="fa-solid fa-pen"></i> Edit</button>
-                                    <button class="btn-delete" onclick="deleteEmpRow('${emp.empId || safeNic}', '${safeName}')"><i class="fa-solid fa-trash"></i> Delete</button>
+                                    <button class="btn-link" onclick="copyPwaLink('${displayId}', '${emp.phone}', '${safeName}')"><i class="fa-solid fa-mobile-screen"></i> PWA Link</button>
+                                    <button class="btn-edit" onclick="openEditEmpModal('${displayId}')"><i class="fa-solid fa-pen"></i> Edit</button>
+                                    <button class="btn-delete" onclick="deleteEmpRow('${displayId}', '${safeName}')"><i class="fa-solid fa-trash"></i> Delete</button>
                                 </div>
                             </td>
                         </tr>
@@ -369,6 +394,20 @@
                 `;
             }
             tbody.innerHTML = html;
+        }
+
+        function handleEmpTypeChange() {
+            const empType = document.getElementById('empType').value;
+            const employees = getEmployeesFromStorage();
+            if (empType === 'Casual') {
+                const casualCount = employees.filter(e => e.empType === 'Casual').length;
+                document.getElementById('empCustomId').value = `C-${casualCount + 1}`;
+                document.getElementById('empEpfNo').value = 'N/A';
+            } else {
+                const epfCount = employees.filter(e => e.empType !== 'Casual').length;
+                document.getElementById('empCustomId').value = String(epfCount + 1);
+                document.getElementById('empEpfNo').value = '';
+            }
         }
 
         function copyPwaLink(empId, phone, name) {
@@ -387,8 +426,10 @@
             document.getElementById('modalTitle').textContent = '👤 Add New Employee Profile';
             document.getElementById('modalSaveBtn').textContent = 'Save Employee Profile';
             document.getElementById('editingEmpId').value = '';
-            document.getElementById('empEpfNo').value = '';
-            document.getElementById('empCustomId').value = '';
+            document.getElementById('empType').value = 'EPF';
+            
+            handleEmpTypeChange();
+
             document.getElementById('empName').value = '';
             document.getElementById('empAddress').value = '';
             document.getElementById('empNic').value = '';
@@ -399,6 +440,7 @@
             document.getElementById('empDoj').value = '';
             document.getElementById('empBank').value = '';
             document.getElementById('empBasic').value = '';
+            document.getElementById('empSalaryAdvance').value = '';
             document.getElementById('empTravel').value = '';
             document.getElementById('empProd').value = '';
             document.getElementById('empAttnAllow').value = '';
@@ -420,8 +462,9 @@
             document.getElementById('modalTitle').textContent = '✏️ Edit Employee Profile';
             document.getElementById('modalSaveBtn').textContent = 'Update Employee Profile';
             document.getElementById('editingEmpId').value = emp.empId || emp.nic;
-            document.getElementById('empEpfNo').value = emp.epfNo || '';
+            document.getElementById('empType').value = emp.empType || 'EPF';
             document.getElementById('empCustomId').value = emp.empId || '';
+            document.getElementById('empEpfNo').value = emp.epfNo || '';
             document.getElementById('empName').value = emp.name || '';
             document.getElementById('empAddress').value = emp.address || '';
             document.getElementById('empNic').value = emp.nic || emp.empId || '';
@@ -433,6 +476,7 @@
             document.getElementById('empBank').value = emp.bank || '';
 
             document.getElementById('empBasic').value = emp.basic || '';
+            document.getElementById('empSalaryAdvance').value = emp.salaryAdvance || '';
             document.getElementById('empTravel').value = emp.travel || '';
             document.getElementById('empProd').value = emp.prod || '';
             document.getElementById('empAttnAllow').value = emp.attnAllow || '';
@@ -509,6 +553,7 @@
 
         function saveEmpProfile() {
             const editingEmpId = document.getElementById('editingEmpId').value;
+            const empType = document.getElementById('empType').value;
             const epfNo = document.getElementById('empEpfNo').value.trim();
             const customId = document.getElementById('empCustomId').value.trim();
             const name = document.getElementById('empName').value.trim();
@@ -523,6 +568,7 @@
             const bank = document.getElementById('empBank').value.trim();
 
             const basic = document.getElementById('empBasic').value;
+            const salaryAdvance = document.getElementById('empSalaryAdvance').value;
             const travel = document.getElementById('empTravel').value;
             const prod = document.getElementById('empProd').value;
             const attnAllow = document.getElementById('empAttnAllow').value;
@@ -561,11 +607,12 @@
 
             let employees = getEmployeesFromStorage();
 
-            const finalEmpId = customId || editingEmpId || `EMP-${Math.floor(100 + Math.random() * 900)}`;
+            const finalEmpId = customId || editingEmpId || (empType === 'Casual' ? `C-${employees.length + 1}` : String(employees.length + 1));
 
             const empObj = {
-                epfNo: epfNo || '000',
+                epfNo: empType === 'Casual' ? 'N/A' : (epfNo || '000'),
                 empId: finalEmpId,
+                empType: empType,
                 nic: nic || finalEmpId,
                 name: name,
                 address: address,
@@ -576,6 +623,7 @@
                 doj: doj,
                 bank: bank || 'N/A',
                 basic: basic ? Number(basic) : 0,
+                salaryAdvance: salaryAdvance ? Number(salaryAdvance) : 0,
                 travel: travel ? Number(travel) : 0,
                 prod: prod ? Number(prod) : 0,
                 attnAllow: attnAllow ? Number(attnAllow) : 0,
@@ -597,15 +645,40 @@
                 employees.push(empObj);
             }
 
+            // Ensure sequential re-indexing
+            let epfIdx = 1;
+            let casualIdx = 1;
+            employees.forEach(emp => {
+                if (emp.empType === 'Casual') {
+                    emp.empId = `C-${casualIdx++}`;
+                } else {
+                    emp.empId = String(epfIdx++);
+                }
+            });
+
             saveEmployeesToStorage(employees);
             renderEmployeeDirectory();
             closeAddEmpModal();
         }
 
         function deleteEmpRow(empId, name) {
-            if (confirm(`ඔබට "${name}" (${empId}) සේවක ගිණුම පද්ධතියෙන් ස්ථිරවම ඉවත් (Delete) කිරීමට අවශ්‍ය බව තහවුරු කරන්න?`)) {
+            if (confirm(`ඔබට "${name}" (${empId}) සේවක ගිණුම පද්ධතියෙන් ස්ථිරවම ඉවත් (Delete) කිරීමට අවශ්‍ය බව තහවුරු කරන්න?\n\n(ඉතිරි සියලු සේවකයින්ගේ EMP ID අංක ස්වයංක්‍රීයව අනුපිළිවෙළට නැවත සකස් වේ).`)) {
                 let employees = getEmployeesFromStorage();
+                
+                // Filter out deleted employee
                 employees = employees.filter(e => e.empId !== empId && e.nic !== empId && e.epfNo !== empId);
+                
+                // AUTOMATIC RE-INDEXING: Shift remaining employees forward
+                let epfIdx = 1;
+                let casualIdx = 1;
+                employees.forEach(emp => {
+                    if (emp.empType === 'Casual') {
+                        emp.empId = `C-${casualIdx++}`;
+                    } else {
+                        emp.empId = String(epfIdx++);
+                    }
+                });
+
                 saveEmployeesToStorage(employees);
                 renderEmployeeDirectory();
             }

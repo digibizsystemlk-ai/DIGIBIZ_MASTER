@@ -560,9 +560,14 @@
                             <td><strong style="color:#2563eb;">${metrics.otHoursStr}</strong></td>
                             <td><span class="badge badge-mobile"><i class="fa-solid fa-qrcode"></i> ${l.method || 'Mobile QR Scan'}</span></td>
                             <td>
-                                <button onclick="deleteAttendanceLog('${logIdStr}', '${l.date}', '${empId}')" style="background:#fee2e2;color:#b91c1c;border:none;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;">
-                                    <i class="fa-solid fa-trash"></i> Delete Log
-                                </button>
+                                <div style="display:flex;gap:6px;">
+                                    <button onclick="openEditLogModal('${logIdStr}', '${l.date}', '${l.inTime || l.time || ''}', '${l.outTime || ''}', '${l.shift || ''}', '${empId}')" style="background:#e0f2fe;color:#0369a1;border:none;padding:5px 9px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;">
+                                        <i class="fa-solid fa-pen"></i> Edit Log
+                                    </button>
+                                    <button onclick="deleteAttendanceLog('${logIdStr}', '${l.date}', '${empId}')" style="background:#fee2e2;color:#b91c1c;border:none;padding:5px 9px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;">
+                                        <i class="fa-solid fa-trash"></i> Delete Log
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     `;
@@ -872,12 +877,122 @@
                 </head>
                 <body>
                     ${printContent}
-                    <script>setTimeout(() => { window.print(); window.close(); }, 500);<\/script>
-                </body>
-                </html>
-            `);
-            printWin.document.close();
+        }
+
+        function openEditLogModal(logId, date, inTime, outTime, shift, empId) {
+            document.getElementById('editLogId').value = logId || '';
+            document.getElementById('editLogEmpId').value = empId || selectedEmpId;
+            document.getElementById('editLogDate').value = date || '';
+            document.getElementById('editLogInTime').value = inTime || '';
+            document.getElementById('editLogOutTime').value = outTime || '';
+            document.getElementById('editLogShift').value = shift || '12h Day Shift';
+
+            document.getElementById('editLogModal').style.display = 'flex';
+        }
+
+        function closeEditLogModal() {
+            document.getElementById('editLogModal').style.display = 'none';
+        }
+
+        function saveEditedLog() {
+            const logId = document.getElementById('editLogId').value;
+            const empId = document.getElementById('editLogEmpId').value;
+            const date = document.getElementById('editLogDate').value;
+            const inTime = document.getElementById('editLogInTime').value.trim();
+            const outTime = document.getElementById('editLogOutTime').value.trim();
+            const shift = document.getElementById('editLogShift').value;
+
+            if (!date) {
+                alert('⚠️ කරුණාකර දිනය ඇතුළත් කරන්න.');
+                return;
+            }
+
+            let logs = [];
+            try {
+                const stored = localStorage.getItem('digibiz_attendance_logs');
+                if (stored) logs = JSON.parse(stored);
+            } catch(e) {}
+
+            let targetLog = logs.find(l => (logId && l.id === logId) || (!logId && l.date === date && (l.empId === empId || l.phone === selectedEmpPhone)));
+            
+            if (targetLog) {
+                targetLog.date = date;
+                targetLog.inTime = inTime;
+                targetLog.outTime = outTime;
+                targetLog.shift = shift;
+            } else {
+                logs.push({
+                    id: logId || `LOG_${Date.now()}`,
+                    empId: empId,
+                    phone: selectedEmpPhone,
+                    date: date,
+                    inTime: inTime,
+                    outTime: outTime,
+                    shift: shift,
+                    method: 'Admin Manual Edit'
+                });
+            }
+
+            localStorage.setItem('digibiz_attendance_logs', JSON.stringify(logs));
+
+            // Sync update to Cloud Firestore
+            const firestoreDb = window.db || (window.firebase && window.firebase.firestore ? window.firebase.firestore() : null);
+            if (firestoreDb) {
+                const bizId = localStorage.getItem('currentBusinessId') || 'ATTENDANCE_BIZ_001';
+                firestoreDb.collection('businesses').doc(bizId).collection('attendance_logs').doc(logId || `${empId}_${date}`).set({
+                    empId: empId,
+                    date: date,
+                    inTime: inTime,
+                    outTime: outTime,
+                    shift: shift,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true }).catch(e => console.warn(e));
+            }
+
+            closeEditLogModal();
+            openEmpReportModal(empId, selectedEmpName, selectedEmpPhone);
         }
     </script>
+
+    <!-- Admin Edit Time Log Modal -->
+    <div class="modal-overlay" id="editLogModal">
+        <div class="modal-card" style="max-width:500px;">
+            <h3 style="font-size:18px;font-weight:800;color:#0f172a;">✏️ Edit Attendance Time Log</h3>
+            <p style="font-size:12.5px;color:#64748b;margin-bottom:16px;">පරිපාලකවරයා ලෙස සේවක පැමිණීම්/පිටවීම් වේලාවන් සංස්කරණය කරන්න:</p>
+            
+            <input type="hidden" id="editLogId">
+            <input type="hidden" id="editLogEmpId">
+
+            <div class="form-group" style="margin-bottom:12px;">
+                <label style="font-size:12px;font-weight:700;color:#475569;display:block;margin-bottom:4px;">Date (දිනය)</label>
+                <input type="date" id="editLogDate" style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;">
+            </div>
+
+            <div class="form-group" style="margin-bottom:12px;">
+                <label style="font-size:12px;font-weight:700;color:#475569;display:block;margin-bottom:4px;">Shift Type (සේවා මුරය)</label>
+                <select id="editLogShift" style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;">
+                    <option value="12h Day Shift">☀️ 12h Day Shift (07:30 AM - 07:30 PM)</option>
+                    <option value="12h Night Shift">🌙 12h Night Shift (07:30 PM - 07:30 AM)</option>
+                    <option value="24h Special Shift">⭐ 24h Special Duty Shift</option>
+                </select>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div class="form-group">
+                    <label style="font-size:12px;font-weight:700;color:#16a34a;display:block;margin-bottom:4px;">In Time (පැමිණි වේලාව)</label>
+                    <input type="text" id="editLogInTime" placeholder="07:30 AM" style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;font-weight:700;">
+                </div>
+                <div class="form-group">
+                    <label style="font-size:12px;font-weight:700;color:#dc2626;display:block;margin-bottom:4px;">Out Time (පිටවූ වේලාව)</label>
+                    <input type="text" id="editLogOutTime" placeholder="07:30 PM" style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;font-weight:700;">
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
+                <button class="btn-primary" style="background:#f1f5f9;color:#475569;" onclick="closeEditLogModal()">Cancel</button>
+                <button class="btn-primary" onclick="saveEditedLog()">Update Time Log</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

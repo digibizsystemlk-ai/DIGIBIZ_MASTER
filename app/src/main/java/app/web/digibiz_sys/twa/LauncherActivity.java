@@ -62,6 +62,7 @@ public class LauncherActivity extends Activity {
         }
 
         mPlayBillingHelper = new PlayBillingHelper(this);
+        mWebView.addJavascriptInterface(new PrintBridge(this), "AndroidBridge");
         mWebView.addJavascriptInterface(new Object() {
             @android.webkit.JavascriptInterface
             public void launchPlayPurchase() {

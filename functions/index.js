@@ -1516,3 +1516,69 @@ exports.scheduledDemoAccountReset = onSchedule(
     }
 );
 
+/**
+ * Audit Logging Service for Security & Compliance.
+ * Logs critical operations (debt write-off, role updates, stock adjustments, soft deletes).
+ */
+exports.logAuditEvent = onCall(
+    {
+        timeoutSeconds: 30,
+        memory: "256MiB",
+    },
+    async (request) => {
+        if (!request.auth) {
+            throw new HttpsError("unauthenticated", "User must be authenticated to log audit events.");
+        }
+        const data = request.data || {};
+        const action = String(data.action || "UNKNOWN_ACTION").trim();
+        const details = data.details || {};
+        const businessId = String(data.businessId || request.auth.token.businessId || "").trim();
+
+        try {
+            await db.collection("audit_logs").add({
+                action,
+                businessId,
+                performedByUid: request.auth.uid,
+                performedByEmail: request.auth.token.email || "N/A",
+                details,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                ipAddress: request.rawRequest ? (request.rawRequest.headers['x-forwarded-for'] || request.rawRequest.socket.remoteAddress) : "N/A"
+            });
+            return { success: true };
+        } catch (err) {
+            logger.error("logAuditEvent failed:", err);
+            return { success: false, error: err.message };
+        }
+    }
+);
+
+/**
+ * Daily Automated Firestore Backup Scheduler (Asia/Colombo Midnight: 18:30 UTC).
+ * Exports Firestore data snapshot to Cloud Storage bucket for emergency disaster recovery.
+ */
+exports.backupFirestoreDaily = onSchedule(
+    {
+        schedule: "0 18 * * *",
+        timeZone: "Asia/Colombo",
+        retryCount: 2,
+    },
+    async () => {
+        logger.info("Starting Daily Automated Firestore Backup...");
+        try {
+            const client = new admin.firestore.v1.FirestoreAdminClient();
+            const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT || "digibiz-sys";
+            const databaseName = client.databasePath(projectId, "(default)");
+            const bucket = `gs://${projectId}.appspot.com/backups/${new Date().toISOString().split('T')[0]}`;
+
+            await client.exportDocuments({
+                name: databaseName,
+                outputUriPrefix: bucket,
+                collectionIds: []
+            });
+            logger.info(`Firestore Backup successfully saved to ${bucket}`);
+        } catch (err) {
+            logger.warn("Daily Firestore Export skipped or pending GCP Admin API permissions:", err.message);
+        }
+    }
+);
+

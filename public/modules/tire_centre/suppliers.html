@@ -192,21 +192,33 @@
         // Load suppliers
         async function loadSuppliers(){
             if(!currentBusinessId) return;
-            const snapshot = await db.collection('suppliers').doc(currentBusinessId).collection('list').get();
+            const opt = navigator.onLine ? {} : { source: 'cache' };
+            const snapshot = await db.collection('suppliers').doc(currentBusinessId).collection('list').get(opt);
             suppliers = [];
             snapshot.forEach(doc => suppliers.push({id: doc.id, ...doc.data()}));
             
-            if(suppliers.length === 0){
-                // Demo suppliers
-                suppliers = [
-                    { id: 'S001', code: 'S001', name: 'Cargills Food City', contact: 'Nimal Perera', phone: '0112345678', email: 'orders@cargills.lk', address: 'Colombo', notes: 'Net 30 days', status: 'active' },
-                    { id: 'S002', code: 'S002', name: 'Keells Supermarket', contact: 'Sunil Silva', phone: '0113456789', email: 'purchase@keells.lk', address: 'Colombo', notes: 'Net 15 days', status: 'active' },
-                    { id: 'S003', code: 'S003', name: 'Lanka Groceries', contact: 'Kamal Fernando', phone: '0771234567', email: 'info@lankagroceries.lk', address: 'Kandy', notes: 'Cash on delivery', status: 'active' }
-                ];
-                for(const s of suppliers){
-                    await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(s.id).set(s);
-                }
-            }
+            // Also check customers collection for type === 'supplier'
+            try {
+                const custSnap = await db.collection('customers').doc(currentBusinessId).collection('list').where('type', '==', 'supplier').get(opt);
+                custSnap.forEach(doc => {
+                    const data = doc.data();
+                    if (!suppliers.some(s => s.id === doc.id || s.code === (data.code || doc.id))) {
+                        suppliers.push({
+                            id: doc.id,
+                            code: data.code || doc.id,
+                            name: data.name || data.customerName || 'Supplier',
+                            contact: data.contact || data.contactPerson || '-',
+                            phone: data.phone || data.mobile || '-',
+                            email: data.email || '-',
+                            address: data.address || '-',
+                            notes: data.notes || '',
+                            status: data.status || 'active',
+                            totalPurchases: Number(data.totalPurchases) || 0
+                        });
+                    }
+                });
+            } catch(e) {}
+
             renderSuppliers();
             updateSupplierSelect();
             updateStats();
@@ -381,10 +393,21 @@
         }
         
         window.deleteSupplier = async (id) => {
-            if(confirm('Delete this supplier? This will also delete all purchase history.')){
-                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(id).delete();
-                showToast('Supplier deleted');
-                await loadSuppliers();
+            if(confirm('Are you sure you want to delete this supplier?')){
+                try {
+                    await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(id).delete();
+                    try {
+                        await db.collection('customers').doc(currentBusinessId).collection('list').doc(id).delete();
+                    } catch(e) {}
+                    suppliers = suppliers.filter(s => s.id !== id && s.code !== id);
+                    showToast('Supplier deleted successfully');
+                    renderSuppliers();
+                    updateSupplierSelect();
+                    updateStats();
+                } catch(err) {
+                    console.error('Delete supplier failed:', err);
+                    showToast('Failed to delete supplier: ' + err.message, true);
+                }
             }
         };
         
