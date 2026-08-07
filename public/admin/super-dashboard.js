@@ -40,6 +40,9 @@
     function setTab(tab) {
         document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
         document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${tab}`));
+        if (tab === 'security') {
+            loadAuditLogs();
+        }
     }
 
     async function guardSuperAdmin(user) {
@@ -96,10 +99,11 @@
                     <td>${safe(b.name || '-')}</td>
                     <td>${safe(b.businessType || '-')}</td>
                     <td>${safe(b.ownerId || '-')}</td>
-                    <td>${safe(b.status || 'active')}</td>
+                    <td><span style="font-weight:700; color:${b.status === 'suspended' ? '#ef4444' : '#10b981'};">${safe(b.status || 'active')}</span></td>
                     <td>${formatDate(b.createdAt)}</td>
                     <td>
                         <button class="btn alt" data-act="edit-biz" data-id="${safe(b.id)}">Edit</button>
+                        <button class="btn alt" data-act="extend-sub" data-id="${safe(b.id)}">💳 Renew (+30 Days)</button>
                         <button class="btn alt" data-act="suspend-biz" data-id="${safe(b.id)}">Suspend/Activate</button>
                         <button class="btn danger" data-act="soft-del-biz" data-id="${safe(b.id)}">Soft Delete</button>
                     </td>
@@ -108,6 +112,41 @@
         $('bizBody').innerHTML = rows || '<tr><td colspan="7" class="small">No businesses</td></tr>';
         $('stBusinesses').textContent = String(state.businesses.length);
         renderAssignableBusinesses();
+    }
+
+    async function loadAuditLogs() {
+        const body = $('auditLogsBody');
+        if (!body) return;
+        body.innerHTML = '<tr><td colspan="6" class="small">Fetching security audit logs...</td></tr>';
+        try {
+            const snap = await db.collection('audit_logs').orderBy('timestamp', 'desc').limit(100).get();
+            if (snap.empty) {
+                body.innerHTML = '<tr><td colspan="6" class="small">No audit logs recorded yet.</td></tr>';
+                return;
+            }
+            body.innerHTML = snap.docs.map((d) => {
+                const data = d.data() || {};
+                const ts = formatDate(data.timestamp);
+                const act = safe(data.action || 'LOG');
+                const bizId = safe(data.businessId || 'N/A');
+                const email = safe(data.performedByEmail || 'System');
+                const ip = safe(data.ipAddress || 'N/A');
+                const details = safe(JSON.stringify(data.details || {}));
+                return `
+                    <tr>
+                        <td style="font-size:12px; color:#94a3b8;">${ts}</td>
+                        <td><span style="background:#1e293b; color:#38bdf8; padding:2px 6px; border-radius:6px; font-weight:700; font-size:11px;">${act}</span></td>
+                        <td><code>${bizId}</code></td>
+                        <td>${email}</td>
+                        <td style="font-size:11px; font-family:monospace;">${ip}</td>
+                        <td style="font-size:11px; max-width:250px; overflow:hidden; text-overflow:ellipsis;">${details}</td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (e) {
+            console.warn('loadAuditLogs error:', e);
+            body.innerHTML = `<tr><td colspan="6" class="small" style="color:#ef4444;">Error loading audit logs: ${safe(e?.message || e)}</td></tr>`;
+        }
     }
 
     function dashboardPathForBusinessType(typeRaw) {
@@ -302,6 +341,19 @@
                 $('mRole').value = b.businessType || 'retail';
                 $('mBusinessId').value = b.ownerId || '';
                 $('editModal').classList.add('show');
+            } else if (act === 'extend-sub') {
+                const b = state.businesses.find((x) => x.id === id) || {};
+                const currentTrialEnd = b.trialEndsAt ? (b.trialEndsAt.toDate ? b.trialEndsAt.toDate() : new Date(b.trialEndsAt)) : new Date();
+                const newTrialEnd = new Date(Math.max(Date.now(), currentTrialEnd.getTime()) + 30 * 24 * 60 * 60 * 1000);
+                await db.collection('businesses').doc(id).set({
+                    trialEndsAt: newTrialEnd,
+                    subscriptionPaid: true,
+                    lastPaymentAt: new Date(),
+                    status: 'active',
+                    updatedAt: new Date()
+                }, { merge: true });
+                toast(`Subscription for ${b.name || id} extended by 30 days!`);
+                await loadBusinesses();
             } else if (act === 'suspend-biz') {
                 const b = state.businesses.find((x) => x.id === id) || {};
                 const next = String(b.status || 'active') === 'active' ? 'suspended' : 'active';
@@ -490,6 +542,7 @@
         $('assignRole').onchange = updateAssignPreview;
         $('assignCreateBusinessName').oninput = updateAssignPreview;
         $('btnRefreshAll').onclick = async () => { await bootstrapData(); toast('Refreshed'); };
+        if ($('btnRefreshAuditLogs')) $('btnRefreshAuditLogs').onclick = loadAuditLogs;
         $('btnTheme').onclick = () => document.documentElement.classList.toggle('light');
         $('btnSuperBizSwitch').onclick = switchBusinessFromSuperAdmin;
         $('btnSwitchUserBusiness').onclick = switchTargetUserBusiness;
