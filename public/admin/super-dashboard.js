@@ -74,9 +74,11 @@
                     <td>${safe(u.businessId || '-')}</td>
                     <td>${formatDate(u.createdAt)}</td>
                     <td>
-                        <button class="btn alt" data-act="edit-user" data-id="${safe(u.id)}">Edit</button>
-                        <button class="btn alt" data-act="toggle-user" data-id="${safe(u.id)}">${u.disabled ? 'Enable' : 'Disable'}</button>
-                        <button class="btn danger" data-act="soft-del-user" data-id="${safe(u.id)}">Soft Delete</button>
+                        <div class="action-btn-group">
+                            <button class="btn btn-sm alt" data-act="edit-user" data-id="${safe(u.id)}">Edit</button>
+                            <button class="btn btn-sm alt" data-act="toggle-user" data-id="${safe(u.id)}">${u.disabled ? 'Enable' : 'Disable'}</button>
+                            <button class="btn btn-sm danger" data-act="soft-del-user" data-id="${safe(u.id)}">Soft Delete</button>
+                        </div>
                     </td>
                 </tr>
             `).join('');
@@ -102,10 +104,12 @@
                     <td><span style="font-weight:700; color:${b.status === 'suspended' ? '#ef4444' : '#10b981'};">${safe(b.status || 'active')}</span></td>
                     <td>${formatDate(b.createdAt)}</td>
                     <td>
-                        <button class="btn alt" data-act="edit-biz" data-id="${safe(b.id)}">Edit</button>
-                        <button class="btn alt" data-act="extend-sub" data-id="${safe(b.id)}">💳 Renew (+30 Days)</button>
-                        <button class="btn alt" data-act="suspend-biz" data-id="${safe(b.id)}">Suspend/Activate</button>
-                        <button class="btn danger" data-act="soft-del-biz" data-id="${safe(b.id)}">Soft Delete</button>
+                        <div class="action-btn-group">
+                            <button class="btn btn-sm alt" data-act="edit-biz" data-id="${safe(b.id)}">Edit</button>
+                            <button class="btn btn-sm alt" data-act="extend-sub" data-id="${safe(b.id)}">💳 Renew (+30 Days)</button>
+                            <button class="btn btn-sm alt" data-act="suspend-biz" data-id="${safe(b.id)}">Suspend/Activate</button>
+                            <button class="btn btn-sm danger" data-act="soft-del-biz" data-id="${safe(b.id)}">Soft Delete</button>
+                        </div>
                     </td>
                 </tr>
             `).join('');
