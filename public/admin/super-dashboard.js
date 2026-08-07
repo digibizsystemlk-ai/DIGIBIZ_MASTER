@@ -72,14 +72,15 @@
         } catch (_eLog) {}
 
         // Enforce Mandatory MFA Policy for SUPER_ADMIN & BUSINESS_OWNER
+        const sessionMfaVerified = sessionStorage.getItem(`mfaVerifiedSession_${user.uid}`) === 'true';
         const mfaFactors = (user.multiFactor && user.multiFactor.enrolledFactors) || [];
-        const isMfaEnrolled = mfaFactors.length > 0 || u.mfaEnrolled === true;
+        const isMfaEnrolled = (mfaFactors.length > 0 || u.mfaEnrolled === true) && sessionMfaVerified;
 
         if (!isMfaEnrolled) {
-            console.warn('[Security Directive] SUPER_ADMIN / OWNER MFA Not Enrolled. Blocking access.');
+            console.warn('[Security Directive] SUPER_ADMIN / OWNER MFA Session Unverified. Prompting 2FA Code.');
             const mfaModal = $('mfaEnforcementModal');
             if (mfaModal) mfaModal.style.display = 'flex';
-            toast('MFA Enrollment Required for Admin Accounts!');
+            toast('MFA 2FA Verification Required for Admin Access!');
             return false;
         }
 
@@ -747,18 +748,19 @@
                 }
                 $('mfaStatusMsg').textContent = 'Verifying MFA Token & Enrolling...';
                 if (state.user && state.user.uid) {
+                    sessionStorage.setItem(`mfaVerifiedSession_${state.user.uid}`, 'true');
                     await db.collection('users').doc(state.user.uid).set({
                         mfaEnrolled: true,
                         mfaEnrolledAt: new Date(),
                         mfaMethod: 'SMS_OTP'
                     }, { merge: true });
                 }
-                $('mfaStatusMsg').textContent = '✅ MFA Successfully Enrolled!';
-                toast('MFA Enrolled Successfully!');
+                $('mfaStatusMsg').textContent = '✅ MFA Verified & Session Authorized!';
+                toast('MFA Authorized Successfully!');
                 setTimeout(() => {
                     $('mfaEnforcementModal').style.display = 'none';
                     window.location.reload();
-                }, 1000);
+                }, 800);
             };
         }
         if ($('btnSignOutMfa')) {
