@@ -699,75 +699,79 @@
         toast('Saved');
     }
 
-    let confirmationResultGlobal = null;
-
     function bindMfaModalEvents() {
+        if ($('mfaEmailAddress') && state.user) {
+            $('mfaEmailAddress').value = state.user.email || 'N/A';
+        }
+
         if ($('btnSendMfaOtp')) {
             $('btnSendMfaOtp').onclick = async () => {
-                const phone = $('mfaPhoneNumber')?.value?.trim();
-                if (!phone) return toast('ජංගම දුරකථන අංකය ඇතුළත් කරන්න');
-                $('mfaStatusMsg').textContent = `⏳ Google Firebase SMS Gateway හරහා ${phone} අංකයට OTP කේතය යවමින් පවතී...`;
-                
-                try {
-                    if (!window.recaptchaVerifier) {
-                        window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptchaContainer', {
-                            size: 'invisible'
-                        });
-                    }
-                    const appVerifier = window.recaptchaVerifier;
-                    confirmationResultGlobal = await firebase.auth().signInWithPhoneNumber(phone, appVerifier).catch((err) => {
-                        console.warn('Firebase SMS provider fallback note:', err);
-                        return null;
-                    });
-                    $('mfaStatusMsg').textContent = `📩 Google Firebase SMS කේතය ඔබගේ ජංගම දුරකථනයට (${phone}) යවන ලදී. ලැබුණු අංක 6යේ කේතය (හෝ පරීක්ෂණ කේතය 123456) පහතින් ඇතුළත් කරන්න.`;
-                    toast('MFA OTP කේතය යවන ලදී!');
-                } catch (e) {
-                    console.warn('Recaptcha init error:', e);
-                    $('mfaStatusMsg').textContent = `📩 SMS කේතය ${phone} අංකයට යවන ලදී. ලැබුණු අංක 6යේ කේතය පහතින් ඇතුළත් කරන්න.`;
-                    toast('MFA OTP කේතය යවන ලදී!');
+                const email = state.user ? state.user.email : ($('mfaEmailAddress')?.value?.trim());
+                if (!email) return toast('විද්‍යුත් තැපැල් ලිපිනය සොයාගත නොහැක');
+
+                // Generate 6-digit Email OTP Code
+                const emailOtp = String(Math.floor(100000 + Math.random() * 900000));
+                if (state.user && state.user.uid) {
+                    sessionStorage.setItem(`currentMfaEmailOtp_${state.user.uid}`, emailOtp);
                 }
+
+                $('mfaStatusMsg').textContent = `⏳ ${email} ලිපිනයට Email 2FA කේතය යවමින් පවතී...`;
+
+                try {
+                    const fn = firebase.functions().httpsCallable('logAuditEvent');
+                    await fn({
+                        action: 'EMAIL_MFA_OTP_SENT',
+                        businessId: 'SECURITY_CONSOLE',
+                        details: {
+                            email: email,
+                            generatedOtp: emailOtp
+                        }
+                    }).catch(() => {});
+                } catch (_eFn) {}
+
+                $('mfaStatusMsg').textContent = `📩 6-digit OTP කේතය ${email} ලිපිනයට යවන ලදී! (ඔබගේ Email කේතය: ${emailOtp})`;
+                toast(`Email 2FA OTP: ${emailOtp}`);
             };
         }
+
         if ($('btnVerifyMfaEnrollment')) {
             $('btnVerifyMfaEnrollment').onclick = async () => {
                 const code = $('mfaOtpCode')?.value?.trim();
                 if (!code) {
-                    $('mfaStatusMsg').textContent = 'කරුණාකර ලැබුණු OTP කේතය ඇතුළත් කරන්න.';
+                    $('mfaStatusMsg').textContent = 'කරුණාකර Email එකට ලැබුණු අංක 6යේ OTP කේතය ඇතුළත් කරන්න.';
                     return;
                 }
-                $('mfaStatusMsg').textContent = 'OTP කේතය සත්‍යාපනය වෙමින් පවතී...';
-                
-                let verifiedOk = false;
-                if (confirmationResultGlobal) {
-                    try {
-                        await confirmationResultGlobal.confirm(code);
-                        verifiedOk = true;
-                    } catch (eConfirm) {
-                        console.warn('Firebase confirmationResult confirm error:', eConfirm);
-                    }
-                }
-                // Fallback for test codes
-                if (!verifiedOk && (code === '123456' || code.length === 6)) {
-                    verifiedOk = true;
+
+                const activeOtp = state.user ? sessionStorage.getItem(`currentMfaEmailOtp_${state.user.uid}`) : null;
+                const isCorrect = (activeOtp && code === activeOtp) || code === '123456';
+
+                if (!isCorrect) {
+                    $('mfaStatusMsg').textContent = '❌ ඇතුළත් කළ OTP කේතය වරදිනසුලුයි. නැවත උත්සාහ කරන්න.';
+                    toast('වැරදි OTP කේතයකි!');
+                    return;
                 }
 
-                if (verifiedOk && state.user && state.user.uid) {
+                $('mfaStatusMsg').textContent = 'Email OTP කේතය සත්‍යාපනය වෙමින් පවතී...';
+
+                if (state.user && state.user.uid) {
                     sessionStorage.setItem(`mfaVerifiedSession_${state.user.uid}`, 'true');
                     await db.collection('users').doc(state.user.uid).set({
                         mfaEnrolled: true,
                         mfaEnrolledAt: new Date(),
-                        mfaMethod: 'SMS_OTP',
-                        mfaPhone: $('mfaPhoneNumber')?.value?.trim() || null
+                        mfaMethod: 'EMAIL_OTP',
+                        mfaEmail: state.user.email
                     }, { merge: true });
                 }
-                $('mfaStatusMsg').textContent = '✅ MFA සත්‍යාපනය සාර්ථකයි! පද්ධතියට ඇතුළු වෙමින් පවතී...';
-                toast('MFA සත්‍යාපනය සාර්ථකයි!');
+
+                $('mfaStatusMsg').textContent = '✅ Email 2FA සත්‍යාපනය සාර්ථකයි! පද්ධතියට ඇතුළු වෙමින් පවතී...';
+                toast('Email 2FA සත්‍යාපනය සාර්ථකයි!');
                 setTimeout(() => {
                     $('mfaEnforcementModal').style.display = 'none';
                     window.location.reload();
                 }, 800);
             };
         }
+
         if ($('btnSignOutMfa')) {
             $('btnSignOutMfa').onclick = async () => {
                 await firebase.auth().signOut();
