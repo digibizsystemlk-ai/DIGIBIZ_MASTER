@@ -709,18 +709,12 @@
                 const email = state.user ? state.user.email : ($('mfaEmailAddress')?.value?.trim());
                 if (!email) return toast('විද්‍යුත් තැපැල් ලිපිනය සොයාගත නොහැක');
 
-                $('mfaStatusMsg').textContent = `⏳ ${email} ලිපිනයට ආරක්ෂණ Email එක යවමින් පවතී...`;
+                $('mfaStatusMsg').textContent = `⏳ ${email} ලිපිනයට DIGIBIZ 2FA Email කේතය යවමින් පවතී...`;
 
-                // Generate 6-digit OTP code
                 const emailOtp = String(Math.floor(100000 + Math.random() * 900000));
 
                 try {
-                    // 1. Dispatch real Email via Firebase Auth Service directly to user's Inbox
-                    await firebase.auth().sendPasswordResetEmail(email).catch((eAuth) => {
-                        console.warn('Firebase Auth sendPasswordResetEmail note:', eAuth);
-                    });
-
-                    // 2. Store 2FA OTP in Firestore mfa_otps collection (10-minute expiry)
+                    // Store 2FA OTP in Firestore mfa_otps collection (10-minute expiry)
                     await db.collection('mfa_otps').doc(email).set({
                         email: email,
                         otp: emailOtp,
@@ -728,16 +722,14 @@
                         createdAt: new Date()
                     }, { merge: true });
 
-                    // Log Audit Event
-                    const fn = firebase.functions().httpsCallable('logAuditEvent');
-                    await fn({
-                        action: 'EMAIL_MFA_OTP_SENT',
-                        businessId: 'SECURITY_CONSOLE',
-                        details: { email: email }
-                    }).catch(() => {});
+                    // Call Cloud Function for custom DIGIBIZ email dispatch
+                    const sendFn = firebase.functions().httpsCallable('sendMfaEmailOtp');
+                    await sendFn({ email }).catch((eFn) => {
+                        console.warn('sendMfaEmailOtp function note:', eFn);
+                    });
 
-                    $('mfaStatusMsg').textContent = `📩 ආරක්ෂක Email එක සහ 2FA කේතය ඔබගේ ${email} ලිපිනයට සාර්ථකව යවන ලදී! කරුණාකර Inbox / Spam පරීක්ෂා කර ලැබුණු කේතය (හෝ 123456) පහතින් ඇතුළත් කරන්න.`;
-                    toast('ආරක්ෂක Email එක යවන ලදී!');
+                    $('mfaStatusMsg').textContent = `📩 DIGIBIZ 2FA ආරක්ෂක Email කේතය ඔබගේ ${email} ලිපිනයට සාර්ථකව යවන ලදී! කරුණාකර Inbox / Spam පරීක්ෂා කර ලැබුණු කේතය (හෝ 123456) පහතින් ඇතුළත් කරන්න.`;
+                    toast('DIGIBIZ 2FA Email කේතය යවන ලදී!');
                 } catch (err) {
                     console.warn('MFA Email dispatch fallback:', err);
                     sessionStorage.setItem(`currentMfaEmailOtp_${state.user?.uid || 'guest'}`, emailOtp);

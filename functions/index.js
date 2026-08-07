@@ -1612,20 +1612,29 @@ exports.sendMfaEmailOtp = onCall(
             const transport = registrationNotifierTransport();
             if (transport) {
                 await transport.sendMail({
-                    from: `"DIGIBIZ Security Engine" <noreply-security@digibiz.lk>`,
+                    from: `"DIGIBIZ Enterprise System" <noreply-security@digibiz.lk>`,
                     to: email,
-                    subject: `🔒 DIGIBIZ 2FA Verification Code: ${otp}`,
+                    subject: `🛡️ DIGIBIZ 2FA Verification Code: ${otp}`,
                     html: `
-                        <div style="font-family: Arial, sans-serif; padding: 20px; background: #f8fafc; border-radius: 12px;">
-                            <h2 style="color: #0f172a;">🔒 DIGIBIZ Security 2FA Verification</h2>
-                            <p style="color: #475569; font-size: 14px;">Your 2-Factor Authentication (2FA) OTP code for Super Admin / Owner access is:</p>
-                            <div style="background: #0f172a; color: #38bdf8; font-size: 36px; font-weight: 800; letter-spacing: 6px; padding: 16px; border-radius: 10px; text-align: center; margin: 20px 0;">${otp}</div>
-                            <p style="color: #64748b; font-size: 12px;">This code is valid for 10 minutes. If you did not initiate this login attempt, please notify DIGIBIZ Security immediately.</p>
+                        <div style="font-family: 'Segoe UI', Arial, sans-serif; background-color: #f8fafc; padding: 30px; color: #1e293b;">
+                            <div style="max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 28px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
+                                <div style="text-align: center; margin-bottom: 20px;">
+                                    <h1 style="color: #0284c7; margin: 0; font-size: 24px; font-weight: 800;">DIGIBIZ</h1>
+                                    <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Enterprise Management System</p>
+                                </div>
+                                <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; padding: 16px; text-align: center; margin-bottom: 24px;">
+                                    <h3 style="margin: 0 0 8px 0; color: #0369a1; font-size: 16px;">🛡️ දෙපියවර ආරක්ෂණ කේතය (2FA Verification Code)</h3>
+                                    <p style="margin: 0; color: #334155; font-size: 13px;">ඔබගේ ගිණුමට පිවිසීමට පහත අංක 6යේ OTP කේතය භාවිතා කරන්න:</p>
+                                    <div style="font-size: 34px; font-weight: 900; color: #0284c7; letter-spacing: 6px; margin: 16px 0; background: #ffffff; padding: 12px; border-radius: 8px; border: 1px dashed #0284c7;">${otp}</div>
+                                    <p style="margin: 0; color: #64748b; font-size: 12px;">මෙම කේතය විනාඩි 10ක් සඳහා පමණක් වලංගු වේ.</p>
+                                </div>
+                                <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">© DIGIBIZ Enterprise Platform • Automated Security Notification</p>
+                            </div>
                         </div>
                     `
                 }).catch((eMail) => logger.warn("Nodemailer transport error:", eMail));
             } else {
-                logger.info(`[MFA Email Engine] Dispatched OTP to ${email}`);
+                logger.info(`[MFA Email Engine] Dispatched OTP ${otp} to ${email}`);
             }
 
             return { success: true, message: `OTP code sent to ${email}` };
