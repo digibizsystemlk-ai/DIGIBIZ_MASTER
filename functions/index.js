@@ -1612,7 +1612,7 @@ exports.sendMfaEmailOtp = onCall(
             const transport = registrationNotifierTransport();
             if (transport) {
                 await transport.sendMail({
-                    from: `"DIGIBIZ Security" <${process.env.DIGIBIZ_NOTIFY_EMAIL_USER || "security@digibiz.lk"}>`,
+                    from: `"DIGIBIZ Security Engine" <no-reply@digibiz-sys.firebaseapp.com>`,
                     to: email,
                     subject: `🔒 DIGIBIZ 2FA Verification Code: ${otp}`,
                     html: `
