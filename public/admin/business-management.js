@@ -773,8 +773,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Active Accounts Trend Chart Instance & Loader
+    // Helper to identify Super Admin accounts (which must be EXCLUDED from active tenant analytics)
+    function isSuperAdminAccount(u) {
+        if (!u) return false;
+        const role = String(u.role || '').toUpperCase();
+        const email = String(u.email || '').toLowerCase();
+        if (role === 'SUPER_ADMIN' || u.isSuperAdmin === true || u.superAdmin === true) return true;
+        if (email === 'digibizsystemlk@gmail.com' || email.includes('admin@digibiz')) return true;
+        return false;
+    }
+
+    // Active Accounts Trend Chart Instance & Global Active User Data Cache
     let activeTrendChartInstance = null;
+    const periodActiveUsersCache = {
+        onlineNow: [],
+        today: [],
+        yesterday: [],
+        week: [],
+        month: []
+    };
+    let currentModalUserList = [];
 
     async function loadActiveAccountsMetrics() {
         const onlineRightNowEl = document.getElementById('actOnlineRightNow');
@@ -814,34 +832,69 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const onlineNowCutoff = Date.now() - 15 * 60 * 1000; // active in last 15 mins
         const onlineUsersSet = new Set();
+        const userLatestActivityMap = new Map();
 
-        const addActivity = (userIdentifier, dateVal) => {
-            const dtKey = formatSldateKey(dateVal);
-            if (!dtKey || !userIdentifier) return;
-            if (dailyActiveUsersMap.has(dtKey)) {
-                dailyActiveUsersMap.get(dtKey).add(userIdentifier);
-            }
-            const dateObj = (dateVal && dateVal.toDate) ? dateVal.toDate() : (dateVal ? new Date(dateVal) : null);
-            if (dateObj && !isNaN(dateObj.getTime()) && dateObj.getTime() >= onlineNowCutoff) {
-                onlineUsersSet.add(userIdentifier);
-            }
-        };
+        const tenantUsersMap = new Map();
+        const tenantBusinessesMap = new Map();
 
+        // 1. Fetch businesses to map businessId -> business object
+        try {
+            const bizSnap = await window.db.collection('businesses').limit(1000).get();
+            bizSnap.docs.forEach((d) => tenantBusinessesMap.set(d.id, { id: d.id, ...(d.data() || {}) }));
+        } catch (_eBiz) {}
+
+        // 2. Fetch users and filter out SUPER_ADMIN accounts
         try {
             const usersSnap = await window.db.collection('users').limit(1000).get();
-            const usersList = usersSnap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
-
-            usersList.forEach((u) => {
-                const uid = u.id || u.email;
-                if (u.lastActiveAt) addActivity(uid, u.lastActiveAt);
-                if (u.lastLoginAt) addActivity(uid, u.lastLoginAt);
-                if (u.updatedAt) addActivity(uid, u.updatedAt);
-                if (u.createdAt) addActivity(uid, u.createdAt);
+            usersSnap.docs.forEach((d) => {
+                const u = { id: d.id, ...(d.data() || {}) };
+                if (!isSuperAdminAccount(u)) {
+                    tenantUsersMap.set(d.id, u);
+                    if (u.email) tenantUsersMap.set(String(u.email).toLowerCase(), u);
+                }
             });
         } catch (eUsers) {
             console.warn('[Active Metrics] users fetch warn:', eUsers);
         }
 
+        const addActivity = (userIdentifier, dateVal) => {
+            if (!userIdentifier) return;
+            const idKey = String(userIdentifier).toLowerCase();
+
+            // EXCLUDE SUPER ADMIN LOGINS FROM ALL METRICS
+            const userObj = tenantUsersMap.get(idKey) || tenantUsersMap.get(userIdentifier);
+            if (userObj && isSuperAdminAccount(userObj)) return;
+            if (idKey === 'digibizsystemlk@gmail.com' || idKey.includes('super_admin')) return;
+
+            const dtKey = formatSldateKey(dateVal);
+            if (!dtKey) return;
+
+            if (dailyActiveUsersMap.has(dtKey)) {
+                dailyActiveUsersMap.get(dtKey).add(idKey);
+            }
+
+            const dateObj = (dateVal && dateVal.toDate) ? dateVal.toDate() : (dateVal ? new Date(dateVal) : null);
+            if (dateObj && !isNaN(dateObj.getTime())) {
+                const existingLast = userLatestActivityMap.get(idKey);
+                if (!existingLast || dateObj.getTime() > existingLast.getTime()) {
+                    userLatestActivityMap.set(idKey, dateObj);
+                }
+                if (dateObj.getTime() >= onlineNowCutoff) {
+                    onlineUsersSet.add(idKey);
+                }
+            }
+        };
+
+        // Scan users activities
+        tenantUsersMap.forEach((u, key) => {
+            const uid = u.id || u.email;
+            if (u.lastActiveAt) addActivity(uid, u.lastActiveAt);
+            if (u.lastLoginAt) addActivity(uid, u.lastLoginAt);
+            if (u.updatedAt) addActivity(uid, u.updatedAt);
+            if (u.createdAt) addActivity(uid, u.createdAt);
+        });
+
+        // Scan audit_logs activities
         try {
             const auditSnap = await window.db.collection('audit_logs').limit(1000).get();
             auditSnap.docs.forEach((doc) => {
@@ -870,11 +923,45 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        if (onlineRightNowEl) onlineRightNowEl.textContent = String(onlineUsersSet.size);
-        todayEl.textContent = String(todayUsersSet.size);
-        yestEl.textContent = String(yestUsersSet.size);
-        weekEl.textContent = String(weekUsersSet.size);
-        monthEl.textContent = String(monthUsersSet.size);
+        // Build active user detail lists for modal popups
+        const buildUserList = (idSet) => {
+            const list = [];
+            const processedSet = new Set();
+            idSet.forEach((idKey) => {
+                const u = tenantUsersMap.get(idKey) || tenantUsersMap.get(String(idKey).toLowerCase()) || {};
+                const uid = u.id || idKey;
+                if (processedSet.has(uid)) return;
+                processedSet.add(uid);
+
+                const bizId = u.businessId || u.id;
+                const biz = tenantBusinessesMap.get(bizId) || tenantBusinessesMap.get(u.businessId) || {};
+                const lastDt = userLatestActivityMap.get(idKey) || userLatestActivityMap.get(uid);
+
+                list.push({
+                    uid: uid,
+                    email: u.email || idKey,
+                    ownerName: u.displayName || u.name || u.ownerName || biz.ownerName || 'N/A',
+                    businessName: biz.name || u.businessName || 'Unnamed Business',
+                    businessType: formatBusinessTypeName(biz.businessType || u.businessType || 'general'),
+                    phone: u.phoneNumber || u.phone || biz.phone || 'N/A',
+                    lastActivityStr: formatTimestamp(lastDt || u.lastActiveAt || u.lastLoginAt || u.updatedAt),
+                    lastActivityTime: lastDt ? lastDt.getTime() : 0
+                });
+            });
+            return list.sort((a, b) => b.lastActivityTime - a.lastActivityTime);
+        };
+
+        periodActiveUsersCache.onlineNow = buildUserList(onlineUsersSet);
+        periodActiveUsersCache.today = buildUserList(todayUsersSet);
+        periodActiveUsersCache.yesterday = buildUserList(yestUsersSet);
+        periodActiveUsersCache.week = buildUserList(weekUsersSet);
+        periodActiveUsersCache.month = buildUserList(monthUsersSet);
+
+        if (onlineRightNowEl) onlineRightNowEl.textContent = String(periodActiveUsersCache.onlineNow.length);
+        todayEl.textContent = String(periodActiveUsersCache.today.length);
+        yestEl.textContent = String(periodActiveUsersCache.yesterday.length);
+        weekEl.textContent = String(periodActiveUsersCache.week.length);
+        monthEl.textContent = String(periodActiveUsersCache.month.length);
 
         const chartLabels = last30Days.map((d) => {
             const parts = d.split('-');
@@ -893,7 +980,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 data: {
                     labels: chartLabels,
                     datasets: [{
-                        label: 'Daily Unique Active Accounts',
+                        label: 'Client Daily Active Accounts',
                         data: chartData,
                         borderColor: '#0ea5e9',
                         backgroundColor: 'rgba(14, 165, 233, 0.12)',
@@ -912,7 +999,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         legend: { display: false },
                         tooltip: {
                             callbacks: {
-                                label: (ctx) => ` ${ctx.parsed.y} Unique Active Account(s)`
+                                label: (ctx) => ` ${ctx.parsed.y} Unique Active Client Account(s)`
                             }
                         }
                     },
@@ -923,6 +1010,139 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         }
+    }
+
+    // Modal popup helper for displaying active user lists
+    function openActiveUsersModal(title, subtitle, userList) {
+        const modal = document.getElementById('activeUsersModal');
+        const titleEl = document.getElementById('activeModalTitle');
+        const subTitleEl = document.getElementById('activeModalSubtitle');
+        const searchInput = document.getElementById('activeModalSearch');
+        if (!modal) return;
+
+        titleEl.textContent = title;
+        subTitleEl.textContent = subtitle;
+        currentModalUserList = userList || [];
+        if (searchInput) searchInput.value = '';
+
+        renderActiveModalUsersList(currentModalUserList);
+        modal.style.display = 'flex';
+    }
+
+    function renderActiveModalUsersList(list) {
+        const container = document.getElementById('activeModalUsersContainer');
+        const countBadge = document.getElementById('activeModalCountBadge');
+        if (!container) return;
+
+        if (countBadge) countBadge.textContent = `${list.length} Client Account(s)`;
+
+        if (!list || list.length === 0) {
+            container.innerHTML = `
+                <div style="background:#ffffff; padding:32px; text-align:center; border-radius:14px; border:1px solid #cbd5e1;">
+                    <div style="font-size:38px; margin-bottom:8px;">📭</div>
+                    <div style="font-size:15px; font-weight:700; color:#475569;">මෙම කාල සීමාව තුළ සක්‍රීය පාරිභෝගික ගිණුම් නැත (No Active Client Accounts)</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px;">No client user logins or transaction activities recorded for this period.</div>
+                </div>
+            `;
+            return;
+        }
+
+        const safeStr = (val) => {
+            if (!val) return '';
+            return String(val).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        };
+
+        container.innerHTML = list.map((item) => `
+            <div class="active-user-item-card" style="background:#ffffff; border-radius:14px; padding:16px 20px; border:1px solid #e2e8f0; box-shadow:0 2px 8px rgba(0,0,0,0.04); display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
+                <div style="flex-grow:1; min-width:240px;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                        <h4 style="margin:0; font-size:16px; font-weight:800; color:#0f172a;">🏢 ${safeStr(item.businessName)}</h4>
+                        <span style="background:#e0f2fe; color:#0284c7; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px;">${safeStr(item.businessType)}</span>
+                    </div>
+                    <div style="font-size:13px; font-weight:600; color:#334155; margin-bottom:4px;">
+                        👤 Owner: <strong>${safeStr(item.ownerName)}</strong> &nbsp;|&nbsp; 📧 Email: <a href="mailto:${safeStr(item.email)}" style="color:#0284c7; text-decoration:none; font-weight:700;">${safeStr(item.email)}</a>
+                    </div>
+                    <div style="font-size:12px; color:#64748b;">
+                        📞 Phone: <strong>${safeStr(item.phone)}</strong> &nbsp;|&nbsp; 🆔 UID: <code style="font-size:11px; background:#f1f5f9; padding:2px 6px; border-radius:4px;">${safeStr(item.uid)}</code>
+                    </div>
+                </div>
+                <div style="text-align:right; min-width:180px;">
+                    <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">⏱️ Last Activity</div>
+                    <div style="font-size:12px; font-weight:700; color:#10b981; margin-top:2px;">${safeStr(item.lastActivityStr)}</div>
+                    <button class="inspect-user-btn" data-email="${safeStr(item.email)}" style="margin-top:8px; background:#0284c7; color:#ffffff; border:none; padding:7px 16px; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer;" type="button">🔍 Inspect Profile</button>
+                </div>
+            </div>
+        `).join('');
+
+        container.querySelectorAll('.inspect-user-btn').forEach((btn) => {
+            btn.onclick = () => {
+                const targetEmail = btn.dataset.email;
+                const modal = document.getElementById('activeUsersModal');
+                if (modal) modal.style.display = 'none';
+                if (emailSearch) {
+                    emailSearch.value = targetEmail;
+                    const searchBtn = document.getElementById('search-btn');
+                    if (searchBtn) searchBtn.click();
+                }
+            };
+        });
+    }
+
+    // Modal search listener
+    const activeModalSearch = document.getElementById('activeModalSearch');
+    if (activeModalSearch) {
+        activeModalSearch.addEventListener('input', () => {
+            const q = activeModalSearch.value.trim().toLowerCase();
+            if (!q) {
+                renderActiveModalUsersList(currentModalUserList);
+                return;
+            }
+            const filtered = currentModalUserList.filter((item) =>
+                item.email.toLowerCase().includes(q) ||
+                item.ownerName.toLowerCase().includes(q) ||
+                item.businessName.toLowerCase().includes(q) ||
+                item.phone.toLowerCase().includes(q) ||
+                item.uid.toLowerCase().includes(q)
+            );
+            renderActiveModalUsersList(filtered);
+        });
+    }
+
+    // Modal close listeners
+    const btnCloseActiveModal = document.getElementById('btnCloseActiveModal');
+    if (btnCloseActiveModal) {
+        btnCloseActiveModal.onclick = () => {
+            const modal = document.getElementById('activeUsersModal');
+            if (modal) modal.style.display = 'none';
+        };
+    }
+    const activeUsersModal = document.getElementById('activeUsersModal');
+    if (activeUsersModal) {
+        activeUsersModal.onclick = (e) => {
+            if (e.target === activeUsersModal) activeUsersModal.style.display = 'none';
+        };
+    }
+
+    // Bind card click listeners
+    const cardOnlineRightNow = document.getElementById('cardOnlineRightNow');
+    if (cardOnlineRightNow) {
+        cardOnlineRightNow.onclick = () => openActiveUsersModal('🟢 Online Now (මෙම මොහොතේ සක්‍රීය පරිශීලකයින්)', 'Client accounts active in system within the last 15 minutes', periodActiveUsersCache.onlineNow);
+    }
+    const cardToday = document.getElementById('cardToday');
+    if (cardToday) {
+        cardToday.onclick = () => openActiveUsersModal('🌞 Today Active Client Accounts (අද සක්‍රීය වූ ගිණුම්)', 'Unique client accounts active today', periodActiveUsersCache.today);
+    }
+    const cardYesterday = document.getElementById('cardYesterday');
+    if (cardYesterday) {
+        cardYesterday.onclick = () => openActiveUsersModal('🌙 Yesterday Active Client Accounts (ඊයේ සක්‍රීය වූ ගිණුම්)', 'Unique client accounts active yesterday', periodActiveUsersCache.yesterday);
+    }
+    const cardWeek = document.getElementById('cardWeek');
+    if (cardWeek) {
+        cardWeek.onclick = () => openActiveUsersModal('📅 This Week Active Client Accounts (මේ සතියේ සක්‍රීය වූ ගිණුම්)', 'Unique client accounts active this week', periodActiveUsersCache.week);
+    }
+    const cardMonth = document.getElementById('cardMonth');
+    if (cardMonth) {
+        cardMonth.onclick = () => openActiveUsersModal('🗓️ This Month Active Client Accounts (මේ මාසයේ සක්‍රීය වූ ගිණුම්)', 'Unique client accounts active this month', periodActiveUsersCache.month);
     }
 
     // Bind Search Bar visibility behavior: hide chart when search query is entered
