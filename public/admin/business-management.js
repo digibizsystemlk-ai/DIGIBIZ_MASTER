@@ -837,9 +837,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const tenantUsersMap = new Map();
         const tenantBusinessesMap = new Map();
 
-        // 1. Fetch businesses to map businessId -> business object
+        const tenantSubscriptionsMap = new Map();
+        const tenantSettingsMap = new Map();
+
+        // 1. Fetch businesses, subscriptions & settings in parallel
         try {
-            const bizSnap = await window.db.collection('businesses').limit(1000).get();
+            const [bizSnap, subSnap, settingsSnap] = await Promise.all([
+                window.db.collection('businesses').limit(1000).get().catch(() => ({ docs: [] })),
+                window.db.collection('subscriptions').limit(1000).get().catch(() => ({ docs: [] })),
+                window.db.collection('settings').limit(1000).get().catch(() => ({ docs: [] }))
+            ]);
             bizSnap.docs.forEach((d) => {
                 const b = { id: d.id, ...(d.data() || {}) };
                 tenantBusinessesMap.set(d.id, b);
@@ -848,6 +855,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (b.ownerUid) tenantBusinessesMap.set(String(b.ownerUid).toLowerCase(), b);
                 if (b.ownerEmail) tenantBusinessesMap.set(String(b.ownerEmail).toLowerCase(), b);
                 if (b.email) tenantBusinessesMap.set(String(b.email).toLowerCase(), b);
+            });
+            subSnap.docs.forEach((d) => {
+                tenantSubscriptionsMap.set(d.id, d.data() || {});
+                tenantSubscriptionsMap.set(d.id.toLowerCase(), d.data() || {});
+            });
+            settingsSnap.docs.forEach((d) => {
+                tenantSettingsMap.set(d.id, d.data() || {});
+                tenantSettingsMap.set(d.id.toLowerCase(), d.data() || {});
             });
         } catch (_eBiz) {}
 
@@ -979,13 +994,43 @@ document.addEventListener('DOMContentLoaded', () => {
             const phone = (userObj && (userObj.phoneNumber || userObj.phone)) || (bizObj && (bizObj.phone || bizObj.contactPhone)) || 'N/A';
             const uid = (userObj && userObj.id) || (bizObj && (bizObj.ownerUid || bizObj.id)) || strKey;
 
+            // Extract Plan & Subscription Status
+            const bizId = (bizObj && bizObj.id) || (userObj && userObj.businessId) || uid;
+            const subObj = tenantSubscriptionsMap.get(bizId) || tenantSubscriptionsMap.get(String(bizId).toLowerCase()) || {};
+            const settObj = tenantSettingsMap.get(bizId) || tenantSettingsMap.get(String(bizId).toLowerCase()) || {};
+            const subInfo = settObj.subscription || subObj || {};
+
+            const isPro = Boolean(
+                (subObj.plan && (subObj.plan === 'PRO' || subObj.plan === 'PAID' || subObj.plan === 'ENTERPRISE')) ||
+                (subInfo.plan && (subInfo.plan === 'PRO' || subInfo.plan === 'PAID' || subInfo.plan === 'ENTERPRISE')) ||
+                (userObj && (userObj.isPro === true || userObj.plan === 'PRO' || userObj.subscriptionPlan === 'PRO')) ||
+                (bizObj && (bizObj.isPro === true || bizObj.plan === 'PRO' || bizObj.subscriptionPlan === 'PRO'))
+            );
+
+            // Calculate 7-day access frequency for High-Intent Lead identification
+            let active7DayCount = 0;
+            last30Days.slice(-7).forEach((dtKey) => {
+                const userSet = dailyActiveUsersMap.get(dtKey);
+                if (userSet && (userSet.has(strKey) || userSet.has(lowerKey) || userSet.has(uid) || userSet.has(email.toLowerCase()))) {
+                    active7DayCount++;
+                }
+            });
+
+            // High Conversion Intent: Free user visiting 2 or more days in the last week
+            const isHighIntent = !isPro && (active7DayCount >= 2 || (userObj && Array.isArray(userObj.activeDates) && userObj.activeDates.length >= 2));
+
             return {
                 uid,
                 email,
                 ownerName,
                 businessName,
                 businessType,
-                phone
+                phone,
+                bizId,
+                isPro,
+                planName: isPro ? 'PRO ACTIVE' : (subInfo.plan || 'FREE / TRIAL'),
+                active7DayCount,
+                isHighIntent
             };
         };
 
@@ -1022,11 +1067,25 @@ document.addEventListener('DOMContentLoaded', () => {
         periodActiveUsersCache.week = buildUserList(weekUsersSet);
         periodActiveUsersCache.month = buildUserList(monthUsersSet);
 
+        // Subscription & Conversion Lead Intelligence caches
+        const monthList = periodActiveUsersCache.month;
+        periodActiveUsersCache.paidPro = monthList.filter(u => u.isPro);
+        periodActiveUsersCache.freeTrial = monthList.filter(u => !u.isPro);
+        periodActiveUsersCache.highIntent = monthList.filter(u => u.isHighIntent);
+
         if (onlineRightNowEl) onlineRightNowEl.textContent = String(periodActiveUsersCache.onlineNow.length);
         todayEl.textContent = String(periodActiveUsersCache.today.length);
         yestEl.textContent = String(periodActiveUsersCache.yesterday.length);
         weekEl.textContent = String(periodActiveUsersCache.week.length);
         monthEl.textContent = String(periodActiveUsersCache.month.length);
+
+        const actPaidProCountEl = document.getElementById('actPaidProCount');
+        const actFreeTrialCountEl = document.getElementById('actFreeTrialCount');
+        const actHighIntentCountEl = document.getElementById('actHighIntentCount');
+
+        if (actPaidProCountEl) actPaidProCountEl.textContent = String(periodActiveUsersCache.paidPro.length);
+        if (actFreeTrialCountEl) actFreeTrialCountEl.textContent = String(periodActiveUsersCache.freeTrial.length);
+        if (actHighIntentCountEl) actHighIntentCountEl.textContent = String(periodActiveUsersCache.highIntent.length);
 
         const chartLabels = last30Days.map((d) => {
             const parts = d.split('-');
@@ -1105,8 +1164,8 @@ document.addEventListener('DOMContentLoaded', () => {
             container.innerHTML = `
                 <div style="background:#ffffff; padding:32px; text-align:center; border-radius:14px; border:1px solid #cbd5e1;">
                     <div style="font-size:38px; margin-bottom:8px;">📭</div>
-                    <div style="font-size:15px; font-weight:700; color:#475569;">මෙම කාල සීමාව තුළ සක්‍රීය පාරිභෝගික ගිණුම් නැත (No Active Client Accounts)</div>
-                    <div style="font-size:12px; color:#94a3b8; margin-top:4px;">No client user logins or transaction activities recorded for this period.</div>
+                    <div style="font-size:15px; font-weight:700; color:#475569;">මෙම කාණ්ඩය තුළ ගිණුම් නැත (No Matching Accounts)</div>
+                    <div style="font-size:12px; color:#94a3b8; margin-top:4px;">No client user records match this category.</div>
                 </div>
             `;
             return;
@@ -1117,27 +1176,55 @@ document.addEventListener('DOMContentLoaded', () => {
             return String(val).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         };
 
-        container.innerHTML = list.map((item) => `
-            <div class="active-user-item-card" style="background:#ffffff; border-radius:14px; padding:16px 20px; border:1px solid #e2e8f0; box-shadow:0 2px 8px rgba(0,0,0,0.04); display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
-                <div style="flex-grow:1; min-width:240px;">
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-                        <h4 style="margin:0; font-size:16px; font-weight:800; color:#0f172a;">🏢 ${safeStr(item.businessName)}</h4>
-                        <span style="background:#e0f2fe; color:#0284c7; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px;">${safeStr(item.businessType)}</span>
+        container.innerHTML = list.map((item) => {
+            let planBadgeHtml = '';
+            if (item.isPro) {
+                planBadgeHtml = `<span style="background:#dcfce7; color:#15803d; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; border:1px solid #86efac;">💎 PRO ACTIVE</span>`;
+            } else if (item.isHighIntent) {
+                planBadgeHtml = `<span style="background:#fee2e2; color:#dc2626; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; border:1px solid #fca5a5;">🔥 HIGH-INTENT LEAD (${item.active7DayCount}/7 Days Active)</span>`;
+            } else {
+                planBadgeHtml = `<span style="background:#fef3c7; color:#b45309; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; border:1px solid #fde68a;">🎁 FREE / TRIAL</span>`;
+            }
+
+            let hotLeadNoticeHtml = '';
+            if (item.isHighIntent) {
+                hotLeadNoticeHtml = `
+                    <div style="background:#fff7ed; border:1px solid #ffedd5; color:#c2410c; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:600; margin-top:10px; display:flex; align-items:center; gap:6px;">
+                        <span>💡</span>
+                        <span><strong>Super Admin Lead Opportunity:</strong> මෙම පාරිභෝගිකයා නොමිලේ පද්ධතිය දිනපතා සක්‍රීයව භාවිත කරයි (${item.active7DayCount}/7 Days). ඍජුවම කතා කර Pro Plan එක ලබාදීමට වඩාත්ම සුදුසු අයෙකි.</span>
                     </div>
-                    <div style="font-size:13px; font-weight:600; color:#334155; margin-bottom:4px;">
-                        👤 Owner: <strong>${safeStr(item.ownerName)}</strong> &nbsp;|&nbsp; 📧 Email: <a href="mailto:${safeStr(item.email)}" style="color:#0284c7; text-decoration:none; font-weight:700;">${safeStr(item.email)}</a>
+                `;
+            }
+
+            return `
+                <div class="active-user-item-card" style="background:#ffffff; border-radius:14px; padding:18px 20px; border:${item.isHighIntent ? '2px solid #f97316' : '1px solid #e2e8f0'}; box-shadow:0 2px 10px rgba(0,0,0,0.05); display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
+                        <div style="flex-grow:1; min-width:240px;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                                <h4 style="margin:0; font-size:16px; font-weight:800; color:#0f172a;">🏢 ${safeStr(item.businessName)}</h4>
+                                <span style="background:#e0f2fe; color:#0284c7; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px;">${safeStr(item.businessType)}</span>
+                                ${planBadgeHtml}
+                            </div>
+                            <div style="font-size:13px; font-weight:600; color:#334155; margin-bottom:4px;">
+                                👤 Owner: <strong>${safeStr(item.ownerName)}</strong> &nbsp;|&nbsp; 📧 Email: <a href="mailto:${safeStr(item.email)}" style="color:#0284c7; text-decoration:none; font-weight:700;">${safeStr(item.email)}</a>
+                            </div>
+                            <div style="font-size:12px; color:#64748b;">
+                                📞 Phone: <a href="tel:${safeStr(item.phone)}" style="color:#0f172a; font-weight:700; text-decoration:none;">${safeStr(item.phone)}</a> &nbsp;|&nbsp; 🆔 UID: <code style="font-size:11px; background:#f1f5f9; padding:2px 6px; border-radius:4px;">${safeStr(item.uid)}</code>
+                            </div>
+                        </div>
+                        <div style="text-align:right; min-width:180px;">
+                            <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">⏱️ Last Activity</div>
+                            <div style="font-size:12px; font-weight:700; color:#10b981; margin-top:2px;">${safeStr(item.lastActivityStr)}</div>
+                            <div style="display:flex; gap:6px; justify-content:flex-end; margin-top:8px;">
+                                <button class="inspect-user-btn" data-email="${safeStr(item.email)}" style="background:#0284c7; color:#ffffff; border:none; padding:7px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;" type="button">🔍 Inspect</button>
+                                <button class="quick-pro-btn" data-email="${safeStr(item.email)}" style="background:#10b981; color:#ffffff; border:none; padding:7px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;" type="button">⭐ Give Pro</button>
+                            </div>
+                        </div>
                     </div>
-                    <div style="font-size:12px; color:#64748b;">
-                        📞 Phone: <strong>${safeStr(item.phone)}</strong> &nbsp;|&nbsp; 🆔 UID: <code style="font-size:11px; background:#f1f5f9; padding:2px 6px; border-radius:4px;">${safeStr(item.uid)}</code>
-                    </div>
+                    ${hotLeadNoticeHtml}
                 </div>
-                <div style="text-align:right; min-width:180px;">
-                    <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">⏱️ Last Activity</div>
-                    <div style="font-size:12px; font-weight:700; color:#10b981; margin-top:2px;">${safeStr(item.lastActivityStr)}</div>
-                    <button class="inspect-user-btn" data-email="${safeStr(item.email)}" style="margin-top:8px; background:#0284c7; color:#ffffff; border:none; padding:7px 16px; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer;" type="button">🔍 Inspect Profile</button>
-                </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
 
         container.querySelectorAll('.inspect-user-btn').forEach((btn) => {
             btn.onclick = () => {
@@ -1148,6 +1235,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     emailSearch.value = targetEmail;
                     const searchBtn = document.getElementById('search-btn');
                     if (searchBtn) searchBtn.click();
+                }
+            };
+        });
+
+        container.querySelectorAll('.quick-pro-btn').forEach((btn) => {
+            btn.onclick = async () => {
+                const targetEmail = btn.dataset.email;
+                if (!confirm(`⭐ Grant 30 Days Pro Plan to "${targetEmail}"?`)) return;
+                const modal = document.getElementById('activeUsersModal');
+                if (modal) modal.style.display = 'none';
+                if (emailSearch) {
+                    emailSearch.value = targetEmail;
+                    const searchBtn = document.getElementById('search-btn');
+                    if (searchBtn) await searchBtn.click();
+                    const extendProBtn = document.getElementById('extend-pro-btn');
+                    if (extendProBtn) extendProBtn.click();
                 }
             };
         });
@@ -1188,7 +1291,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // Bind card click listeners
+    // Bind card click listeners for basic periods
     const cardOnlineRightNow = document.getElementById('cardOnlineRightNow');
     if (cardOnlineRightNow) {
         cardOnlineRightNow.onclick = () => openActiveUsersModal('🟢 Online Now (මෙම මොහොතේ සක්‍රීය පරිශීලකයින්)', 'Client accounts active in system within the last 15 minutes', periodActiveUsersCache.onlineNow);
@@ -1208,6 +1311,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const cardMonth = document.getElementById('cardMonth');
     if (cardMonth) {
         cardMonth.onclick = () => openActiveUsersModal('🗓️ This Month Active Client Accounts (මේ මාසයේ සක්‍රීය වූ ගිණුම්)', 'Unique client accounts active this month', periodActiveUsersCache.month);
+    }
+
+    // Bind card click listeners for Subscription & Conversion Intelligence
+    const cardPaidPro = document.getElementById('cardPaidPro');
+    if (cardPaidPro) {
+        cardPaidPro.onclick = () => openActiveUsersModal('💎 Active Paid / Pro Clients (ගෙවන ලද සක්‍රීය ගිණුම්)', 'List of active client businesses currently on Pro subscription plans', periodActiveUsersCache.paidPro);
+    }
+    const cardFreeTrial = document.getElementById('cardFreeTrial');
+    if (cardFreeTrial) {
+        cardFreeTrial.onclick = () => openActiveUsersModal('🎁 Active Free / Trial Clients (නොමිලේ සක්‍රීය ගිණුම්)', 'List of active client businesses currently on Free or Trial plans', periodActiveUsersCache.freeTrial);
+    }
+    const cardHighIntentLeads = document.getElementById('cardHighIntentLeads');
+    if (cardHighIntentLeads) {
+        cardHighIntentLeads.onclick = () => openActiveUsersModal('🔥 High Conversion Potential Leads (Pro සඳහා සූදානම් නොමිලේ ගිණුම්)', 'Daily active free users getting high value - contact them to offer Pro upgrade!', periodActiveUsersCache.highIntent);
     }
 
     // Bind Search Bar visibility behavior: hide chart when search query is entered

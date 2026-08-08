@@ -55,16 +55,16 @@
         .card-header h3 i{margin-right:10px;color:#10b981;}
         .card-body{padding:0;overflow-x:auto;}
         
-        .data-table{width:100%;border-collapse:collapse;}
-        .data-table th,.data-table td{padding:14px 18px;text-align:left;border-bottom:1px solid #e9ecef;font-size:13px;}
-        .data-table th{background:#fafbfc;font-weight:600;}
+        .data-table{width:100%;border-collapse:collapse;table-layout:auto;}
+        .data-table th,.data-table td{padding:10px 8px;text-align:left;border-bottom:1px solid #e9ecef;font-size:12.5px;}
+        .data-table th{background:#fafbfc;font-weight:600;white-space:nowrap;}
         .data-table tr:hover{background:#f8f9fa;}
         
         .low-stock{color:#f59e0b;font-weight:600;}
         .out-stock{color:#ef4444;font-weight:600;}
         .in-stock{color:#10b981;font-weight:600;}
         
-        .badge{padding:4px 10px;border-radius:30px;font-size:11px;}
+        .badge{padding:3px 8px;border-radius:30px;font-size:11px;white-space:nowrap;}
         .badge-low{background:#fed7aa;color:#f59e0b;}
         .badge-out{background:#fee2e2;color:#ef4444;}
         .badge-in{background:#d1fae5;color:#10b981;}
@@ -80,6 +80,15 @@
         
         footer{text-align:center;padding:25px;color:#adb5bd;font-size:12px;border-top:1px solid #e9ecef;margin-top:25px;}
         
+        @media (max-width:1400px){
+            .main-content{padding:20px 22px;}
+            .data-table th,.data-table td{padding:8px 6px;font-size:12px;}
+        }
+        @media (max-width:1200px){
+            .stats-row{grid-template-columns:repeat(2,1fr);gap:12px;}
+            .filter-bar{gap:10px;padding:12px 15px;}
+            .data-table th,.data-table td{padding:7px 5px;font-size:11.5px;}
+        }
         @media (max-width:768px){.stats-row{grid-template-columns:repeat(2,1fr);}}
     </style>
 </head>
@@ -122,7 +131,20 @@
             <div class="card-body">
                 <table class="data-table" id="productTable">
                     <thead>
-                        <tr><th>Code</th><th>Brand</th><th>Model</th><th>Name</th><th>Category</th><th>Price</th><th>Cost</th><th>Stock</th><th>Value</th><th>Restock Level</th><th>Status</th><th>Actions</th></tr>
+                        <tr>
+                            <th>Code</th>
+                            <th>Brand</th>
+                            <th>Model</th>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th style="text-align:right;">Price</th>
+                            <th style="text-align:right;">Cost</th>
+                            <th style="text-align:center;">Stock</th>
+                            <th style="text-align:right;">Value</th>
+                            <th style="text-align:center;">Restock Level</th>
+                            <th style="text-align:center;">Status</th>
+                            <th style="text-align:center;">Actions</th>
+                        </tr>
                     </thead>
                     <tbody id="productList">
                         <tr><td colspan="12" style="text-align:center;padding:40px;">Loading products...</td></tr>
@@ -273,6 +295,45 @@
             applyFilters();
         }
         
+        function getRestockVal(p) {
+            if (p.restockLevel !== undefined && p.restockLevel !== null && p.restockLevel !== '') return Number(p.restockLevel);
+            if (p.minStockLevel !== undefined && p.minStockLevel !== null && p.minStockLevel !== '') return Number(p.minStockLevel);
+            if (p.reorderLevel !== undefined && p.reorderLevel !== null && p.reorderLevel !== '') return Number(p.reorderLevel);
+            return 10;
+        }
+
+        function getEffectiveCost(p) {
+            if (Number(p.cost) > 0) return Number(p.cost);
+            if (Number(p.costPrice) > 0) return Number(p.costPrice);
+            if (Number(p.buyPrice) > 0) return Number(p.buyPrice);
+            if (Number(p.unitPrice) > 0) return Number(p.unitPrice);
+            return Number(p.price || 0);
+        }
+
+        window.quickUpdateRestockLevel = async (id, val) => {
+            const numVal = (val !== '' && !isNaN(val)) ? Number(val) : 10;
+            try {
+                await db.collection('products').doc(currentBusinessId).collection('list').doc(id).set({
+                    restockLevel: numVal,
+                    minStockLevel: numVal,
+                    reorderLevel: numVal,
+                    updatedAt: new Date()
+                }, { merge: true });
+
+                const p = products.find(prod => prod.id === id);
+                if (p) {
+                    p.restockLevel = numVal;
+                    p.minStockLevel = numVal;
+                    p.reorderLevel = numVal;
+                }
+                applyFilters();
+                showToast('Restock level updated successfully!');
+            } catch(e) {
+                console.error('Failed to update restock level:', e);
+                showToast('Failed to update restock level: ' + e.message, true);
+            }
+        };
+
         function applyFilters(){
             let filtered = [...products];
             const search = document.getElementById('searchInput').value.toLowerCase();
@@ -281,7 +342,7 @@
             
             if(search) filtered = filtered.filter(p => p.name.toLowerCase().includes(search) || p.code?.toLowerCase().includes(search) || p.barcode?.includes(search) || p.brand?.toLowerCase().includes(search) || p.model?.toLowerCase().includes(search));
             if(category !== 'all') filtered = filtered.filter(p => p.category === category);
-            if(stockFilter === 'low') filtered = filtered.filter(p => p.stock > 0 && p.stock < (p.restockLevel !== undefined && p.restockLevel !== null && p.restockLevel !== '' ? Number(p.restockLevel) : 10));
+            if(stockFilter === 'low') filtered = filtered.filter(p => p.stock > 0 && p.stock < getRestockVal(p));
             if(stockFilter === 'out') filtered = filtered.filter(p => p.stock === 0);
             if(stockFilter === 'in') filtered = filtered.filter(p => p.stock > 0);
             
@@ -298,7 +359,8 @@
             }
             
             tbody.innerHTML = productsList.map(p => {
-                const restockLevel = p.restockLevel !== undefined && p.restockLevel !== null && p.restockLevel !== '' ? Number(p.restockLevel) : 10;
+                const restockLevel = getRestockVal(p);
+                const effCost = getEffectiveCost(p);
                 let stockClass = '', stockText = '', stockBadge = '';
                 if(p.isService) {
                     stockClass = 'in-stock';
@@ -310,21 +372,21 @@
                 else{ stockClass = 'in-stock'; stockText = 'In Stock'; stockBadge = '<span class="badge badge-in">In</span>'; }
                 
                 return `<tr>
-                    <td><code>${p.code || p.id}</code></td>
+                    <td><code style="font-size:11px;font-weight:700;">${p.code || p.id}</code></td>
                     <td>${p.brand || '-'}</td>
                     <td>${p.model || '-'}</td>
-                    <td><strong>${p.name}</strong></td>
-                    <td>${p.category}</td>
-                    <td>${formatCurrency(p.price)}${p.normalPrice ? `<br><small style="text-decoration:line-through; color:#94a3b8;">${formatCurrency(p.normalPrice)}</small>` : ''}</td>
-                    <td>${p.isService ? '-' : formatCurrency(p.cost)}</td>
-                    <td class="${stockClass}">${p.isService ? '-' : p.stock}</td>
-                    <td>${p.isService ? '-' : formatCurrency((p.stock || 0) * (p.cost || 0))}</td>
-                    <td>${p.isService ? '-' : restockLevel}</td>
-                    <td>${stockBadge}</td>
-                    <td>
-                        <button class="btn-outline" onclick="editProduct('${p.id}')" style="padding:5px 10px;margin-right:5px;"><i class="fas fa-edit"></i></button>
-                        ${p.isService ? '' : `<button class="btn-outline" onclick="adjustStock('${p.id}')" style="padding:5px 10px;margin-right:5px;"><i class="fas fa-boxes"></i></button>`}
-                        <button class="btn-danger" onclick="deleteProduct('${p.id}')"><i class="fas fa-trash"></i></button>
+                    <td><strong style="color:#0f172a;">${p.name}</strong></td>
+                    <td style="text-transform:capitalize;">${p.category}</td>
+                    <td style="text-align:right;font-weight:700;">${formatCurrency(p.price)}${p.normalPrice ? `<br><small style="text-decoration:line-through; color:#94a3b8;">${formatCurrency(p.normalPrice)}</small>` : ''}</td>
+                    <td style="text-align:right;">${p.isService ? '-' : formatCurrency(effCost)}</td>
+                    <td class="${stockClass}" style="text-align:center;font-weight:700;">${p.isService ? '-' : p.stock}</td>
+                    <td style="text-align:right;">${p.isService ? '-' : formatCurrency((p.stock || 0) * effCost)}</td>
+                    <td style="text-align:center;">${p.isService ? '-' : `<input type="number" min="0" value="${restockLevel}" onchange="quickUpdateRestockLevel('${p.id}', this.value)" style="width:58px; padding:3px 4px; border:1px solid #cbd5e1; border-radius:6px; font-weight:700; text-align:center; font-size:12px;">`}</td>
+                    <td style="text-align:center;">${stockBadge}</td>
+                    <td style="text-align:center;white-space:nowrap;">
+                        <button class="btn-outline" onclick="editProduct('${p.id}')" title="Edit" style="padding:4px 8px;font-size:11px;margin-right:2px;"><i class="fas fa-edit"></i></button>
+                        ${p.isService ? '' : `<button class="btn-outline" onclick="adjustStock('${p.id}')" title="Adjust Stock" style="padding:4px 8px;font-size:11px;margin-right:2px;"><i class="fas fa-boxes"></i></button>`}
+                        <button class="btn-danger" onclick="deleteProduct('${p.id}')" title="Delete" style="padding:4px 8px;font-size:11px;"><i class="fas fa-trash"></i></button>
                     </td>
                 </tr>`;
             }).join('');
@@ -334,8 +396,8 @@
         function updateStats(productsList){
             const physicalProducts = productsList.filter(p => !p.isService);
             const totalProducts = productsList.length;
-            const totalStockValue = physicalProducts.reduce((sum, p) => sum + ((p.stock || 0) * (p.cost || 0)), 0);
-            const lowStockCount = physicalProducts.filter(p => p.stock > 0 && p.stock < (p.restockLevel !== undefined && p.restockLevel !== null && p.restockLevel !== '' ? Number(p.restockLevel) : 10)).length;
+            const totalStockValue = physicalProducts.reduce((sum, p) => sum + ((p.stock || 0) * getEffectiveCost(p)), 0);
+            const lowStockCount = physicalProducts.filter(p => p.stock > 0 && p.stock < getRestockVal(p)).length;
             const outStockCount = physicalProducts.filter(p => p.stock === 0).length;
             
             document.getElementById('totalProducts').innerHTML = totalProducts;
@@ -372,7 +434,7 @@
             document.getElementById('productCost').style.display = 'block';
             document.getElementById('productStock').value = '';
             document.getElementById('productStock').style.display = 'block';
-            document.getElementById('productRestockLevel').value = '';
+            document.getElementById('productRestockLevel').value = '10';
             document.getElementById('productRestockLevel').style.display = 'block';
             document.getElementById('productBarcode').value = '';
             document.getElementById('productIsService').checked = false;
@@ -395,7 +457,7 @@
                 document.getElementById('productCost').style.display = product.isService ? 'none' : 'block';
                 document.getElementById('productStock').value = product.isService ? '' : product.stock;
                 document.getElementById('productStock').style.display = product.isService ? 'none' : 'block';
-                document.getElementById('productRestockLevel').value = product.isService ? '' : (product.restockLevel || '');
+                document.getElementById('productRestockLevel').value = product.isService ? '' : getRestockVal(product);
                 document.getElementById('productRestockLevel').style.display = product.isService ? 'none' : 'block';
                 document.getElementById('productBarcode').value = product.barcode || '';
                 document.getElementById('productIsService').checked = !!product.isService;
@@ -414,7 +476,11 @@
             const normalPrice = parseFloat(document.getElementById('productNormalPrice').value) || null;
             const cost = isService ? 0 : parseFloat(document.getElementById('productCost').value || 0);
             const stock = isService ? 999999 : (parseInt(document.getElementById('productStock').value) || 0);
-            const restockLevel = isService ? null : (parseInt(document.getElementById('productRestockLevel').value) || null);
+            
+            const restockInputStr = document.getElementById('productRestockLevel').value.trim();
+            const restockLevelNum = (restockInputStr !== '' && !isNaN(restockInputStr)) ? Number(restockInputStr) : 10;
+            const restockLevel = isService ? null : restockLevelNum;
+
             const barcode = document.getElementById('productBarcode').value.trim();
             
             if(!name || isNaN(price)){
@@ -428,7 +494,24 @@
                 const autoDocRef = db.collection('products').doc(currentBusinessId).collection('list').doc();
                 productId = autoDocRef.id;
             }
-            const productData = { id: productId, code: rawCode || productId, brand, model, name, category, price, normalPrice, cost, stock, restockLevel, barcode, isService, updatedAt: new Date() };
+            const productData = { 
+                id: productId, 
+                code: rawCode || productId, 
+                brand, 
+                model, 
+                name, 
+                category, 
+                price, 
+                normalPrice, 
+                cost, 
+                stock, 
+                restockLevel: restockLevel, 
+                minStockLevel: restockLevel, 
+                reorderLevel: restockLevel, 
+                barcode, 
+                isService, 
+                updatedAt: new Date() 
+            };
             
             const btn = document.getElementById('saveProductBtn');
             try {

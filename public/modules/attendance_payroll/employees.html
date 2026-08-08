@@ -288,8 +288,24 @@
                 firestoreDb.collection('businesses').doc(bizId).onSnapshot(doc => {
                     if (doc.exists) {
                         const data = doc.data();
-                        if (data && Array.isArray(data.registered_employees)) {
-                            localStorage.setItem('digibiz_registered_employees', JSON.stringify(data.registered_employees));
+                        if (data && Array.isArray(data.registered_employees) && data.registered_employees.length > 0) {
+                            let localList = [];
+                            try {
+                                const stored = localStorage.getItem('digibiz_registered_employees');
+                                if (stored) localList = JSON.parse(stored);
+                            } catch(e) {}
+
+                            const map = new Map();
+                            [...data.registered_employees, ...localList].forEach(emp => {
+                                if (emp) {
+                                    const key = String(emp.empId || emp.nic || emp.phone).trim();
+                                    if (!map.has(key)) map.set(key, emp);
+                                }
+                            });
+
+                            const merged = Array.from(map.values());
+                            localStorage.setItem('digibiz_registered_employees', JSON.stringify(merged));
+                            localStorage.setItem('digibiz_employees_initialized', 'true');
                             renderEmployeeDirectory();
                         }
                     }
@@ -299,12 +315,17 @@
 
         function getEmployeesFromStorage() {
             const raw = localStorage.getItem('digibiz_registered_employees');
+            const isInitialized = localStorage.getItem('digibiz_employees_initialized');
+
             if (raw !== null) {
                 try {
                     const list = JSON.parse(raw);
-                    if (Array.isArray(list) && list.length > 0) return list;
+                    if (Array.isArray(list) && (list.length > 0 || isInitialized === 'true')) {
+                        return list;
+                    }
                 } catch(e) {}
             }
+
             // Sunrose Lanka Official Seed List with EPF & Casual classification
             const defaultSeed = [
                 { epfNo: '001', empId: '1', empType: 'EPF', name: 'K. Champika N. De Silva', nic: '751232454V', phone: '0773145820', designation: 'Director', gender: 'Male', dob: '1975-12-04', doj: '2020-01-01', basic: 100000, travel: 10000, prod: 60000, attnAllow: 30000, nightMeals: 1000, salaryAdvance: 0, loanInstalment: 0, bank: '327200298012161', address: 'Piliyandala', increments: [{ date: '2025-01-01', amount: 10000, newBasic: 100000, reason: 'Annual Director Review' }], chargeSheets: [], specialNotes: 'Executive Board Member' },
@@ -315,15 +336,18 @@
                 { epfNo: 'N/A', empId: 'C-1', empType: 'Casual', name: 'Kamal Bandara (Casual)', nic: '981240129V', phone: '0712345678', designation: 'Casual Helper', gender: 'Male', dob: '1998-04-12', doj: '2024-01-10', basic: 25000, travel: 0, prod: 0, attnAllow: 5000, nightMeals: 0, salaryAdvance: 1000, loanInstalment: 0, bank: 'Cash Voucher', address: 'Kesbewa', increments: [], chargeSheets: [], specialNotes: 'Daily Wages / Casual Staff' }
             ];
             localStorage.setItem('digibiz_registered_employees', JSON.stringify(defaultSeed));
+            localStorage.setItem('digibiz_employees_initialized', 'true');
             return defaultSeed;
         }
 
         function saveEmployeesToStorage(list) {
             localStorage.setItem('digibiz_registered_employees', JSON.stringify(list));
+            localStorage.setItem('digibiz_employees_initialized', 'true');
             const firestoreDb = window.db || (window.firebase && window.firebase.firestore ? window.firebase.firestore() : null);
             if (firestoreDb) {
                 const bizId = localStorage.getItem('currentBusinessId') || 'ATTENDANCE_BIZ_001';
                 firestoreDb.collection('businesses').doc(bizId).set({ registered_employees: list }, { merge: true }).catch(e => console.warn(e));
+                firestoreDb.collection('registered_employees').doc(bizId).set({ list: list }, { merge: true }).catch(e => console.warn(e));
             }
         }
 
@@ -649,20 +673,23 @@
                 employees.push(empObj);
             }
 
-            // Ensure sequential re-indexing
+            // Assign unique ID if missing
             let epfIdx = 1;
             let casualIdx = 1;
             employees.forEach(emp => {
-                if (emp.empType === 'Casual') {
-                    emp.empId = `C-${casualIdx++}`;
-                } else {
-                    emp.empId = String(epfIdx++);
+                if (!emp.empId) {
+                    if (emp.empType === 'Casual') {
+                        emp.empId = `C-${casualIdx++}`;
+                    } else {
+                        emp.empId = String(epfIdx++);
+                    }
                 }
             });
 
             saveEmployeesToStorage(employees);
             renderEmployeeDirectory();
             closeAddEmpModal();
+            alert(`✅ "${name}" සේවක පැතිකඩ සාර්ථකව පද්ධතියට එක්කර සුරකින ලදී!`);
         }
 
         function deleteEmpRow(empId, name) {
