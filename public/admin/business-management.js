@@ -923,31 +923,87 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        const tenantUsersSetValues = new Set(tenantUsersMap.values());
+
+        const resolveUserAndBusiness = (idKey) => {
+            if (!idKey) return null;
+            const strKey = String(idKey).trim();
+            const lowerKey = strKey.toLowerCase();
+
+            // 1. Try finding direct user object in tenantUsersMap (by UID or email)
+            let userObj = tenantUsersMap.get(strKey) || tenantUsersMap.get(lowerKey);
+
+            // 2. If not found by direct key, search users array for matching UID, email, or businessId
+            if (!userObj) {
+                userObj = Array.from(tenantUsersSetValues).find(u =>
+                    u.id === strKey ||
+                    (u.email && u.email.toLowerCase() === lowerKey) ||
+                    u.businessId === strKey
+                );
+            }
+
+            // 3. Try finding business object in tenantBusinessesMap
+            let bizObj = null;
+            if (userObj && userObj.businessId) {
+                bizObj = tenantBusinessesMap.get(userObj.businessId);
+            }
+            if (!bizObj) {
+                bizObj = tenantBusinessesMap.get(strKey);
+            }
+            if (!bizObj && userObj) {
+                bizObj = tenantBusinessesMap.get(userObj.id);
+            }
+
+            // If neither userObj nor bizObj exists, return null so unresolvable orphan IDs are ignored!
+            if (!userObj && !bizObj) return null;
+
+            // Extract resolved email
+            const email = (userObj && userObj.email) || (bizObj && (bizObj.ownerEmail || bizObj.email)) || '';
+
+            // STRICT FILTER: If resolved email does not contain '@', it is a raw hash string, not a valid email address. Skip!
+            if (!email || !email.includes('@')) return null;
+
+            // EXCLUDE Super Admin accounts
+            if (isSuperAdminAccount(userObj) || isSuperAdminAccount(bizObj) || email.toLowerCase() === 'digibizsystemlk@gmail.com') return null;
+
+            const businessName = (bizObj && bizObj.name) || (userObj && (userObj.businessName || userObj.name)) || 'DIGIBIZ Store';
+            const businessType = formatBusinessTypeName((bizObj && bizObj.businessType) || (userObj && userObj.businessType) || 'general');
+            const ownerName = (userObj && (userObj.displayName || userObj.name || userObj.ownerName)) || (bizObj && (bizObj.ownerName || bizObj.contactName)) || 'N/A';
+            const phone = (userObj && (userObj.phoneNumber || userObj.phone)) || (bizObj && (bizObj.phone || bizObj.contactPhone)) || 'N/A';
+            const uid = (userObj && userObj.id) || (bizObj && (bizObj.ownerUid || bizObj.id)) || strKey;
+
+            return {
+                uid,
+                email,
+                ownerName,
+                businessName,
+                businessType,
+                phone
+            };
+        };
+
         // Build active user detail lists for modal popups
         const buildUserList = (idSet) => {
             const list = [];
             const processedSet = new Set();
-            idSet.forEach((idKey) => {
-                const u = tenantUsersMap.get(idKey) || tenantUsersMap.get(String(idKey).toLowerCase()) || {};
-                const uid = u.id || idKey;
-                if (processedSet.has(uid)) return;
-                processedSet.add(uid);
 
-                const bizId = u.businessId || u.id;
-                const biz = tenantBusinessesMap.get(bizId) || tenantBusinessesMap.get(u.businessId) || {};
-                const lastDt = userLatestActivityMap.get(idKey) || userLatestActivityMap.get(uid);
+            idSet.forEach((idKey) => {
+                const resolved = resolveUserAndBusiness(idKey);
+                if (!resolved) return;
+
+                const uniqueKey = resolved.email.toLowerCase();
+                if (processedSet.has(uniqueKey)) return;
+                processedSet.add(uniqueKey);
+
+                const lastDt = userLatestActivityMap.get(String(idKey).toLowerCase()) || userLatestActivityMap.get(resolved.uid.toLowerCase()) || userLatestActivityMap.get(resolved.email.toLowerCase());
 
                 list.push({
-                    uid: uid,
-                    email: u.email || idKey,
-                    ownerName: u.displayName || u.name || u.ownerName || biz.ownerName || 'N/A',
-                    businessName: biz.name || u.businessName || 'Unnamed Business',
-                    businessType: formatBusinessTypeName(biz.businessType || u.businessType || 'general'),
-                    phone: u.phoneNumber || u.phone || biz.phone || 'N/A',
-                    lastActivityStr: formatTimestamp(lastDt || u.lastActiveAt || u.lastLoginAt || u.updatedAt),
+                    ...resolved,
+                    lastActivityStr: formatTimestamp(lastDt),
                     lastActivityTime: lastDt ? lastDt.getTime() : 0
                 });
             });
+
             return list.sort((a, b) => b.lastActivityTime - a.lastActivityTime);
         };
 
