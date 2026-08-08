@@ -840,7 +840,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Fetch businesses to map businessId -> business object
         try {
             const bizSnap = await window.db.collection('businesses').limit(1000).get();
-            bizSnap.docs.forEach((d) => tenantBusinessesMap.set(d.id, { id: d.id, ...(d.data() || {}) }));
+            bizSnap.docs.forEach((d) => {
+                const b = { id: d.id, ...(d.data() || {}) };
+                tenantBusinessesMap.set(d.id, b);
+                tenantBusinessesMap.set(d.id.toLowerCase(), b);
+                if (b.ownerUid) tenantBusinessesMap.set(b.ownerUid, b);
+                if (b.ownerUid) tenantBusinessesMap.set(String(b.ownerUid).toLowerCase(), b);
+                if (b.ownerEmail) tenantBusinessesMap.set(String(b.ownerEmail).toLowerCase(), b);
+                if (b.email) tenantBusinessesMap.set(String(b.email).toLowerCase(), b);
+            });
         } catch (_eBiz) {}
 
         // 2. Fetch users and filter out SUPER_ADMIN accounts
@@ -850,7 +858,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const u = { id: d.id, ...(d.data() || {}) };
                 if (!isSuperAdminAccount(u)) {
                     tenantUsersMap.set(d.id, u);
+                    tenantUsersMap.set(d.id.toLowerCase(), u);
                     if (u.email) tenantUsersMap.set(String(u.email).toLowerCase(), u);
+                    if (u.businessId) tenantUsersMap.set(u.businessId, u);
+                    if (u.businessId) tenantUsersMap.set(String(u.businessId).toLowerCase(), u);
                 }
             });
         } catch (eUsers) {
@@ -859,28 +870,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const addActivity = (userIdentifier, dateVal) => {
             if (!userIdentifier) return;
-            const idKey = String(userIdentifier).toLowerCase();
+            const strId = String(userIdentifier).trim();
+            const lowerId = strId.toLowerCase();
 
             // EXCLUDE SUPER ADMIN LOGINS FROM ALL METRICS
-            const userObj = tenantUsersMap.get(idKey) || tenantUsersMap.get(userIdentifier);
+            const userObj = tenantUsersMap.get(strId) || tenantUsersMap.get(lowerId);
             if (userObj && isSuperAdminAccount(userObj)) return;
-            if (idKey === 'digibizsystemlk@gmail.com' || idKey.includes('super_admin')) return;
+            if (lowerId === 'digibizsystemlk@gmail.com' || lowerId.includes('super_admin')) return;
 
             const dtKey = formatSldateKey(dateVal);
             if (!dtKey) return;
 
             if (dailyActiveUsersMap.has(dtKey)) {
-                dailyActiveUsersMap.get(dtKey).add(idKey);
+                dailyActiveUsersMap.get(dtKey).add(strId);
             }
 
             const dateObj = (dateVal && dateVal.toDate) ? dateVal.toDate() : (dateVal ? new Date(dateVal) : null);
             if (dateObj && !isNaN(dateObj.getTime())) {
-                const existingLast = userLatestActivityMap.get(idKey);
+                const existingLast = userLatestActivityMap.get(lowerId);
                 if (!existingLast || dateObj.getTime() > existingLast.getTime()) {
-                    userLatestActivityMap.set(idKey, dateObj);
+                    userLatestActivityMap.set(lowerId, dateObj);
+                    userLatestActivityMap.set(strId, dateObj);
                 }
                 if (dateObj.getTime() >= onlineNowCutoff) {
-                    onlineUsersSet.add(idKey);
+                    onlineUsersSet.add(strId);
                 }
             }
         };
@@ -923,8 +936,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        const tenantUsersSetValues = new Set(tenantUsersMap.values());
-
         const resolveUserAndBusiness = (idKey) => {
             if (!idKey) return null;
             const strKey = String(idKey).trim();
@@ -932,52 +943,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Step 1: Find user object if available
             let userObj = tenantUsersMap.get(strKey) || tenantUsersMap.get(lowerKey);
-            if (!userObj) {
-                userObj = Array.from(tenantUsersSetValues).find(u =>
-                    u.id === strKey ||
-                    (u.email && u.email.toLowerCase() === lowerKey) ||
-                    u.businessId === strKey
-                );
-            }
 
             // Step 2: Find business object if available
-            let bizObj = null;
-            if (userObj && userObj.businessId) {
-                bizObj = tenantBusinessesMap.get(userObj.businessId);
-            }
-            if (!bizObj) {
-                bizObj = tenantBusinessesMap.get(strKey);
+            let bizObj = tenantBusinessesMap.get(strKey) || tenantBusinessesMap.get(lowerKey);
+            if (userObj && userObj.businessId && !bizObj) {
+                bizObj = tenantBusinessesMap.get(userObj.businessId) || tenantBusinessesMap.get(String(userObj.businessId).toLowerCase());
             }
 
             // Step 3: If userObj wasn't found but bizObj was found, find linked user
             if (!userObj && bizObj) {
-                userObj = Array.from(tenantUsersSetValues).find(u =>
-                    u.businessId === bizObj.id ||
-                    u.id === bizObj.ownerUid ||
-                    (u.email && (u.email === bizObj.ownerEmail || u.email === bizObj.email))
-                );
+                userObj = tenantUsersMap.get(bizObj.id) || tenantUsersMap.get(String(bizObj.id).toLowerCase()) ||
+                          tenantUsersMap.get(bizObj.ownerUid) || tenantUsersMap.get(String(bizObj.ownerUid || '').toLowerCase()) ||
+                          tenantUsersMap.get(String(bizObj.ownerEmail || '').toLowerCase());
             }
 
-            // If neither userObj nor bizObj exists, return null so orphan system IDs are skipped
-            if (!userObj && !bizObj) return null;
+            // EXCLUDE Super Admin accounts
+            if (isSuperAdminAccount(userObj) || isSuperAdminAccount(bizObj) || lowerKey.includes('digibizsystemlk')) return null;
 
             // Extract resolved email with smart fallback
             let email = (userObj && userObj.email) || (bizObj && (bizObj.ownerEmail || bizObj.email || bizObj.contactEmail)) || '';
 
-            if (!email) {
+            if (!email || !email.includes('@')) {
                 if (userObj && userObj.id) {
                     email = `user_${userObj.id.slice(0, 8)}@digibiz.lk`;
                 } else if (bizObj && bizObj.id) {
                     email = `biz_${bizObj.id.slice(0, 8)}@digibiz.lk`;
-                } else if (strKey.length > 5) {
+                } else {
                     email = `account_${strKey.slice(0, 8)}@digibiz.lk`;
                 }
             }
 
-            // EXCLUDE Super Admin accounts
-            if (isSuperAdminAccount(userObj) || isSuperAdminAccount(bizObj) || email.toLowerCase().includes('digibizsystemlk')) return null;
-
-            const businessName = (bizObj && bizObj.name) || (userObj && (userObj.businessName || userObj.name)) || 'DIGIBIZ Store';
+            const businessName = (bizObj && bizObj.name) || (userObj && (userObj.businessName || userObj.name)) || 'DIGIBIZ Client Business';
             const businessType = formatBusinessTypeName((bizObj && bizObj.businessType) || (userObj && userObj.businessType) || 'general');
             const ownerName = (userObj && (userObj.displayName || userObj.name || userObj.ownerName)) || (bizObj && (bizObj.ownerName || bizObj.contactName)) || 'Business Owner';
             const phone = (userObj && (userObj.phoneNumber || userObj.phone)) || (bizObj && (bizObj.phone || bizObj.contactPhone)) || 'N/A';
@@ -1036,11 +1032,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const parts = d.split('-');
             return `${parts[1]}/${parts[2]}`;
         });
-        // Synchronized chart data using buildUserList lengths for exact match with cards
-        const chartData = last30Days.map((d) => {
-            const userSet = dailyActiveUsersMap.get(d) || new Set();
-            return buildUserList(userSet).length;
-        });
+        const chartData = last30Days.map((d) => (dailyActiveUsersMap.get(d) ? dailyActiveUsersMap.get(d).size : 0));
 
         const canvas = document.getElementById('activeTrendChart');
         if (canvas && window.Chart) {
