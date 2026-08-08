@@ -777,9 +777,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function isSuperAdminAccount(u) {
         if (!u) return false;
         const role = String(u.role || '').toUpperCase();
-        const email = String(u.email || '').toLowerCase();
+        const email = String(u.email || u.ownerEmail || '').toLowerCase();
+        const uid = String(u.id || u.uid || '').toLowerCase();
+
         if (role === 'SUPER_ADMIN' || u.isSuperAdmin === true || u.superAdmin === true) return true;
-        if (email === 'digibizsystemlk@gmail.com' || email.includes('admin@digibiz')) return true;
+        if (email === 'digibizsystemlk@gmail.com' || email === 'biz.sirimal@gmail.com' || email.includes('admin@digibiz') || email.includes('sirimal')) return true;
+        if (uid.includes('sirimal')) return true;
         return false;
     }
 
@@ -869,12 +872,14 @@ document.addEventListener('DOMContentLoaded', () => {
             ]);
             bizSnap.docs.forEach((d) => {
                 const b = { id: d.id, ...(d.data() || {}) };
-                tenantBusinessesMap.set(d.id, b);
-                tenantBusinessesMap.set(d.id.toLowerCase(), b);
-                if (b.ownerUid) tenantBusinessesMap.set(b.ownerUid, b);
-                if (b.ownerUid) tenantBusinessesMap.set(String(b.ownerUid).toLowerCase(), b);
-                if (b.ownerEmail) tenantBusinessesMap.set(String(b.ownerEmail).toLowerCase(), b);
-                if (b.email) tenantBusinessesMap.set(String(b.email).toLowerCase(), b);
+                if (!isSuperAdminAccount(b)) {
+                    tenantBusinessesMap.set(d.id, b);
+                    tenantBusinessesMap.set(d.id.toLowerCase(), b);
+                    if (b.ownerUid) tenantBusinessesMap.set(b.ownerUid, b);
+                    if (b.ownerUid) tenantBusinessesMap.set(String(b.ownerUid).toLowerCase(), b);
+                    if (b.ownerEmail) tenantBusinessesMap.set(String(b.ownerEmail).toLowerCase(), b);
+                    if (b.email) tenantBusinessesMap.set(String(b.email).toLowerCase(), b);
+                }
             });
             subSnap.docs.forEach((d) => {
                 tenantSubscriptionsMap.set(d.id, d.data() || {});
@@ -911,7 +916,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // EXCLUDE SUPER ADMIN LOGINS FROM ALL METRICS
             const userObj = tenantUsersMap.get(strId) || tenantUsersMap.get(lowerId);
             if (userObj && isSuperAdminAccount(userObj)) return;
-            if (lowerId === 'digibizsystemlk@gmail.com' || lowerId.includes('super_admin')) return;
+            if (lowerId === 'digibizsystemlk@gmail.com' || lowerId === 'biz.sirimal@gmail.com' || lowerId.includes('sirimal') || lowerId.includes('super_admin')) return;
 
             const dtKey = formatSldateKey(dateVal);
             if (!dtKey) return;
@@ -993,7 +998,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // EXCLUDE Super Admin accounts
-            if (isSuperAdminAccount(userObj) || isSuperAdminAccount(bizObj) || lowerKey.includes('digibizsystemlk')) return null;
+            if (isSuperAdminAccount(userObj) || isSuperAdminAccount(bizObj) || lowerKey.includes('digibizsystemlk') || lowerKey.includes('biz.sirimal@gmail.com') || lowerKey.includes('sirimal')) return null;
 
             // Check if Test/Demo account
             const isTest = isTestAccount(userObj) || isTestAccount(bizObj) || lowerKey.includes('test') || lowerKey.includes('demo') || lowerKey.includes('sample');
