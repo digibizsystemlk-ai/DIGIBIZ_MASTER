@@ -930,10 +930,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const strKey = String(idKey).trim();
             const lowerKey = strKey.toLowerCase();
 
-            // 1. Try finding direct user object in tenantUsersMap (by UID or email)
+            // Step 1: Find user object if available
             let userObj = tenantUsersMap.get(strKey) || tenantUsersMap.get(lowerKey);
-
-            // 2. If not found by direct key, search users array for matching UID, email, or businessId
             if (!userObj) {
                 userObj = Array.from(tenantUsersSetValues).find(u =>
                     u.id === strKey ||
@@ -942,7 +940,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
             }
 
-            // 3. Try finding business object in tenantBusinessesMap
+            // Step 2: Find business object if available
             let bizObj = null;
             if (userObj && userObj.businessId) {
                 bizObj = tenantBusinessesMap.get(userObj.businessId);
@@ -950,25 +948,38 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!bizObj) {
                 bizObj = tenantBusinessesMap.get(strKey);
             }
-            if (!bizObj && userObj) {
-                bizObj = tenantBusinessesMap.get(userObj.id);
+
+            // Step 3: If userObj wasn't found but bizObj was found, find linked user
+            if (!userObj && bizObj) {
+                userObj = Array.from(tenantUsersSetValues).find(u =>
+                    u.businessId === bizObj.id ||
+                    u.id === bizObj.ownerUid ||
+                    (u.email && (u.email === bizObj.ownerEmail || u.email === bizObj.email))
+                );
             }
 
-            // If neither userObj nor bizObj exists, return null so unresolvable orphan IDs are ignored!
+            // If neither userObj nor bizObj exists, return null so orphan system IDs are skipped
             if (!userObj && !bizObj) return null;
 
-            // Extract resolved email
-            const email = (userObj && userObj.email) || (bizObj && (bizObj.ownerEmail || bizObj.email)) || '';
+            // Extract resolved email with smart fallback
+            let email = (userObj && userObj.email) || (bizObj && (bizObj.ownerEmail || bizObj.email || bizObj.contactEmail)) || '';
 
-            // STRICT FILTER: If resolved email does not contain '@', it is a raw hash string, not a valid email address. Skip!
-            if (!email || !email.includes('@')) return null;
+            if (!email) {
+                if (userObj && userObj.id) {
+                    email = `user_${userObj.id.slice(0, 8)}@digibiz.lk`;
+                } else if (bizObj && bizObj.id) {
+                    email = `biz_${bizObj.id.slice(0, 8)}@digibiz.lk`;
+                } else if (strKey.length > 5) {
+                    email = `account_${strKey.slice(0, 8)}@digibiz.lk`;
+                }
+            }
 
             // EXCLUDE Super Admin accounts
-            if (isSuperAdminAccount(userObj) || isSuperAdminAccount(bizObj) || email.toLowerCase() === 'digibizsystemlk@gmail.com') return null;
+            if (isSuperAdminAccount(userObj) || isSuperAdminAccount(bizObj) || email.toLowerCase().includes('digibizsystemlk')) return null;
 
             const businessName = (bizObj && bizObj.name) || (userObj && (userObj.businessName || userObj.name)) || 'DIGIBIZ Store';
             const businessType = formatBusinessTypeName((bizObj && bizObj.businessType) || (userObj && userObj.businessType) || 'general');
-            const ownerName = (userObj && (userObj.displayName || userObj.name || userObj.ownerName)) || (bizObj && (bizObj.ownerName || bizObj.contactName)) || 'N/A';
+            const ownerName = (userObj && (userObj.displayName || userObj.name || userObj.ownerName)) || (bizObj && (bizObj.ownerName || bizObj.contactName)) || 'Business Owner';
             const phone = (userObj && (userObj.phoneNumber || userObj.phone)) || (bizObj && (bizObj.phone || bizObj.contactPhone)) || 'N/A';
             const uid = (userObj && userObj.id) || (bizObj && (bizObj.ownerUid || bizObj.id)) || strKey;
 
@@ -986,6 +997,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const buildUserList = (idSet) => {
             const list = [];
             const processedSet = new Set();
+
+            if (!idSet || idSet.size === 0) return list;
 
             idSet.forEach((idKey) => {
                 const resolved = resolveUserAndBusiness(idKey);
@@ -1023,7 +1036,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const parts = d.split('-');
             return `${parts[1]}/${parts[2]}`;
         });
-        const chartData = last30Days.map((d) => (dailyActiveUsersMap.get(d) ? dailyActiveUsersMap.get(d).size : 0));
+        // Synchronized chart data using buildUserList lengths for exact match with cards
+        const chartData = last30Days.map((d) => {
+            const userSet = dailyActiveUsersMap.get(d) || new Set();
+            return buildUserList(userSet).length;
+        });
 
         const canvas = document.getElementById('activeTrendChart');
         if (canvas && window.Chart) {
