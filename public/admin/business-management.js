@@ -783,6 +783,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return false;
     }
 
+    // Helper to identify Test/Demo/Sample accounts (which must be EXCLUDED from real business metrics & leads)
+    function isTestAccount(u) {
+        if (!u) return false;
+        const email = String(u.email || '').toLowerCase();
+        const name = String(u.name || u.displayName || u.ownerName || '').toLowerCase();
+        const bizName = String(u.businessName || u.name || '').toLowerCase();
+        const uid = String(u.id || '').toLowerCase();
+
+        if (email.includes('test') || email.includes('demo') || email.includes('sample') || email.includes('dummy') || email.includes('temp') || email.includes('fake')) return true;
+        if (name.includes('test') || name.includes('demo') || name.includes('sample') || name.includes('dummy')) return true;
+        if (bizName.includes('test') || bizName.includes('demo') || bizName.includes('sample') || bizName.includes('dummy')) return true;
+        if (uid.includes('test') || uid.includes('demo')) return true;
+
+        return false;
+    }
+
     // Active Accounts Trend Chart Instance & Global Active User Data Cache
     let activeTrendChartInstance = null;
     const periodActiveUsersCache = {
@@ -790,7 +806,11 @@ document.addEventListener('DOMContentLoaded', () => {
         today: [],
         yesterday: [],
         week: [],
-        month: []
+        month: [],
+        paidPro: [],
+        freeTrial: [],
+        highIntent: [],
+        testToday: []
     };
     let currentModalUserList = [];
 
@@ -975,6 +995,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // EXCLUDE Super Admin accounts
             if (isSuperAdminAccount(userObj) || isSuperAdminAccount(bizObj) || lowerKey.includes('digibizsystemlk')) return null;
 
+            // Check if Test/Demo account
+            const isTest = isTestAccount(userObj) || isTestAccount(bizObj) || lowerKey.includes('test') || lowerKey.includes('demo') || lowerKey.includes('sample');
+
             // Extract resolved email with smart fallback
             let email = (userObj && userObj.email) || (bizObj && (bizObj.ownerEmail || bizObj.email || bizObj.contactEmail)) || '';
 
@@ -1016,8 +1039,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // High Conversion Intent: Free user visiting 2 or more days in the last week
-            const isHighIntent = !isPro && (active7DayCount >= 2 || (userObj && Array.isArray(userObj.activeDates) && userObj.activeDates.length >= 2));
+            // High Conversion Intent: Free user visiting 2 or more days in the last week (and NOT a test account)
+            const isHighIntent = !isPro && !isTest && (active7DayCount >= 2 || (userObj && Array.isArray(userObj.activeDates) && userObj.activeDates.length >= 2));
 
             return {
                 uid,
@@ -1028,14 +1051,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 phone,
                 bizId,
                 isPro,
-                planName: isPro ? 'PRO ACTIVE' : (subInfo.plan || 'FREE / TRIAL'),
+                isTest,
+                planName: isPro ? 'PRO ACTIVE' : (isTest ? 'TEST / DEMO' : (subInfo.plan || 'FREE / TRIAL')),
                 active7DayCount,
                 isHighIntent
             };
         };
 
-        // Build active user detail lists for modal popups
-        const buildUserList = (idSet) => {
+        // Build active user detail lists for modal popups (with test filtering options)
+        const buildUserList = (idSet, options = {}) => {
             const list = [];
             const processedSet = new Set();
 
@@ -1044,6 +1068,13 @@ document.addEventListener('DOMContentLoaded', () => {
             idSet.forEach((idKey) => {
                 const resolved = resolveUserAndBusiness(idKey);
                 if (!resolved) return;
+
+                // Option: Include ONLY test accounts vs EXCLUDE test accounts
+                if (options.includeTestOnly) {
+                    if (!resolved.isTest) return;
+                } else if (options.excludeTest !== false) {
+                    if (resolved.isTest) return;
+                }
 
                 const uniqueKey = resolved.email.toLowerCase();
                 if (processedSet.has(uniqueKey)) return;
@@ -1061,17 +1092,21 @@ document.addEventListener('DOMContentLoaded', () => {
             return list.sort((a, b) => b.lastActivityTime - a.lastActivityTime);
         };
 
-        periodActiveUsersCache.onlineNow = buildUserList(onlineUsersSet);
-        periodActiveUsersCache.today = buildUserList(todayUsersSet);
-        periodActiveUsersCache.yesterday = buildUserList(yestUsersSet);
-        periodActiveUsersCache.week = buildUserList(weekUsersSet);
-        periodActiveUsersCache.month = buildUserList(monthUsersSet);
+        // Build real business client user lists (excluding test accounts)
+        periodActiveUsersCache.onlineNow = buildUserList(onlineUsersSet, { excludeTest: true });
+        periodActiveUsersCache.today = buildUserList(todayUsersSet, { excludeTest: true });
+        periodActiveUsersCache.yesterday = buildUserList(yestUsersSet, { excludeTest: true });
+        periodActiveUsersCache.week = buildUserList(weekUsersSet, { excludeTest: true });
+        periodActiveUsersCache.month = buildUserList(monthUsersSet, { excludeTest: true });
 
-        // Subscription & Conversion Lead Intelligence caches
+        // Subscription & Conversion Lead Intelligence caches (excluding test accounts)
         const monthList = periodActiveUsersCache.month;
-        periodActiveUsersCache.paidPro = monthList.filter(u => u.isPro);
-        periodActiveUsersCache.freeTrial = monthList.filter(u => !u.isPro);
-        periodActiveUsersCache.highIntent = monthList.filter(u => u.isHighIntent);
+        periodActiveUsersCache.paidPro = monthList.filter(u => u.isPro && !u.isTest);
+        periodActiveUsersCache.freeTrial = monthList.filter(u => !u.isPro && !u.isTest);
+        periodActiveUsersCache.highIntent = monthList.filter(u => u.isHighIntent && !u.isTest);
+
+        // Test Accounts active today cache
+        periodActiveUsersCache.testToday = buildUserList(todayUsersSet, { includeTestOnly: true });
 
         if (onlineRightNowEl) onlineRightNowEl.textContent = String(periodActiveUsersCache.onlineNow.length);
         todayEl.textContent = String(periodActiveUsersCache.today.length);
@@ -1082,16 +1117,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const actPaidProCountEl = document.getElementById('actPaidProCount');
         const actFreeTrialCountEl = document.getElementById('actFreeTrialCount');
         const actHighIntentCountEl = document.getElementById('actHighIntentCount');
+        const actTestTodayCountEl = document.getElementById('actTestTodayCount');
 
         if (actPaidProCountEl) actPaidProCountEl.textContent = String(periodActiveUsersCache.paidPro.length);
         if (actFreeTrialCountEl) actFreeTrialCountEl.textContent = String(periodActiveUsersCache.freeTrial.length);
         if (actHighIntentCountEl) actHighIntentCountEl.textContent = String(periodActiveUsersCache.highIntent.length);
+        if (actTestTodayCountEl) actTestTodayCountEl.textContent = String(periodActiveUsersCache.testToday.length);
 
         const chartLabels = last30Days.map((d) => {
             const parts = d.split('-');
             return `${parts[1]}/${parts[2]}`;
         });
-        const chartData = last30Days.map((d) => (dailyActiveUsersMap.get(d) ? dailyActiveUsersMap.get(d).size : 0));
+
+        // 30-Day Active Accounts Trend line excluding test & demo accounts
+        const chartData = last30Days.map((d) => {
+            const userSet = dailyActiveUsersMap.get(d) || new Set();
+            return buildUserList(userSet, { excludeTest: true }).length;
+        });
 
         const canvas = document.getElementById('activeTrendChart');
         if (canvas && window.Chart) {
@@ -1104,7 +1146,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 data: {
                     labels: chartLabels,
                     datasets: [{
-                        label: 'Client Daily Active Accounts',
+                        label: 'Real Client Daily Active Accounts',
                         data: chartData,
                         borderColor: '#0ea5e9',
                         backgroundColor: 'rgba(14, 165, 233, 0.12)',
@@ -1123,7 +1165,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         legend: { display: false },
                         tooltip: {
                             callbacks: {
-                                label: (ctx) => ` ${ctx.parsed.y} Unique Active Client Account(s)`
+                                label: (ctx) => ` ${ctx.parsed.y} Real Active Client Account(s)`
                             }
                         }
                     },
@@ -1158,7 +1200,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const countBadge = document.getElementById('activeModalCountBadge');
         if (!container) return;
 
-        if (countBadge) countBadge.textContent = `${list.length} Client Account(s)`;
+        if (countBadge) countBadge.textContent = `${list.length} Account(s)`;
 
         if (!list || list.length === 0) {
             container.innerHTML = `
@@ -1178,7 +1220,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         container.innerHTML = list.map((item) => {
             let planBadgeHtml = '';
-            if (item.isPro) {
+            if (item.isTest) {
+                planBadgeHtml = `<span style="background:#f1f5f9; color:#475569; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; border:1px solid #cbd5e1;">🧪 TEST / DEMO</span>`;
+            } else if (item.isPro) {
                 planBadgeHtml = `<span style="background:#dcfce7; color:#15803d; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; border:1px solid #86efac;">💎 PRO ACTIVE</span>`;
             } else if (item.isHighIntent) {
                 planBadgeHtml = `<span style="background:#fee2e2; color:#dc2626; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; border:1px solid #fca5a5;">🔥 HIGH-INTENT LEAD (${item.active7DayCount}/7 Days Active)</span>`;
@@ -1187,7 +1231,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             let hotLeadNoticeHtml = '';
-            if (item.isHighIntent) {
+            if (item.isHighIntent && !item.isTest) {
                 hotLeadNoticeHtml = `
                     <div style="background:#fff7ed; border:1px solid #ffedd5; color:#c2410c; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:600; margin-top:10px; display:flex; align-items:center; gap:6px;">
                         <span>💡</span>
@@ -1325,6 +1369,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const cardHighIntentLeads = document.getElementById('cardHighIntentLeads');
     if (cardHighIntentLeads) {
         cardHighIntentLeads.onclick = () => openActiveUsersModal('🔥 High Conversion Potential Leads (Pro සඳහා සූදානම් නොමිලේ ගිණුම්)', 'Daily active free users getting high value - contact them to offer Pro upgrade!', periodActiveUsersCache.highIntent);
+    }
+    const cardTestAccounts = document.getElementById('cardTestAccounts');
+    if (cardTestAccounts) {
+        cardTestAccounts.onclick = () => openActiveUsersModal('🧪 Test & Demo Accounts Active Today (අද පැමිණි ටෙස්ට් ගිණුම්)', 'List of test / demo accounts active today (Excluded from real business metrics & leads)', periodActiveUsersCache.testToday);
     }
 
     // Bind Search Bar visibility behavior: hide chart when search query is entered
