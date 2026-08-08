@@ -915,50 +915,98 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // EXCLUDE SUPER ADMIN LOGINS FROM ALL METRICS
             const userObj = tenantUsersMap.get(strId) || tenantUsersMap.get(lowerId);
-            if (userObj && isSuperAdminAccount(userObj)) return;
+            const bizObj = tenantBusinessesMap.get(strId) || tenantBusinessesMap.get(lowerId);
+            if ((userObj && isSuperAdminAccount(userObj)) || (bizObj && isSuperAdminAccount(bizObj))) return;
             if (lowerId === 'digibizsystemlk@gmail.com' || lowerId === 'biz.sirimal@gmail.com' || lowerId.includes('sirimal') || lowerId.includes('super_admin')) return;
 
             const dtKey = formatSldateKey(dateVal);
             if (!dtKey) return;
 
+            // Alias mapping so UID, email, and businessId ALL link together for this date
+            const aliases = new Set([strId, lowerId]);
+            if (userObj) {
+                if (userObj.id) { aliases.add(userObj.id); aliases.add(String(userObj.id).toLowerCase()); }
+                if (userObj.email) { aliases.add(userObj.email); aliases.add(String(userObj.email).toLowerCase()); }
+                if (userObj.businessId) { aliases.add(userObj.businessId); aliases.add(String(userObj.businessId).toLowerCase()); }
+            }
+            if (bizObj) {
+                if (bizObj.id) { aliases.add(bizObj.id); aliases.add(String(bizObj.id).toLowerCase()); }
+                if (bizObj.ownerUid) { aliases.add(bizObj.ownerUid); aliases.add(String(bizObj.ownerUid).toLowerCase()); }
+                if (bizObj.ownerEmail) { aliases.add(bizObj.ownerEmail); aliases.add(String(bizObj.ownerEmail).toLowerCase()); }
+            }
+
             if (dailyActiveUsersMap.has(dtKey)) {
-                dailyActiveUsersMap.get(dtKey).add(strId);
+                const daySet = dailyActiveUsersMap.get(dtKey);
+                aliases.forEach((a) => daySet.add(a));
             }
 
             const dateObj = (dateVal && dateVal.toDate) ? dateVal.toDate() : (dateVal ? new Date(dateVal) : null);
             if (dateObj && !isNaN(dateObj.getTime())) {
-                const existingLast = userLatestActivityMap.get(lowerId);
-                if (!existingLast || dateObj.getTime() > existingLast.getTime()) {
-                    userLatestActivityMap.set(lowerId, dateObj);
-                    userLatestActivityMap.set(strId, dateObj);
-                }
+                aliases.forEach((a) => {
+                    const existingLast = userLatestActivityMap.get(a);
+                    if (!existingLast || dateObj.getTime() > existingLast.getTime()) {
+                        userLatestActivityMap.set(a, dateObj);
+                    }
+                });
                 if (dateObj.getTime() >= onlineNowCutoff) {
-                    onlineUsersSet.add(strId);
+                    aliases.forEach((a) => onlineUsersSet.add(a));
                 }
             }
         };
 
-        // Scan users activities
-        tenantUsersMap.forEach((u, key) => {
+        // Scan users activities (including activeDates & loginHistory arrays)
+        tenantUsersMap.forEach((u) => {
             const uid = u.id || u.email;
             if (u.lastActiveAt) addActivity(uid, u.lastActiveAt);
             if (u.lastLoginAt) addActivity(uid, u.lastLoginAt);
             if (u.updatedAt) addActivity(uid, u.updatedAt);
             if (u.createdAt) addActivity(uid, u.createdAt);
+
+            if (Array.isArray(u.activeDates)) {
+                u.activeDates.forEach((dStr) => addActivity(uid, dStr));
+            }
+            if (Array.isArray(u.loginHistory)) {
+                u.loginHistory.forEach((ts) => addActivity(uid, ts));
+            }
         });
 
-        // Scan audit_logs activities
+        // Scan audit_logs and key business module collections in parallel for comprehensive activity tracking
         try {
-            const auditSnap = await window.db.collection('audit_logs').limit(1000).get();
-            auditSnap.docs.forEach((doc) => {
-                const data = doc.data() || {};
-                const uid = data.performedByUid || data.performedByEmail || data.businessId;
-                if (uid && data.timestamp) {
-                    addActivity(uid, data.timestamp);
-                }
-            });
+            const [auditSnap, invSnap, salesSnap, attSnap, expSnap, grnSnap] = await Promise.all([
+                window.db.collection('audit_logs').orderBy('timestamp', 'desc').limit(2000).get().catch(() => ({ docs: [] })),
+                window.db.collection('invoices').limit(1000).get().catch(() => ({ docs: [] })),
+                window.db.collection('sales').limit(1000).get().catch(() => ({ docs: [] })),
+                window.db.collection('attendance_logs').limit(1000).get().catch(() => ({ docs: [] })),
+                window.db.collection('expenses').limit(1000).get().catch(() => ({ docs: [] })),
+                window.db.collection('grns').limit(1000).get().catch(() => ({ docs: [] }))
+            ]);
+
+            const processCollectionDocs = (snap, idFields, timeFields) => {
+                if (!snap || !snap.docs) return;
+                snap.docs.forEach((doc) => {
+                    const data = doc.data() || {};
+                    let targetId = null;
+                    for (const f of idFields) {
+                        if (data[f]) { targetId = data[f]; break; }
+                    }
+                    let targetTs = null;
+                    for (const tf of timeFields) {
+                        if (data[tf]) { targetTs = data[tf]; break; }
+                    }
+                    if (targetId && targetTs) {
+                        addActivity(targetId, targetTs);
+                    }
+                });
+            };
+
+            processCollectionDocs(auditSnap, ['performedByUid', 'performedByEmail', 'businessId', 'userId'], ['timestamp', 'createdAt', 'date']);
+            processCollectionDocs(invSnap, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
+            processCollectionDocs(salesSnap, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
+            processCollectionDocs(attSnap, ['businessId', 'employeeId', 'userId'], ['timestamp', 'date', 'createdAt']);
+            processCollectionDocs(expSnap, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
+            processCollectionDocs(grnSnap, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
         } catch (e) {
-            console.warn('[Active Metrics] audit_logs fetch skipped:', e);
+            console.warn('[Active Metrics] Multi-collection scan warning:', e);
         }
 
         const todayUsersSet = dailyActiveUsersMap.get(todayStr) || new Set();
@@ -1035,11 +1083,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 (bizObj && (bizObj.isPro === true || bizObj.plan === 'PRO' || bizObj.subscriptionPlan === 'PRO'))
             );
 
-            // Calculate 7-day access frequency for High-Intent Lead identification
+            // Calculate 7-day access frequency for High-Intent Lead identification across all aliases
             let active7DayCount = 0;
             last30Days.slice(-7).forEach((dtKey) => {
                 const userSet = dailyActiveUsersMap.get(dtKey);
-                if (userSet && (userSet.has(strKey) || userSet.has(lowerKey) || userSet.has(uid) || userSet.has(email.toLowerCase()))) {
+                if (userSet && (
+                    userSet.has(strKey) ||
+                    userSet.has(lowerKey) ||
+                    userSet.has(uid) ||
+                    userSet.has(String(uid).toLowerCase()) ||
+                    userSet.has(email.toLowerCase()) ||
+                    (bizId && userSet.has(bizId)) ||
+                    (bizId && userSet.has(String(bizId).toLowerCase()))
+                )) {
                     active7DayCount++;
                 }
             });
