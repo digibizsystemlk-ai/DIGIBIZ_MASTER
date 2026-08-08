@@ -95,8 +95,11 @@
                 <button class="close-btn" onclick="closeModal()" style="background:none; border:none; font-size:24px; cursor:pointer; color:#94a3b8;">&times;</button>
             </div>
             <form id="jobForm" onsubmit="saveJobCard(event)">
-                <input type="hidden" id="jobId">
                 <div class="form-grid">
+                    <div class="form-group">
+                        <label>Job Card Reference Number (රැකියා අංකය) *</label>
+                        <input type="text" id="jobId" required style="font-weight:700; color:#38bdf8;" title="Manual paper book override supported">
+                    </div>
                     <div class="form-group">
                         <label>Vehicle Reg Number (වාහන අංකය) *</label>
                         <input type="text" id="vehicleRegNo" placeholder="e.g. CAB-8921" required style="text-transform:uppercase;">
@@ -288,31 +291,64 @@
             }
         }
 
+        let isEditingMode = false;
+
         function openNewJobModal() {
             populateAutoDatalists();
-            document.getElementById('jobId').value = '';
+            isEditingMode = false;
+            const form = document.getElementById('jobForm');
+            if (form) form.reset();
+            const nextNo = window.AutoCareUtils ? window.AutoCareUtils.getNextJobNumber() : 'JOB-00001';
+            document.getElementById('jobId').value = nextNo;
             document.getElementById('modalTitle').innerText = '📋 New Job Card (නව රැකියා කාඩ්පත)';
-            document.getElementById('jobForm').reset();
-            document.getElementById('jobModal').style.display = 'flex';
+            const modal = document.getElementById('jobModal');
+            if (modal) modal.style.display = 'flex';
         }
 
         function closeModal() {
-            document.getElementById('jobModal').style.display = 'none';
+            const modal = document.getElementById('jobModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        function editJob(id) {
+            populateAutoDatalists();
+            isEditingMode = true;
+            const j = currentJobs.find(item => item.id === id);
+            if(!j) return;
+            document.getElementById('jobId').value = j.id;
+            document.getElementById('modalTitle').innerText = '✏️ Edit Job Card #' + j.id;
+            document.getElementById('vehicleRegNo').value = j.regNo;
+            document.getElementById('vehicleBrand').value = j.brand || '';
+            document.getElementById('vehicleModel').value = j.model || '';
+            document.getElementById('mileage').value = (j.mileage || '').replace(' km', '');
+            document.getElementById('fuelLevel').value = j.fuel;
+            document.getElementById('customerName').value = j.customerName || j.customer || '';
+            document.getElementById('customerPhone').value = j.customerPhone || j.phone || '';
+            document.getElementById('assignedTech').value = j.tech;
+            document.getElementById('jobStatus').value = j.status;
+            document.getElementById('requestedServices').value = j.services;
+
+            document.getElementById('jobModal').style.display = 'flex';
         }
 
         function saveJobCard(e) {
             e.preventDefault();
-            const id = document.getElementById('jobId').value || (window.AutoCareUtils ? window.AutoCareUtils.getNextJobNumber() : 'JOB-' + Date.now());
-            const regNo = document.getElementById('vehicleRegNo').value.toUpperCase();
-            const brand = document.getElementById('vehicleBrand').value;
-            const model = document.getElementById('vehicleModel').value;
+            let id = document.getElementById('jobId').value || (window.AutoCareUtils ? window.AutoCareUtils.getNextJobNumber() : 'JOB-' + Date.now());
+            const regNo = document.getElementById('vehicleRegNo').value.toUpperCase().trim();
+            const brand = document.getElementById('vehicleBrand').value.trim();
+            const model = document.getElementById('vehicleModel').value.trim();
             const mileage = document.getElementById('mileage').value ? document.getElementById('mileage').value + ' km' : 'N/A';
             const fuel = document.getElementById('fuelLevel').value;
-            const customerName = document.getElementById('customerName').value;
-            const customerPhone = document.getElementById('customerPhone').value;
-            const tech = document.getElementById('assignedTech').value;
+            const customerName = document.getElementById('customerName').value.trim();
+            const customerPhone = document.getElementById('customerPhone').value.trim();
+            const tech = document.getElementById('assignedTech').value.trim();
             const status = document.getElementById('jobStatus').value;
-            const services = document.getElementById('requestedServices').value;
+            const services = document.getElementById('requestedServices').value.trim();
+
+            if (!regNo) {
+                alert('⚠️ Please enter Vehicle Reg Number (වාහන අංකය).');
+                return;
+            }
 
             // Auto-remember technician, brand, model, and customer details for future autocomplete!
             if (window.AutoCareUtils) {
@@ -323,16 +359,23 @@
             }
 
             const existingIndex = currentJobs.findIndex(j => j.id === id);
+
+            // If creating a new job card and there is a collision, generate fresh number
+            if (!isEditingMode && existingIndex >= 0) {
+                if (window.AutoCareUtils) window.AutoCareUtils.saveJobCounter();
+                id = (window.AutoCareUtils ? window.AutoCareUtils.getNextJobNumber() : 'JOB-' + Date.now());
+            }
+
             const newObj = {
                 id, date: new Date().toISOString().split('T')[0],
                 regNo, brand, model, customerName, customerPhone, tech, mileage, fuel, status, services
             };
 
-            if(existingIndex >= 0) {
+            if (isEditingMode && existingIndex >= 0) {
                 currentJobs[existingIndex] = newObj;
             } else {
                 currentJobs.unshift(newObj);
-                if (window.AutoCareUtils && !document.getElementById('jobId').value) {
+                if (window.AutoCareUtils) {
                     window.AutoCareUtils.saveJobCounter();
                 }
             }
@@ -385,14 +428,22 @@
 
             const container = document.getElementById('printableJobCard');
             container.innerHTML = `
-                <div style="display:flex; justify-content:space-between; border-bottom:2px solid #38bdf8; padding-bottom:12px; margin-bottom:16px;">
-                    <div>
-                        <h2 style="font-size:22px; font-weight:800; color:#38bdf8;">${companyName}</h2>
-                        <p style="font-size:12px; color:#94a3b8;">High-Tech Vehicle Diagnostics & Service Center</p>
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:3px solid #0284c7; padding-bottom:16px; margin-bottom:20px;">
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        <div id="jobLogoContainer" style="width:60px; height:60px; background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border-radius:12px; display:flex; align-items:center; justify-content:center; color:#ffffff; font-size:26px; box-shadow:0 4px 12px rgba(2,132,199,0.3); flex-shrink:0;">
+                            <i class="fa-solid fa-wrench"></i>
+                        </div>
+                        <div>
+                            <h2 style="color:#0284c7; font-size:20px; font-weight:900; margin:0; text-transform:uppercase; letter-spacing:0.5px;">${companyName}</h2>
+                            <p style="color:#475569; font-size:13px; font-weight:600; margin:3px 0 0 0;"><i class="fa-solid fa-gears" style="color:#0284c7;"></i> Workshop Operations & Maintenance Division</p>
+                        </div>
                     </div>
                     <div style="text-align:right;">
-                        <h3 style="font-size:18px; color:#ffffff;">JOB CARD #${j.id}</h3>
-                        <p style="font-size:12px; color:#94a3b8;">Date: ${formattedDate}</p>
+                        <div style="display:inline-block; background:rgba(2, 132, 199, 0.15); border:1px solid #0284c7; color:#0284c7; font-size:11px; font-weight:800; padding:4px 12px; border-radius:20px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">
+                            JOB CARD SHEET
+                        </div>
+                        <h3 style="font-size:16px; font-weight:900; color:#0f172a; margin:0;">JOB CARD #${j.id}</h3>
+                        <p style="font-size:12px; color:#475569; margin-top:2px;">Date: ${formattedDate}</p>
                     </div>
                 </div>
 
@@ -421,6 +472,7 @@
                     <div style="border-top:1px dashed #475569; text-align:center; padding-top:6px;">Supervisor / Tech Signature</div>
                 </div>
             `;
+            if (window.AutoCareUtils) window.AutoCareUtils.renderCompanyLogo('jobLogoContainer', 'fa-solid fa-wrench');
             document.getElementById('printModal').style.display = 'flex';
         }
 
@@ -431,6 +483,13 @@
             alert(`💬 SMS Notification disptached to ${cName} (${cPhone}):\n"ඔබගේ වාහනය ${activeJobForPrint.regNo} හි අලුත්වැඩියා කටයුතු (Job #${activeJobForPrint.id}) සඳහා ස්තූතියි."`);
         }
 
+        window.openNewJobModal = openNewJobModal;
+        window.closeModal = closeModal;
+        window.saveJobCard = saveJobCard;
+        window.editJob = editJob;
+        window.deleteJobCard = deleteJobCard;
+        window.viewPrintModal = viewPrintModal;
+
         window.onload = function() {
             loadJobs();
             const urlParams = new URLSearchParams(window.location.search);
@@ -439,6 +498,41 @@
             }
         };
     </script>
+
+    <style>
+        @media print {
+            .header-bar, .controls-card, .table-card, #jobModal, .no-print, .retail-navbar, .digibiz-mobile-topbar, .digibiz-mobile-menu-toggle, .trial-sidebar-banner { display: none !important; }
+            #printModal {
+                position: relative !important;
+                display: block !important;
+                background: #ffffff !important;
+                width: 100% !important;
+                height: auto !important;
+                left: 0 !important;
+                top: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+            }
+            #printModal .modal-content {
+                background: #ffffff !important;
+                color: #000000 !important;
+                border: 1px solid #cbd5e1 !important;
+                box-shadow: none !important;
+                max-width: 100% !important;
+                padding: 20px !important;
+            }
+            #printableJobCard div, #printableJobCard p, #printableJobCard h2, #printableJobCard h3, #printableJobCard h4, #printableJobCard strong {
+                color: #000000 !important;
+            }
+            #printableJobCard h2 {
+                color: #0284c7 !important;
+            }
+            #printableJobCard div[style*="background:#1e293b"], #printableJobCard p[style*="background:#1e293b"] {
+                background: #f8fafc !important;
+                border: 1px solid #cbd5e1 !important;
+            }
+        }
+    </style>
 
 </body>
 </html>

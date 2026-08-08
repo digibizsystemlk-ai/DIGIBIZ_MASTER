@@ -791,12 +791,38 @@ function sendMfgSaleWhatsApp(saleId) {
 }
 
 async function deleteMfgSale(id) {
-    if (!confirm('Are you sure you want to delete this sale record?')) return;
+    if (!confirm('Are you sure you want to delete this sale record? Finished goods stock will be restored to inventory.')) return;
     try {
-        await db.collection('manufacturer_sales').doc(id).update({
-            isActive: false,
-            deletedAt: new Date()
-        });
+        const docRef = db.collection('manufacturer_sales').doc(id);
+        const snap = await docRef.get();
+        if (snap.exists) {
+            const data = snap.data() || {};
+            const bid = data.businessId || ManufacturerModule.businessId;
+
+            // STOCK REVERSAL: Restore sold finished goods stock back to inventory!
+            if (data.items && data.items.length > 0) {
+                for (const item of data.items) {
+                    if (item.productId && item.qty > 0) {
+                        await db.collection('manufacturer_finished_products').doc(item.productId).set({
+                            stockQty: firebase.firestore.FieldValue.increment(Math.abs(item.qty)),
+                            updatedAt: new Date()
+                        }, { merge: true }).catch(eStk => console.warn('[Sales] Stock reversal err:', eStk));
+                    }
+                }
+            } else if (data.productName && data.qty > 0) {
+                const fgKey = String(data.productName).trim().toUpperCase();
+                await db.collection('manufacturer_finished_products').doc(`${bid}_${fgKey}`).set({
+                    stockQty: firebase.firestore.FieldValue.increment(Math.abs(data.qty)),
+                    updatedAt: new Date()
+                }, { merge: true }).catch(eStk => console.warn('[Sales] Stock reversal err:', eStk));
+            }
+
+            await docRef.update({
+                isActive: false,
+                deletedAt: new Date()
+            });
+        }
+        await loadFinishedProductsOptions();
         await loadMfgSalesHistory();
         await updateSalesSummaryCards();
     } catch (e) {

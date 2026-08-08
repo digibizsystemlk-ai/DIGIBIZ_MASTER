@@ -1396,29 +1396,94 @@
             const tr = currentAccountTransactions.find(t => t.id === trId);
             if (!tr) return;
 
-            if (!confirm(`Are you sure you want to delete this transaction?\nType: ${tr.type}\nAmount: Rs. ${tr.amount.toLocaleString()}`)) return;
-
-            const isCredit = ['CASH_DEPOSIT', 'CHEQUE_DEPOSIT', 'LOAN_RECEIPT'].includes(tr.type);
-            const netEffect = isCredit ? tr.amount : -tr.amount;
-
-            const currentAcc = accounts.find(a => a.id === selectedAccountId);
-            const newAccBalance = (currentAcc.balance || 0) - netEffect;
-
-            const batch = db.batch();
-            const trRefDoc = db.collection('banks').doc(currentBusinessId).collection('transactions').doc(trId);
-            batch.delete(trRefDoc);
-
-            const accRefDoc = db.collection('banks').doc(currentBusinessId).collection('accounts').doc(selectedAccountId);
-            batch.update(accRefDoc, { balance: newAccBalance });
+            const amtStr = (Number(tr.amount) || 0).toLocaleString('en-LK', { minimumFractionDigits: 2 });
+            if (!confirm(`⚠️ Are you sure you want to DELETE this transaction?\n\nType: ${tr.type || 'Transaction'}\nRef/ID: ${tr.ref || tr.id}\nAmount: Rs. ${amtStr}\n\nThis will adjust account balance, reverse matching journal accounting entries, and remove linked records across the system.`)) return;
 
             try {
+                const batch = db.batch();
+                const trRefDoc = db.collection('banks').doc(currentBusinessId).collection('transactions').doc(trId);
+                batch.delete(trRefDoc);
+
+                // 1. Adjust Bank Account Balance safely
+                const targetAccId = tr.bankAccountId || selectedAccountId;
+                if (targetAccId) {
+                    const accDoc = await db.collection('banks').doc(currentBusinessId).collection('accounts').doc(targetAccId).get();
+                    if (accDoc.exists) {
+                        const accData = accDoc.data() || {};
+                        const currentBal = Number(accData.balance || 0);
+                        const isCredit = ['CASH_DEPOSIT', 'CHEQUE_DEPOSIT', 'LOAN_RECEIPT', 'DEPOSIT', 'INCOME'].includes(String(tr.type || '').toUpperCase());
+                        const netEffect = isCredit ? (Number(tr.amount) || 0) : -(Number(tr.amount) || 0);
+                        const newBal = currentBal - netEffect;
+                        batch.update(accDoc.ref, { balance: newBal, updatedAt: new Date() });
+                    }
+                }
+
+                // 2. Cascade delete/reverse associated Journal entries
+                const journalSnap = await db.collection('journal').doc(currentBusinessId).collection('entries').where('ref', '==', trId).get();
+                journalSnap.docs.forEach(jDoc => {
+                    batch.delete(jDoc.ref);
+                });
+
+                if (tr.ref) {
+                    const journalSnap2 = await db.collection('journal').doc(currentBusinessId).collection('entries').where('ref', '==', tr.ref).get();
+                    journalSnap2.docs.forEach(jDoc => {
+                        batch.delete(jDoc.ref);
+                    });
+
+                    // If ref matches an order ID, cancel order and restore inventory stock
+                    try {
+                        const orderRef = db.collection('orders').doc(currentBusinessId).collection('list').doc(tr.ref);
+                        const orderSnap = await orderRef.get();
+                        if (orderSnap.exists) {
+                            const oData = orderSnap.data() || {};
+                            batch.update(orderRef, { status: 'cancelled', isReversed: true });
+                            const items = Array.isArray(oData.items) ? oData.items : [];
+                            items.forEach(line => {
+                                const pId = line.productId || line.id;
+                                const qty = Math.max(0, Number(line.quantity != null ? line.quantity : (line.orderedQty != null ? line.orderedQty : line.qty)) || 0);
+                                if (pId && qty > 0) {
+                                    const pRef = db.collection('products').doc(currentBusinessId).collection('list').doc(pId);
+                                    batch.update(pRef, { stock: firebase.firestore.FieldValue.increment(qty) });
+                                }
+                            });
+                        }
+                    } catch(e) {}
+
+                    // If ref matches an expense ID, delete expense document
+                    try {
+                        const expRef = db.collection('expenses').doc(currentBusinessId).collection('list').doc(tr.ref);
+                        const expSnap = await expRef.get();
+                        if (expSnap.exists) {
+                            batch.delete(expRef);
+                        }
+                    } catch(e) {}
+                }
+
+                // 3. Revert associated loan remaining balance if LOAN_REPAYMENT
+                if (tr.loanId && (tr.type === 'LOAN_REPAYMENT' || tr.type === 'REPAY_LOAN')) {
+                    const loanRef = db.collection('banks').doc(currentBusinessId).collection('loans').doc(tr.loanId);
+                    const loanDoc = await loanRef.get();
+                    if (loanDoc.exists) {
+                        const curRem = Number(loanDoc.data().remainingBalance || 0);
+                        const newRem = curRem + (Number(tr.amount) || 0);
+                        batch.update(loanRef, { remainingBalance: newRem, status: newRem > 0 ? 'active' : 'settled' });
+                    }
+                }
+
                 await batch.commit();
-                showToast('Transaction deleted and balance adjusted successfully!');
+                showToast('✅ Transaction deleted and all system balances adjusted successfully!');
+
                 await loadBankAccounts();
+                if (selectedAccountId) {
+                    await loadAccountLedger(selectedAccountId, document.getElementById('ledgerAccountFilter')?.value || 'selected');
+                } else {
+                    await loadAccountLedger(null, 'all');
+                }
                 await loadLiveCash();
+                await loadCashBankingSummary();
             } catch (e) {
-                console.error(e);
-                showToast('Failed to delete transaction!', true);
+                console.error('[Banking] Delete transaction failed:', e);
+                showToast('Failed to delete transaction: ' + e.message, true);
             }
         }
 

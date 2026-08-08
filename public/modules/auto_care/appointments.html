@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Service Appointments - DIGIBIZ Auto Care</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="autocare-theme.css?v=3">
+    
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    
+    <script src="../../core/firebase-init.js?v=3"></script>
+    <script src="../../core/event-validation.js?v=3"></script>
+    <script src="../../core/event-bus.js?v=3"></script>
+    <script src="../../core/accounts-core.js?v=3"></script>
+    <script src="../../core/auth-roles.js?v=3"></script>
+    <script src="../../core/business-types.js?v=4"></script>
+    <script src="../../core/dashboard-core.js?v=3"></script>
+    <script src="../../core/subscription-manager.js?v=3"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
+    <script src="autocare-utils.js?v=2"></script>
+    
+    <style>
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .controls-card { background: rgba(30, 41, 59, 0.85); border-radius: 16px; padding: 16px 20px; border: 1px solid #334155; margin-bottom: 25px; display: flex; gap: 15px; align-items: center; }
+        .search-box { flex: 1; position: relative; }
+        .search-box input { width: 100%; padding: 10px 14px 10px 40px; }
+        .search-box i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #64748b; }
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div>
+            <h2 style="color:#38bdf8; font-size:24px; font-weight:800;"><i class="fa-solid fa-calendar-check"></i> Service Appointments & Booking Console</h2>
+            <p style="color:#94a3b8; font-size:14px; margin-top:4px;">පාරිභෝගිකයින් සඳහා සේවා වේලාවන් වෙන්කිරීම (Appointments) සහ Job Cards බවට පත්කිරීම</p>
+        </div>
+        <button class="btn btn-primary" onclick="openApptModal()"><i class="fa-solid fa-plus"></i> Book New Appointment</button>
+    </div>
+
+    <div class="controls-card">
+        <div class="search-box">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="appSearch" placeholder="Search Customer Name, Phone, Vehicle Reg or Service Type..." onkeyup="renderAppointments()">
+        </div>
+        <select id="statusFilter" onchange="renderAppointments()">
+            <option value="ALL">All Statuses</option>
+            <option value="SCHEDULED">Scheduled</option>
+            <option value="CONFIRMED">Confirmed</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="CANCELLED">Cancelled</option>
+        </select>
+    </div>
+
+    <div class="table-card" style="padding:0; overflow:hidden;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Date & Time Slot</th>
+                    <th>Customer Name & Phone</th>
+                    <th>Vehicle Details</th>
+                    <th>Requested Service</th>
+                    <th>Assigned Tech / Bay</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="apptBody">
+                <!-- JS Rendered -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Modal Book Appointment -->
+    <div class="modal" id="apptModal" style="display:none;">
+        <div class="modal-content" style="max-width:600px; padding:24px; border-radius:20px;">
+            <h3 style="margin-bottom:15px; color:#38bdf8;" id="modalTitle"><i class="fa-solid fa-calendar-plus"></i> Service Appointment Booking</h3>
+            <form onsubmit="saveAppointment(event)">
+                <input type="hidden" id="appId">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div>
+                        <label>Appointment Date *</label>
+                        <input type="date" id="appDate" required style="width:100%;">
+                    </div>
+                    <div>
+                        <label>Time Slot *</label>
+                        <select id="appTime" style="width:100%;">
+                            <option value="08:30 AM">08:30 AM</option>
+                            <option value="09:30 AM">09:30 AM</option>
+                            <option value="10:30 AM">10:30 AM</option>
+                            <option value="11:30 AM">11:30 AM</option>
+                            <option value="01:30 PM">01:30 PM</option>
+                            <option value="02:30 PM">02:30 PM</option>
+                            <option value="03:30 PM">03:30 PM</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Customer Name *</label>
+                        <input type="text" id="appCustName" list="customerNameList" required style="width:100%;">
+                        <datalist id="customerNameList"></datalist>
+                    </div>
+                    <div>
+                        <label>Customer Phone *</label>
+                        <input type="text" id="appCustPhone" list="customerPhoneList" required style="width:100%;">
+                        <datalist id="customerPhoneList"></datalist>
+                    </div>
+                    <div>
+                        <label>Vehicle Reg Number *</label>
+                        <input type="text" id="appVehReg" required placeholder="e.g. CAB-8921" style="width:100%; text-transform:uppercase;">
+                    </div>
+                    <div>
+                        <label>Vehicle Brand & Model</label>
+                        <input type="text" id="appVehModel" placeholder="e.g. Toyota Prius" style="width:100%;">
+                    </div>
+                    <div style="grid-column: span 2;">
+                        <label>Requested Service / Note *</label>
+                        <input type="text" id="appService" required placeholder="e.g. Full Oil Service & Brake Check" style="width:100%;">
+                    </div>
+                    <div>
+                        <label>Assigned Technician / Bay</label>
+                        <input type="text" id="appTech" list="techList" placeholder="e.g. Nimal Kumara (Bay 1)" style="width:100%;">
+                        <datalist id="techList"></datalist>
+                    </div>
+                    <div>
+                        <label>Appointment Status</label>
+                        <select id="appStatus" style="width:100%;">
+                            <option value="SCHEDULED">SCHEDULED</option>
+                            <option value="CONFIRMED">CONFIRMED</option>
+                            <option value="COMPLETED">COMPLETED</option>
+                            <option value="CANCELLED">CANCELLED</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                    <button type="button" class="btn btn-outline" onclick="document.getElementById('apptModal').style.display='none'">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Appointment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let appointments = [];
+
+        function getBizId() {
+            return window.AutoCareUtils ? window.AutoCareUtils.getBizId() : 'DEFAULT_BIZ';
+        }
+
+        function loadAppointments() {
+            const bizId = getBizId();
+            const storageKey = `autocare_appointments_${bizId}`;
+            const cached = localStorage.getItem(storageKey);
+
+            if (cached) {
+                try { appointments = JSON.parse(cached); } catch(e) { appointments = []; }
+            } else {
+                appointments = [];
+            }
+
+            renderAppointments();
+        }
+
+        function renderAppointments() {
+            const tbody = document.getElementById('apptBody');
+            const search = document.getElementById('appSearch').value.toLowerCase();
+            const statusFilter = document.getElementById('statusFilter').value;
+
+            tbody.innerHTML = '';
+            const filtered = appointments.filter(a => {
+                const matchSearch = (a.custName||'').toLowerCase().includes(search) || (a.custPhone||'').includes(search) || (a.vehReg||'').toLowerCase().includes(search) || (a.service||'').toLowerCase().includes(search);
+                const matchStatus = statusFilter === 'ALL' || a.status === statusFilter;
+                return matchSearch && matchStatus;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:40px; color:#64748b;">තවම හමුවීම් (Appointments) සටහන් කර නොමැත. (No appointments booked)</td></tr>`;
+                return;
+            }
+
+            filtered.forEach(a => {
+                const dateStr = window.AutoCareUtils ? window.AutoCareUtils.formatDateDDMMYYYY(a.date) : a.date;
+                let badgeClass = 'badge-pending';
+                if(a.status === 'CONFIRMED') badgeClass = 'badge-progress';
+                else if(a.status === 'COMPLETED') badgeClass = 'badge-ready';
+                else if(a.status === 'CANCELLED') badgeClass = 'badge-delivered';
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td><strong style="color:#38bdf8;">${dateStr}</strong><br><small style="color:#94a3b8;">${a.time}</small></td>
+                        <td><strong style="color:#ffffff;">${a.custName}</strong><br><small style="color:#cbd5e1;">${a.custPhone}</small></td>
+                        <td><strong style="color:#ffffff;">${a.vehReg}</strong><br><small style="color:#94a3b8;">${a.vehModel || ''}</small></td>
+                        <td>${a.service}</td>
+                        <td>${a.tech || '-'}</td>
+                        <td><span class="status-badge ${badgeClass}">${a.status}</span></td>
+                        <td>
+                            <button class="btn btn-outline" style="padding:4px 8px; font-size:11px; border-color:#38bdf8; color:#38bdf8;" title="Convert to Job Card" onclick="convertToJobCard('${a.id}')"><i class="fa-solid fa-car-wrench"></i> To Job Card</button>
+                            <button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" title="Edit" onclick="editAppointment('${a.id}')"><i class="fa-solid fa-pen-to-square"></i></button>
+                            <button class="btn-danger-icon" title="Delete" onclick="deleteAppointment('${a.id}')"><i class="fa-solid fa-trash-can"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function populateDatalists() {
+            const nameList = document.getElementById('customerNameList');
+            const phoneList = document.getElementById('customerPhoneList');
+            const techList = document.getElementById('techList');
+
+            if (nameList || phoneList) {
+                const custs = window.AutoCareUtils ? window.AutoCareUtils.getCustomers() : [];
+                if (nameList) nameList.innerHTML = custs.map(c => `<option value="${c.name}">${c.phone ? '('+c.phone+')' : ''}</option>`).join('');
+                if (phoneList) phoneList.innerHTML = custs.filter(c => c.phone).map(c => `<option value="${c.phone}">${c.name}</option>`).join('');
+            }
+            if (techList) {
+                const techs = window.AutoCareUtils ? window.AutoCareUtils.getTechnicians() : [];
+                techList.innerHTML = techs.map(t => `<option value="${t}"></option>`).join('');
+            }
+        }
+
+        function openApptModal() {
+            populateDatalists();
+            document.getElementById('appId').value = '';
+            document.getElementById('modalTitle').innerText = '📅 Book New Service Appointment';
+            document.getElementById('appDate').valueAsDate = new Date();
+            document.getElementById('appCustName').value = '';
+            document.getElementById('appCustPhone').value = '';
+            document.getElementById('appVehReg').value = '';
+            document.getElementById('appVehModel').value = '';
+            document.getElementById('appService').value = '';
+            document.getElementById('appTech').value = '';
+            document.getElementById('appStatus').value = 'SCHEDULED';
+            document.getElementById('apptModal').style.display = 'flex';
+        }
+
+        function saveAppointment(e) {
+            e.preventDefault();
+            const id = document.getElementById('appId').value || 'APP-' + Date.now();
+            const date = document.getElementById('appDate').value;
+            const time = document.getElementById('appTime').value;
+            const custName = document.getElementById('appCustName').value.trim();
+            const custPhone = document.getElementById('appCustPhone').value.trim();
+            const vehReg = document.getElementById('appVehReg').value.toUpperCase().trim();
+            const vehModel = document.getElementById('appVehModel').value.trim();
+            const service = document.getElementById('appService').value.trim();
+            const tech = document.getElementById('appTech').value.trim();
+            const status = document.getElementById('appStatus').value;
+
+            if (window.AutoCareUtils) {
+                window.AutoCareUtils.saveCustomerMemory(custName, custPhone, vehReg);
+                if (tech) window.AutoCareUtils.saveTechnician(tech);
+            }
+
+            const obj = { id, date, time, custName, custPhone, vehReg, vehModel, service, tech, status };
+            const idx = appointments.findIndex(x => x.id === id);
+
+            if (idx >= 0) appointments[idx] = obj;
+            else appointments.unshift(obj);
+
+            const bizId = getBizId();
+            localStorage.setItem(`autocare_appointments_${bizId}`, JSON.stringify(appointments));
+
+            document.getElementById('apptModal').style.display = 'none';
+            renderAppointments();
+            alert('✅ Appointment saved successfully!');
+        }
+
+        function convertToJobCard(id) {
+            const a = appointments.find(x => x.id === id);
+            if (!a) return;
+
+            const bizId = getBizId();
+            const jobsKey = `autocare_jobs_${bizId}`;
+            let currentJobs = localStorage.getItem(jobsKey) ? JSON.parse(localStorage.getItem(jobsKey)) : [];
+
+            const jobNo = window.AutoCareUtils ? window.AutoCareUtils.getNextJobNumber() : 'JOB-' + Date.now();
+            currentJobs.unshift({
+                id: jobNo,
+                date: new Date().toISOString().split('T')[0],
+                regNo: a.vehReg,
+                brand: '',
+                model: a.vehModel || '',
+                customerName: a.custName,
+                customerPhone: a.custPhone,
+                tech: a.tech || 'Unassigned',
+                mileage: 'N/A',
+                fuel: '1/2',
+                status: 'PENDING',
+                services: a.service
+            });
+
+            localStorage.setItem(jobsKey, JSON.stringify(currentJobs));
+            if (window.AutoCareUtils) window.AutoCareUtils.saveJobCounter();
+
+            a.status = 'COMPLETED';
+            localStorage.setItem(`autocare_appointments_${bizId}`, JSON.stringify(appointments));
+
+            alert(`✅ Appointment converted to Active Job Card #${jobNo}! Redirecting...`);
+            window.location.href = 'job-cards.html';
+        }
+
+        function editAppointment(id) {
+            populateDatalists();
+            const a = appointments.find(x => x.id === id);
+            if (!a) return;
+
+            document.getElementById('appId').value = a.id;
+            document.getElementById('modalTitle').innerText = '✏️ Edit Appointment';
+            document.getElementById('appDate').value = a.date;
+            document.getElementById('appTime').value = a.time;
+            document.getElementById('appCustName').value = a.custName;
+            document.getElementById('appCustPhone').value = a.custPhone;
+            document.getElementById('appVehReg').value = a.vehReg;
+            document.getElementById('appVehModel').value = a.vehModel || '';
+            document.getElementById('appService').value = a.service;
+            document.getElementById('appTech').value = a.tech || '';
+            document.getElementById('appStatus').value = a.status;
+            document.getElementById('apptModal').style.display = 'flex';
+        }
+
+        function deleteAppointment(id) {
+            if (confirm('ඔබට මෙම හමුවීම (Appointment) මකා දැමීමට අවශ්‍ය බව තහවුරු කරන්න?')) {
+                appointments = appointments.filter(x => x.id !== id);
+                const bizId = getBizId();
+                localStorage.setItem(`autocare_appointments_${bizId}`, JSON.stringify(appointments));
+                renderAppointments();
+                alert('✅ Appointment deleted!');
+            }
+        }
+
+        window.onload = loadAppointments;
+    </script>
+</body>
+</html>

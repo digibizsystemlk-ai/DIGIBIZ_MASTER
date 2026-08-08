@@ -232,6 +232,50 @@
                 </div>
             </div>
 
+            <!-- Overdue Credit Collections Widget (Clickable Block) -->
+            <div id="coreOverdueCreditWidget" onclick="openOverdueCreditModal()" style="background:linear-gradient(135deg, #854d0e, #a16207); color:#fff; border-radius:14px; padding:16px 20px; margin-bottom:15px; cursor:pointer; box-shadow:0 4px 14px rgba(161,98,7,0.25); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; transition:transform 0.2s;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <div style="font-size:28px;">📅</div>
+                    <div>
+                        <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#fef08a; font-weight:800;">🚨 Overdue Credit Collections (කල් ඉකුත් වූ ණය ගෙවීම්)</div>
+                        <div id="coreOverdueCreditCountText" style="font-size:18px; font-weight:800; color:#ffffff; margin-top:2px;">Checking due dates...</div>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.15); padding:8px 14px; border-radius:8px; font-weight:700; font-size:12px; border:1px solid rgba(255,255,255,0.3);">
+                    <span>🔍 View Overdue Collections List</span> ➔
+                </div>
+            </div>
+
+            <!-- Overdue Credit Modal -->
+            <div id="overdueCreditModal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.65); z-index:99999; padding:20px; align-items:center; justify-content:center;">
+                <div style="background:#fff; border-radius:16px; max-width:780px; width:100%; max-height:85vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 40px rgba(0,0,0,0.3);">
+                    <div style="background:#854d0e; color:#fff; padding:16px 20px; display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0; font-size:16px; font-weight:800; display:flex; align-items:center; gap:8px;">📅 Overdue Credit Sales & Cheque Clearance Dates</h3>
+                        <button onclick="closeOverdueCreditModal()" style="background:none; border:none; color:#fff; font-size:20px; font-weight:bold; cursor:pointer;">&times;</button>
+                    </div>
+                    <div style="padding:16px; overflow-y:auto; flex:1;">
+                        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                            <thead>
+                                <tr style="background:#fefce8; color:#854d0e;">
+                                    <th style="padding:10px; text-align:left;">Customer / Shop</th>
+                                    <th style="padding:10px; text-align:left;">Area</th>
+                                    <th style="padding:10px; text-align:left;">Payment Mode</th>
+                                    <th style="padding:10px; text-align:left;">Due Date</th>
+                                    <th style="padding:10px; text-align:right;">Amount (Rs.)</th>
+                                    <th style="padding:10px; text-align:center;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="overdueCreditModalBody">
+                                <tr><td colspan="6" style="text-align:center; padding:20px; color:#64748b;">Checking overdue collections...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="background:#f8fafc; padding:12px 20px; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end;">
+                        <button onclick="closeOverdueCreditModal()" style="padding:8px 16px; background:#64748b; color:#fff; border:none; border-radius:8px; font-weight:700; cursor:pointer;">Close</button>
+                    </div>
+                </div>
+            </div>
+
             <div class="due-payments-widget">
                 <div><i class="fas fa-clock" style="color:#ff6b6b;"></i> Payment Reminders</div>
                 <div class="due-stats">
@@ -1308,6 +1352,24 @@
                     if (dt >= startOfToday) profitToday += grossMargin;
                 });
 
+                const mfgSalesSnap = await db.collection('manufacturer_sales').where('businessId', '==', bid).get().catch(() => ({ docs: [] }));
+                mfgSalesSnap.docs.forEach(doc => {
+                    const r = doc.data() || {};
+                    if (r.isActive === false) return;
+                    const dt = parseDateAny(r.createdAt);
+                    if (!dt || isNaN(dt.getTime())) return;
+                    if (dt < startOfYear) return;
+
+                    const amt = Number(r.amount || 0);
+                    const cogs = Number(r.cogsAmount || (Number(r.qty || 0) * Number(r.fgUnitCost || 0)));
+                    const grossProfit = amt - cogs;
+
+                    if (dt >= startOfYear) profitYear += grossProfit;
+                    if (dt >= startOfMonth) profitMonth += grossProfit;
+                    if (dt >= startOfWeek) profitWeek += grossProfit;
+                    if (dt >= startOfToday) profitToday += grossProfit;
+                });
+
                 allExpDocs.forEach(doc => {
                     const r = doc.data() || {};
                     const dt = parseDateAny(r.createdAt || r.expenseDate);
@@ -1463,13 +1525,120 @@
             if (modal) modal.style.display = 'none';
         }
 
+        let overdueCreditItemsCache = [];
+
+        async function loadCoreOverdueCreditAlerts() {
+            const bid = (dashboardContext && dashboardContext.businessId) || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            if (!bid || !window.db) return;
+            try {
+                const snap = await db.collection('manufacturer_sales').where('businessId', '==', bid).where('paymentStatus', 'in', ['PENDING', 'PENDING_CLEARANCE']).get().catch(() => ({ docs: [] }));
+                const items = [];
+                const todayMs = new Date().getTime();
+
+                snap.docs.forEach(doc => {
+                    const d = doc.data() || {};
+                    if (d.isActive === false) return;
+                    const isCredit = d.paymentMode === 'CREDIT';
+                    const isCheque = d.paymentMode === 'CHEQUE';
+                    const dueStr = isCredit ? d.dueDate : (isCheque ? d.chequeClearanceDate : null);
+                    const amt = Number(d.amount || 0);
+
+                    let isOverdue = false;
+                    if (dueStr) {
+                        const dueMs = new Date(dueStr + 'T23:59:59').getTime();
+                        if (!isNaN(dueMs) && dueMs < todayMs) {
+                            isOverdue = true;
+                        }
+                    }
+
+                    if (isOverdue) {
+                        items.push({
+                            id: doc.id,
+                            customer: d.companyName || 'Customer',
+                            area: d.area || 'N/A',
+                            phone: d.customerMobile || '',
+                            amount: amt,
+                            dueStr: dueStr || 'Overdue',
+                            paymentMode: d.paymentMode || 'CREDIT'
+                        });
+                    }
+                });
+
+                overdueCreditItemsCache = items;
+                const txtEl = document.getElementById('coreOverdueCreditCountText');
+                const widgetEl = document.getElementById('coreOverdueCreditWidget');
+
+                if (!items.length) {
+                    if (txtEl) txtEl.textContent = '✅ No overdue collections pending (කල් ඉකුත් වූ ණය නැත)';
+                    if (widgetEl) widgetEl.style.background = 'linear-gradient(135deg, #15803d, #166534)';
+                } else {
+                    const totalAmt = items.reduce((sum, x) => sum + x.amount, 0);
+                    if (txtEl) txtEl.textContent = `🚨 ${items.length} Overdue Credit Collections (Rs. ${totalAmt.toLocaleString()})`;
+                    if (widgetEl) widgetEl.style.background = 'linear-gradient(135deg, #854d0e, #a16207)';
+                }
+            } catch (e) {
+                console.warn('[Dashboard] Error loading overdue credit alerts:', e);
+            }
+        }
+
+        function openOverdueCreditModal() {
+            const modal = document.getElementById('overdueCreditModal');
+            const tbody = document.getElementById('overdueCreditModalBody');
+            if (!modal || !tbody) return;
+
+            modal.style.display = 'flex';
+            if (!overdueCreditItemsCache.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#166534; font-weight:700;">✅ No overdue credit sales! All payments are up to date.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = overdueCreditItemsCache.map(x => `
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px; font-weight:700; color:#0f172a;">${x.customer}</td>
+                    <td style="padding:10px; color:#0369a1; font-weight:600;">📍 ${x.area}</td>
+                    <td style="padding:10px;"><span style="background:#fef2f2; color:#991b1b; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">${x.paymentMode}</span></td>
+                    <td style="padding:10px; font-weight:800; color:#dc2626;">📅 ${x.dueStr}</td>
+                    <td style="padding:10px; text-align:right; font-weight:800; color:#0f172a;">Rs. ${x.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td style="padding:10px; text-align:center;">
+                        <button onclick="settleCreditSaleDirect('${x.id}')" style="padding:4px 10px; background:#166534; color:#fff; border:none; border-radius:6px; font-weight:700; font-size:11px; cursor:pointer;">
+                            ✅ Mark Settled
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function closeOverdueCreditModal() {
+            const modal = document.getElementById('overdueCreditModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function settleCreditSaleDirect(saleId) {
+            if (!confirm('Mark this overdue credit sale as fully settled / paid?')) return;
+            try {
+                await db.collection('manufacturer_sales').doc(saleId).update({
+                    paymentStatus: 'PAID',
+                    settledAt: new Date()
+                });
+                alert('✅ Credit sale marked as settled successfully!');
+                await loadCoreOverdueCreditAlerts();
+                openOverdueCreditModal();
+            } catch (e) {
+                alert('Error settling credit sale: ' + e.message);
+            }
+        }
+
         window.openLowStockAlertModal = openLowStockAlertModal;
         window.closeLowStockAlertModal = closeLowStockAlertModal;
+        window.openOverdueCreditModal = openOverdueCreditModal;
+        window.closeOverdueCreditModal = closeOverdueCreditModal;
+        window.settleCreditSaleDirect = settleCreditSaleDirect;
 
         async function startDashboardForUser(user) {
             if (!user) return;
             await refreshDashboardContextAndRender(user);
             loadCoreLowStockAlerts();
+            loadCoreOverdueCreditAlerts();
             if (!window.__DIGIBIZ_CORE_DASHBOARD_WATCHERS_BOUND__) {
                 window.__DIGIBIZ_CORE_DASHBOARD_WATCHERS_BOUND__ = true;
                 window.addEventListener('storage', (ev) => {

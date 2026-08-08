@@ -94,6 +94,68 @@
     </div>
 </div>
 
+<!-- Shop Intelligence & Order History Analysis Modal -->
+<div id="shopAnalyticsModal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-card" style="max-width:780px; max-height:90vh; overflow-y:auto;" role="dialog">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:14px;">
+            <h3 id="analyticsModalTitle" style="margin:0; color:#0f172a; font-size:1.1rem;">📊 Shop Order History Analysis</h3>
+            <button type="button" onclick="closeAnalyticsModal()" style="background:#f1f5f9; border:none; border-radius:50%; width:30px; height:30px; font-weight:bold; cursor:pointer;">✕</button>
+        </div>
+        
+        <div id="analyticsLoading" style="text-align:center; padding:30px; color:#64748b;">Analysing shop history...</div>
+        
+        <div id="analyticsContent" style="display:none;">
+            <!-- 1. Frequency Analysis Summary Cards -->
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin-bottom:16px;">
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:12px;">
+                    <div style="font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase;">Order Frequency</div>
+                    <div id="statAvgInterval" style="font-size:1.25rem; font-weight:800; color:#0f172a; margin-top:4px;">-</div>
+                    <div style="font-size:11px; color:#94a3b8; margin-top:2px;">Avg interval in days</div>
+                </div>
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:12px;">
+                    <div style="font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase;">Last Order Date</div>
+                    <div id="statLastOrder" style="font-size:1.1rem; font-weight:800; color:#0f172a; margin-top:4px;">-</div>
+                    <div id="statDaysAgo" style="font-size:11px; color:#94a3b8; margin-top:2px;">-</div>
+                </div>
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:12px;">
+                    <div style="font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase;">Reorder Status</div>
+                    <div id="statReorderStatus" style="font-size:1rem; font-weight:800; margin-top:4px;">-</div>
+                    <div style="font-size:11px; color:#94a3b8; margin-top:2px;">Customer Buying Health</div>
+                </div>
+            </div>
+
+            <!-- 2. Top Purchased Products -->
+            <div style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:14px; margin-bottom:16px;">
+                <h4 style="margin:0 0 10px; font-size:0.9rem; color:#0f172a; display:flex; align-items:center; gap:6px;">🏆 Top Purchased Products</h4>
+                <div id="topProductsList" style="display:flex; flex-direction:column; gap:8px;"></div>
+            </div>
+
+            <!-- 3. Bills & Receipts History Table -->
+            <div style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:14px;">
+                <h4 style="margin:0 0 10px; font-size:0.9rem; color:#0f172a;">📄 Issued Receipts & Bills History</h4>
+                <div style="overflow-x:auto;">
+                    <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                        <thead>
+                            <tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0;">
+                                <th style="padding:8px;">Date</th>
+                                <th style="padding:8px;">Order ID</th>
+                                <th style="padding:8px;">Items</th>
+                                <th style="padding:8px; text-align:right;">Amount</th>
+                                <th style="padding:8px; text-align:center;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="shopOrdersHistoryRows"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top:16px; text-align:right;">
+            <button type="button" class="btn btn-secondary" onclick="closeAnalyticsModal()">Close</button>
+        </div>
+    </div>
+</div>
+
 <script>
 (function () {
     var db = firebase.firestore();
@@ -247,11 +309,15 @@
                 ? '<span class="badge badge-on">Active</span>'
                 : '<span class="badge badge-off">Inactive</span>';
             var actionsHtml = '—';
+            var analyticsBtn = '<button type="button" class="btn-icon my-shops-analytics" title="Order History Analysis" data-shop-id="' + esc(r.id) + '" data-shop-name="' + esc(disp) + '" style="background:#e0f2fe; border-color:#bae6fd; color:#0369a1;">📊 Analysis</button>';
             if (showActions) {
                 actionsHtml = '<div class="act-btns">'
+                    + analyticsBtn
                     + '<button type="button" class="btn-icon my-shops-edit" title="Edit" data-shop-id="' + esc(r.id) + '">✏️</button>'
                     + '<button type="button" class="btn-icon danger my-shops-remove" title="Remove" data-shop-id="' + esc(r.id) + '">🗑️</button>'
                     + '</div>';
+            } else {
+                actionsHtml = '<div class="act-btns">' + analyticsBtn + '</div>';
             }
             html += '<tr>'
                 + '<td class="num">' + (i + 1) + '</td>'
@@ -270,10 +336,15 @@
     });
 
     document.getElementById('shopBody').addEventListener('click', function (ev) {
-        var t = ev.target && ev.target.closest ? ev.target.closest('.my-shops-edit, .my-shops-remove') : null;
+        var t = ev.target && ev.target.closest ? ev.target.closest('.my-shops-edit, .my-shops-remove, .my-shops-analytics') : null;
         if (!t) return;
         var sid = String(t.getAttribute('data-shop-id') || '').trim();
         if (!sid) return;
+        if (t.classList.contains('my-shops-analytics')) {
+            var sName = String(t.getAttribute('data-shop-name') || sid).trim();
+            openAnalyticsModal(sid, sName);
+            return;
+        }
         if (t.classList.contains('my-shops-edit')) {
             openEditModal(sid);
             return;
@@ -290,6 +361,138 @@
             });
         }
     });
+
+    window.closeAnalyticsModal = function() {
+        var m = document.getElementById('shopAnalyticsModal');
+        if (m) {
+            m.classList.remove('open');
+            m.setAttribute('aria-hidden', 'true');
+        }
+    };
+
+    async function openAnalyticsModal(shopId, shopName) {
+        var modal = document.getElementById('shopAnalyticsModal');
+        document.getElementById('analyticsModalTitle').textContent = '📊 Order History & Intelligence: ' + shopName;
+        document.getElementById('analyticsLoading').style.display = 'block';
+        document.getElementById('analyticsContent').style.display = 'none';
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+
+        try {
+            var bid = String(currentBusinessId || '').trim();
+            var ordersSnap = await db.collection('distributor_orders')
+                .where('businessId', '==', bid)
+                .where('shopId', '==', shopId)
+                .get().catch(function() { return { docs: [] }; });
+
+            if (!ordersSnap.docs || !ordersSnap.docs.length) {
+                ordersSnap = await db.collection('distributor_orders')
+                    .where('businessId', '==', bid)
+                    .where('shopName', '==', shopName)
+                    .get().catch(function() { return { docs: [] }; });
+            }
+
+            var orders = ordersSnap.docs.map(function(d) {
+                return Object.assign({ id: d.id }, d.data() || {});
+            });
+
+            orders.sort(function(a, b) {
+                return shopCreatedMs(b) - shopCreatedMs(a);
+            });
+
+            var totalOrders = orders.length;
+            var nowMs = Date.now();
+            var avgIntervalText = 'N/A (1 order)';
+            var lastOrderText = 'No orders yet';
+            var daysAgoText = '-';
+            var statusBadge = '<span style="color:#64748b;">⚪ No Order History</span>';
+
+            if (totalOrders > 0) {
+                var lastOrderMs = shopCreatedMs(orders[0]);
+                if (lastOrderMs > 0) {
+                    var dLast = new Date(lastOrderMs);
+                    lastOrderText = dLast.toLocaleDateString();
+                    var daysDiff = Math.floor((nowMs - lastOrderMs) / (1000 * 60 * 60 * 24));
+                    daysAgoText = daysDiff === 0 ? 'Today' : (daysDiff + ' days ago');
+
+                    if (totalOrders >= 2) {
+                        var firstOrderMs = shopCreatedMs(orders[totalOrders - 1]);
+                        var totalSpanDays = (lastOrderMs - firstOrderMs) / (1000 * 60 * 60 * 24);
+                        var avgDays = Math.max(1, Math.round(totalSpanDays / (totalOrders - 1)));
+                        avgIntervalText = 'Every ' + avgDays + ' day(s)';
+
+                        if (daysDiff <= avgDays + 2) {
+                            statusBadge = '<span style="color:#166534; background:#d1fae5; padding:4px 8px; border-radius:6px; font-weight:700;">🟢 Healthy Pattern</span>';
+                        } else if (daysDiff <= avgDays * 2) {
+                            statusBadge = '<span style="color:#854d0e; background:#fef9c3; padding:4px 8px; border-radius:6px; font-weight:700;">🟡 Due for Reorder</span>';
+                        } else {
+                            statusBadge = '<span style="color:#991b1b; background:#fee2e2; padding:4px 8px; border-radius:6px; font-weight:700;">🔴 Overdue Order!</span>';
+                        }
+                    } else {
+                        statusBadge = '<span style="color:#0369a1; background:#e0f2fe; padding:4px 8px; border-radius:6px; font-weight:700;">🔵 New Customer</span>';
+                    }
+                }
+            }
+
+            document.getElementById('statAvgInterval').textContent = avgIntervalText;
+            document.getElementById('statLastOrder').textContent = lastOrderText;
+            document.getElementById('statDaysAgo').textContent = daysAgoText;
+            document.getElementById('statReorderStatus').innerHTML = statusBadge;
+
+            var prodMap = {};
+            orders.forEach(function(ord) {
+                (ord.items || []).forEach(function(it) {
+                    var pName = String(it.name || it.productName || 'Item').trim();
+                    var qty = Number(it.qty || it.quantity || 1);
+                    var sub = Number(it.subtotal || it.total || (qty * Number(it.price || it.unitPrice || 0)));
+                    if (!prodMap[pName]) prodMap[pName] = { name: pName, qty: 0, total: 0 };
+                    prodMap[pName].qty += qty;
+                    prodMap[pName].total += sub;
+                });
+            });
+
+            var topProds = Object.values(prodMap).sort(function(a, b) { return b.qty - a.qty; }).slice(0, 5);
+            var topHtml = '';
+            if (topProds.length > 0) {
+                topProds.forEach(function(p, idx) {
+                    topHtml += '<div style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; padding:8px 12px; border-radius:8px; border:1px solid #f1f5f9;">'
+                        + '<div style="font-size:12px; font-weight:700; color:#334155;">#' + (idx + 1) + ' ' + esc(p.name) + '</div>'
+                        + '<div style="font-size:12px; color:#475569;"><span style="font-weight:700; color:#0ea5e9;">' + p.qty + ' units</span> | LKR ' + p.total.toFixed(2) + '</div>'
+                        + '</div>';
+                });
+            } else {
+                topHtml = '<div style="color:#94a3b8; font-size:12px;">No purchased product records.</div>';
+            }
+            document.getElementById('topProductsList').innerHTML = topHtml;
+
+            var historyHtml = '';
+            if (orders.length > 0) {
+                orders.forEach(function(ord) {
+                    var dVal = fmtCreated(ord);
+                    var ordId = esc(ord.id || ord.orderId || '-');
+                    var itemCount = (ord.items || []).length;
+                    var tot = Number(ord.totalAmount || ord.grandTotal || 0).toFixed(2);
+                    historyHtml += '<tr style="border-bottom:1px solid #f1f5f9;">'
+                        + '<td style="padding:8px;">' + esc(dVal) + '</td>'
+                        + '<td style="padding:8px; font-family:monospace; font-weight:700;">' + ordId + '</td>'
+                        + '<td style="padding:8px;">' + itemCount + ' item(s)</td>'
+                        + '<td style="padding:8px; text-align:right; font-weight:700; color:#0f172a;">LKR ' + tot + '</td>'
+                        + '<td style="padding:8px; text-align:center;"><a href="/view-bill.html?id=' + encodeURIComponent(ord.id) + '" target="_blank" style="background:#0ea5e9; color:#fff; text-decoration:none; padding:4px 8px; border-radius:6px; font-size:11px; font-weight:700;">📄 View Bill</a></td>'
+                        + '</tr>';
+                });
+            } else {
+                historyHtml = '<tr><td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">No bill history found for this shop.</td></tr>';
+            }
+            document.getElementById('shopOrdersHistoryRows').innerHTML = historyHtml;
+
+            document.getElementById('analyticsLoading').style.display = 'none';
+            document.getElementById('analyticsContent').style.display = 'block';
+
+        } catch (eErr) {
+            console.error('Analytics Error:', eErr);
+            document.getElementById('analyticsLoading').innerHTML = '<div style="color:#b91c1c;">Failed to load analysis: ' + esc(eErr.message || String(eErr)) + '</div>';
+        }
+    };
 
     document.getElementById('shopEditCancel').addEventListener('click', closeEditModal);
     document.getElementById('shopEditModal').addEventListener('click', function (ev) {

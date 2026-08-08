@@ -774,6 +774,7 @@
                 const W = 44;
                 const line = "--------------------------------------------\r\n";
                 const dline = "============================================\r\n";
+                const boxLine = "+------------------------------------------+\r\n";
                 
                 function row2(left, right) {
                     left = String(left || '');
@@ -783,8 +784,19 @@
                     return left.substring(0, W - right.length - 1) + " " + right + "\r\n";
                 }
 
+                function boxRow(text) {
+                    text = String(text || '');
+                    if (text.length > 40) text = text.substring(0, 40);
+                    return "| " + text.padEnd(40, ' ') + " |\r\n";
+                }
+
                 const repDisplay = getRepDisplayName(order);
                 const formattedOrdId = formatReadableOrderId(order);
+                const shopAddress = order.shopAddress || order.address || 'Standard Delivery Location';
+                const shopPhone = order.shopPhone || order.phone || order.contactPhone || 'N/A';
+                const corpName = order.corpName || 'SPRANZA HOLDINGS (PVT) LTD';
+                const corpHotline = order.corpHotline || order.branchPhone || '+94 11 234 5678';
+                const orderNotes = order.notes || order.paymentTerms || 'Distributor Standard Order';
 
                 // Initialize Printer + Reset Hardware Left Margin (24 dots = 2 chars offset) & Width to Full 80mm Canvas (576 dots)
                 let txt = "\x1B\x40\x1C\x2E\x1B\x74\x00\x1D\x4C\x18\x00\x1D\x57\x40\x02";
@@ -800,18 +812,38 @@
                 txt += dline;
 
                 // ----------------------------------------------------
-                // 2. Order Meta Details (Left Align)
+                // 2. Order Meta Details
                 // ----------------------------------------------------
                 txt += "\x1B\x61\x00"; // Left Align
                 txt += row2("Order ID:", formattedOrdId);
-                txt += row2("Shop:", String(order.shopName || 'Customer Shop').substring(0, 28));
                 txt += row2("Rep Name:", String(repDisplay).substring(0, 28));
                 txt += line;
 
                 // ----------------------------------------------------
-                // 3. Item Table (Exact Column Alignment) - 44 chars wide
+                // 3. BOX 1: Customer & Delivery Address Details Box
                 // ----------------------------------------------------
-                // Item Name (20) + Qty (4) + Price (8) + Amount (12) = 44
+                txt += boxLine;
+                txt += boxRow("BOX 1: CUSTOMER & DELIVERY ADDRESS");
+                txt += boxRow("Shop: " + String(order.shopName || 'Customer Shop'));
+                txt += boxRow("Addr: " + String(shopAddress));
+                txt += boxRow("Phone: " + String(shopPhone));
+                txt += boxLine;
+                txt += "\r\n";
+
+                // ----------------------------------------------------
+                // 4. BOX 2: Corporate Holding & Branch Details Box
+                // ----------------------------------------------------
+                txt += boxLine;
+                txt += boxRow("BOX 2: CORPORATE & BRANCH DETAILS");
+                txt += boxRow("Holding: " + String(corpName));
+                txt += boxRow("Hotline: " + String(corpHotline));
+                txt += boxRow("Notes: " + String(orderNotes));
+                txt += boxLine;
+                txt += line;
+
+                // ----------------------------------------------------
+                // 5. Item Table (Exact Column Alignment) - 44 chars wide
+                // ----------------------------------------------------
                 txt += "Item Name            Qty   Price      Amount\r\n";
                 txt += line;
 
@@ -825,20 +857,25 @@
 
                 txt += line;
                 const tot = Number(order.totalAmount || order.grandTotal || 0);
-                txt += "\x1B\x45\x01"; // Bold On for Total
-                txt += row2("GRAND TOTAL:", `LKR ${tot.toFixed(2)}`);
-                txt += "\x1B\x45\x00"; // Bold Off
+
+                // ----------------------------------------------------
+                // 6. Prominent Extra-Bold Grand Total (Double Height/Width)
+                // ----------------------------------------------------
+                txt += "\x1B\x61\x01"; // Center Align
+                txt += "\x1D\x21\x11\x1B\x45\x01"; // Double Height + Double Width + Extra Bold
+                txt += `TOTAL: LKR ${tot.toFixed(2)}\r\n`;
+                txt += "\x1D\x21\x00\x1B\x45\x00"; // Reset Size & Bold Off
                 txt += dline;
 
                 // ----------------------------------------------------
-                // 4. Thank You Footer (Hardware Center Align)
+                // 7. Thank You Footer (Hardware Center Align)
                 // ----------------------------------------------------
                 txt += "\x1B\x61\x01"; // Center Align
                 txt += "Thank You For Your Business!\r\n";
                 txt += line;
 
                 // ----------------------------------------------------
-                // 5. Software Solution Credit (50% Small Font + Center Align)
+                // 8. Software Solution Credit (50% Small Font + Center Align)
                 // ----------------------------------------------------
                 txt += "\x1B\x4D\x01"; // Font B (50% Smaller Font Size)
                 txt += "Software solution by - DIGIBIZ - 0713446500\r\n";

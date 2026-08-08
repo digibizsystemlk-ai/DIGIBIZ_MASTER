@@ -87,7 +87,11 @@
     <div class="main-content">
         <div class="page-header">
             <h1><i class="fas fa-boxes"></i> Inventory Management</h1>
-            <button class="btn-primary" id="addProductBtn"><i class="fas fa-plus"></i> Add Product</button>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button class="btn-outline" style="border-color:#ef4444; color:#ef4444;" onclick="openSpoilageModal()"><i class="fas fa-biohazard"></i> Log Spoilage / Damage (හානි)</button>
+                <button class="btn-outline" style="border-color:#0f3b2c; color:#0f3b2c;" onclick="openReconciliationModal()"><i class="fas fa-balance-scale"></i> Stock Reconciliation (තොග පරීක්ෂාව)</button>
+                <button class="btn-primary" id="addProductBtn"><i class="fas fa-plus"></i> Add Product</button>
+            </div>
         </div>
         
         <div class="stats-row">
@@ -139,14 +143,13 @@
         <div class="modal-content">
             <h3 id="modalTitle">Add New Product</h3>
             <input type="text" id="productCode" placeholder="Product Code (e.g., P001)">
-            <input type="text" id="productName" placeholder="Product Name">
-            <label style="display:block; margin-top:12px; margin-bottom:4px; font-size:12px; font-weight:600; color:#64748b; text-align: left;">Product Category</label>
-            <input type="text" id="productCategory" list="categoryOptions" placeholder="Type or Select Category">
+            <input type="text" id="productName" placeholder="Product Name *" required>
+            <input type="text" id="productCategory" placeholder="Category *" list="categoryOptions" required>
             <datalist id="categoryOptions"></datalist>
             
             <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                 <div style="flex: 1;">
-                    <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:4px; text-align: left;">Selling Type (මාදිලිය)</label>
+                    <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:4px; text-align: left;">Selling Type</label>
                     <select id="productSellType" style="width:100%; padding:10px; border:1px solid #e9ecef; border-radius:8px;" onchange="onSellTypeChange()">
                         <option value="pcs">Unit (ගණන් කර - Pcs)</option>
                         <option value="weight">Weight (කිරා මැන - Kg/g)</option>
@@ -202,6 +205,103 @@
         </div>
     </div>
     
+    <!-- Real-Time GRN Batch-Linked Spoilage / Damage Logging Modal -->
+    <div id="spoilageModal" class="modal">
+        <div class="modal-content" style="max-width:580px;">
+            <h3 style="color:#ef4444;"><i class="fas fa-biohazard"></i> Log Spoilage / Damage (GRN Batch Costing)</h3>
+            <p style="font-size:12px; color:#64748b; margin-bottom:12px;">Select product and historical GRN Purchase Batch to calculate exact financial loss expense based on original GRN purchase cost.</p>
+            
+            <label style="font-size:12px; font-weight:700; color:#64748b; margin-bottom:4px; display:block;">1. Select Product (භාණ්ඩය)</label>
+            <select id="spoilageProductSelect" style="width:100%; padding:10px; border:1px solid #e9ecef; border-radius:8px; margin-bottom:12px;" onchange="onSpoilageProductChange()">
+                <option value="">-- Select Product --</option>
+            </select>
+
+            <label style="font-size:12px; font-weight:700; color:#64748b; margin-bottom:4px; display:block;">2. Select GRN Purchase Batch (මිලදී ගත් GRN තොග කාණ්ඩය)</label>
+            <select id="spoilageGrnSelect" style="width:100%; padding:10px; border:1px solid #e9ecef; border-radius:8px; margin-bottom:12px;" onchange="calcSpoilageLoss()">
+                <option value="">-- Select GRN Purchase Batch --</option>
+            </select>
+
+            <div style="display:flex; gap:10px; margin-bottom:12px;">
+                <div style="flex:1;">
+                    <label style="font-size:12px; font-weight:700; color:#64748b; margin-bottom:4px; display:block;">Station / Location</label>
+                    <select id="spoilageStationSelect" style="width:100%; padding:10px; border:1px solid #e9ecef; border-radius:8px;">
+                        <option value="Main Shop">Main Shop / Warehouse</option>
+                        <option value="Station 2 / Branch">Station 2 / Branch</option>
+                        <option value="Home Station">Home Station / Store</option>
+                    </select>
+                </div>
+                <div style="flex:1;">
+                    <label style="font-size:12px; font-weight:700; color:#64748b; margin-bottom:4px; display:block;">Damaged Qty / Wt</label>
+                    <input type="number" id="spoilageQty" placeholder="Quantity damaged" step="any" style="margin-bottom:0;" oninput="calcSpoilageLoss()">
+                </div>
+            </div>
+
+            <label style="font-size:12px; font-weight:700; color:#64748b; margin-bottom:4px; display:block;">Spoilage Reason (හේතුව)</label>
+            <select id="spoilageReason" style="width:100%; padding:10px; border:1px solid #e9ecef; border-radius:8px; margin-bottom:12px;">
+                <option value="Spoiled / Expired">Spoiled / Expired (නරක වූ / කල් ඉකුත් වූ)</option>
+                <option value="Broken / Damaged">Broken / Damaged (කැඩී යාම් / හානි)</option>
+                <option value="Transport Leakage">Transport Leakage (ප්‍රවාහන හානි)</option>
+                <option value="Internal Usage">Internal Usage / Testing (භාවිතයන්)</option>
+            </select>
+
+            <div id="spoilageLossPreview" style="background:#fee2e2; border:1px solid #fca5a5; padding:12px 14px; border-radius:10px; font-size:13px; font-weight:700; color:#991b1b; margin-bottom:15px; display:none;">
+                <div style="font-weight:800; font-size:15px; margin-bottom:4px;" id="prevLossTotal">Total Financial Loss: Rs. 0.00</div>
+                <div style="font-size:12px; opacity:0.9;" id="prevGrnDetails">GRN Purchase Cost: Rs. 0.00 / unit</div>
+            </div>
+
+            <div class="modal-buttons">
+                <button class="btn-outline" onclick="closeSpoilageModal()">Cancel</button>
+                <button class="btn-danger" style="padding:10px 20px;" onclick="saveSpoilageLog()"><i class="fas fa-check"></i> Log Expense & Deduct Stock</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Automated Stock Reconciliation Audit Modal -->
+    <div id="reconciliationModal" class="modal">
+        <div class="modal-content" style="max-width:850px; width:95%;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h3 style="color:#0f3b2c;"><i class="fas fa-balance-scale"></i> Automated Stock Reconciliation Tool (තොග පරීක්ෂාව)</h3>
+                <button onclick="closeReconciliationModal()" style="background:none; border:none; font-size:18px; cursor:pointer;">✕</button>
+            </div>
+            <p style="font-size:12px; color:#64748b; margin-bottom:15px;">Compare physical inventory counts with system balances across stations and auto-reconcile variances instantly.</p>
+
+            <div style="display:flex; gap:12px; margin-bottom:15px; flex-wrap:wrap;">
+                <select id="reconStationFilter" style="flex:1; min-width:200px; margin-bottom:0;" onchange="renderReconciliationTable()">
+                    <option value="all">All Stations / Warehouses</option>
+                    <option value="Main Shop">Main Shop</option>
+                    <option value="Station 2 / Branch">Station 2 / Branch</option>
+                </select>
+                <input type="text" id="reconSearchInput" placeholder="🔍 Search item to audit..." style="flex:1; min-width:200px; margin-bottom:0;" onkeyup="renderReconciliationTable()">
+            </div>
+
+            <div style="max-height:380px; overflow-y:auto; border:1px solid #e9ecef; border-radius:12px; margin-bottom:15px;">
+                <table class="data-table" style="font-size:12px;">
+                    <thead>
+                        <tr style="background:#f8fafc;">
+                            <th>Product Name</th>
+                            <th>Unit</th>
+                            <th>System Balance</th>
+                            <th>Physical Count Input</th>
+                            <th>Variance / Discrepancy</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reconciliationTableBody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div id="reconTotalVarianceSummary" style="font-size:13px; font-weight:700; color:#475569;">
+                    0 Variances Detected
+                </div>
+                <button class="btn-primary" style="padding:12px 22px; font-weight:800;" onclick="applyAutoReconciliation()">
+                    ⚡ Apply Auto-Reconciliation & Balance Stock
+                </button>
+            </div>
+        </div>
+    </div>
+    
     <div id="toast" class="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
 
     <script>
@@ -248,12 +348,20 @@
             });
         }
 
+        let grnOrders = [];
         // Load products from Firestore
         async function loadProducts(){
             if(!currentBusinessId) return;
             const snapshot = await db.collection('products').doc(currentBusinessId).collection('list').get();
             products = [];
             snapshot.forEach(doc => products.push({id: doc.id, ...doc.data()}));
+
+            try {
+                const grnSnap = await db.collection('purchases').doc(currentBusinessId).collection('orders').get();
+                grnOrders = grnSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            } catch (e) {
+                console.warn('Error loading GRN orders for spoilage costing:', e);
+            }
             
             populateCategoryLists();
             // No demo products seeded automatically
@@ -490,6 +598,287 @@
             }
         }
         
+        // --- REAL-TIME BATCH SPOILAGE & DAMAGE LOGGING (GRN COSTING) ---
+        function openSpoilageModal() {
+            const sel = document.getElementById('spoilageProductSelect');
+            sel.innerHTML = '<option value="">-- Select Product --</option>' + 
+                products.map(p => `<option value="${p.id}">${p.name} (Stock: ${p.stock} ${p.unit || 'Pcs'})</option>`).join('');
+            document.getElementById('spoilageGrnSelect').innerHTML = '<option value="">-- Select GRN Purchase Batch --</option>';
+            document.getElementById('spoilageQty').value = '';
+            document.getElementById('spoilageLossPreview').style.display = 'none';
+            document.getElementById('spoilageModal').style.display = 'flex';
+        }
+
+        function closeSpoilageModal() {
+            document.getElementById('spoilageModal').style.display = 'none';
+        }
+
+        function onSpoilageProductChange() {
+            const prodId = document.getElementById('spoilageProductSelect').value;
+            const grnSelect = document.getElementById('spoilageGrnSelect');
+            if (!prodId) {
+                grnSelect.innerHTML = '<option value="">-- Select GRN Purchase Batch --</option>';
+                calcSpoilageLoss();
+                return;
+            }
+
+            const p = products.find(prod => prod.id === prodId);
+
+            let matchedBatches = [];
+            grnOrders.forEach(order => {
+                if (order.items && Array.isArray(order.items)) {
+                    const item = order.items.find(i => i.productId === prodId);
+                    if (item) {
+                        matchedBatches.push({
+                            grnNo: order.grnNo || order.poNo || order.id,
+                            billDate: order.billDate || 'Unknown Date',
+                            supplierName: order.supplierName || 'General Supplier',
+                            unitCost: parseFloat(item.unitPrice || 0),
+                            receivedQty: item.quantity || 0,
+                            unit: item.unit || p.unit || 'Pcs'
+                        });
+                    }
+                }
+            });
+
+            let optsHtml = '';
+            if (matchedBatches.length > 0) {
+                optsHtml += matchedBatches.map(b => 
+                    `<option value="${b.grnNo}" data-cost="${b.unitCost}" data-date="${b.billDate}" data-supplier="${b.supplierName}">📦 GRN #${b.grnNo} | Date: ${b.billDate} | Cost: Rs. ${b.unitCost.toFixed(2)} / unit (${b.supplierName})</option>`
+                ).join('');
+            }
+
+            optsHtml += `<option value="DEFAULT-STOCK" data-cost="${p ? (p.cost || 0) : 0}" data-date="Inventory Default" data-supplier="Inventory Stock">🏷️ Default Stock Cost Price (Rs. ${(p ? (p.cost || 0) : 0).toFixed(2)} / unit)</option>`;
+
+            grnSelect.innerHTML = optsHtml;
+            calcSpoilageLoss();
+        }
+
+        function calcSpoilageLoss() {
+            const prodId = document.getElementById('spoilageProductSelect').value;
+            const grnSelect = document.getElementById('spoilageGrnSelect');
+            const qty = parseFloat(document.getElementById('spoilageQty').value) || 0;
+            const previewCard = document.getElementById('spoilageLossPreview');
+
+            if (!prodId || !grnSelect.value || qty <= 0) {
+                previewCard.style.display = 'none';
+                return;
+            }
+
+            const selectedOpt = grnSelect.options[grnSelect.selectedIndex];
+            const unitCost = parseFloat(selectedOpt.dataset.cost || 0);
+            const totalLoss = qty * unitCost;
+
+            document.getElementById('prevLossTotal').textContent = `Total Financial Loss Expense: Rs. ${totalLoss.toLocaleString('en-LK', { minimumFractionDigits: 2 })}`;
+            document.getElementById('prevGrnDetails').textContent = `GRN Batch: ${grnSelect.value} | Purchase Date: ${selectedOpt.dataset.date} | Cost: Rs. ${unitCost.toFixed(2)} / unit`;
+            previewCard.style.display = 'block';
+        }
+
+        async function saveSpoilageLog() {
+            const prodId = document.getElementById('spoilageProductSelect').value;
+            const grnSelect = document.getElementById('spoilageGrnSelect');
+            let qty = parseFloat(document.getElementById('spoilageQty').value);
+            const station = document.getElementById('spoilageStationSelect').value;
+            const reason = document.getElementById('spoilageReason').value;
+
+            if (!prodId || !grnSelect.value || isNaN(qty) || qty <= 0) {
+                showToast('Please select product, GRN purchase batch and enter valid damaged quantity!', true);
+                return;
+            }
+
+            const p = products.find(prod => prod.id === prodId);
+            const selectedOpt = grnSelect.options[grnSelect.selectedIndex];
+            const unitCost = parseFloat(selectedOpt.dataset.cost || 0);
+            const totalLoss = qty * unitCost;
+            const grnNo = grnSelect.value;
+
+            const newStock = Math.max(0, p.stock - qty);
+
+            try {
+                // 1. Deduct live product stock in Firestore
+                await db.collection('products').doc(currentBusinessId).collection('list').doc(prodId).update({ stock: newStock });
+
+                // 2. Save Spoilage Expense Entry to Firestore
+                await db.collection('spoilage_logs').doc(currentBusinessId).collection('list').add({
+                    productId: prodId,
+                    productName: p.name,
+                    productCode: p.code || prodId,
+                    damagedQty: qty,
+                    unit: p.unit || (p.sellType === 'weight' ? 'kg' : 'Pcs'),
+                    unitCost: unitCost,
+                    totalLossValue: totalLoss,
+                    grnNo: grnNo,
+                    grnDate: selectedOpt.dataset.date || '-',
+                    supplierName: selectedOpt.dataset.supplier || '-',
+                    reason: reason,
+                    station: station,
+                    isOperatingExpense: true,
+                    timestamp: new Date()
+                });
+
+                closeSpoilageModal();
+                showToast(`Logged ${qty} ${p.unit || 'Pcs'} spoilage expense (Rs. ${totalLoss.toFixed(2)}). Stock updated!`);
+                await loadProducts();
+
+            } catch (err) {
+                console.error('Error logging spoilage:', err);
+                showToast('Failed to save record: ' + (err.message || err), true);
+            }
+        }
+
+
+        // --- AUTOMATED STOCK RECONCILIATION TOOL ---
+        function openReconciliationModal() {
+            renderReconciliationTable();
+            document.getElementById('reconciliationModal').style.display = 'flex';
+        }
+
+        function closeReconciliationModal() {
+            document.getElementById('reconciliationModal').style.display = 'none';
+        }
+
+        function renderReconciliationTable() {
+            const filter = (document.getElementById('reconSearchInput').value || '').toLowerCase().trim();
+            const tbody = document.getElementById('reconciliationTableBody');
+            
+            let filteredProds = [...products];
+            if (filter) {
+                filteredProds = filteredProds.filter(p => p.name.toLowerCase().includes(filter) || (p.code && p.code.toLowerCase().includes(filter)));
+            }
+
+            if (filteredProds.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:30px; color:#64748b;">No products found for reconciliation</td></tr>';
+                document.getElementById('reconTotalVarianceSummary').textContent = '0 Variances Detected';
+                return;
+            }
+
+            tbody.innerHTML = filteredProds.map(p => {
+                const uStr = p.unit || (p.sellType === 'weight' ? 'kg' : 'Pcs');
+                return `
+                <tr>
+                    <td><strong>${p.name}</strong> <br><small style="color:#64748b;"><code>${p.code || p.id}</code></small></td>
+                    <td>${uStr}</td>
+                    <td><strong>${p.stock}</strong> ${uStr}</td>
+                    <td>
+                        <input type="number" step="any" id="reconCount_${p.id}" value="${p.stock}" style="width:100px; padding:6px; font-weight:700; border:1px solid #cbd5e1; border-radius:8px; text-align:center;" oninput="onReconInputChange('${p.id}', ${p.stock})">
+                    </td>
+                    <td id="reconVarianceCell_${p.id}">
+                        <span style="color:#10b981; font-weight:700;">✓ Balanced</span>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            updateReconSummary();
+        }
+
+        function onReconInputChange(id, sysStock) {
+            const inputVal = parseFloat(document.getElementById(`reconCount_${id}`).value);
+            const cell = document.getElementById(`reconVarianceCell_${id}`);
+            const p = products.find(prod => prod.id === id);
+            const uStr = p ? (p.unit || (p.sellType === 'weight' ? 'kg' : 'Pcs')) : '';
+
+            if (isNaN(inputVal)) {
+                cell.innerHTML = '<span style="color:#94a3b8;">Enter count</span>';
+            } else {
+                const diff = inputVal - sysStock;
+                if (diff === 0) {
+                    cell.innerHTML = '<span style="color:#10b981; font-weight:700;">✓ Balanced</span>';
+                } else if (diff < 0) {
+                    const lossVal = Math.abs(diff) * (p.cost || 0);
+                    cell.innerHTML = `<span style="color:#ef4444; font-weight:700;">⚠️ ${diff} ${uStr} (Loss: Rs. ${lossVal.toFixed(2)})</span>`;
+                } else {
+                    const gainVal = diff * (p.cost || 0);
+                    cell.innerHTML = `<span style="color:#3b82f6; font-weight:700;">➕ +${diff} ${uStr} (Gain: Rs. ${gainVal.toFixed(2)})</span>`;
+                }
+            }
+            updateReconSummary();
+        }
+
+        function updateReconSummary() {
+            let varianceCount = 0;
+            let totalLoss = 0;
+
+            products.forEach(p => {
+                const el = document.getElementById(`reconCount_${p.id}`);
+                if (el) {
+                    const val = parseFloat(el.value);
+                    if (!isNaN(val) && val !== p.stock) {
+                        varianceCount++;
+                        const diff = val - p.stock;
+                        totalLoss += (diff * (p.cost || 0));
+                    }
+                }
+            });
+
+            const summaryEl = document.getElementById('reconTotalVarianceSummary');
+            if (summaryEl) {
+                if (varianceCount === 0) {
+                    summaryEl.innerHTML = '✓ All Stock Items Reconciled (No Variances)';
+                } else {
+                    summaryEl.innerHTML = `⚠️ <strong>${varianceCount} Item Variances</strong> (Net Adjustment: Rs. ${totalLoss.toFixed(2)})`;
+                }
+            }
+        }
+
+        async function applyAutoReconciliation() {
+            let itemsToReconcile = [];
+
+            products.forEach(p => {
+                const el = document.getElementById(`reconCount_${p.id}`);
+                if (el) {
+                    const physicalVal = parseFloat(el.value);
+                    if (!isNaN(physicalVal) && physicalVal !== p.stock) {
+                        itemsToReconcile.push({
+                            product: p,
+                            oldStock: p.stock,
+                            newStock: physicalVal,
+                            variance: physicalVal - p.stock
+                        });
+                    }
+                }
+            });
+
+            if (itemsToReconcile.length === 0) {
+                showToast('No stock variances detected to adjust.', true);
+                return;
+            }
+
+            if (!confirm(`Apply Auto-Reconciliation for ${itemsToReconcile.length} items? Live inventory stock will be updated to match physical counts.`)) {
+                return;
+            }
+
+            const station = document.getElementById('reconStationFilter').value;
+
+            try {
+                for (const item of itemsToReconcile) {
+                    await db.collection('products').doc(currentBusinessId).collection('list').doc(item.product.id).update({
+                        stock: item.newStock
+                    });
+                }
+
+                await db.collection('stock_reconciliations').doc(currentBusinessId).collection('list').add({
+                    timestamp: new Date(),
+                    station: station,
+                    reconciledItemsCount: itemsToReconcile.length,
+                    details: itemsToReconcile.map(i => ({
+                        productId: i.product.id,
+                        productName: i.product.name,
+                        oldStock: i.oldStock,
+                        newStock: i.newStock,
+                        variance: i.variance
+                    }))
+                });
+
+                closeReconciliationModal();
+                showToast(`Successfully Reconciled & Balanced Stock for ${itemsToReconcile.length} items!`);
+                await loadProducts();
+
+            } catch(e) {
+                console.error('Error applying stock reconciliation:', e);
+                showToast('Failed to apply reconciliation: ' + (e.message || e), true);
+            }
+        }
+
         function exportToCSV(){
             let csv = 'Code,Name,Category,Price,Cost,Stock,Value\n';
             products.forEach(p => {

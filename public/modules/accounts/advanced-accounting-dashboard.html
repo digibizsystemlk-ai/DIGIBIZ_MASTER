@@ -201,11 +201,11 @@
             });
 
             const entriesToDisplay = state.journalEntries.filter(entry => {
-                return !entry.reversalOf && !reversedEntryIds.has(entry.id);
+                return !entry.isReversed && !entry.isReversal && !entry.reversalOf && !reversedEntryIds.has(entry.id);
             });
 
             if (entriesToDisplay.length === 0) {
-                body.innerHTML = '<tr><td colspan="6">No journal entries found.</td></tr>';
+                body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:#64748b;">No journal entries found.</td></tr>';
                 return;
             }
             
@@ -237,7 +237,7 @@
                     <td class="text-right" style="color: #0f3b2c; font-weight: 500;">${debitHtml}</td>
                     <td class="text-right" style="color: #64748b;">${creditHtml}</td>
                     <td>
-                        ${hasAccountingAccess() && !entry.isReversed && !entry.reversalOf ? `<button onclick="deleteJournalEntry('${entry.id}')" style="background:#ef444420;color:#ef4444;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;">Delete</button>` : ''}
+                        ${hasAccountingAccess() ? `<button onclick="deleteJournalEntry('${entry.id}')" style="background:#ef444420;color:#ef4444;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600;"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
                     </td>
                 </tr>`;
             });
@@ -245,33 +245,103 @@
         }
 
         async function deleteJournalEntry(entryId) {
-            if (!hasAccountingAccess() || !confirm('Are you sure you want to delete this entry? This will create a reversing entry and cannot be undone.')) return;
+            if (!hasAccountingAccess() || !confirm('⚠️ Are you sure you want to DELETE this journal entry?\n\nThis will permanently remove the entry from the General Ledger, update bank/cash balances, and reverse linked sales/purchases/expenses across the system.')) return;
             
-            const entryRef = db.collection('journal').doc(state.context.businessId).collection('entries').doc(entryId);
-            const entrySnap = await entryRef.get();
-            if (!entrySnap.exists) { showToast('Entry not found.'); return; }
-            const originalEntry = { id: entrySnap.id, ...entrySnap.data() };
-
-            const reversalEntry = {
-                memo: `Reversal of: ${originalEntry.memo || `entry ${originalEntry.id}`}`,
-                isReversal: true,
-                reversalOf: entryId,
-                date: firebase.firestore.Timestamp.now(),
-                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                businessId: originalEntry.businessId,
-                entries: (originalEntry.entries || []).map(line => ({
-                    ...line,
-                    type: line.type === 'debit' ? 'credit' : 'debit'
-                }))
-            };
-
             try {
-                await db.collection('journal').doc(state.context.businessId).collection('entries').add(reversalEntry);
-                await entryRef.update({ isReversed: true });
-                showToast('Journal entry reversed successfully.');
+                const entryRef = db.collection('journal').doc(state.context.businessId).collection('entries').doc(entryId);
+                const entrySnap = await entryRef.get();
+                if (!entrySnap.exists) { 
+                    showToast('Journal entry not found or already deleted.');
+                    state.journalEntries = state.journalEntries.filter(e => e.id !== entryId);
+                    updateUI();
+                    return; 
+                }
+                const originalEntry = { id: entrySnap.id, ...entrySnap.data() };
+
+                const batch = db.batch();
+
+                // 1. Delete original journal entry doc & any associated reversal entry docs
+                batch.delete(entryRef);
+
+                if (originalEntry.reversalOf) {
+                    const revRef = db.collection('journal').doc(state.context.businessId).collection('entries').doc(originalEntry.reversalOf);
+                    batch.delete(revRef);
+                }
+
+                const otherReversals = await db.collection('journal').doc(state.context.businessId).collection('entries').where('reversalOf', '==', entryId).get();
+                otherReversals.docs.forEach(d => batch.delete(d.ref));
+
+                // 2. Cascade to source object if ref exists
+                const refRaw = originalEntry.ref || '';
+                const refId = refRaw.replace(/^purchases\//, '').replace(/^orders\//, '').replace(/^expenses\//, '').replace(/^banks\//, '');
+
+                if (refId) {
+                    // a) Delete Purchase Order / Mock PO if ref matches purchase
+                    try {
+                        const poRef = db.collection('purchases').doc(state.context.businessId).collection('orders').doc(refId);
+                        const poSnap = await poRef.get();
+                        if (poSnap.exists) {
+                            batch.delete(poRef);
+                        }
+                    } catch(e) {}
+
+                    // b) Cancel Order / POS Sale if ref matches order
+                    try {
+                        const orderRef = db.collection('orders').doc(state.context.businessId).collection('list').doc(refId);
+                        const oSnap = await orderRef.get();
+                        if (oSnap.exists) {
+                            const oData = oSnap.data() || {};
+                            batch.update(orderRef, { status: 'cancelled', isReversed: true });
+                            const items = Array.isArray(oData.items) ? oData.items : [];
+                            items.forEach(line => {
+                                const pId = line.productId || line.id;
+                                const qty = Math.max(0, Number(line.quantity != null ? line.quantity : (line.orderedQty != null ? line.orderedQty : line.qty)) || 0);
+                                if (pId && qty > 0) {
+                                    const pRef = db.collection('products').doc(state.context.businessId).collection('list').doc(pId);
+                                    batch.update(pRef, { stock: firebase.firestore.FieldValue.increment(qty) });
+                                }
+                            });
+                        }
+                    } catch(e) {}
+
+                    // c) Delete Expense if ref matches expense
+                    try {
+                        const expRef = db.collection('expenses').doc(state.context.businessId).collection('list').doc(refId);
+                        const eSnap = await expRef.get();
+                        if (eSnap.exists) {
+                            batch.delete(expRef);
+                        }
+                    } catch(e) {}
+
+                    // d) Delete Bank Transaction & adjust bank account balance if ref matches bank transaction
+                    try {
+                        const bankTrRef = db.collection('banks').doc(state.context.businessId).collection('transactions').doc(refId);
+                        const bSnap = await bankTrRef.get();
+                        if (bSnap.exists) {
+                            const bData = bSnap.data() || {};
+                            if (bData.bankAccountId) {
+                                const accRef = db.collection('banks').doc(state.context.businessId).collection('accounts').doc(bData.bankAccountId);
+                                const accSnap = await accRef.get();
+                                if (accSnap.exists) {
+                                    const isCredit = ['CASH_DEPOSIT', 'CHEQUE_DEPOSIT', 'LOAN_RECEIPT', 'DEPOSIT', 'INCOME'].includes(String(bData.type || '').toUpperCase());
+                                    const netEffect = isCredit ? (Number(bData.amount) || 0) : -(Number(bData.amount) || 0);
+                                    batch.update(accRef, { balance: Number(accSnap.data().balance || 0) - netEffect });
+                                }
+                            }
+                            batch.delete(bankTrRef);
+                        }
+                    } catch(e) {}
+                }
+
+                await batch.commit();
+                showToast('✅ Journal entry deleted successfully.');
+
+                // 3. Immediately filter in memory & re-render UI
+                state.journalEntries = state.journalEntries.filter(e => e.id !== entryId && e.reversalOf !== entryId && e.id !== originalEntry.reversalOf);
+                updateUI();
             } catch (error) {
-                console.error('Error reversing entry:', error);
-                showToast('Error: Could not reverse entry.', true);
+                console.error('Error deleting journal entry:', error);
+                showToast('Error: Could not delete journal entry - ' + error.message, true);
             }
         }
 

@@ -776,10 +776,59 @@ function renderProductionHistoryTable() {
                 <td style="font-weight:600; color:#d97706;">Rs. ${laborOverheadTotal.toFixed(2)}</td>
                 <td style="font-weight:700; color:#059669;">Rs. ${Number(x.unitFgCost || 0).toFixed(2)}</td>
                 <td style="font-weight:800; color:#0f172a;">Rs. ${Number(x.totalBatchCost || x.totalMaterialCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                <td style="text-align:center;">${actionBtn}</td>
+                <td style="text-align:center;">
+                    <div style="display:flex; gap:6px; justify-content:center; align-items:center;">
+                        ${actionBtn}
+                        <button type="button" onclick="deleteProdBatch('${x.id}')" style="background:#ef4444; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px;" title="Delete Production Batch & Restore Stock">🗑️</button>
+                    </div>
+                </td>
             </tr>
         `;
     }).join('');
+}
+
+async function deleteProdBatch(batchId) {
+    if (!confirm('Are you sure you want to delete this production batch? Consumed raw materials will be restored to stock, and produced finished goods stock will be reduced.')) return;
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    if (!bid || !batchId) return;
+
+    try {
+        const docRef = db.collection('manufacturer_production_batches').doc(batchId);
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+            const data = docSnap.data() || {};
+            const ingredients = data.ingredients || [];
+            const productName = String(data.productName || '').trim();
+            const producedQty = Number(data.producedQty || 0);
+
+            // 1. Restore consumed raw materials back to raw material stock
+            for (const item of ingredients) {
+                const rmKey = String(item.name || 'MATERIAL').trim().toUpperCase();
+                const realDocId = (item.id && !item.id.startsWith('HIST_')) ? item.id : `${bid}_${rmKey}`;
+                await db.collection('manufacturer_raw_materials').doc(realDocId).set({
+                    stockQty: firebase.firestore.FieldValue.increment(Math.abs(item.qty)),
+                    updatedAt: new Date()
+                }, { merge: true }).catch(() => {});
+            }
+
+            // 2. Reduce created finished goods stock balance
+            if (productName && producedQty > 0) {
+                const fgKey = productName.toUpperCase();
+                await db.collection('manufacturer_finished_products').doc(`${bid}_${fgKey}`).set({
+                    stockQty: firebase.firestore.FieldValue.increment(-Math.abs(producedQty)),
+                    updatedAt: new Date()
+                }, { merge: true }).catch(() => {});
+            }
+
+            await docRef.delete();
+            alert('✅ Production batch deleted and stock balances successfully restored!');
+        }
+        await refreshFinishedGoodsStockTable();
+        await refreshProductionHistory();
+        await updateProductionAssetSummary();
+    } catch (e) {
+        alert('Error deleting batch: ' + e.message);
+    }
 }
 
 async function refreshFinishedGoodsStockTable() {

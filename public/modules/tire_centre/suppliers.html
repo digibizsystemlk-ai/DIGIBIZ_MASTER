@@ -96,6 +96,7 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="suppliers"><i class="fas fa-list"></i> All Suppliers</button>
             <button class="tab-btn" data-tab="purchases"><i class="fas fa-history"></i> Purchase History</button>
+            <button class="tab-btn" data-tab="cheques"><i class="fas fa-money-check-dollar"></i> Cheque Payments</button>
         </div>
         
         <!-- Suppliers Tab -->
@@ -104,6 +105,7 @@
                 <input type="text" id="searchSupplier" placeholder="🔍 Search by name, contact or phone...">
                 <button id="applyFilterBtn"><i class="fas fa-search"></i> Search</button>
                 <button id="exportSuppliersBtn" class="btn-outline"><i class="fas fa-download"></i> Export</button>
+                <button id="quickPaySupplierBtn" class="btn-primary" style="margin-left:auto;"><i class="fas fa-hand-holding-dollar"></i> Pay Supplier / Issue Cheque</button>
             </div>
             
             <div class="card">
@@ -111,10 +113,20 @@
                 <div class="card-body">
                     <table class="data-table" id="supplierTable">
                         <thead>
-                            <tr><th>Code</th><th>Name</th><th>Contact Person</th><th>Phone</th><th>Email</th><th>Total Purchases</th><th>Status</th><th>Actions</th></tr>
+                            <tr>
+                                <th>Code</th>
+                                <th>Name</th>
+                                <th>Contact Person</th>
+                                <th>Phone</th>
+                                <th>Opening Bal</th>
+                                <th>Total Purchases</th>
+                                <th>Outstanding</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
                         </thead>
                         <tbody id="supplierList">
-                            <tr><td colspan="8" style="text-align:center;padding:40px;">Loading suppliers...</tbody>
+                            <tr><td colspan="9" style="text-align:center;padding:40px;">Loading suppliers...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -138,14 +150,51 @@
                             <tr><th>PO No</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th></tr>
                         </thead>
                         <tbody id="historyList">
-                            <tr><td colspan="5" style="text-align:center;padding:40px;">Select a supplier to view history</tbody>
+                            <tr><td colspan="5" style="text-align:center;padding:40px;">Select a supplier to view history</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cheque Payments Tab -->
+        <div id="tab-cheques" class="tab-pane">
+            <div class="filter-bar">
+                <select id="chequeSupplierSelect"><option value="">All Suppliers</option></select>
+                <select id="chequeStatusFilter">
+                    <option value="">All Statuses</option>
+                    <option value="issued">Issued / Post-Dated</option>
+                    <option value="cleared">Cleared / Realized</option>
+                    <option value="returned">Returned / Bounced</option>
+                </select>
+                <button id="loadChequesBtn"><i class="fas fa-search"></i> Filter</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-header"><h3><i class="fas fa-money-check-dollar"></i> Supplier Cheque Payments Log</h3><span id="chequeCount"></span></div>
+                <div class="card-body">
+                    <table class="data-table" id="chequeTable">
+                        <thead>
+                            <tr>
+                                <th>Issued Date</th>
+                                <th>Cheque No</th>
+                                <th>Supplier</th>
+                                <th>Bank Account</th>
+                                <th>Cheque Date</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="chequeList">
+                            <tr><td colspan="8" style="text-align:center;padding:40px;">Loading cheque payments...</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
         
-        <footer><p>© 2025 DIGIBIZ Universal - Supplier Management System</p></footer>
+        <footer><p>© 2025 DIGIBIZ Universal - Supplier & Cheque Payment Management System</p></footer>
     </div>
     
     <!-- Add/Edit Supplier Modal -->
@@ -158,7 +207,10 @@
             <input type="tel" id="supplierPhone" placeholder="Phone Number *">
             <input type="email" id="supplierEmail" placeholder="Email">
             <input type="text" id="supplierAddress" placeholder="Address">
-            <input type="number" id="supplierOpeningBalance" placeholder="Opening Outstanding Balance (Rs.) (optional)">
+            
+            <label style="font-size:12px; font-weight:700; color:#64748b; margin-top:5px; display:block;">Opening Outstanding Balance (Rs.) (ආරම්භක ශේෂය)</label>
+            <input type="number" id="supplierOpeningBalance" placeholder="Opening Outstanding Balance (Rs.) (e.g. 15000)">
+            
             <textarea id="supplierNotes" placeholder="Notes (payment terms, etc.)" rows="3"></textarea>
             <select id="supplierStatus">
                 <option value="active">Active</option>
@@ -170,6 +222,64 @@
             </div>
         </div>
     </div>
+
+    <!-- Pay Supplier / Issue Cheque Modal -->
+    <div id="paySupplierModal" class="modal">
+        <div class="modal-content" style="max-width: 580px;">
+            <h3 id="payModalTitle"><i class="fas fa-hand-holding-dollar" style="color:#10b981; margin-right:8px;"></i> Supplier Payment / Cheque Issue</h3>
+            
+            <label style="font-size:12.5px; font-weight:700; color:#64748b; margin-top:8px; display:block;">Select Supplier *</label>
+            <select id="paySupplierSelect" onchange="onPaySupplierChange()" style="margin-bottom:10px; font-weight:700; width:100%; padding:10px; border-radius:8px; border:1px solid #e9ecef;"></select>
+            
+            <div id="paySupplierBalanceInfo" style="background:#f1f5f9; padding:10px 14px; border-radius:10px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:13px; color:#475569; font-weight:600;">Current Outstanding Balance:</span>
+                <span id="paySupplierOutstandingText" style="font-size:16px; font-weight:800; color:#ef4444;">Rs. 0.00</span>
+            </div>
+
+            <label style="font-size:12.5px; font-weight:700; color:#64748b; display:block;">Payment Method *</label>
+            <select id="payMethodSelect" onchange="togglePayMethodFields()" style="margin-bottom:12px; font-weight:700; width:100%; padding:10px; border-radius:8px; border:1px solid #e9ecef;">
+                <option value="CHEQUE">💳 Cheque Payment (චෙක්පත් ගෙවීම)</option>
+                <option value="CASH">💵 Cash (මුදල්)</option>
+                <option value="BANK_TRANSFER">🏦 Bank Transfer (බැංකු හුවමාරුව)</option>
+            </select>
+
+            <!-- Cheque Specific Fields -->
+            <div id="chequeFieldsWrap">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#64748b; display:block;">Cheque Number *</label>
+                        <input type="text" id="payChequeNo" placeholder="e.g. CHQ-990812">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#64748b; display:block;">Cheque Realization Date *</label>
+                        <input type="date" id="payChequeDate">
+                    </div>
+                </div>
+
+                <label style="font-size:12.5px; font-weight:700; color:#64748b; display:block; margin-top:6px;">Select Drawn Bank Account *</label>
+                <select id="payBankAccountSelect" style="margin-bottom:12px; width:100%; padding:10px; border-radius:8px; border:1px solid #e9ecef;"></select>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:6px;">
+                <div>
+                    <label style="font-size:12px; font-weight:700; color:#64748b; display:block;">Payment Date *</label>
+                    <input type="date" id="payTxDate">
+                </div>
+                <div>
+                    <label style="font-size:12px; font-weight:700; color:#64748b; display:block;">Payment Amount (Rs.) *</label>
+                    <input type="number" id="payAmount" placeholder="Amount (Rs.)" min="1">
+                </div>
+            </div>
+
+            <label style="font-size:12px; font-weight:700; color:#64748b; display:block; margin-top:6px;">Reference / Remarks</label>
+            <textarea id="payNotes" placeholder="Invoice No, PO Ref, or Cheque memo..." rows="2"></textarea>
+
+            <div class="modal-buttons" style="margin-top:15px;">
+                <button class="btn-outline" id="closePayModalBtn">Cancel</button>
+                <button class="btn-primary" id="saveSupplierPaymentBtn"><i class="fas fa-paper-plane"></i> Record Payment</button>
+            </div>
+        </div>
+    </div>
     
     <div id="toast" class="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
 
@@ -178,6 +288,8 @@
         let suppliers = [];
         let editingSupplierId = null;
         let purchaseOrders = [];
+        let bankAccounts = [];
+        let supplierPayments = [];
         
         function formatCurrency(amt){ return 'Rs. ' + (amt||0).toLocaleString('en-LK'); }
         
@@ -213,15 +325,56 @@
                             address: data.address || '-',
                             notes: data.notes || '',
                             status: data.status || 'active',
+                            openingBalance: Number(data.openingBalance) || 0,
                             totalPurchases: Number(data.totalPurchases) || 0
                         });
                     }
                 });
             } catch(e) {}
 
+            await loadBankAccounts();
+            await loadPurchaseOrders();
             renderSuppliers();
-            updateSupplierSelect();
+            updateSupplierSelects();
             updateStats();
+            await loadSupplierCheques();
+        }
+
+        async function loadBankAccounts() {
+            try {
+                const snap = await db.collection('banks').doc(currentBusinessId).collection('accounts').get();
+                bankAccounts = [];
+                snap.forEach(d => bankAccounts.push({ id: d.id, ...d.data() }));
+
+                const sel = document.getElementById('payBankAccountSelect');
+                if (sel) {
+                    sel.innerHTML = bankAccounts.length === 0 
+                        ? '<option value="">No bank accounts added</option>' 
+                        : bankAccounts.map(a => `<option value="${a.id}">${a.bank} - ${a.name} (${a.accountNumber})</option>`).join('');
+                }
+            } catch(e) {
+                console.error('loadBankAccounts error:', e);
+            }
+        }
+
+        async function loadPurchaseOrders() {
+            try {
+                const poSnapshot = await db.collection('purchases').doc(currentBusinessId).collection('orders').get();
+                purchaseOrders = [];
+                poSnapshot.forEach(doc => purchaseOrders.push({id: doc.id, ...doc.data()}));
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        function getSupplierOutstanding(supplierId) {
+            const supplier = suppliers.find(s => s.id === supplierId || s.code === supplierId);
+            const openBal = Number(supplier?.openingBalance || 0);
+            
+            const pendingPos = purchaseOrders.filter(po => (po.supplierId === supplierId || po.supplierId === supplier?.code) && po.status === 'pending');
+            const poTotal = pendingPos.reduce((sum, po) => sum + Number(po.total || 0), 0);
+            
+            return openBal + poTotal;
         }
         
         function renderSuppliers(){
@@ -231,24 +384,31 @@
             
             const tbody = document.getElementById('supplierList');
             if(filtered.length === 0){
-                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;">No suppliers found</tbody>';
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;">No suppliers found</td></tr>';
                 document.getElementById('supplierCount').innerHTML = '0 records';
                 return;
             }
             
-            tbody.innerHTML = filtered.map(s => `<tr>
-                <td><code>${s.code || s.id}</code></td>
-                <td><strong>${s.name}</strong></td>
-                <td>${s.contact || '-'}</td>
-                <td>${s.phone}</td>
-                <td>${s.email || '-'}</td>
-                <td>${formatCurrency(s.totalPurchases || 0)}</td>
-                <td><span class="badge ${s.status === 'active' ? 'badge-active' : 'badge-inactive'}">${s.status}</span></td>
-                <td>
-                    <button class="btn-outline" onclick="editSupplier('${s.id}')" style="padding:5px 10px;margin-right:5px;"><i class="fas fa-edit"></i></button>
-                    <button class="btn-danger" onclick="deleteSupplier('${s.id}')" style="padding:5px 10px;"><i class="fas fa-trash"></i></button>
-                   </td>
-            </tr>`).join('');
+            tbody.innerHTML = filtered.map(s => {
+                const outBal = getSupplierOutstanding(s.id);
+                const openBal = Number(s.openingBalance || 0);
+
+                return `<tr>
+                    <td><code>${s.code || s.id}</code></td>
+                    <td><strong>${s.name}</strong></td>
+                    <td>${s.contact || '-'}</td>
+                    <td>${s.phone}</td>
+                    <td style="font-weight:600; color:#475569;">${formatCurrency(openBal)}</td>
+                    <td>${formatCurrency(s.totalPurchases || 0)}</td>
+                    <td style="font-weight:800; color:${outBal > 0 ? '#ef4444' : '#10b981'};">${formatCurrency(outBal)}</td>
+                    <td><span class="badge ${s.status === 'active' ? 'badge-active' : 'badge-inactive'}">${s.status}</span></td>
+                    <td>
+                        <button class="btn-primary" onclick="openPaySupplierModal('${s.id}')" style="padding:4px 8px;font-size:11px;margin-right:4px;"><i class="fas fa-hand-holding-dollar"></i> Pay</button>
+                        <button class="btn-outline" onclick="editSupplier('${s.id}')" style="padding:4px 8px;font-size:11px;margin-right:4px;"><i class="fas fa-edit"></i></button>
+                        <button class="btn-danger" onclick="deleteSupplier('${s.id}')" style="padding:4px 8px;font-size:11px;"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            }).join('');
             document.getElementById('supplierCount').innerHTML = `${filtered.length} records`;
         }
         
@@ -256,21 +416,22 @@
             document.getElementById('totalSuppliers').innerHTML = suppliers.length;
             document.getElementById('activeSuppliers').innerHTML = suppliers.filter(s => s.status === 'active').length;
             
-            // Load purchase orders to calculate totals
-            const poSnapshot = await db.collection('purchases').doc(currentBusinessId).collection('orders').get();
-            purchaseOrders = [];
-            poSnapshot.forEach(doc => purchaseOrders.push({id: doc.id, ...doc.data()}));
-            
             const totalPurchases = purchaseOrders.reduce((sum, po) => sum + (po.total || 0), 0);
-            const outstanding = purchaseOrders.filter(po => po.status === 'pending').reduce((sum, po) => sum + (po.total || 0), 0);
+            
+            let totalOutstanding = 0;
+            suppliers.forEach(s => {
+                totalOutstanding += getSupplierOutstanding(s.id);
+            });
             
             document.getElementById('totalPurchases').innerHTML = formatCurrency(totalPurchases);
-            document.getElementById('outstanding').innerHTML = formatCurrency(outstanding);
+            document.getElementById('outstanding').innerHTML = formatCurrency(totalOutstanding);
         }
         
-        function updateSupplierSelect(){
-            const select = document.getElementById('historySupplierSelect');
-            select.innerHTML = '<option value="">Select Supplier</option>' + suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        function updateSupplierSelects(){
+            const options = '<option value="">Select Supplier</option>' + suppliers.map(s => `<option value="${s.id}">${s.name} (${s.code || s.id})</option>`).join('');
+            if (document.getElementById('historySupplierSelect')) document.getElementById('historySupplierSelect').innerHTML = options;
+            if (document.getElementById('paySupplierSelect')) document.getElementById('paySupplierSelect').innerHTML = options;
+            if (document.getElementById('chequeSupplierSelect')) document.getElementById('chequeSupplierSelect').innerHTML = '<option value="">All Suppliers</option>' + suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
         }
         
         // Add/Edit supplier
@@ -300,6 +461,7 @@
                 document.getElementById('supplierPhone').value = supplier.phone;
                 document.getElementById('supplierEmail').value = supplier.email || '';
                 document.getElementById('supplierAddress').value = supplier.address || '';
+                document.getElementById('supplierOpeningBalance').value = supplier.openingBalance || '';
                 document.getElementById('supplierNotes').value = supplier.notes || '';
                 document.getElementById('supplierStatus').value = supplier.status || 'active';
                 document.getElementById('supplierModal').style.display = 'flex';
@@ -315,18 +477,26 @@
                     EQUITY: 'AC-30000'
                 };
                 
-                // 1. Create mock Purchase Order
-                const poRef = db.collection('purchases').doc(currentBusinessId).collection('orders').doc();
-                const poNo = 'PO-OPEN-' + Date.now().toString().slice(-4);
+                // 1. Check if mock PO already exists
+                const poQuery = await db.collection('purchases').doc(currentBusinessId).collection('orders').where('supplierId', '==', code).where('poNo', '>=', 'PO-OPEN').get();
+                let poRef;
+                if (!poQuery.empty) {
+                    poRef = poQuery.docs[0].ref;
+                } else {
+                    poRef = db.collection('purchases').doc(currentBusinessId).collection('orders').doc();
+                }
+
+                const poNo = 'PO-OPEN-' + code;
                 batch.set(poRef, {
                     poNo: poNo,
                     supplierId: code,
                     supplierName: name,
                     total: amount,
                     status: 'pending',
+                    isOpeningBalance: true,
                     createdAt: now,
                     items: [{ productName: 'Opening Payable Balance', quantity: 1, unitPrice: amount }]
-                });
+                }, { merge: true });
                 
                 // 2. Create Journal Entry
                 const journalRef = db.collection('journal').doc(currentBusinessId).collection('entries').doc();
@@ -351,8 +521,8 @@
         }
 
         async function saveSupplier(){
-            const name = document.getElementById('supplierName').value;
-            const phone = document.getElementById('supplierPhone').value;
+            const name = document.getElementById('supplierName').value.trim();
+            const phone = document.getElementById('supplierPhone').value.trim();
             const openingBalanceVal = parseFloat(document.getElementById('supplierOpeningBalance').value) || 0;
             
             if(!name || !phone){
@@ -360,27 +530,30 @@
                 return;
             }
             
-            const code = document.getElementById('supplierCode').value || 'SUP-' + Date.now();
+            const code = document.getElementById('supplierCode').value.trim() || 'SUP-' + Date.now().toString().slice(-4);
             const supplierData = {
                 id: code,
                 code: code,
                 name: name,
-                contact: document.getElementById('supplierContact').value,
+                contact: document.getElementById('supplierContact').value.trim(),
                 phone: phone,
-                email: document.getElementById('supplierEmail').value,
-                address: document.getElementById('supplierAddress').value,
-                notes: document.getElementById('supplierNotes').value,
+                email: document.getElementById('supplierEmail').value.trim(),
+                address: document.getElementById('supplierAddress').value.trim(),
+                openingBalance: openingBalanceVal,
+                notes: document.getElementById('supplierNotes').value.trim(),
                 status: document.getElementById('supplierStatus').value,
                 updatedAt: new Date()
             };
             
             if(editingSupplierId){
-                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(editingSupplierId).update(supplierData);
+                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(editingSupplierId).set(supplierData, { merge: true });
+                if (openingBalanceVal > 0) {
+                    await createSupplierOpeningBalance(code, name, openingBalanceVal);
+                }
                 showToast('Supplier updated successfully!');
             } else {
                 supplierData.createdAt = new Date();
                 supplierData.totalPurchases = 0;
-                supplierData.openingBalance = openingBalanceVal;
                 await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(code).set(supplierData);
                 if (openingBalanceVal > 0) {
                     await createSupplierOpeningBalance(code, name, openingBalanceVal);
@@ -391,6 +564,237 @@
             document.getElementById('supplierModal').style.display = 'none';
             await loadSuppliers();
         }
+
+        /* -------------------------------------------------- */
+        /* PAY SUPPLIER & CHEQUE MANAGEMENT */
+        /* -------------------------------------------------- */
+        function togglePayMethodFields() {
+            const m = document.getElementById('payMethodSelect').value;
+            document.getElementById('chequeFieldsWrap').style.display = m === 'CHEQUE' ? 'block' : 'none';
+        }
+
+        function onPaySupplierChange() {
+            const sId = document.getElementById('paySupplierSelect').value;
+            const outBal = getSupplierOutstanding(sId);
+            document.getElementById('paySupplierOutstandingText').textContent = formatCurrency(outBal);
+            if (outBal > 0) {
+                document.getElementById('payAmount').value = outBal;
+            }
+        }
+
+        window.openPaySupplierModal = (supplierId = null) => {
+            updateSupplierSelects();
+            if (supplierId) {
+                document.getElementById('paySupplierSelect').value = supplierId;
+            }
+            onPaySupplierChange();
+            
+            document.getElementById('payMethodSelect').value = 'CHEQUE';
+            togglePayMethodFields();
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            document.getElementById('payTxDate').value = todayStr;
+            document.getElementById('payChequeDate').value = todayStr;
+            document.getElementById('payChequeNo').value = '';
+            document.getElementById('payNotes').value = '';
+
+            document.getElementById('paySupplierModal').style.display = 'flex';
+        };
+
+        async function saveSupplierPayment() {
+            const supplierId = document.getElementById('paySupplierSelect').value;
+            const payMethod = document.getElementById('payMethodSelect').value;
+            const amount = parseFloat(document.getElementById('payAmount').value) || 0;
+            const payTxDateStr = document.getElementById('payTxDate').value;
+            const chequeNo = document.getElementById('payChequeNo').value.trim();
+            const chequeDateStr = document.getElementById('payChequeDate').value;
+            const bankAccId = document.getElementById('payBankAccountSelect').value;
+            const notes = document.getElementById('payNotes').value.trim();
+
+            if (!supplierId) {
+                showToast('Please select a supplier!', true);
+                return;
+            }
+            if (amount <= 0) {
+                showToast('Please enter a valid payment amount!', true);
+                return;
+            }
+            if (payMethod === 'CHEQUE' && !chequeNo) {
+                showToast('Please enter the Cheque Number!', true);
+                return;
+            }
+            if ((payMethod === 'CHEQUE' || payMethod === 'BANK_TRANSFER') && !bankAccId) {
+                showToast('Please select a Bank Account!', true);
+                return;
+            }
+
+            const supplier = suppliers.find(s => s.id === supplierId || s.code === supplierId);
+            const supplierName = supplier ? supplier.name : 'Supplier';
+            const payDate = payTxDateStr ? new Date(payTxDateStr + 'T12:00:00') : new Date();
+
+            try {
+                const batch = db.batch();
+
+                // 1. Write Payment Document to supplier_payments
+                const payRef = db.collection('supplier_payments').doc(currentBusinessId).collection('list').doc();
+                batch.set(payRef, {
+                    id: payRef.id,
+                    supplierId: supplierId,
+                    supplierName: supplierName,
+                    amount: amount,
+                    paymentMethod: payMethod,
+                    chequeNo: payMethod === 'CHEQUE' ? chequeNo : null,
+                    chequeDate: payMethod === 'CHEQUE' ? (chequeDateStr ? new Date(chequeDateStr + 'T12:00:00') : payDate) : null,
+                    bankAccountId: bankAccId || null,
+                    status: payMethod === 'CHEQUE' ? 'issued' : 'cleared',
+                    notes: notes,
+                    paidAt: payDate,
+                    createdAt: new Date()
+                });
+
+                // 2. Adjust Outstanding POs or Opening Balance PO
+                const pendingPos = purchaseOrders.filter(po => (po.supplierId === supplierId || po.supplierId === supplier?.code) && po.status === 'pending');
+                let remAmt = amount;
+                for (const po of pendingPos) {
+                    if (remAmt <= 0) break;
+                    const poRef = db.collection('purchases').doc(currentBusinessId).collection('orders').doc(po.id);
+                    const poTotal = Number(po.total || 0);
+                    if (remAmt >= poTotal) {
+                        batch.update(poRef, { status: 'paid', paidAt: payDate });
+                        remAmt -= poTotal;
+                    } else {
+                        batch.update(poRef, { total: poTotal - remAmt });
+                        remAmt = 0;
+                    }
+                }
+
+                // 3. Write Bank Transaction & Update Bank Account Balance if Bank Account Selected
+                if (bankAccId) {
+                    const bankTrRef = db.collection('banks').doc(currentBusinessId).collection('transactions').doc();
+                    batch.set(bankTrRef, {
+                        id: bankTrRef.id,
+                        bankAccountId: bankAccId,
+                        type: payMethod === 'CHEQUE' ? 'CHEQUE_WITHDRAWAL' : 'WITHDRAWAL',
+                        amount: amount,
+                        ref: chequeNo || 'PAY-' + Date.now().toString().slice(-4),
+                        description: `Supplier Payment to ${supplierName} (${payMethod}${chequeNo ? ' #' + chequeNo : ''})`,
+                        status: payMethod === 'CHEQUE' ? 'issued' : 'cleared',
+                        createdAt: payDate
+                    });
+
+                    const accRef = db.collection('banks').doc(currentBusinessId).collection('accounts').doc(bankAccId);
+                    const accDoc = await accRef.get();
+                    if (accDoc.exists) {
+                        const curBal = Number(accDoc.data().balance || 0);
+                        batch.update(accRef, { balance: curBal - amount, updatedAt: new Date() });
+                    }
+                }
+
+                // 4. Accounting Journal Entry (Debit Accounts Payable AC-21000, Credit Bank/Cash)
+                const journalRef = db.collection('journal').doc(currentBusinessId).collection('entries').doc();
+                const bankObj = bankAccounts.find(a => a.id === bankAccId);
+                const credAccName = bankObj ? `${bankObj.bank} (${bankObj.name})` : (payMethod === 'CASH' ? 'Cash Account' : 'Bank Account');
+
+                batch.set(journalRef, {
+                    date: payDate,
+                    memo: `Supplier Payment: ${supplierName} (${payMethod}${chequeNo ? ' #' + chequeNo : ''})`,
+                    ref: `supplier_payments/${payRef.id}`,
+                    refType: 'EXPENSE',
+                    total: amount,
+                    entries: [
+                        { accountId: 'AC-21000', accountName: 'Accounts Payable', amount: amount, type: 'debit' },
+                        { accountId: payMethod === 'CASH' ? 'AC-10100' : 'AC-10200', accountName: credAccName, amount: amount, type: 'credit' }
+                    ],
+                    createdAt: new Date()
+                });
+
+                await batch.commit();
+                showToast(`✅ Payment of Rs. ${amount.toLocaleString()} recorded successfully for ${supplierName}!`);
+
+                document.getElementById('paySupplierModal').style.display = 'none';
+                await loadSuppliers();
+            } catch(e) {
+                console.error('saveSupplierPayment failed:', e);
+                showToast('Failed to record supplier payment: ' + e.message, true);
+            }
+        }
+
+        async function loadSupplierCheques() {
+            const tbody = document.getElementById('chequeList');
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:25px;">Loading cheque log...</td></tr>';
+
+            try {
+                const snap = await db.collection('supplier_payments').doc(currentBusinessId).collection('list')
+                    .where('paymentMethod', '==', 'CHEQUE')
+                    .get();
+
+                supplierPayments = [];
+                snap.forEach(doc => supplierPayments.push({ id: doc.id, ...doc.data() }));
+
+                supplierPayments.sort((a, b) => {
+                    const getT = (x) => x.paidAt ? (x.paidAt.toDate ? x.paidAt.toDate().getTime() : new Date(x.paidAt).getTime()) : 0;
+                    return getT(b) - getT(a);
+                });
+
+                const suppFilter = document.getElementById('chequeSupplierSelect')?.value;
+                const statusFilter = document.getElementById('chequeStatusFilter')?.value;
+
+                let filtered = [...supplierPayments];
+                if (suppFilter) filtered = filtered.filter(p => p.supplierId === suppFilter);
+                if (statusFilter) filtered = filtered.filter(p => p.status === statusFilter);
+
+                document.getElementById('chequeCount').textContent = `${filtered.length} cheques`;
+
+                if (filtered.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px;color:#64748b;">No supplier cheques found.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = filtered.map(p => {
+                    const issueDate = p.paidAt ? (p.paidAt.toDate ? p.paidAt.toDate().toLocaleDateString('en-LK') : new Date(p.paidAt).toLocaleDateString('en-LK')) : '-';
+                    const chequeDate = p.chequeDate ? (p.chequeDate.toDate ? p.chequeDate.toDate().toLocaleDateString('en-LK') : new Date(p.chequeDate).toLocaleDateString('en-LK')) : '-';
+                    const bankObj = bankAccounts.find(a => a.id === p.bankAccountId);
+                    const bankName = bankObj ? `${bankObj.bank} (${bankObj.accountNumber})` : 'Bank';
+
+                    let stBadge = '<span class="badge badge-active">ISSUED / DATED</span>';
+                    if (p.status === 'cleared') stBadge = '<span class="badge badge-active" style="background:#dcfce7;color:#15803d;">CLEARED</span>';
+                    if (p.status === 'returned') stBadge = '<span class="badge badge-inactive">RETURNED</span>';
+
+                    return `<tr>
+                        <td>${issueDate}</td>
+                        <td><code style="font-size:13px;font-weight:700;color:#0284c7;">${p.chequeNo || '-'}</code></td>
+                        <td><strong>${p.supplierName || 'Supplier'}</strong></td>
+                        <td>${bankName}</td>
+                        <td><strong style="color:#475569;">${chequeDate}</strong></td>
+                        <td style="font-weight:800;color:#ef4444;">${formatCurrency(p.amount)}</td>
+                        <td>${stBadge}</td>
+                        <td>
+                            ${p.status === 'issued' ? `<button class="btn-outline" onclick="updateChequeStatus('${p.id}', 'cleared')" style="padding:4px 8px;font-size:11px;margin-right:4px;"><i class="fas fa-check"></i> Mark Cleared</button>` : ''}
+                            ${p.status === 'issued' ? `<button class="btn-danger" onclick="updateChequeStatus('${p.id}', 'returned')" style="padding:4px 8px;font-size:11px;"><i class="fas fa-undo"></i> Return</button>` : ''}
+                        </td>
+                    </tr>`;
+                }).join('');
+
+            } catch(e) {
+                console.error('loadSupplierCheques failed:', e);
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:25px;color:#ef4444;">Error loading cheques</td></tr>';
+            }
+        }
+
+        window.updateChequeStatus = async (paymentId, newStatus) => {
+            if (!confirm(`Are you sure you want to mark this cheque as ${newStatus.toUpperCase()}?`)) return;
+            try {
+                await db.collection('supplier_payments').doc(currentBusinessId).collection('list').doc(paymentId).update({
+                    status: newStatus,
+                    updatedAt: new Date()
+                });
+                showToast(`Cheque status updated to ${newStatus.toUpperCase()}!`);
+                await loadSupplierCheques();
+            } catch(e) {
+                console.error(e);
+                showToast('Failed to update cheque status!', true);
+            }
+        };
         
         window.deleteSupplier = async (id) => {
             if(confirm('Are you sure you want to delete this supplier?')){
@@ -402,7 +806,7 @@
                     suppliers = suppliers.filter(s => s.id !== id && s.code !== id);
                     showToast('Supplier deleted successfully');
                     renderSuppliers();
-                    updateSupplierSelect();
+                    updateSupplierSelects();
                     updateStats();
                 } catch(err) {
                     console.error('Delete supplier failed:', err);
@@ -415,7 +819,7 @@
         async function loadPurchaseHistory(){
             const supplierId = document.getElementById('historySupplierSelect').value;
             if(!supplierId){
-                document.getElementById('historyList').innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;">Select a supplier</tbody>';
+                document.getElementById('historyList').innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;">Select a supplier</td></tr>';
                 return;
             }
             
@@ -428,7 +832,7 @@
             
             const tbody = document.getElementById('historyList');
             if(orders.length === 0){
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;">No purchase orders found</tbody>';
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;">No purchase orders found</td></tr>';
                 return;
             }
             
@@ -442,9 +846,9 @@
         }
         
         function exportSuppliers(){
-            let csv = 'Code,Name,Contact Person,Phone,Email,Address,Notes,Status\n';
+            let csv = 'Code,Name,Contact Person,Phone,Email,Address,Opening Balance,Status\n';
             suppliers.forEach(s => {
-                csv += `${s.code || s.id},${s.name},${s.contact || ''},${s.phone},${s.email || ''},${s.address || ''},${s.notes || ''},${s.status}\n`;
+                csv += `${s.code || s.id},${s.name},${s.contact || ''},${s.phone},${s.email || ''},${s.address || ''},${s.openingBalance || 0},${s.status}\n`;
             });
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);
@@ -463,6 +867,9 @@
                 document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
                 btn.classList.add('active');
                 document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+                if (btn.dataset.tab === 'cheques') {
+                    loadSupplierCheques();
+                }
             };
         });
         
@@ -474,7 +881,12 @@
         document.getElementById('searchSupplier').onkeyup = () => renderSuppliers();
         document.getElementById('exportSuppliersBtn').onclick = exportSuppliers;
         document.getElementById('loadHistoryBtn').onclick = loadPurchaseHistory;
-        
+
+        if (document.getElementById('quickPaySupplierBtn')) document.getElementById('quickPaySupplierBtn').onclick = () => openPaySupplierModal();
+        if (document.getElementById('closePayModalBtn')) document.getElementById('closePayModalBtn').onclick = () => document.getElementById('paySupplierModal').style.display = 'none';
+        if (document.getElementById('saveSupplierPaymentBtn')) document.getElementById('saveSupplierPaymentBtn').onclick = saveSupplierPayment;
+        if (document.getElementById('loadChequesBtn')) document.getElementById('loadChequesBtn').onclick = loadSupplierCheques;
+
         auth.onAuthStateChanged(async(user)=>{
             if(!user){ window.location.href='/'; return; }
             const userDoc = await db.collection('users').doc(user.uid).get();

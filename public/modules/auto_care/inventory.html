@@ -46,7 +46,8 @@
             <h2 style="color:#38bdf8; font-size:24px; font-weight:800;"><i class="fa-solid fa-box-open"></i> Spare Parts Inventory Database</h2>
             <p style="color:#94a3b8; font-size:14px; margin-top:4px;">වාහන අමතර කොටස් තොග සටහන් කිරීම, Low Stock පාලනය, සංස්කරණය (Edit) සහ මකා දැමීම (Delete)</p>
         </div>
-        <div style="display:flex; gap:10px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-outline" style="border-color:#34d399; color:#34d399;" onclick="openBulkImportModal()"><i class="fa-solid fa-file-excel"></i> Import Excel / CSV Bulk Stock</button>
             <a href="purchases.html" class="btn btn-outline"><i class="fa-solid fa-cart-flatbed"></i> Stock Purchases / GRN</a>
             <button class="btn btn-primary" onclick="openAddModal()"><i class="fa-solid fa-plus"></i> Add New Spare Part</button>
         </div>
@@ -169,6 +170,32 @@
         </div>
     </div>
 
+    <!-- Modal for Bulk Excel / CSV Import -->
+    <div class="modal" id="bulkModal" style="display:none;">
+        <div class="modal-content" style="width:90%; max-width:580px; padding:24px; border-radius:20px;">
+            <h3 style="margin-bottom:12px; color:#34d399;"><i class="fa-solid fa-file-excel"></i> Bulk Import Spare Parts Inventory (10,000+ Items)</h3>
+            <p style="color:#94a3b8; font-size:13px; margin-bottom:15px;">ඔබගේ Excel / CSV ගොනුව තෝරා එකවර අමතර කොටස් දහස් ගණනක් තොගයට එකතු කරගන්න.</p>
+            
+            <div style="background:#0f172a; padding:15px; border-radius:12px; border:1px solid #334155; margin-bottom:15px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <strong style="color:#ffffff; font-size:13px;">1. Sample Excel / CSV Format Template</strong>
+                    <button type="button" class="btn btn-outline" style="font-size:11px; padding:4px 10px; border-color:#38bdf8; color:#38bdf8;" onclick="downloadSampleCsv()"><i class="fa-solid fa-download"></i> Download Template CSV</button>
+                </div>
+                <small style="color:#64748b; font-size:12px;">Columns required: <code>PartNo, PartName, Category, CompatibleModel, Qty, CostPrice, SellingPrice, MinAlert</code></small>
+            </div>
+
+            <div style="margin-bottom:15px;">
+                <label style="font-weight:700; color:#ffffff; display:block; margin-bottom:6px;">2. Choose CSV File (.csv) *</label>
+                <input type="file" id="csvFileInput" accept=".csv, .txt" style="width:100%; padding:10px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#ffffff;">
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                <button type="button" class="btn btn-outline" onclick="document.getElementById('bulkModal').style.display='none'">Cancel</button>
+                <button type="button" class="btn btn-primary" style="background:#10b981;" onclick="processBulkCsvImport()"><i class="fa-solid fa-file-import"></i> Start Bulk Import</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let parts = [];
 
@@ -183,11 +210,24 @@
 
             if (cached) {
                 try { parts = JSON.parse(cached); } catch(e) { parts = []; }
+                renderPartsTable();
             } else {
-                parts = [];
+                fetch('parts_catalog_seed.json')
+                    .then(res => res.json())
+                    .then(seedData => {
+                        if (Array.isArray(seedData) && seedData.length > 0) {
+                            parts = seedData;
+                            localStorage.setItem(storageKey, JSON.stringify(parts));
+                        } else {
+                            parts = [];
+                        }
+                        renderPartsTable();
+                    })
+                    .catch(err => {
+                        parts = [];
+                        renderPartsTable();
+                    });
             }
-
-            renderPartsTable();
         }
 
         function renderPartsTable() {
@@ -238,7 +278,9 @@
                 return;
             }
 
-            filtered.forEach(p => {
+            const displayList = filtered.slice(0, 200);
+
+            displayList.forEach(p => {
                 const isLow = p.qty <= (p.min || 5);
                 tbody.innerHTML += `
                     <tr>
@@ -258,6 +300,16 @@
                     </tr>
                 `;
             });
+
+            if (filtered.length > 200) {
+                tbody.innerHTML += `
+                    <tr>
+                        <td colspan="7" style="text-align:center; padding:15px; background:#0f172a; color:#94a3b8; font-size:12px;">
+                            ℹ️ Showing first 200 of <strong>${filtered.length.toLocaleString()}</strong> parts. Use the search bar above to instantly find any part.
+                        </td>
+                    </tr>
+                `;
+            }
         }
 
         function filterParts() { renderPartsTable(); }
@@ -330,6 +382,92 @@
                 renderPartsTable();
                 alert(`✅ Part ${no} deleted successfully!`);
             }
+        }
+
+        // --- Bulk Excel / CSV Importer Functions ---
+        function openBulkImportModal() {
+            document.getElementById('csvFileInput').value = '';
+            document.getElementById('bulkModal').style.display = 'flex';
+        }
+
+        function downloadSampleCsv() {
+            const sampleCsv = `PartNo,PartName,Category,CompatibleModel,Qty,CostPrice,SellingPrice,MinAlert
+OIL-5W30-4L,Toyota Genuine Synthetic Engine Oil 4L,Oils & Fluids,Toyota Prius Premio Axio,50,7500,9500,10
+FLT-OIL-001,Genuine Oil Filter C-110,Filters,Toyota All Models,100,1200,1800,15
+BRK-PAD-FRONT,Front Ceramic Brake Pad Set,Brakes,Honda Vezel Fit GP5,30,4500,6800,5`;
+
+            const blob = new Blob([sampleCsv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", "AutoCare_SpareParts_Template.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function processBulkCsvImport() {
+            const fileInput = document.getElementById('csvFileInput');
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert('⚠️ Please select a CSV file to import.');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const lines = text.split(/\r\n|\n/);
+                if (lines.length <= 1) {
+                    alert('⚠️ Selected CSV file is empty.');
+                    return;
+                }
+
+                let importedCount = 0;
+                let updatedCount = 0;
+
+                // Process lines
+                for (let i = 1; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+
+                    // Parse comma separated values
+                    const cols = line.split(',');
+                    if (cols.length < 2) continue;
+
+                    const no = (cols[0] || '').trim().toUpperCase();
+                    const name = (cols[1] || '').trim();
+                    if (!no || !name) continue;
+
+                    const cat = (cols[2] || 'Oils & Fluids').trim();
+                    const model = (cols[3] || '').trim();
+                    const qty = parseInt(cols[4]) || 0;
+                    const cost = parseFloat(cols[5]) || 0;
+                    const price = parseFloat(cols[6]) || 0;
+                    const min = parseInt(cols[7]) || 5;
+
+                    const item = { no, name, cat, model, qty, min, cost, price };
+                    const idx = parts.findIndex(p => p.no === no);
+
+                    if (idx >= 0) {
+                        parts[idx] = item;
+                        updatedCount++;
+                    } else {
+                        parts.push(item);
+                        importedCount++;
+                    }
+                }
+
+                const bizId = getBizId();
+                localStorage.setItem(`autocare_parts_${bizId}`, JSON.stringify(parts));
+
+                document.getElementById('bulkModal').style.display = 'none';
+                renderPartsTable();
+                alert(`🎉 Bulk Import Completed Successfully!\n\n✅ New Items Added: ${importedCount}\n✏️ Existing Items Updated: ${updatedCount}\n📦 Total Parts in Inventory: ${parts.length}`);
+            };
+
+            reader.readAsText(file);
         }
 
         window.onload = loadParts;

@@ -1787,7 +1787,82 @@ class DashboardCore {
             else if (m === 'CHEQUE') purchaseSplit30[i].cheque += amt;
             else purchaseSplit30[i].cash += amt;
         });
+        let todaySales = 0;
+        let todayCogs = 0;
+        let todayProfit = 0;
+        let monthSales = 0;
+        let monthCogs = 0;
+        let monthProfitFromSales = 0;
+        let overdueCollectablesCount = 0;
+        let overdueCollectablesAmount = 0;
+        const overdueList = [];
+        const todayMs = new Date().getTime();
+
         salesHist30.docs.forEach((doc) => {
+            const d = doc.data() || {};
+            if (d.isActive === false) return;
+            const t = d.createdAt?.toDate ? d.createdAt.toDate() : (d.createdAt ? new Date(d.createdAt) : null);
+            if (!t || Number.isNaN(t.getTime())) return;
+
+            const amt = Number(d.amount || 0);
+            const cogs = Number(d.cogsAmount || (Number(d.qty || 0) * Number(d.fgUnitCost || 0)));
+            const profit = amt - cogs;
+
+            if (t >= startToday) {
+                todaySales += amt;
+                todayCogs += cogs;
+                todayProfit += profit;
+            }
+            if (t >= startMonth) {
+                monthSales += amt;
+                monthCogs += cogs;
+                monthProfitFromSales += profit;
+            }
+
+            const k = `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}`;
+            const i = dayIdx[k];
+            if (i != null) {
+                sales30[i] += amt;
+                profit30[i] += profit;
+                const m = String(d.paymentMode || '').toUpperCase();
+                if (m === 'CREDIT') salesSplit30[i].credit += amt;
+                else if (m === 'CHEQUE') salesSplit30[i].cheque += amt;
+                else salesSplit30[i].cash += amt;
+            }
+        });
+
+        receivableSnap.docs.forEach((doc) => {
+            const d = doc.data() || {};
+            if (d.isActive === false) return;
+            const isCredit = d.paymentMode === 'CREDIT';
+            const isCheque = d.paymentMode === 'CHEQUE';
+            const dueStr = isCredit ? d.dueDate : (isCheque ? d.chequeClearanceDate : null);
+            const amt = Number(d.amount || 0);
+
+            let isOverdue = false;
+            if (dueStr) {
+                const dueMs = new Date(dueStr + 'T23:59:59').getTime();
+                if (!isNaN(dueMs) && dueMs < todayMs) {
+                    isOverdue = true;
+                }
+            }
+
+            if (isOverdue) {
+                overdueCollectablesCount++;
+                overdueCollectablesAmount += amt;
+                overdueList.push({
+                    id: doc.id,
+                    customer: d.companyName || 'Customer',
+                    area: d.area || 'N/A',
+                    phone: d.customerMobile || '',
+                    amount: amt,
+                    dueStr,
+                    paymentMode: d.paymentMode
+                });
+            }
+        });
+
+        rawHist30.docs.forEach((doc) => {
             const d = doc.data() || {};
             const t = d.createdAt?.toDate ? d.createdAt.toDate() : (d.createdAt ? new Date(d.createdAt) : null);
             if (!t || Number.isNaN(t.getTime())) return;
@@ -1795,13 +1870,13 @@ class DashboardCore {
             const i = dayIdx[k];
             if (i == null) return;
             const amt = Number(d.amount || 0);
-            sales30[i] += amt;
-            profit30[i] += amt;
+            purchases30[i] += amt;
             const m = String(d.paymentMode || '').toUpperCase();
-            if (m === 'CREDIT') salesSplit30[i].credit += amt;
-            else if (m === 'CHEQUE') salesSplit30[i].cheque += amt;
-            else salesSplit30[i].cash += amt;
+            if (m === 'CREDIT') purchaseSplit30[i].credit += amt;
+            else if (m === 'CHEQUE') purchaseSplit30[i].cheque += amt;
+            else purchaseSplit30[i].cash += amt;
         });
+
         side30.docs.forEach((doc) => {
             const d = doc.data() || {};
             const t = d.date?.toDate ? d.date.toDate() : (d.date ? new Date(d.date) : null);
@@ -1813,19 +1888,13 @@ class DashboardCore {
         });
 
         const entries = journalSnap.docs.map((doc) => doc.data() || {});
-        const monthSales = entries.reduce((sum, entry) => {
-            const ref = String(entry.referenceType || '').toUpperCase();
-            if (!['MANUFACTURING_FINISHED_GOOD_SALE', 'SALE', 'DISTRIBUTOR_ORDER_APPROVED'].includes(ref)) return sum;
-            return sum + (Number(entry.totalCredit) || 0);
-        }, 0);
-
         const rmPurchaseMonth = entries.reduce((sum, entry) => {
             const ref = String(entry.referenceType || '').toUpperCase();
             if (ref !== 'MANUFACTURING_RAW_MATERIAL_PURCHASED') return sum;
             return sum + (Number(entry.totalDebit) || 0);
         }, 0);
 
-        const netProfit = (monthSales + sideIncomeMonth) - (rmPurchaseMonth + productionCostMonth + operationalCostMonth);
+        const netProfit = monthProfitFromSales + sideIncomeMonth - (productionCostMonth + operationalCostMonth);
         const cashFlow = this.calculateCashFlow(entries);
         const runToday = prodSnap.docs.filter((doc) => {
             const d = doc.data() || {};
@@ -1845,7 +1914,8 @@ class DashboardCore {
         const pendingSettlements = (payableSnap.size || 0) + (receivableSnap.size || 0);
 
         return {
-            todaySales: 0,
+            todaySales,
+            todayProfit,
             monthSales,
             rmStockValue,
             fgStockValue,
@@ -1853,6 +1923,9 @@ class DashboardCore {
             productionStatus,
             materialEfficiencyYield,
             pendingSettlements,
+            overdueCollectablesCount,
+            overdueCollectablesAmount,
+            overdueList,
             manufacturer30Labels: dayKeys,
             manufacturerPurchases30: purchases30,
             manufacturerSales30: sales30,
@@ -1882,10 +1955,9 @@ class DashboardCore {
             pharmacy: ['todaySales', 'monthSales', 'expiringSoon', 'drugCategories', 'prescriptionUploads', 'cashFlow', 'stockValue', 'customerOutstanding', 'supplierOutstanding'],
             hardware: ['todaySales', 'monthSales', 'unitConvertibleItems', 'bulkWeightPricedItems', 'bulkItems', 'quotationCount', 'quoteConversionRate', 'cashFlow', 'stockValue', 'customerOutstanding', 'supplierOutstanding'],
             service: ['todayAppointments', 'upcomingAppointments', 'todaySales', 'serviceBills', 'utilization', 'clients', 'cashFlow'],
-            manufacturer: ['rmStockValue', 'fgStockValue', 'productionRuns', 'productionStatus', 'materialEfficiencyYield', 'pendingSettlements', 'rmPurchaseMonth', 'productionCostMonth', 'operationalCostMonth', 'sideIncomeMonth', 'monthSales', 'monthProfit', 'cashFlow'],
+            manufacturer: ['todaySales', 'todayProfit', 'rmStockValue', 'fgStockValue', 'productionRuns', 'productionStatus', 'materialEfficiencyYield', 'pendingSettlements', 'rmPurchaseMonth', 'productionCostMonth', 'operationalCostMonth', 'sideIncomeMonth', 'monthSales', 'monthProfit', 'cashFlow'],
             tire_centre: ['todaySales', 'monthSales', 'todayAppointments', 'lowStock', 'cashFlow', 'stockValue', 'customerOutstanding', 'supplierOutstanding'],
             scrap_collection_center: ['cashBalance', 'bankBalance', 'todaySales', 'todayBuying', 'todayStockIn', 'todayStockOut', 'monthSales', 'monthBuying', 'monthStockIn', 'monthStockOut', 'monthProfit', 'stockValue', 'cashFlow', 'scrapGlRevenue', 'scrapGlCogs', 'scrapGlLoansGiven', 'scrapGlInterestIncome', 'scrapGlNet1030', 'scrapGlNet1060', 'outstandingLoans', 'advanceOutstanding', 'externalSettlementNet', 'lowStock']
-
         };
         return structures[businessType] || structures.retail;
     }

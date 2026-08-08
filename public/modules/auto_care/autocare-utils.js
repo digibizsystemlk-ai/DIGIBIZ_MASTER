@@ -34,6 +34,45 @@ window.AutoCareUtils = {
         return isDemo ? "DEMO Motors & Auto Care" : "Auto Care Center";
     },
 
+    // Company Logo Helpers
+    getCompanyLogo: function() {
+        const bizId = this.getBizId();
+        return localStorage.getItem(`autocare_logo_${bizId}`) ||
+               localStorage.getItem('currentBusinessLogo') ||
+               sessionStorage.getItem('currentBusinessLogo') ||
+               localStorage.getItem('digibizBusinessLogoUrl') ||
+               sessionStorage.getItem('digibizBusinessLogoUrl') ||
+               localStorage.getItem('business_logo') || '';
+    },
+
+    saveCompanyLogo: function(base64Data) {
+        if (!base64Data) return;
+        const bizId = this.getBizId();
+        try {
+            localStorage.setItem(`autocare_logo_${bizId}`, base64Data);
+            localStorage.setItem('currentBusinessLogo', base64Data);
+            sessionStorage.setItem('currentBusinessLogo', base64Data);
+            localStorage.setItem('digibizBusinessLogoUrl', base64Data);
+            sessionStorage.setItem('digibizBusinessLogoUrl', base64Data);
+            localStorage.setItem('business_logo', base64Data);
+        } catch(e) {
+            console.warn('[AutoCareUtils] Logo local storage save error:', e);
+        }
+    },
+
+    renderCompanyLogo: function(containerId, defaultIconClass = 'fa-solid fa-car-tunnel') {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+        const logoUrl = this.getCompanyLogo();
+        if (logoUrl) {
+            el.innerHTML = `<img src="${logoUrl}" alt="Logo" style="max-width:100%; max-height:100%; object-fit:contain; border-radius:8px;">`;
+            el.style.background = 'transparent';
+            el.style.boxShadow = 'none';
+        } else {
+            el.innerHTML = `<i class="${defaultIconClass}"></i>`;
+        }
+    },
+
     // 2. Format Date as DD/MM/YYYY
     formatDateDDMMYYYY: function(dateStrOrObj) {
         if (!dateStrOrObj) return '-';

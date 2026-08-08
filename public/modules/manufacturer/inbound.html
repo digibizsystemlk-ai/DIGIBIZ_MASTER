@@ -613,11 +613,33 @@ async function saveEditInbound(){
 }
 async function deleteInbound(id){
     if (!guardInboundActionOrWarn()) return;
-    if (!confirm('Are you sure you want to delete this record?')) return;
-    await db.collection('manufacturer_raw_material_history').doc(id).update({
-        isActive: false,
-        deletedAt: new Date()
-    });
+    if (!confirm('Are you sure you want to delete this purchase record? Raw material stock will be reduced back.')) return;
+    try {
+        const bid = ManufacturerModule.businessId;
+        const docRef = db.collection('manufacturer_raw_material_history').doc(id);
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+            const data = docSnap.data() || {};
+            const materialName = String(data.materialName || '').trim();
+            const qty = Number(data.qty || 0);
+
+            // STOCK REVERSAL: Deduct purchased raw material quantity back from stock balance!
+            if (materialName && qty > 0) {
+                const rmKey = materialName.toUpperCase();
+                await db.collection('manufacturer_raw_materials').doc(`${bid}_${rmKey}`).set({
+                    stockQty: firebase.firestore.FieldValue.increment(-Math.abs(qty)),
+                    updatedAt: new Date()
+                }, { merge: true }).catch(eStock => console.warn('[Inbound] Stock reversal error:', eStock));
+            }
+
+            await docRef.update({
+                isActive: false,
+                deletedAt: new Date()
+            });
+        }
+    } catch (e) {
+        alert('Error deleting record: ' + e.message);
+    }
     await refresh();
 }
 window.openEditInbound = openEditInbound;

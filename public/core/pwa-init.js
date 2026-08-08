@@ -49,7 +49,16 @@
 
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
-            navigator.serviceWorker.register('/sw.js').catch(function (err) {
+            if ('caches' in window) {
+                caches.keys().then(function(names) {
+                    names.forEach(function(name) {
+                        caches.delete(name);
+                    });
+                });
+            }
+            navigator.serviceWorker.register('/sw.js?v=3001').then(function(reg) {
+                if (reg && reg.update) reg.update();
+            }).catch(function (err) {
                 console.warn('[PWA] Service worker registration error:', err);
             });
         });
