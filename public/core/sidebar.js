@@ -2082,36 +2082,7 @@ class Sidebar {
 
     async refreshBusinessNameFromProfile() {
         const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
-        if (isImpersonating) {
-            this.currentRole = 'BUSINESS_OWNER';
-            this.businessNavRole = 'BUSINESS_OWNER';
-            this.businessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || this.businessId;
-            this.businessType = localStorage.getItem('digibiz_impersonate_type') || localStorage.getItem('currentBusinessType') || 'retail';
-            
-            const impEmail = localStorage.getItem('digibiz_impersonate_email') || '';
-            if (this.businessId) {
-                try {
-                    const bDoc = await window.db.collection('businesses').doc(this.businessId).get();
-                    if (bDoc.exists) {
-                        const bd = bDoc.data() || {};
-                        this.businessName = bd.businessName || bd.name || bd.companyName || bd.title || localStorage.getItem('digibiz_impersonate_biz_name') || 'Client Business';
-                        this.ownerName = bd.ownerName || bd.name || localStorage.getItem('digibiz_impersonate_owner_name') || impEmail;
-                    }
-                } catch (eB) {}
-            }
-            if (!this.businessName || this.businessName === 'Client Business' || this.businessName === 'My Business') {
-                this.businessName = localStorage.getItem('digibiz_impersonate_biz_name') || (impEmail ? `${impEmail.split('@')[0].toUpperCase()} BUSINESS` : 'CLIENT BUSINESS');
-            }
-            this.renderBusinessName(this.businessName);
-            const ownerEl = document.getElementById('sidebarUserName');
-            if (ownerEl) ownerEl.textContent = this.ownerName || impEmail;
-            const roleBadgeEl = document.getElementById('sidebarRoleBadge');
-            if (roleBadgeEl) roleBadgeEl.textContent = 'BUSINESS OWNER';
-            return;
-        }
-
         const user = firebase.auth().currentUser;
-        const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
         if (!user && !isImpersonating) return;
         try {
             const opt = navigator.onLine ? {} : { source: 'cache' };
@@ -2121,13 +2092,14 @@ class Sidebar {
             }
             const userData = userDoc && userDoc.exists ? userDoc.data() : {};
             this.ownerName = String(userData.ownerName || userData.name || this.ownerName || '').trim();
-            let resolvedBusinessId = userData.businessId || userData.assignedBusiness || userData.companyId || (isImpersonating ? localStorage.getItem('digibiz_impersonate_biz_id') : null) || this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || (user ? user.uid : null);
+            const userUid = user ? user.uid : null;
+            let resolvedBusinessId = userData.businessId || userData.assignedBusiness || userData.companyId || (isImpersonating ? localStorage.getItem('digibiz_impersonate_biz_id') : null) || this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || userUid;
             let resolvedName = '';
 
             const targetEmail = (isImpersonating ? localStorage.getItem('digibiz_impersonate_email') : null) || (user && user.email) || '';
 
             // Fallback 1: Query users collection by email if businessId is missing or default
-            if ((!resolvedBusinessId || resolvedBusinessId === user?.uid) && targetEmail) {
+            if ((!resolvedBusinessId || resolvedBusinessId === userUid) && targetEmail) {
                 try {
                     const uSnap = await window.db.collection('users').where('email', '==', targetEmail).limit(1).get();
                     if (!uSnap.empty) {
