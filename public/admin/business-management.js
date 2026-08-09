@@ -868,6 +868,24 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (_eAudit) {}
 
+        let customToken = '';
+        try {
+            if (window.firebase && window.firebase.functions) {
+                const genTokenFn = window.firebase.functions().httpsCallable('generateClientImpersonationToken');
+                const res = await genTokenFn({
+                    targetEmail: targetEmail,
+                    targetBizId: resolvedBizId,
+                    targetOwnerName: resolvedOwnerName
+                });
+                if (res && res.data && res.data.customToken) {
+                    customToken = res.data.customToken;
+                    localStorage.setItem('digibiz_impersonate_token', customToken);
+                }
+            }
+        } catch (eToken) {
+            console.warn('[Impersonation Token Gen Fail]', eToken);
+        }
+
         let destUrl = '/modules/core/dashboard.html';
 
         const queryParams = new URLSearchParams({
@@ -877,6 +895,10 @@ document.addEventListener('DOMContentLoaded', () => {
             bizType: resolvedBizType,
             ts: Date.now()
         });
+
+        if (customToken) {
+            queryParams.set('token', customToken);
+        }
 
         const targetUrl = `${destUrl}?${queryParams.toString()}`;
 

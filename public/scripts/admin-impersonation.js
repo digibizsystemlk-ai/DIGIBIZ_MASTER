@@ -50,12 +50,25 @@
     localStorage.setItem('currentBusinessType', targetType);
     sessionStorage.setItem('currentBusinessType', targetType);
 
-    // Auto-authenticate unauthenticated sessions via Anonymous Auth so Firestore Security Rules grant read access
+    const paramToken = urlParams.get('token');
+    if (paramToken) {
+        localStorage.setItem('digibiz_impersonate_token', paramToken);
+    }
+
+    // Auto-authenticate via Official Firebase Custom Auth Token if provided
     const ensureImpersonatedAuth = async () => {
         if (window.firebase && window.firebase.auth) {
             try {
                 const authInst = window.firebase.auth();
-                if (!authInst.currentUser) {
+                const customToken = localStorage.getItem('digibiz_impersonate_token');
+                if (customToken) {
+                    await authInst.signInWithCustomToken(customToken).then(() => {
+                        console.log('[Impersonation] Signed in with OFFICIAL FIREBASE CUSTOM TOKEN!');
+                    }).catch(async (eTok) => {
+                        console.warn('[Impersonation] Custom token fallback to anonymous auth:', eTok);
+                        if (!authInst.currentUser) await authInst.signInAnonymously().catch(() => {});
+                    });
+                } else if (!authInst.currentUser) {
                     await authInst.signInAnonymously().catch(e => console.warn('[Impersonation] Anonymous auth warn:', e));
                 }
             } catch (err) {

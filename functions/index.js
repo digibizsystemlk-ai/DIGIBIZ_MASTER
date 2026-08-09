@@ -1684,3 +1684,62 @@ exports.verifyMfaEmailOtp = onCall(
     }
 );
 
+/**
+ * Super Admin Official Client Impersonation Token Generator
+ * Generates an official Firebase Custom Auth Token so Super Admin logs in as the REAL CLIENT OWNER.
+ */
+exports.generateClientImpersonationToken = onCall(
+    {
+        timeoutSeconds: 60,
+        memory: "256MiB",
+    },
+    async (request) => {
+        const auth = request.auth;
+        const data = request.data || {};
+        const targetEmail = String(data.targetEmail || "").trim().toLowerCase();
+        const targetBizId = String(data.targetBizId || "").trim();
+
+        const requesterEmail = String((auth && auth.token && auth.token.email) || "").trim().toLowerCase();
+        if (requesterEmail !== "biz.sirimal@gmail.com" && requesterEmail !== "2biz.sirimal@gmail.com") {
+            throw new HttpsError("permission-denied", "Only Super Admin can generate client impersonation tokens.");
+        }
+
+        if (!targetEmail || !targetBizId) {
+            throw new HttpsError("invalid-argument", "targetEmail and targetBizId are required.");
+        }
+
+        let targetUid = targetBizId;
+        try {
+            const userRecord = await admin.auth().getUserByEmail(targetEmail);
+            targetUid = userRecord.uid;
+        } catch (eNotFound) {
+            try {
+                const newRecord = await admin.auth().createUser({
+                    email: targetEmail,
+                    displayName: data.targetOwnerName || targetEmail,
+                });
+                targetUid = newRecord.uid;
+            } catch (_eCreate) {
+                targetUid = targetBizId;
+            }
+        }
+
+        const customClaims = {
+            role: "BUSINESS_OWNER",
+            businessId: targetBizId,
+            isImpersonated: true,
+            impersonatedBy: requesterEmail
+        };
+
+        const customToken = await admin.auth().createCustomToken(targetUid, customClaims);
+
+        return {
+            success: true,
+            customToken: customToken,
+            targetUid: targetUid,
+            targetEmail: targetEmail,
+            targetBizId: targetBizId
+        };
+    }
+);
+
