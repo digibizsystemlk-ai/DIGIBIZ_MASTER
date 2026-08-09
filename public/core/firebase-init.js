@@ -81,9 +81,9 @@ window.auth = firebase.auth();
         const origOnAuthStateChanged = firebase.auth().onAuthStateChanged;
         firebase.auth().onAuthStateChanged = function(callback, optError, optCompleted) {
             const wrappedCallback = async (user) => {
+                const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'client@digibiz.lk';
+                const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || 'CLIENT_BIZ';
                 if (!user) {
-                    const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'client@digibiz.lk';
-                    const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || 'CLIENT_BIZ';
                     const syntheticUser = {
                         uid: targetBizId,
                         email: targetEmail,
@@ -92,6 +92,13 @@ window.auth = firebase.auth();
                         getIdToken: async () => 'SYNTHETIC_IMPERSONATION_TOKEN'
                     };
                     return callback(syntheticUser);
+                }
+                if (!user.email) {
+                    try {
+                        Object.defineProperty(user, 'email', { value: targetEmail, writable: true });
+                    } catch (_eE) {
+                        try { user.email = targetEmail; } catch (_eE2) {}
+                    }
                 }
                 return callback(user);
             };

@@ -50,6 +50,22 @@
     localStorage.setItem('currentBusinessType', targetType);
     sessionStorage.setItem('currentBusinessType', targetType);
 
+    // Auto-authenticate unauthenticated sessions via Anonymous Auth so Firestore Security Rules grant read access
+    const ensureImpersonatedAuth = async () => {
+        if (window.firebase && window.firebase.auth) {
+            try {
+                const authInst = window.firebase.auth();
+                if (!authInst.currentUser) {
+                    await authInst.signInAnonymously().catch(e => console.warn('[Impersonation] Anonymous auth warn:', e));
+                }
+            } catch (err) {
+                console.warn('[Impersonation] Auth init warn:', err);
+            }
+        }
+    };
+
+    ensureImpersonatedAuth();
+
     // Link Click Interceptor to attach tenant parameters on internal links
     document.addEventListener('click', (e) => {
         const a = e.target.closest && e.target.closest('a');

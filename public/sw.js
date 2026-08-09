@@ -1,4 +1,4 @@
-const CACHE_NAME = "digibiz-retail-v2082";
+const CACHE_NAME = "digibiz-retail-v2083";
 
 // Force immediate activation and take over all clients
 self.addEventListener("install", (event) => {
