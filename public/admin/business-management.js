@@ -823,26 +823,35 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (_eAudit) {}
 
         const type = String(targetBizType || '').toLowerCase();
-        let destUrl = '/retail/index.html';
+        let destUrl = '/index.html';
         if (type.includes('attendance') || type.includes('payroll')) {
             destUrl = '/modules/attendance_payroll/employees.html';
         } else if (type.includes('tire')) {
-            destUrl = '/tire/index.html';
+            destUrl = '/modules/tire_centre/workbench.html';
         } else if (type.includes('distributor')) {
-            destUrl = '/distributor/index.html';
-        } else if (type.includes('wholesale')) {
-            destUrl = '/wholesale/index.html';
+            destUrl = '/modules/distributor/orders.html';
         } else if (type.includes('pharmacy')) {
-            destUrl = '/pharmacy/index.html';
-        } else if (type.includes('vehicle')) {
-            destUrl = '/vehicle/index.html';
-        } else if (type.includes('manufacturing') || type.includes('manufactur')) {
-            destUrl = '/manufacturing/index.html';
-        } else if (type.includes('scrap')) {
-            destUrl = '/scrap/index.html';
+            destUrl = '/modules/pharmacy/inventory.html';
+        } else if (type.includes('hardware')) {
+            destUrl = '/modules/hardware/inventory.html';
+        } else if (type.includes('auto') || type.includes('garage')) {
+            destUrl = '/modules/auto_care/appointments.html';
+        } else if (type.includes('retail') || type.includes('pos')) {
+            destUrl = '/modules/retail/workbench.html';
         }
 
-        window.location.href = destUrl;
+        const queryParams = new URLSearchParams({
+            impersonate: 'true',
+            email: targetEmail,
+            bizId: targetBizId || '',
+            bizType: targetBizType || '',
+            ts: Date.now()
+        });
+
+        const targetUrl = `${destUrl}?${queryParams.toString()}`;
+
+        // Open Client App in a NEW TAB (_blank) with clean tenant context
+        window.open(targetUrl, '_blank');
     }
 
     const impersonateClientBtn = document.getElementById('impersonate-client-btn');
