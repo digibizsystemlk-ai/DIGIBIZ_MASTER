@@ -50,7 +50,24 @@
     localStorage.setItem('currentBusinessType', targetType);
     sessionStorage.setItem('currentBusinessType', targetType);
 
-    // If on Landing Page or Login page, land directly on Universal Dashboard (/modules/core/dashboard.html)
+    // Link Click Interceptor to attach tenant parameters on internal links
+    document.addEventListener('click', (e) => {
+        const a = e.target.closest && e.target.closest('a');
+        if (a && a.href && a.href.startsWith(window.location.origin)) {
+            try {
+                const url = new URL(a.href);
+                if (!url.searchParams.get('impersonate')) {
+                    url.searchParams.set('impersonate', 'true');
+                    if (targetEmail) url.searchParams.set('email', targetEmail);
+                    if (targetBizId) url.searchParams.set('bizId', targetBizId);
+                    if (targetType) url.searchParams.set('bizType', targetType);
+                    a.href = url.toString();
+                }
+            } catch (_err) {}
+        }
+    }, true);
+
+    // ONLY redirect if on Landing Page or Login page
     const path = window.location.pathname.toLowerCase();
     if (path === '/' || path === '/index.html' || path.includes('/auth/login.html')) {
         const targetDashboardUrl = `/modules/core/dashboard.html?impersonate=true&email=${encodeURIComponent(targetEmail)}&bizId=${encodeURIComponent(targetBizId)}&bizType=${encodeURIComponent(targetType)}`;
@@ -86,7 +103,7 @@
 
     fetchLiveTenantProfile();
 
-    // Continuous 150ms DOM & State Enforcer to override any cached sidebar elements
+    // Continuous 150ms DOM & State Enforcer
     const enforceDOMState = () => {
         const roleBadge = document.getElementById('sidebarRoleBadge');
         if (roleBadge && roleBadge.textContent !== 'BUSINESS OWNER') {

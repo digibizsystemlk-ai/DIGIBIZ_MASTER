@@ -1,4 +1,13 @@
 // Dynamic Sidebar Component - Retail Navbar Layout
+(function autoInjectAdminImpersonation() {
+    if (localStorage.getItem('digibiz_impersonate_active') === 'true' || window.location.search.includes('impersonate=true')) {
+        if (!document.querySelector('script[src*="admin-impersonation.js"]')) {
+            const s = document.createElement('script');
+            s.src = '/scripts/admin-impersonation.js';
+            document.head.appendChild(s);
+        }
+    }
+})();
 
 // TWA (Android App) Environment Detection
 if (window.location.search.includes('platform=android') || document.referrer.startsWith('android-app://') || sessionStorage.getItem('is_android_app') === 'true') {
