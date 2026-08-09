@@ -2111,17 +2111,50 @@ class Sidebar {
         }
 
         const user = firebase.auth().currentUser;
-        if (!user) return;
+        const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+        if (!user && !isImpersonating) return;
         try {
             const opt = navigator.onLine ? {} : { source: 'cache' };
-            const userDoc = await window.db.collection('users').doc(user.uid).get(opt);
-            const userData = userDoc.exists ? userDoc.data() : {};
+            let userDoc = null;
+            if (user) {
+                try { userDoc = await window.db.collection('users').doc(user.uid).get(opt); } catch (eU) {}
+            }
+            const userData = userDoc && userDoc.exists ? userDoc.data() : {};
             this.ownerName = String(userData.ownerName || userData.name || this.ownerName || '').trim();
-            const resolvedBusinessId = userData.businessId || this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || user.uid;
+            let resolvedBusinessId = userData.businessId || userData.assignedBusiness || userData.companyId || (isImpersonating ? localStorage.getItem('digibiz_impersonate_biz_id') : null) || this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || (user ? user.uid : null);
             let resolvedName = '';
+
+            const targetEmail = (isImpersonating ? localStorage.getItem('digibiz_impersonate_email') : null) || (user && user.email) || '';
+
+            // Fallback 1: Query users collection by email if businessId is missing or default
+            if ((!resolvedBusinessId || resolvedBusinessId === user?.uid) && targetEmail) {
+                try {
+                    const uSnap = await window.db.collection('users').where('email', '==', targetEmail).limit(1).get();
+                    if (!uSnap.empty) {
+                        const uData = uSnap.docs[0].data() || {};
+                        if (uData.businessId) resolvedBusinessId = uData.businessId;
+                        if (uData.ownerName || uData.name) this.ownerName = uData.ownerName || uData.name;
+                    }
+                } catch (eUq) {}
+            }
+
+            // Fallback 2: Query businesses collection by ownerEmail if resolvedBusinessId is missing
+            if (!resolvedBusinessId && targetEmail) {
+                try {
+                    const bSnap = await window.db.collection('businesses').where('ownerEmail', '==', targetEmail).limit(1).get();
+                    if (!bSnap.empty) {
+                        resolvedBusinessId = bSnap.docs[0].id;
+                        const bd = bSnap.docs[0].data() || {};
+                        resolvedName = String(bd.name || bd.businessName || bd.companyName || '').trim();
+                        if (bd.ownerName) this.ownerName = String(bd.ownerName).trim();
+                    }
+                } catch (eBq) {}
+            }
 
             if (resolvedBusinessId) {
                 this.businessId = resolvedBusinessId;
+                localStorage.setItem('currentBusinessId', resolvedBusinessId);
+                sessionStorage.setItem('currentBusinessId', resolvedBusinessId);
 
                 // Fetch Business Info & Permissions Bridge
                 try {
@@ -2129,7 +2162,7 @@ class Sidebar {
                     const businessDoc = await window.db.collection('businesses').doc(resolvedBusinessId).get(opt);
                     if (businessDoc.exists) {
                         const bd = businessDoc.data() || {};
-                        resolvedName = String(bd.name || bd.businessName || '').trim();
+                        resolvedName = String(bd.name || bd.businessName || bd.companyName || bd.title || '').trim();
 
                         // Sync Permissions from Bridge (Staff Path) with Version Tracking
                         const cachedVersion = sessionStorage.getItem(`digibiz_perm_v_${resolvedBusinessId}`);
@@ -2168,9 +2201,24 @@ class Sidebar {
                 } catch (eBiz) { console.warn('Sidebar biz lookup failed:', eBiz); }
             }
 
+            // Fallback 3: Query businesses collection by ownerEmail if name is still missing
+            if ((!resolvedName || resolvedName === 'No Business Connected') && targetEmail) {
+                try {
+                    const bSnap2 = await window.db.collection('businesses').where('ownerEmail', '==', targetEmail).limit(1).get();
+                    if (!bSnap2.empty) {
+                        const bd2 = bSnap2.docs[0].data() || {};
+                        resolvedBusinessId = bSnap2.docs[0].id;
+                        resolvedName = String(bd2.name || bd2.businessName || bd2.companyName || bd2.title || '').trim();
+                        if (bd2.ownerName) this.ownerName = String(bd2.ownerName).trim();
+                        this.businessId = resolvedBusinessId;
+                        localStorage.setItem('currentBusinessId', resolvedBusinessId);
+                    }
+                } catch (eBq2) {}
+            }
+
             if (!resolvedName) resolvedName = String(this.businessName || 'No Business Connected').trim();
 
-            if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+            if (isImpersonating) {
                 if (!resolvedName || resolvedName === 'No Business Connected' || resolvedName === 'Client Business') {
                     const impBizName = localStorage.getItem('digibiz_impersonate_biz_name');
                     const impEmail = localStorage.getItem('digibiz_impersonate_email') || 'CLIENT';
