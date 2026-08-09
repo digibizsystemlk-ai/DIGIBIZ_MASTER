@@ -14,7 +14,8 @@ const BUSINESS_TYPES = {
             { icon: "📦", name: "Stock", link: "/modules/retail/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF"] },
             { icon: "⚠️", name: "Spoil / Damage", link: "/modules/retail/spoilage.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF"] },
             { icon: "📥", name: "Purchases / GRN", link: "/modules/retail/grn.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF"] },
-            { icon: "🚚", name: "Suppliers", link: "/modules/retail/suppliers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF"] }
+            { icon: "🚚", name: "Suppliers", link: "/modules/retail/suppliers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF"] },
+            { icon: "🏛️", name: "Banking & Cash", link: "/modules/retail/banking.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "BUSINESS_STAFF"] }
         ],
         dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
         demoEmail: "test@retail.com",

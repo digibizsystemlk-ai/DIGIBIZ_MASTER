@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cash & Banking Management - DIGIBIZ Retail</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    
+    <script src="../../core/firebase-init.js?v=3"></script>
+    <script src="../../core/auth-roles.js?v=3"></script>
+    <script src="../../core/dashboard-core.js?v=3"></script>
+    <script src="../../core/ui-helpers.js?v=1"></script>
+    <script src="../../core/sidebar.js?v=1010"></script>
+
+    <style>
+        html.digibiz-sidebar-reserved body { margin-left: 260px; }
+        @media (max-width: 768px) { html.digibiz-sidebar-reserved body { margin-left: 0; } }
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #0f172a; margin: 0; padding: 0; }
+        .main-content { padding: 30px; min-height: 100vh; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; }
+        .header h1 { font-family: 'Outfit', sans-serif; font-size: 26px; font-weight: 800; color: #0f3b2c; margin: 0; display: flex; align-items: center; gap: 10px; }
+        
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; margin-bottom: 25px; }
+        .kpi-card { background: white; border-radius: 16px; padding: 20px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+        .kpi-card .title { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px; }
+        .kpi-card .value { font-family: 'Outfit', sans-serif; font-size: 24px; font-weight: 800; color: #0f3b2c; }
+        .kpi-card .sub { font-size: 11px; color: #94a3b8; margin-top: 4px; font-weight: 600; }
+
+        .btn-group { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 25px; }
+        .btn { padding: 10px 18px; border-radius: 10px; font-weight: 700; font-size: 13.5px; cursor: pointer; border: none; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s ease; }
+        .btn-primary { background: #0f3b2c; color: white; }
+        .btn-primary:hover { background: #10b981; }
+        .btn-outline { background: white; color: #0f172a; border: 1.5px solid #cbd5e1; }
+        .btn-outline:hover { background: #f1f5f9; }
+        .btn-success { background: #10b981; color: white; }
+        .btn-success:hover { background: #059669; }
+
+        .card { background: white; border-radius: 18px; border: 1px solid #e2e8f0; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); margin-bottom: 25px; }
+        .card h2 { font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 800; margin: 0 0 15px 0; color: #0f3b2c; display: flex; align-items: center; justify-content: space-between; }
+
+        .table-wrap { overflow-x: auto; }
+        .data-table { width: 100%; border-collapse: collapse; text-align: left; }
+        .data-table th, .data-table td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+        .data-table th { background: #fafbfc; font-weight: 700; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        .type-badge { padding: 4px 10px; border-radius: 20px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+        .type-deposit { background: #d1fae5; color: #059669; }
+        .type-transfer { background: #e0f2fe; color: #0284c7; }
+
+        /* Modal Styles */
+        .modal { display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); z-index: 10000; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(3px); }
+        .modal-content { background: white; border-radius: 20px; padding: 25px; width: 100%; max-width: 500px; box-shadow: 0 20px 40px rgba(0,0,0,0.15); }
+        .modal-content h3 { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 20px; color: #0f3b2c; margin: 0 0 15px 0; }
+        .modal-content label { display: block; font-size: 12px; font-weight: 700; color: #64748b; margin-bottom: 4px; }
+        .modal-content input, .modal-content select, .modal-content textarea { width: 100%; padding: 10px 12px; border: 1.5px solid #cbd5e1; border-radius: 10px; margin-bottom: 14px; font-family: inherit; font-size: 13.5px; box-sizing: border-box; }
+        .modal-buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px; }
+
+        .toast { position: fixed; bottom: 30px; right: 30px; background: #0f3b2c; color: white; padding: 12px 20px; border-radius: 10px; z-index: 99999; display: none; font-weight: 700; font-size: 13px; }
+        .toast.show { display: flex; animation: slideIn 0.3s; }
+        @keyframes slideIn { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="header">
+            <h1><i class="fas fa-university" style="color:#10b981;"></i> Cash & Banking Management</h1>
+            <div class="btn-group" style="margin-bottom:0;">
+                <button class="btn btn-outline" onclick="openOpeningBalanceModal()"><i class="fas fa-sliders"></i> Edit Opening Balance</button>
+                <button class="btn btn-primary" onclick="openAddAccountModal()"><i class="fas fa-plus-circle"></i> + Add Bank Account</button>
+                <button class="btn btn-success" onclick="openDepositModal()"><i class="fas fa-money-bill-transfer"></i> Deposit Cash to Bank</button>
+            </div>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="title">Cash in Hand (අතැති මුදල්)</div>
+                <div class="value" id="kpiCashInHand">Rs. 0.00</div>
+                <div class="sub">Accumulated POS cash balance</div>
+            </div>
+            <div class="kpi-card">
+                <div class="title">Total Bank Accounts (බැංකු ශේෂය)</div>
+                <div class="value" id="kpiBankTotal">Rs. 0.00</div>
+                <div class="sub" id="kpiBankCount">0 Active Accounts</div>
+            </div>
+            <div class="kpi-card">
+                <div class="title">Total Deposits Logged (තැන්පතු මුදල)</div>
+                <div class="value" id="kpiTotalDeposited">Rs. 0.00</div>
+                <div class="sub">Cash transferred to bank</div>
+            </div>
+            <div class="kpi-card">
+                <div class="title">Opening Capital (ආරම්භක ප්‍රාග්ධනය)</div>
+                <div class="value" id="kpiOpeningBalance">Rs. 0.00</div>
+                <div class="sub">Configured starting balance</div>
+            </div>
+        </div>
+
+        <!-- Bank Accounts List Card -->
+        <div class="card">
+            <h2>
+                <span><i class="fas fa-wallet" style="color:#3b82f6;"></i> Bank Accounts List</span>
+            </h2>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Bank Name</th>
+                            <th>Account Name</th>
+                            <th>Account Number</th>
+                            <th>Branch</th>
+                            <th style="text-align:right;">Current Balance</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bankAccountsTableBody">
+                        <tr><td colspan="6" style="text-align:center; padding:30px;">Loading Bank Accounts...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Banking & Deposit Ledger Audit Table -->
+        <div class="card">
+            <h2>
+                <span><i class="fas fa-list-check" style="color:#10b981;"></i> Banking & Deposit Audit Ledger</span>
+                <button class="btn btn-outline" style="font-size:12px; padding:6px 12px;" onclick="exportLedgerCSV()"><i class="fas fa-file-csv"></i> Export CSV</button>
+            </h2>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Reference / Slip #</th>
+                            <th>Bank / Account</th>
+                            <th>Transaction Type</th>
+                            <th>Notes / Remitter</th>
+                            <th style="text-align:right;">Amount (Rs.)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="depositLedgerTableBody">
+                        <tr><td colspan="6" style="text-align:center; padding:30px;">Loading Banking Ledger Logs...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Opening Cash Balance Modal -->
+    <div id="openingBalanceModal" class="modal">
+        <div class="modal-content">
+            <h3><i class="fas fa-sliders" style="color:#0f3b2c;"></i> Configure Opening Capital Balances</h3>
+            <p style="font-size:12px; color:#64748b; margin-bottom:15px;">Set or adjust your business starting cash-in-hand and capital balances.</p>
+
+            <label>Opening Cash in Hand (ආරම්භක අතැති මුදල - Rs.)</label>
+            <input type="number" id="inputOpeningCash" step="any" placeholder="e.g. 50000">
+
+            <label>Opening Bank Balance (ආරම්භක බැංකු ශේෂය - Rs.)</label>
+            <input type="number" id="inputOpeningBank" step="any" placeholder="e.g. 150000">
+
+            <div class="modal-buttons">
+                <button class="btn btn-outline" onclick="closeModal('openingBalanceModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveOpeningBalance()"><i class="fas fa-save"></i> Save Balances</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Bank Account Modal -->
+    <div id="addAccountModal" class="modal">
+        <div class="modal-content">
+            <h3><i class="fas fa-university" style="color:#3b82f6;"></i> Add New Bank Account</h3>
+            
+            <label>Bank Name (බැංකුවේ නම)</label>
+            <input type="text" id="bankNameInput" placeholder="e.g. Commercial Bank / Sampath Bank">
+
+            <label>Account Name (ගිණුමේ නම)</label>
+            <input type="text" id="accNameInput" placeholder="e.g. DIGIBIZ Retail Main Acc">
+
+            <label>Account Number (ගිණුම් අංකය)</label>
+            <input type="text" id="accNoInput" placeholder="e.g. 8009123456">
+
+            <label>Branch (ශාඛාව)</label>
+            <input type="text" id="branchInput" placeholder="e.g. Colombo Fort">
+
+            <label>Initial Account Balance (Rs.)</label>
+            <input type="number" id="initialBalanceInput" step="any" placeholder="0.00">
+
+            <div class="modal-buttons">
+                <button class="btn btn-outline" onclick="closeModal('addAccountModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveBankAccount()"><i class="fas fa-check"></i> Add Account</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deposit Cash to Bank Modal -->
+    <div id="depositModal" class="modal">
+        <div class="modal-content">
+            <h3><i class="fas fa-money-bill-transfer" style="color:#10b981;"></i> Deposit Cash to Bank Account</h3>
+            <p style="font-size:12px; color:#64748b; margin-bottom:15px;">Transfers cash received from POS drawer into your selected bank account.</p>
+
+            <label>Select Target Bank Account (බැංකු ගිණුම)</label>
+            <select id="depositBankSelect">
+                <option value="">-- Select Bank Account --</option>
+            </select>
+
+            <label>Deposit Amount (තැන්පත් කරන මුදල - Rs.)</label>
+            <input type="number" id="depositAmount" step="any" placeholder="Enter Deposit Amount">
+
+            <label>Deposit Slip / Reference No (රිසිට්පත / Slip #)</label>
+            <input type="text" id="depositSlipRef" placeholder="e.g. SLIP-99812">
+
+            <label>Deposit Date (දිනය)</label>
+            <input type="date" id="depositDate">
+
+            <label>Notes / Remitter (සටහන්)</label>
+            <input type="text" id="depositNotes" placeholder="e.g. Daily POS Cash Banked by Manager">
+
+            <div class="modal-buttons">
+                <button class="btn btn-outline" onclick="closeModal('depositModal')">Cancel</button>
+                <button class="btn btn-success" onclick="saveCashDeposit()"><i class="fas fa-check-circle"></i> Confirm Deposit</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let currentBusinessId = null;
+        let bankAccounts = [];
+        let depositLogs = [];
+        let cashInHand = 0;
+        let openingCash = 0;
+        let openingBank = 0;
+
+        function showToast(msg, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.style.background = isError ? '#ef4444' : '#0f3b2c';
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        function formatCurrency(amt) {
+            return 'Rs. ' + (amt || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = '/';
+                return;
+            }
+
+            try {
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                currentBusinessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+            } catch(e) {
+                currentBusinessId = user.uid;
+            }
+
+            document.getElementById('depositDate').value = new Date().toISOString().split('T')[0];
+            await loadBankingData();
+        });
+
+        async function loadBankingData() {
+            if (!currentBusinessId) return;
+
+            try {
+                // 1. Fetch Financial Settings (Opening Balances & Cash in Hand)
+                const settingsDoc = await db.collection('financial_accounts').doc(currentBusinessId).get();
+                if (settingsDoc.exists) {
+                    const d = settingsDoc.data();
+                    openingCash = d.openingCash || 0;
+                    openingBank = d.openingBank || 0;
+                    cashInHand = d.cashInHand !== undefined ? d.cashInHand : openingCash;
+                } else {
+                    openingCash = 0;
+                    openingBank = 0;
+                    cashInHand = 0;
+                }
+
+                // 2. Fetch Bank Accounts
+                const bankSnap = await db.collection('bank_accounts').doc(currentBusinessId).collection('accounts').get();
+                bankAccounts = bankSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                // 3. Fetch Deposit Audit Logs
+                const depositSnap = await db.collection('banking_transactions').doc(currentBusinessId).collection('list').orderBy('timestamp', 'desc').get();
+                depositLogs = depositSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                renderBankingUI();
+            } catch (err) {
+                console.error('Error loading banking data:', err);
+                showToast('Error loading banking data: ' + err.message, true);
+            }
+        }
+
+        function renderBankingUI() {
+            const totalBankBal = bankAccounts.reduce((sum, b) => sum + (parseFloat(b.balance) || 0), 0);
+            const totalDeposited = depositLogs.filter(d => d.type === 'DEPOSIT').reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+
+            document.getElementById('kpiCashInHand').textContent = formatCurrency(cashInHand);
+            document.getElementById('kpiBankTotal').textContent = formatCurrency(totalBankBal);
+            document.getElementById('kpiBankCount').textContent = `${bankAccounts.length} Active Accounts`;
+            document.getElementById('kpiTotalDeposited').textContent = formatCurrency(totalDeposited);
+            document.getElementById('kpiOpeningBalance').textContent = formatCurrency(openingCash + openingBank);
+
+            // Render Bank Accounts Table
+            const bankTbody = document.getElementById('bankAccountsTableBody');
+            if (bankAccounts.length === 0) {
+                bankTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:30px; color:#64748b;">No bank accounts added yet. Click "+ Add Bank Account" above.</td></tr>';
+            } else {
+                bankTbody.innerHTML = bankAccounts.map(b => `
+                    <tr>
+                        <td><strong>🏦 ${b.bankName}</strong></td>
+                        <td>${b.accountName}</td>
+                        <td><code>${b.accountNo}</code></td>
+                        <td>${b.branch || '-'}</td>
+                        <td style="text-align:right; font-weight:800; color:#059669;">${formatCurrency(b.balance)}</td>
+                        <td>
+                            <button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="deleteBankAccount('${b.id}')"><i class="fas fa-trash" style="color:#ef4444;"></i></button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            // Populate Deposit Bank Select Dropdown
+            const bankSelect = document.getElementById('depositBankSelect');
+            bankSelect.innerHTML = '<option value="">-- Select Bank Account --</option>' + 
+                bankAccounts.map(b => `<option value="${b.id}">${b.bankName} - ${b.accountNo} (${b.accountName})</option>`).join('');
+
+            // Render Ledger Table
+            const ledgerTbody = document.getElementById('depositLedgerTableBody');
+            if (depositLogs.length === 0) {
+                ledgerTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:30px; color:#64748b;">No banking or deposit transactions logged yet.</td></tr>';
+            } else {
+                ledgerTbody.innerHTML = depositLogs.map(d => `
+                    <tr>
+                        <td>${d.date || '-'}</td>
+                        <td><code>${d.reference || '-'}</code></td>
+                        <td><strong>${d.bankName || 'Bank Account'}</strong></td>
+                        <td><span class="type-badge ${d.type === 'DEPOSIT' ? 'type-deposit' : 'type-transfer'}">${d.type}</span></td>
+                        <td>${d.notes || '-'}</td>
+                        <td style="text-align:right; font-weight:800; color:#0f3b2c;">${formatCurrency(d.amount)}</td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        function openOpeningBalanceModal() {
+            document.getElementById('inputOpeningCash').value = openingCash;
+            document.getElementById('inputOpeningBank').value = openingBank;
+            document.getElementById('openingBalanceModal').style.display = 'flex';
+        }
+
+        async function saveOpeningBalance() {
+            const cash = parseFloat(document.getElementById('inputOpeningCash').value) || 0;
+            const bank = parseFloat(document.getElementById('inputOpeningBank').value) || 0;
+
+            try {
+                await db.collection('financial_accounts').doc(currentBusinessId).set({
+                    openingCash: cash,
+                    openingBank: bank,
+                    cashInHand: cash,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+
+                closeModal('openingBalanceModal');
+                showToast('Opening balances updated successfully!');
+                await loadBankingData();
+            } catch (err) {
+                console.error('Error saving opening balance:', err);
+                showToast('Failed to save balances: ' + err.message, true);
+            }
+        }
+
+        function openAddAccountModal() {
+            document.getElementById('bankNameInput').value = '';
+            document.getElementById('accNameInput').value = '';
+            document.getElementById('accNoInput').value = '';
+            document.getElementById('branchInput').value = '';
+            document.getElementById('initialBalanceInput').value = '';
+            document.getElementById('addAccountModal').style.display = 'flex';
+        }
+
+        async function saveBankAccount() {
+            const bankName = document.getElementById('bankNameInput').value.trim();
+            const accName = document.getElementById('accNameInput').value.trim();
+            const accNo = document.getElementById('accNoInput').value.trim();
+            const branch = document.getElementById('branchInput').value.trim();
+            const initBal = parseFloat(document.getElementById('initialBalanceInput').value) || 0;
+
+            if (!bankName || !accNo) {
+                showToast('Please enter Bank Name and Account Number!', true);
+                return;
+            }
+
+            try {
+                await db.collection('bank_accounts').doc(currentBusinessId).collection('accounts').add({
+                    bankName: bankName,
+                    accountName: accName || bankName,
+                    accountNo: accNo,
+                    branch: branch,
+                    balance: initBal,
+                    createdAt: new Date()
+                });
+
+                closeModal('addAccountModal');
+                showToast('Bank account added successfully!');
+                await loadBankingData();
+            } catch (err) {
+                console.error('Error adding bank account:', err);
+                showToast('Failed to add bank account: ' + err.message, true);
+            }
+        }
+
+        async function deleteBankAccount(accId) {
+            if (!confirm('Are you sure you want to delete this bank account?')) return;
+            try {
+                await db.collection('bank_accounts').doc(currentBusinessId).collection('accounts').doc(accId).delete();
+                showToast('Bank account deleted!');
+                await loadBankingData();
+            } catch (err) {
+                showToast('Failed to delete account: ' + err.message, true);
+            }
+        }
+
+        function openDepositModal() {
+            document.getElementById('depositAmount').value = '';
+            document.getElementById('depositSlipRef').value = 'SLIP-' + Math.floor(100000 + Math.random() * 900000);
+            document.getElementById('depositNotes').value = '';
+            document.getElementById('depositModal').style.display = 'flex';
+        }
+
+        async function saveCashDeposit() {
+            const bankId = document.getElementById('depositBankSelect').value;
+            const amount = parseFloat(document.getElementById('depositAmount').value) || 0;
+            const ref = document.getElementById('depositSlipRef').value.trim() || 'SLIP-GENERAL';
+            const date = document.getElementById('depositDate').value;
+            const notes = document.getElementById('depositNotes').value.trim() || 'Cash Deposit to Bank';
+
+            if (!bankId) {
+                showToast('Please select a bank account!', true);
+                return;
+            }
+            if (amount <= 0) {
+                showToast('Please enter a valid deposit amount!', true);
+                return;
+            }
+
+            const targetBank = bankAccounts.find(b => b.id === bankId);
+            if (!targetBank) return;
+
+            try {
+                // 1. Update Bank Account Balance
+                const newBankBal = (parseFloat(targetBank.balance) || 0) + amount;
+                await db.collection('bank_accounts').doc(currentBusinessId).collection('accounts').doc(bankId).update({ balance: newBankBal });
+
+                // 2. Deduct Cash in Hand
+                const newCashInHand = Math.max(0, cashInHand - amount);
+                await db.collection('financial_accounts').doc(currentBusinessId).set({ cashInHand: newCashInHand }, { merge: true });
+
+                // 3. Log Deposit Transaction
+                await db.collection('banking_transactions').doc(currentBusinessId).collection('list').add({
+                    bankId: bankId,
+                    bankName: `${targetBank.bankName} (${targetBank.accountNo})`,
+                    amount: amount,
+                    reference: ref,
+                    date: date,
+                    notes: notes,
+                    type: 'DEPOSIT',
+                    timestamp: new Date()
+                });
+
+                closeModal('depositModal');
+                showToast(`Successfully deposited ${formatCurrency(amount)} into ${targetBank.bankName}!`);
+                await loadBankingData();
+            } catch (err) {
+                console.error('Error saving deposit:', err);
+                showToast('Failed to record deposit: ' + err.message, true);
+            }
+        }
+
+        function exportLedgerCSV() {
+            if (depositLogs.length === 0) {
+                showToast('No ledger entries available to export!', true);
+                return;
+            }
+
+            let csvContent = "Date,Reference/Slip,Bank Account,Transaction Type,Notes,Amount (LKR)\n";
+            depositLogs.forEach(d => {
+                csvContent += `"${d.date || ''}","${d.reference || ''}","${d.bankName || ''}","${d.type || ''}","${d.notes || ''}",${d.amount || 0}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `Banking_Ledger_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>

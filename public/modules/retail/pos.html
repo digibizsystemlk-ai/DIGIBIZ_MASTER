@@ -403,7 +403,10 @@
             <div class="cart-panel" id="cartPanel">
                 <div class="cart-header">
                     <h3 data-i18n="Cart"><i class="fas fa-shopping-bag" style="color:var(--primary);"></i> Current Sale</h3>
-                    <span id="cartCountBadge" style="background:var(--primary); color:white; font-size:12px; font-weight:700; padding:3px 10px; border-radius:30px;">0 items</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <input type="date" id="posBillDate" style="padding:4px 8px; border:1.5px solid var(--border); border-radius:8px; font-size:12px; font-weight:700; color:var(--text);" title="Invoice / Bill Date (Backdating)" data-i18n-title="Invoice / Bill Date (Backdating)">
+                        <span id="cartCountBadge" style="background:var(--primary); color:white; font-size:12px; font-weight:700; padding:3px 10px; border-radius:30px;">0 items</span>
+                    </div>
                 </div>
 
                 <!-- POS Customer Selection and History Panel -->
@@ -413,7 +416,8 @@
                         <button type="button" class="btn" style="padding: 4px 8px; font-size: 11px; font-weight: 700; border-radius: 8px; background: rgba(16,185,129,0.1); color: #059669; border: none; cursor: pointer;" onclick="openInlineCustomerModal()"><i class="fa-solid fa-user-plus"></i> + Register Customer</button>
                     </div>
                     
-                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px;">
+                        <input type="text" id="posCustomerSearchInput" placeholder="🔍 Search Customer Name or Phone..." onkeyup="filterPosCustomerOptions()" style="width: 100%; padding: 7px 12px; border-radius: 8px; border: 1.5px solid var(--border); font-size: 12px; font-weight: 600; background: white; box-sizing: border-box;" title="Type customer name or phone to search" data-i18n-title="Type customer name or phone to search">
                         <select id="posCustomerSelect" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1.5px solid var(--border); font-size: 13px; font-weight: 600;" onchange="onPosCustomerChange()">
                             <!-- Populated dynamically with Guest as default -->
                         </select>
@@ -813,6 +817,10 @@
                 });
             }
             
+            const billDateInput = document.getElementById('posBillDate');
+            if (billDateInput && !billDateInput.value) {
+                billDateInput.value = new Date().toISOString().split('T')[0];
+            }
             initDesktopPromoBanner();
             renderProducts(products);
 
@@ -827,16 +835,39 @@
             
             // Fetch Customers
             const custSnap = await db.collection('customers').where('businessId', '==', currentBusinessId).get();
-            const custSelect = document.getElementById('posCustomerSelect');
-            custSelect.innerHTML = '<option value="guest" data-name="Guest" data-phone="-">Walk-in Guest Customer</option>';
-            custSnap.docs.forEach(doc => {
-                const c = doc.data();
-                custSelect.innerHTML += `<option value="${doc.id}" data-name="${c.fullName}" data-phone="${c.mobile}">${c.fullName} - ${c.mobile}</option>`;
-            });
+            allCustomersList = custSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            filterPosCustomerOptions();
             onPosCustomerChange();
             
             await loadRecentSales();
         }
+
+        let allCustomersList = [];
+
+        window.filterPosCustomerOptions = () => {
+            const term = (document.getElementById('posCustomerSearchInput')?.value || '').toLowerCase().trim();
+            const custSelect = document.getElementById('posCustomerSelect');
+            if (!custSelect) return;
+
+            let filtered = allCustomersList;
+            if (term) {
+                filtered = allCustomersList.filter(c => 
+                    (c.fullName && c.fullName.toLowerCase().includes(term)) || 
+                    (c.mobile && c.mobile.toLowerCase().includes(term))
+                );
+            }
+
+            const currentSelected = custSelect.value;
+            custSelect.innerHTML = '<option value="guest" data-name="Guest" data-phone="-">Walk-in Guest Customer</option>' +
+                filtered.map(c => `<option value="${c.id}" data-name="${c.fullName || ''}" data-phone="${c.mobile || '-'}">${c.fullName || 'Customer'} - ${c.mobile || '-'}</option>`).join('');
+
+            if (term && filtered.length === 1) {
+                custSelect.value = filtered[0].id;
+                onPosCustomerChange();
+            } else if (filtered.some(c => c.id === currentSelected)) {
+                custSelect.value = currentSelected;
+            }
+        };
 
         function initDesktopPromoBanner() {
             if (localStorage.getItem('hideDesktopBanner') === 'true') return;
@@ -1418,6 +1449,24 @@
             renderCart();
         };
 
+        window.updateDirectQuantity = (id, val) => {
+            const item = cart.find(i => i.id === id);
+            if (!item) return;
+            const parsed = parseFloat(val);
+            if (!isNaN(parsed) && parsed > 0) {
+                item.quantity = parsed;
+                if (item.sellType === 'weight') {
+                    item.kg = Math.floor(parsed);
+                    item.grams = Math.round((parsed - item.kg) * 1000);
+                }
+            } else {
+                item.quantity = 1;
+            }
+            const totalEl = document.getElementById(`total-${id}`);
+            if (totalEl) totalEl.textContent = formatCurrency(item.price * item.quantity);
+            calculateTotals();
+        };
+
         window.updateItemPrice = (id, newPriceVal) => {
             const item = cart.find(i => i.id === id);
             if (!item) return;
@@ -1484,7 +1533,7 @@
                         ${i.sellType === 'pcs' ? `
                             <div class="qty-controls">
                                 <button class="qty-btn" onclick="changePcsQuantity('${i.id}', -1)">-</button>
-                                <span class="qty-val">${i.quantity}</span>
+                                <input type="number" step="any" min="0.001" value="${i.quantity}" oninput="updateDirectQuantity('${i.id}', this.value)" style="width:58px; text-align:center; padding:3px 4px; font-weight:800; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-family:'Outfit', sans-serif; background:white; color:#0f172a;" title="Type quantity directly" data-i18n-title="Type quantity directly">
                                 <button class="qty-btn" onclick="changePcsQuantity('${i.id}', 1)">+</button>
                             </div>
                         ` : `
@@ -1615,15 +1664,11 @@
                     businessId: currentBusinessId 
                 });
                 
-                const sel = document.getElementById('posCustomerSelect');
-                const opt = document.createElement('option');
-                opt.value = ref.id;
-                opt.dataset.name = name;
-                opt.dataset.phone = phone;
-                opt.textContent = `${name} - ${phone}`;
-                sel.appendChild(opt);
-                sel.value = ref.id;
+                allCustomersList.push({ id: ref.id, fullName: name, mobile: phone });
+                filterPosCustomerOptions();
                 
+                const sel = document.getElementById('posCustomerSelect');
+                sel.value = ref.id;
                 await onPosCustomerChange();
                 
                 document.getElementById('customerModal').style.display = 'none';
@@ -1737,6 +1782,9 @@
             }
             
             try {
+                const customBillDate = document.getElementById('posBillDate') ? document.getElementById('posBillDate').value : null;
+                const saleDate = customBillDate ? new Date(customBillDate + 'T12:00:00') : new Date();
+
                 const orderData = {
                     customer: selectedCustomer || { name: 'Guest', phone: '-' },
                     items: cart,
@@ -1745,7 +1793,8 @@
                     total: total,
                     paymentMethod: paymentMethod,
                     status: balanceDue > 0 ? 'unpaid' : 'completed',
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    createdAt: saleDate,
+                    billDate: customBillDate || saleDate.toISOString().split('T')[0],
                     businessId: currentBusinessId,
                     amountPaid: amountPaid,
                     balanceDue: balanceDue,

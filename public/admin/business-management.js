@@ -773,6 +773,70 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Super Admin Direct Impersonation Login Handler
+    async function impersonateClientAccount(targetEmail, targetBizId, targetBizType) {
+        if (!targetEmail) {
+            alert('⚠️ Invalid email or business profile for impersonation.');
+            return;
+        }
+
+        if (!confirm(`🔑 Log in as client business "${targetEmail}"?\n\nYou will enter live PWA app as this business to inspect layout and troubleshoot reported issues directly.`)) return;
+
+        localStorage.setItem('digibiz_impersonate_active', 'true');
+        localStorage.setItem('digibiz_impersonate_email', targetEmail);
+        if (targetBizId) localStorage.setItem('digibiz_impersonate_biz_id', targetBizId);
+        if (targetBizType) localStorage.setItem('digibiz_impersonate_type', targetBizType);
+
+        try {
+            if (window.db && window.db.collection) {
+                await window.db.collection('audit_logs').add({
+                    action: 'SUPER_ADMIN_IMPERSONATION_LOGIN',
+                    performedByEmail: 'biz.sirimal@gmail.com',
+                    targetEmail: targetEmail,
+                    targetBizId: targetBizId || '',
+                    targetBizType: targetBizType || '',
+                    timestamp: new Date().toISOString()
+                }).catch(() => {});
+            }
+        } catch (_eAudit) {}
+
+        const type = String(targetBizType || '').toLowerCase();
+        let destUrl = '/retail/index.html';
+        if (type.includes('attendance') || type.includes('payroll')) {
+            destUrl = '/modules/attendance_payroll/employees.html';
+        } else if (type.includes('tire')) {
+            destUrl = '/tire/index.html';
+        } else if (type.includes('distributor')) {
+            destUrl = '/distributor/index.html';
+        } else if (type.includes('wholesale')) {
+            destUrl = '/wholesale/index.html';
+        } else if (type.includes('pharmacy')) {
+            destUrl = '/pharmacy/index.html';
+        } else if (type.includes('vehicle')) {
+            destUrl = '/vehicle/index.html';
+        } else if (type.includes('manufacturing') || type.includes('manufactur')) {
+            destUrl = '/manufacturing/index.html';
+        } else if (type.includes('scrap')) {
+            destUrl = '/scrap/index.html';
+        }
+
+        window.location.href = destUrl;
+    }
+
+    const impersonateClientBtn = document.getElementById('impersonate-client-btn');
+    if (impersonateClientBtn) {
+        impersonateClientBtn.onclick = () => {
+            if (!selectedBusinessData && !selectedUserData) {
+                alert('⚠️ Please select a business account first.');
+                return;
+            }
+            const targetEmail = (selectedBusinessData && (selectedBusinessData.ownerEmail || selectedBusinessData.email)) || (selectedUserData && selectedUserData.email);
+            const targetBizId = (selectedBusinessData && selectedBusinessData.id) || (selectedUserData && selectedUserData.businessId);
+            const targetBizType = (selectedBusinessData && selectedBusinessData.businessType) || (selectedUserData && selectedUserData.businessType);
+            impersonateClientAccount(targetEmail, targetBizId, targetBizType);
+        };
+    }
+
     // Helper to identify Super Admin accounts (which must be EXCLUDED from active tenant analytics)
     function isSuperAdminAccount(u) {
         if (!u) return false;
@@ -1370,6 +1434,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">⏱️ Last Activity</div>
                             <div style="font-size:12px; font-weight:700; color:#10b981; margin-top:2px;">${safeStr(item.lastActivityStr)}</div>
                             <div style="display:flex; gap:6px; justify-content:flex-end; margin-top:8px;">
+                                <button class="quick-impersonate-btn" data-email="${safeStr(item.email)}" data-bizid="${safeStr(item.bizId)}" data-type="${safeStr(item.businessType)}" style="background:#d97706; color:#ffffff; border:none; padding:7px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;" type="button">🔑 Log in</button>
                                 <button class="inspect-user-btn" data-email="${safeStr(item.email)}" style="background:#0284c7; color:#ffffff; border:none; padding:7px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;" type="button">🔍 Inspect</button>
                                 <button class="quick-pro-btn" data-email="${safeStr(item.email)}" style="background:#10b981; color:#ffffff; border:none; padding:7px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;" type="button">⭐ Give Pro</button>
                             </div>
@@ -1379,6 +1444,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         }).join('');
+
+        container.querySelectorAll('.quick-impersonate-btn').forEach((btn) => {
+            btn.onclick = () => {
+                const targetEmail = btn.dataset.email;
+                const targetBizId = btn.dataset.bizid;
+                const targetBizType = btn.dataset.type;
+                impersonateClientAccount(targetEmail, targetBizId, targetBizType);
+            };
+        });
 
         container.querySelectorAll('.inspect-user-btn').forEach((btn) => {
             btn.onclick = () => {
@@ -1409,6 +1483,45 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
     }
+
+// Initialize Super Admin Floating Impersonation Banner across all PWA pages
+(function initSuperAdminImpersonationBanner() {
+    if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+        const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'Client Business';
+        const targetType = localStorage.getItem('digibiz_impersonate_type') || 'PWA App';
+
+        const existingBanner = document.getElementById('super-admin-impersonation-banner');
+        if (existingBanner) return;
+
+        const banner = document.createElement('div');
+        banner.id = 'super-admin-impersonation-banner';
+        banner.style.cssText = 'position:fixed; top:0; left:0; width:100%; z-index:999999; background:linear-gradient(90deg, #d97706 0%, #b45309 100%); color:#ffffff; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding:8px 16px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 4px 15px rgba(0,0,0,0.35); font-size:13px; font-weight:700; box-sizing:border-box;';
+
+        banner.innerHTML = `
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                <span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:800;">👑 SUPER ADMIN IMPERSONATION</span>
+                <span>Viewing Live Client: <strong>${targetEmail}</strong> (${targetType})</span>
+            </div>
+            <button id="exit-impersonation-btn" style="background:#ffffff; color:#b45309; border:none; padding:5px 14px; border-radius:6px; font-size:12px; font-weight:800; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.2);" type="button">
+                🔙 Exit to Admin Console
+            </button>
+        `;
+
+        document.body.prepend(banner);
+        document.body.style.marginTop = '42px';
+
+        const exitBtn = document.getElementById('exit-impersonation-btn');
+        if (exitBtn) {
+            exitBtn.onclick = () => {
+                localStorage.removeItem('digibiz_impersonate_active');
+                localStorage.removeItem('digibiz_impersonate_email');
+                localStorage.removeItem('digibiz_impersonate_biz_id');
+                localStorage.removeItem('digibiz_impersonate_type');
+                window.location.href = '/admin/business-management.html';
+            };
+        }
+    }
+})();
 
     // Modal search listener
     const activeModalSearch = document.getElementById('activeModalSearch');

@@ -58,14 +58,41 @@
 <body>
     <div class="main-content">
         <div class="header">
-            <h1>Sales History</h1>
+            <h1><i class="fas fa-history" style="color:#2563eb;"></i> Sales History & Reports</h1>
+        </div>
+
+        <!-- Financial KPI Summary Cards -->
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:15px; margin-bottom:20px;">
+            <div style="background:white; padding:18px; border-radius:12px; border:1px solid #e5e7eb; box-shadow:0 2px 4px rgba(0,0,0,0.03);">
+                <div style="font-size:12px; font-weight:700; color:#6b7280; text-transform:uppercase;">Total Sales Revenue</div>
+                <div style="font-size:22px; font-weight:800; color:#0f3b2c; margin-top:4px;" id="kpiTotalRevenue">Rs. 0.00</div>
+            </div>
+            <div style="background:white; padding:18px; border-radius:12px; border:1px solid #e5e7eb; box-shadow:0 2px 4px rgba(0,0,0,0.03);">
+                <div style="font-size:12px; font-weight:700; color:#6b7280; text-transform:uppercase;">Total Invoices</div>
+                <div style="font-size:22px; font-weight:800; color:#2563eb; margin-top:4px;" id="kpiTotalInvoices">0</div>
+            </div>
+            <div style="background:white; padding:18px; border-radius:12px; border:1px solid #e5e7eb; box-shadow:0 2px 4px rgba(0,0,0,0.03);">
+                <div style="font-size:12px; font-weight:700; color:#6b7280; text-transform:uppercase;">Total Amount Paid</div>
+                <div style="font-size:22px; font-weight:800; color:#059669; margin-top:4px;" id="kpiTotalPaid">Rs. 0.00</div>
+            </div>
+            <div style="background:white; padding:18px; border-radius:12px; border:1px solid #e5e7eb; box-shadow:0 2px 4px rgba(0,0,0,0.03);">
+                <div style="font-size:12px; font-weight:700; color:#6b7280; text-transform:uppercase;">Credit Outstanding</div>
+                <div style="font-size:22px; font-weight:800; color:#dc2626; margin-top:4px;" id="kpiTotalCredit">Rs. 0.00</div>
+            </div>
         </div>
 
         <div class="filters">
+            <select id="presetDateFilter" onchange="applyDatePreset(this.value)" style="font-weight:700; color:#0f3b2c;">
+                <option value="all">All Dates</option>
+                <option value="today">Today (අද)</option>
+                <option value="yesterday">Yesterday (ඊයේ)</option>
+                <option value="this_week">This Week (මෙම සතිය)</option>
+                <option value="this_month">This Month (මෙම මාසය)</option>
+            </select>
             <input type="date" id="dateFrom">
             <input type="date" id="dateTo">
-            <input type="text" id="searchInput" placeholder="Search by Invoice No or Customer...">
-            <button class="btn-sm" id="filterBtn">Filter</button>
+            <input type="text" id="searchInput" placeholder="Search Invoice No or Customer..." style="min-width:240px;" onkeyup="applyClientSideFilter()">
+            <button class="btn-sm" id="filterBtn"><i class="fas fa-filter"></i> Apply Filter</button>
         </div>
 
         <div style="overflow-x:auto;">
@@ -119,7 +146,72 @@
 
         function formatDate(date) {
             if (!date) return 'N/A';
-            return date.toLocaleDateString('en-CA'); // YYYY-MM-DD
+            if (typeof date === 'string') return date.split('T')[0];
+            if (date.toDate) date = date.toDate();
+            if (date instanceof Date && !isNaN(date)) {
+                return date.toLocaleDateString('en-CA'); // YYYY-MM-DD
+            }
+            return 'N/A';
+        }
+
+        function parseSaleDate(sale) {
+            if (sale.billDate) {
+                return new Date(sale.billDate + 'T12:00:00');
+            }
+            if (sale.createdAt) {
+                if (sale.createdAt.toDate) return sale.createdAt.toDate();
+                if (typeof sale.createdAt === 'string') return new Date(sale.createdAt);
+                if (sale.createdAt instanceof Date) return sale.createdAt;
+            }
+            return new Date();
+        }
+
+        function applyDatePreset(preset) {
+            const dateFromInput = document.getElementById('dateFrom');
+            const dateToInput = document.getElementById('dateTo');
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            if (preset === 'today') {
+                dateFromInput.value = todayStr;
+                dateToInput.value = todayStr;
+            } else if (preset === 'yesterday') {
+                const yest = new Date();
+                yest.setDate(yest.getDate() - 1);
+                const yestStr = yest.toISOString().split('T')[0];
+                dateFromInput.value = yestStr;
+                dateToInput.value = yestStr;
+            } else if (preset === 'this_week') {
+                const curr = new Date();
+                const firstDay = new Date(curr.setDate(curr.getDate() - curr.getDay()));
+                dateFromInput.value = firstDay.toISOString().split('T')[0];
+                dateToInput.value = todayStr;
+            } else if (preset === 'this_month') {
+                const curr = new Date();
+                const firstDay = new Date(curr.getFullYear(), curr.getMonth(), 1);
+                dateFromInput.value = firstDay.toISOString().split('T')[0];
+                dateToInput.value = todayStr;
+            } else {
+                dateFromInput.value = '';
+                dateToInput.value = '';
+            }
+            fetchSales(true);
+        }
+
+        function updateKpis(sales) {
+            let totalRev = 0, totalPaid = 0, totalCredit = 0;
+            sales.forEach(sale => {
+                const tot = sale.total || 0;
+                const paid = sale.amountPaid !== undefined ? sale.amountPaid : (sale.paymentMethod !== 'credit' ? tot : 0);
+                const bal = sale.balanceDue !== undefined ? sale.balanceDue : Math.max(0, tot - paid);
+                totalRev += tot;
+                totalPaid += paid;
+                totalCredit += bal;
+            });
+
+            document.getElementById('kpiTotalRevenue').textContent = formatCurrency(totalRev);
+            document.getElementById('kpiTotalInvoices').textContent = sales.length;
+            document.getElementById('kpiTotalPaid').textContent = formatCurrency(totalPaid);
+            document.getElementById('kpiTotalCredit').textContent = formatCurrency(totalCredit);
         }
 
         async function fetchSales(isInitialLoad = false) {
@@ -128,51 +220,17 @@
             document.getElementById('loader').style.display = 'block';
 
             try {
-                let query = db.collection('orders').doc(currentBusinessId).collection('list')
-                              .orderBy('createdAt', 'desc');
+                const snapshot = await db.collection('orders').doc(currentBusinessId).collection('list').get();
 
-                const dateFrom = document.getElementById('dateFrom').value;
-                if (dateFrom) query = query.where('createdAt', '>=', new Date(dateFrom));
-
-                const dateTo = document.getElementById('dateTo').value;
-                if (dateTo) query = query.where('createdAt', '<=', new Date(dateTo + 'T23:59:59'));
-                
-                // Note: Search term filtering is done client-side after fetch due to Firestore query limitations.
-                // For large datasets, a dedicated search service would be better.
-
-                if (!isInitialLoad && lastVisible) {
-                    query = query.startAfter(lastVisible);
-                }
-                
-                query = query.limit(salesLimit);
-                const snapshot = await query.get();
-
-                if (isInitialLoad) {
-                    allSales = [];
-                    document.getElementById('historyTableBody').innerHTML = '';
-                }
-
-                if (snapshot.empty && isInitialLoad) {
-                    document.getElementById('loader').innerText = 'No sales records found for the selected criteria.';
-                    return;
-                }
-                
-                lastVisible = snapshot.docs[snapshot.docs.length - 1];
-                
-                let newSales = [];
+                allSales = [];
                 snapshot.forEach(doc => {
-                    newSales.push({ id: doc.id, ...doc.data() });
+                    allSales.push({ id: doc.id, ...doc.data() });
                 });
-                
-                allSales.push(...newSales);
-                renderTable(newSales);
-                
-                 if (snapshot.docs.length < salesLimit) {
-                    document.getElementById('loader').innerText = 'End of records.';
-                    lastVisible = null; // No more to load
-                } else {
-                     document.getElementById('loader').style.display = 'none';
-                }
+
+                // Sort by date descending
+                allSales.sort((a, b) => parseSaleDate(b) - parseSaleDate(a));
+
+                applyClientSideFilter();
 
             } catch (error) {
                 console.error("Error fetching sales history: ", error);
@@ -186,18 +244,37 @@
             const tableBody = document.getElementById('historyTableBody');
             tableBody.innerHTML = '';
             
-            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const searchTerm = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
 
-            const filteredSales = allSales.filter(sale => {
-                const customerName = (sale.customer && sale.customer.name) ? sale.customer.name.toLowerCase() : '';
-                const invoiceNo = sale.invoiceNo ? sale.invoiceNo.toLowerCase() : '';
-                return invoiceNo.includes(searchTerm) || customerName.includes(searchTerm);
-            });
+            let filtered = [...allSales];
+
+            if (dateFrom) {
+                const fromTime = new Date(dateFrom + 'T00:00:00').getTime();
+                filtered = filtered.filter(s => parseSaleDate(s).getTime() >= fromTime);
+            }
+
+            if (dateTo) {
+                const toTime = new Date(dateTo + 'T23:59:59').getTime();
+                filtered = filtered.filter(s => parseSaleDate(s).getTime() <= toTime);
+            }
+
+            if (searchTerm) {
+                filtered = filtered.filter(sale => {
+                    const customerName = (sale.customer && sale.customer.name) ? sale.customer.name.toLowerCase() : '';
+                    const invoiceNo = sale.invoiceNo ? sale.invoiceNo.toLowerCase() : '';
+                    return invoiceNo.includes(searchTerm) || customerName.includes(searchTerm);
+                });
+            }
             
-            renderTable(filteredSales, true); // Render with replace=true
+            updateKpis(filtered);
+            renderTable(filtered, true);
 
-            if (filteredSales.length === 0) {
-                 tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 40px;">No records match your search.</td></tr>';
+            document.getElementById('loader').style.display = 'none';
+
+            if (filtered.length === 0) {
+                 tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 40px;">No sales records match your filter criteria.</td></tr>';
             }
         }
 
@@ -218,14 +295,19 @@
                 const total = sale.total || 0;
                 // Use amountPaid and balanceDue if they exist from pos.html, otherwise calculate
                 const amountPaid = sale.amountPaid !== undefined ? sale.amountPaid : (sale.paymentMethod !== 'credit' ? total : 0);
-                const balanceDue = sale.balanceDue !== undefined ? sale.balanceDue : total - amountPaid;
+                const balanceDue = sale.balanceDue !== undefined ? sale.balanceDue : Math.max(0, total - amountPaid);
 
                 const isPaid = balanceDue < 0.01;
                 const statusPill = isPaid
                     ? `<span class="status-pill status-paid">Paid</span>`
                     : `<span class="status-pill status-unpaid">Unpaid</span>`;
                 
-                const dueDate = sale.dueDate ? sale.dueDate.toDate() : null;
+                let dueDate = null;
+                if (sale.dueDate) {
+                    if (sale.dueDate.toDate) dueDate = sale.dueDate.toDate();
+                    else if (typeof sale.dueDate === 'string') dueDate = new Date(sale.dueDate + 'T12:00:00');
+                    else if (sale.dueDate instanceof Date) dueDate = sale.dueDate;
+                }
                 const isOverdue = !isPaid && dueDate && dueDate < today;
 
                 const rowClass = isOverdue ? 'row-overdue' : '';
@@ -233,7 +315,7 @@
                 return `
                     <tr class="${rowClass}" data-id="${sale.id}">
                         <td>${sale.invoiceNo || 'N/A'}</td>
-                        <td>${formatDate(sale.createdAt ? sale.createdAt.toDate() : null)}</td>
+                        <td>${formatDate(parseSaleDate(sale))}</td>
                         <td>${(sale.customer && sale.customer.name) ? sale.customer.name : 'Walk-in Customer'}</td>
                         <td>${formatCurrency(total)}</td>
                         <td>${formatCurrency(amountPaid)}</td>

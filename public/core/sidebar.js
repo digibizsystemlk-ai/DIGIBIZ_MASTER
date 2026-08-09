@@ -33,6 +33,7 @@ window.i18n = function(key) {
             "Sales History": "Sales History (විකුණුම් ඉතිහාසය)",
             "Stock": "Stock (තොගය)",
             "Spoil / Damage": "Spoil / Damage (නරක වූ / හානි වූ තොග)",
+            "Banking & Cash": "Banking & Cash (බැංකු සහ අතැති මුදල්)",
             "Customers": "Customers (පාරිභෝගිකයින්)",
             "Finance": "Finance (මූල්‍ය)",
             "Accounting": "Accounting (ගිණුම්කරණය)",
@@ -1919,7 +1920,8 @@ class Sidebar {
                 { icon: '📦', name: 'Stock', link: '/modules/retail/inventory.html' },
                 { icon: '⚠️', name: 'Spoil / Damage', link: '/modules/retail/spoilage.html' },
                 { icon: '📥', name: 'Purchases / GRN', link: '/modules/retail/grn.html' },
-                { icon: '🚚', name: 'Suppliers', link: '/modules/retail/suppliers.html' }
+                { icon: '🚚', name: 'Suppliers', link: '/modules/retail/suppliers.html' },
+                { icon: '🏛️', name: 'Banking & Cash', link: '/modules/retail/banking.html' }
             ];
         }
         const isKduManufacturer = menuBusinessType === 'manufacturer' && this.businessId === this.kduTeaBusinessId;
