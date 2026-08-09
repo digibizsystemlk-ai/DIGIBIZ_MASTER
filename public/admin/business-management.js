@@ -857,20 +857,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const onlineUsersSet = new Set();
         const userLatestActivityMap = new Map();
 
+        const userVisitDaysMap = new Map();
+        const userOpDaysMap = new Map();
+        const userOpActionsMap = new Map();
+
         const tenantUsersMap = new Map();
         const tenantBusinessesMap = new Map();
 
         const tenantSubscriptionsMap = new Map();
         const tenantSettingsMap = new Map();
 
-        // 1. Fetch businesses, subscriptions & settings in parallel
+        // Safe Firestore Collection Fetcher to prevent query/index errors from crashing metrics
+        const safeFetchDocs = async (collName) => {
+            try {
+                const snap = await window.db.collection(collName).limit(1000).get();
+                return snap ? (snap.docs || []) : [];
+            } catch (_err) {
+                console.warn(`[Active Metrics] ${collName} fetch skipped:`, _err);
+                return [];
+            }
+        };
+
+        // 1. Fetch businesses, subscriptions, settings & users safely in parallel
         try {
-            const [bizSnap, subSnap, settingsSnap] = await Promise.all([
-                window.db.collection('businesses').limit(1000).get().catch(() => ({ docs: [] })),
-                window.db.collection('subscriptions').limit(1000).get().catch(() => ({ docs: [] })),
-                window.db.collection('settings').limit(1000).get().catch(() => ({ docs: [] }))
+            const [bizDocs, subDocs, settingsDocs, userDocs] = await Promise.all([
+                safeFetchDocs('businesses'),
+                safeFetchDocs('subscriptions'),
+                safeFetchDocs('settings'),
+                safeFetchDocs('users')
             ]);
-            bizSnap.docs.forEach((d) => {
+
+            bizDocs.forEach((d) => {
                 const b = { id: d.id, ...(d.data() || {}) };
                 if (!isSuperAdminAccount(b)) {
                     tenantBusinessesMap.set(d.id, b);
@@ -881,20 +898,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (b.email) tenantBusinessesMap.set(String(b.email).toLowerCase(), b);
                 }
             });
-            subSnap.docs.forEach((d) => {
+
+            subDocs.forEach((d) => {
                 tenantSubscriptionsMap.set(d.id, d.data() || {});
                 tenantSubscriptionsMap.set(d.id.toLowerCase(), d.data() || {});
             });
-            settingsSnap.docs.forEach((d) => {
+
+            settingsDocs.forEach((d) => {
                 tenantSettingsMap.set(d.id, d.data() || {});
                 tenantSettingsMap.set(d.id.toLowerCase(), d.data() || {});
             });
-        } catch (_eBiz) {}
 
-        // 2. Fetch users and filter out SUPER_ADMIN accounts
-        try {
-            const usersSnap = await window.db.collection('users').limit(1000).get();
-            usersSnap.docs.forEach((d) => {
+            userDocs.forEach((d) => {
                 const u = { id: d.id, ...(d.data() || {}) };
                 if (!isSuperAdminAccount(u)) {
                     tenantUsersMap.set(d.id, u);
@@ -904,40 +919,97 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (u.businessId) tenantUsersMap.set(String(u.businessId).toLowerCase(), u);
                 }
             });
-        } catch (eUsers) {
-            console.warn('[Active Metrics] users fetch warn:', eUsers);
+        } catch (eInit) {
+            console.warn('[Active Metrics] Parallel init fetch warning:', eInit);
         }
 
-        // Scan users activities (including activeDates & loginHistory arrays) -> Site Access
+        const addActivity = (userIdentifier, dateVal, activityType = 'op') => {
+            if (!userIdentifier) return;
+            const strId = String(userIdentifier).trim();
+            const lowerId = strId.toLowerCase();
+
+            // EXCLUDE SUPER ADMIN LOGINS FROM ALL METRICS
+            const userObj = tenantUsersMap.get(strId) || tenantUsersMap.get(lowerId);
+            const bizObj = tenantBusinessesMap.get(strId) || tenantBusinessesMap.get(lowerId);
+            if ((userObj && isSuperAdminAccount(userObj)) || (bizObj && isSuperAdminAccount(bizObj))) return;
+            if (lowerId === 'digibizsystemlk@gmail.com' || lowerId === 'biz.sirimal@gmail.com' || lowerId.includes('sirimal') || lowerId.includes('super_admin')) return;
+
+            const dtKey = formatSldateKey(dateVal);
+            if (!dtKey) return;
+
+            // Alias mapping so UID, email, and businessId ALL link together for this date
+            const aliases = new Set([strId, lowerId]);
+            if (userObj) {
+                if (userObj.id) { aliases.add(userObj.id); aliases.add(String(userObj.id).toLowerCase()); }
+                if (userObj.email) { aliases.add(userObj.email); aliases.add(String(userObj.email).toLowerCase()); }
+                if (userObj.businessId) { aliases.add(userObj.businessId); aliases.add(String(userObj.businessId).toLowerCase()); }
+            }
+            if (bizObj) {
+                if (bizObj.id) { aliases.add(bizObj.id); aliases.add(String(bizObj.id).toLowerCase()); }
+                if (bizObj.ownerUid) { aliases.add(bizObj.ownerUid); aliases.add(String(bizObj.ownerUid).toLowerCase()); }
+                if (bizObj.ownerEmail) { aliases.add(bizObj.ownerEmail); aliases.add(String(bizObj.ownerEmail).toLowerCase()); }
+            }
+
+            if (dailyActiveUsersMap.has(dtKey)) {
+                const daySet = dailyActiveUsersMap.get(dtKey);
+                aliases.forEach((a) => daySet.add(a));
+            }
+
+            aliases.forEach((a) => {
+                if (activityType === 'visit') {
+                    if (!userVisitDaysMap.has(a)) userVisitDaysMap.set(a, new Set());
+                    if (dtKey >= weekStartStr && dtKey <= todayStr) userVisitDaysMap.get(a).add(dtKey);
+                } else {
+                    if (!userOpDaysMap.has(a)) userOpDaysMap.set(a, new Set());
+                    if (dtKey >= weekStartStr && dtKey <= todayStr) userOpDaysMap.get(a).add(dtKey);
+                    userOpActionsMap.set(a, (userOpActionsMap.get(a) || 0) + 1);
+                }
+            });
+
+            const dateObj = (dateVal && dateVal.toDate) ? dateVal.toDate() : (dateVal ? new Date(dateVal) : null);
+            if (dateObj && !isNaN(dateObj.getTime())) {
+                aliases.forEach((a) => {
+                    const existingLast = userLatestActivityMap.get(a);
+                    if (!existingLast || dateObj.getTime() > existingLast.getTime()) {
+                        userLatestActivityMap.set(a, dateObj);
+                    }
+                });
+                if (dateObj.getTime() >= onlineNowCutoff) {
+                    aliases.forEach((a) => onlineUsersSet.add(a));
+                }
+            }
+        };
+
+        // Scan users activities (App visits & page logins)
         tenantUsersMap.forEach((u) => {
             const uid = u.id || u.email;
-            if (u.lastActiveAt) addSiteActivity(uid, u.lastActiveAt);
-            if (u.lastLoginAt) addSiteActivity(uid, u.lastLoginAt);
-            if (u.updatedAt) addSiteActivity(uid, u.updatedAt);
-            if (u.createdAt) addSiteActivity(uid, u.createdAt);
+            if (u.lastActiveAt) addActivity(uid, u.lastActiveAt, 'visit');
+            if (u.lastLoginAt) addActivity(uid, u.lastLoginAt, 'visit');
+            if (u.updatedAt) addActivity(uid, u.updatedAt, 'visit');
+            if (u.createdAt) addActivity(uid, u.createdAt, 'visit');
 
             if (Array.isArray(u.activeDates)) {
-                u.activeDates.forEach((dStr) => addSiteActivity(uid, dStr));
+                u.activeDates.forEach((dStr) => addActivity(uid, dStr, 'visit'));
             }
             if (Array.isArray(u.loginHistory)) {
-                u.loginHistory.forEach((ts) => addSiteActivity(uid, ts));
+                u.loginHistory.forEach((ts) => addActivity(uid, ts, 'visit'));
             }
         });
 
-        // Scan audit_logs and key business module collections in parallel -> Business Transactions
+        // Scan audit_logs and key business module collections in parallel for operational system actions
         try {
-            const [auditSnap, invSnap, salesSnap, attSnap, expSnap, grnSnap] = await Promise.all([
-                window.db.collection('audit_logs').orderBy('timestamp', 'desc').limit(2000).get().catch(() => ({ docs: [] })),
-                window.db.collection('invoices').limit(1000).get().catch(() => ({ docs: [] })),
-                window.db.collection('sales').limit(1000).get().catch(() => ({ docs: [] })),
-                window.db.collection('attendance_logs').limit(1000).get().catch(() => ({ docs: [] })),
-                window.db.collection('expenses').limit(1000).get().catch(() => ({ docs: [] })),
-                window.db.collection('grns').limit(1000).get().catch(() => ({ docs: [] }))
+            const [auditDocs, invDocs, salesDocs, attDocs, expDocs, grnDocs] = await Promise.all([
+                safeFetchDocs('audit_logs'),
+                safeFetchDocs('invoices'),
+                safeFetchDocs('sales'),
+                safeFetchDocs('attendance_logs'),
+                safeFetchDocs('expenses'),
+                safeFetchDocs('grns')
             ]);
 
-            const processCollectionDocs = (snap, idFields, timeFields) => {
-                if (!snap || !snap.docs) return;
-                snap.docs.forEach((doc) => {
+            const processCollectionDocs = (docs, idFields, timeFields) => {
+                if (!docs || !Array.isArray(docs)) return;
+                docs.forEach((doc) => {
                     const data = doc.data() || {};
                     let targetId = null;
                     for (const f of idFields) {
@@ -948,28 +1020,28 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (data[tf]) { targetTs = data[tf]; break; }
                     }
                     if (targetId && targetTs) {
-                        addTxnActivity(targetId, targetTs);
+                        addActivity(targetId, targetTs, 'op');
                     }
                 });
             };
 
-            processCollectionDocs(auditSnap, ['performedByUid', 'performedByEmail', 'businessId', 'userId'], ['timestamp', 'createdAt', 'date']);
-            processCollectionDocs(invSnap, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
-            processCollectionDocs(salesSnap, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
-            processCollectionDocs(attSnap, ['businessId', 'employeeId', 'userId'], ['timestamp', 'date', 'createdAt']);
-            processCollectionDocs(expSnap, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
-            processCollectionDocs(grnSnap, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
+            processCollectionDocs(auditDocs, ['performedByUid', 'performedByEmail', 'businessId', 'userId'], ['timestamp', 'createdAt', 'date']);
+            processCollectionDocs(invDocs, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
+            processCollectionDocs(salesDocs, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
+            processCollectionDocs(attDocs, ['businessId', 'employeeId', 'userId'], ['timestamp', 'date', 'createdAt']);
+            processCollectionDocs(expDocs, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
+            processCollectionDocs(grnDocs, ['businessId', 'createdBy', 'userId'], ['createdAt', 'date', 'timestamp']);
         } catch (e) {
             console.warn('[Active Metrics] Multi-collection scan warning:', e);
         }
 
-        const todayUsersSet = dailySiteAccessMap.get(todayStr) || new Set();
-        const yestUsersSet = dailySiteAccessMap.get(yestStr) || new Set();
+        const todayUsersSet = dailyActiveUsersMap.get(todayStr) || new Set();
+        const yestUsersSet = dailyActiveUsersMap.get(yestStr) || new Set();
 
         const weekUsersSet = new Set();
         const monthUsersSet = new Set();
 
-        dailySiteAccessMap.forEach((userSet, dateKey) => {
+        dailyActiveUsersMap.forEach((userSet, dateKey) => {
             if (dateKey >= weekStartStr && dateKey <= todayStr) {
                 userSet.forEach((u) => weekUsersSet.add(u));
             }
@@ -1037,30 +1109,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 (bizObj && (bizObj.isPro === true || bizObj.plan === 'PRO' || bizObj.subscriptionPlan === 'PRO'))
             );
 
-            // 7-Day Frequency Calculations: Site Access vs Business Transactions
-            let siteAccessDays = 0;
-            let txnAccessDays = 0;
-
+            // Calculate 7-day access frequency across all aliases
+            let active7DayCount = 0;
             last30Days.slice(-7).forEach((dtKey) => {
-                const siteSet = dailySiteAccessMap.get(dtKey);
-                const txnSet = dailyTxnActivityMap.get(dtKey);
-
-                const hasMatch = (set) => set && (
-                    set.has(strKey) ||
-                    set.has(lowerKey) ||
-                    set.has(uid) ||
-                    set.has(String(uid).toLowerCase()) ||
-                    set.has(email.toLowerCase()) ||
-                    (bizId && set.has(bizId)) ||
-                    (bizId && set.has(String(bizId).toLowerCase()))
-                );
-
-                if (hasMatch(siteSet)) siteAccessDays++;
-                if (hasMatch(txnSet)) txnAccessDays++;
+                const userSet = dailyActiveUsersMap.get(dtKey);
+                if (userSet && (
+                    userSet.has(strKey) ||
+                    userSet.has(lowerKey) ||
+                    userSet.has(uid) ||
+                    userSet.has(String(uid).toLowerCase()) ||
+                    userSet.has(email.toLowerCase()) ||
+                    (bizId && userSet.has(bizId)) ||
+                    (bizId && userSet.has(String(bizId).toLowerCase()))
+                )) {
+                    active7DayCount++;
+                }
             });
 
-            // High Conversion Intent: Free user visiting or transacting 2 or more days in the last week
-            const isHighIntent = !isPro && !isTest && (siteAccessDays >= 2 || txnAccessDays >= 2 || (userObj && Array.isArray(userObj.activeDates) && userObj.activeDates.length >= 2));
+            // Extract App Visits vs System Operations breakdown
+            const visitDaysSet = userVisitDaysMap.get(strKey) || userVisitDaysMap.get(lowerKey) || userVisitDaysMap.get(uid.toLowerCase()) || userVisitDaysMap.get(email.toLowerCase()) || new Set();
+            const opDaysSet = userOpDaysMap.get(strKey) || userOpDaysMap.get(lowerKey) || userOpDaysMap.get(uid.toLowerCase()) || userOpDaysMap.get(email.toLowerCase()) || new Set();
+            const opTotalActions = userOpActionsMap.get(strKey) || userOpActionsMap.get(lowerKey) || userOpActionsMap.get(uid.toLowerCase()) || userOpActionsMap.get(email.toLowerCase()) || 0;
+
+            const visitDaysCount = visitDaysSet.size;
+            const opDaysCount = opDaysSet.size;
+
+            // High Conversion Intent: Free user visiting 2 or more days in the last week (and NOT a test account)
+            const isHighIntent = !isPro && !isTest && (active7DayCount >= 2 || visitDaysCount >= 2 || opDaysCount >= 2);
 
             return {
                 uid,
@@ -1073,9 +1148,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 isPro,
                 isTest,
                 planName: isPro ? 'PRO ACTIVE' : (isTest ? 'TEST / DEMO' : (subInfo.plan || 'FREE / TRIAL')),
-                siteAccessDays,
-                txnAccessDays,
-                active7DayCount: Math.max(siteAccessDays, txnAccessDays),
+                active7DayCount: Math.max(active7DayCount, visitDaysCount, opDaysCount),
+                visitDaysCount,
+                opDaysCount,
+                opTotalActions,
                 isHighIntent
             };
         };
@@ -1153,7 +1229,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 30-Day Active Accounts Trend line excluding test & demo accounts
         const chartData = last30Days.map((d) => {
-            const userSet = dailySiteAccessMap.get(d) || new Set();
+            const userSet = dailyActiveUsersMap.get(d) || new Set();
             return buildUserList(userSet, { excludeTest: true }).length;
         });
 
@@ -1247,7 +1323,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (item.isPro) {
                 planBadgeHtml = `<span style="background:#dcfce7; color:#15803d; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; border:1px solid #86efac;">💎 PRO ACTIVE</span>`;
             } else if (item.isHighIntent) {
-                planBadgeHtml = `<span style="background:#fee2e2; color:#dc2626; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; border:1px solid #fca5a5;">🔥 HIGH-INTENT LEAD</span>`;
+                planBadgeHtml = `<span style="background:#fee2e2; color:#dc2626; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; border:1px solid #fca5a5;">🔥 HIGH-INTENT LEAD (${item.active7DayCount}/7 Days Active)</span>`;
             } else {
                 planBadgeHtml = `<span style="background:#fef3c7; color:#b45309; font-size:11px; font-weight:800; padding:3px 10px; border-radius:12px; border:1px solid #fde68a;">🎁 FREE / TRIAL</span>`;
             }
@@ -1255,21 +1331,23 @@ document.addEventListener('DOMContentLoaded', () => {
             let hotLeadNoticeHtml = '';
             if (item.isHighIntent && !item.isTest) {
                 hotLeadNoticeHtml = `
-                    <div style="background:#fff7ed; border:1px solid #ffedd5; color:#c2410c; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:600; margin-top:8px; display:flex; align-items:center; gap:6px;">
+                    <div style="background:#fff7ed; border:1px solid #ffedd5; color:#c2410c; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:600; margin-top:10px; display:flex; align-items:center; gap:6px;">
                         <span>💡</span>
-                        <span><strong>Super Admin Lead Opportunity:</strong> මෙම පාරිභෝගිකයා නොමිලේ පද්ධතිය දිනපතා භාවිත කරයි (අඩවිය open කිරීම්: ${item.siteAccessDays}/7 Days, සැබෑ කටයුතු: ${item.txnAccessDays}/7 Days). ඍජුවම කතා කර Pro Plan එක ලබාදීමට වඩාත්ම සුදුසු අයෙකි.</span>
+                        <span><strong>Super Admin Lead Opportunity:</strong> මෙම පාරිභෝගිකයා නොමිලේ පද්ධතිය දිනපතා සක්‍රීයව භාවිත කරයි (${item.active7DayCount}/7 Days). ඍජුවම කතා කර Pro Plan එක ලබාදීමට වඩාත්ම සුදුසු අයෙකි.</span>
                     </div>
                 `;
             }
 
-            let engagementStatusBadgeHtml = '';
-            if (item.txnAccessDays >= 4) {
-                engagementStatusBadgeHtml = `<span style="background:#dcfce7; color:#166534; font-size:11px; font-weight:800; padding:3px 10px; border-radius:10px; border:1px solid #86efac;">🚀 HIGH POWER USER</span>`;
-            } else if (item.siteAccessDays >= 2) {
-                engagementStatusBadgeHtml = `<span style="background:#e0f2fe; color:#0369a1; font-size:11px; font-weight:800; padding:3px 10px; border-radius:10px; border:1px solid #7dd3fc;">👀 ACTIVE VISITOR</span>`;
-            } else {
-                engagementStatusBadgeHtml = `<span style="background:#f1f5f9; color:#64748b; font-size:11px; font-weight:700; padding:3px 10px; border-radius:10px;">💤 LIGHT USER</span>`;
-            }
+            const activitySummaryHtml = `
+                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; font-size:12px;">
+                    <span style="background:#f0f9ff; color:#0369a1; font-weight:700; padding:4px 10px; border-radius:8px; border:1px solid #bae6fd;" title="App/Page login visits recorded in past 7 days">
+                        🌐 App Visits: <strong>${item.visitDaysCount}/7 Days</strong>
+                    </span>
+                    <span style="background:#f0fdf4; color:#15803d; font-weight:700; padding:4px 10px; border-radius:8px; border:1px solid #bbf7d0;" title="System transactions and operational actions recorded in past 7 days">
+                        ⚡ System Operations: <strong>${item.opTotalActions} Actions (${item.opDaysCount}/7 Days)</strong>
+                    </span>
+                </div>
+            `;
 
             return `
                 <div class="active-user-item-card" style="background:#ffffff; border-radius:14px; padding:18px 20px; border:${item.isHighIntent ? '2px solid #f97316' : '1px solid #e2e8f0'}; box-shadow:0 2px 10px rgba(0,0,0,0.05); display:flex; flex-direction:column; gap:8px;">
@@ -1286,6 +1364,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div style="font-size:12px; color:#64748b;">
                                 📞 Phone: <a href="tel:${safeStr(item.phone)}" style="color:#0f172a; font-weight:700; text-decoration:none;">${safeStr(item.phone)}</a> &nbsp;|&nbsp; 🆔 UID: <code style="font-size:11px; background:#f1f5f9; padding:2px 6px; border-radius:4px;">${safeStr(item.uid)}</code>
                             </div>
+                            ${activitySummaryHtml}
                         </div>
                         <div style="text-align:right; min-width:180px;">
                             <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">⏱️ Last Activity</div>
@@ -1294,20 +1373,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <button class="inspect-user-btn" data-email="${safeStr(item.email)}" style="background:#0284c7; color:#ffffff; border:none; padding:7px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;" type="button">🔍 Inspect</button>
                                 <button class="quick-pro-btn" data-email="${safeStr(item.email)}" style="background:#10b981; color:#ffffff; border:none; padding:7px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;" type="button">⭐ Give Pro</button>
                             </div>
-                        </div>
-                    </div>
-                    <!-- Detailed 7-Day Activity Breakdown -->
-                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-top:6px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px;">
-                        <div>
-                            <div style="font-size:12.5px; font-weight:700; color:#334155;">
-                                🌐 <strong>Site/PWA Access:</strong> <span style="color:#0284c7; font-weight:800;">${item.siteAccessDays}/7 Days</span> (අඩවිය open කළ දින ගණන)
-                            </div>
-                            <div style="font-size:12.5px; font-weight:700; color:#059669; margin-top:3px;">
-                                ⚡ <strong>Business Operations:</strong> <span style="color:#10b981; font-weight:800;">${item.txnAccessDays}/7 Days</span> (සැබෑ ව්‍යාපාරික කටයුතු කළ දින ගණන)
-                            </div>
-                        </div>
-                        <div>
-                            ${engagementStatusBadgeHtml}
                         </div>
                     </div>
                     ${hotLeadNoticeHtml}
