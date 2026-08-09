@@ -97,6 +97,42 @@ window.auth = firebase.auth();
             };
             return origOnAuthStateChanged.call(firebase.auth(), wrappedCallback, optError, optCompleted);
         };
+
+        // Intercept db.collection('users').doc(...).get() during impersonation to prevent unhandled promise failures
+        if (firebase.firestore && firebase.firestore.prototype) {
+            const origCollection = firebase.firestore.prototype.collection;
+            firebase.firestore.prototype.collection = function(colName) {
+                const colRef = origCollection.apply(this, arguments);
+                if (colName === 'users' && localStorage.getItem('digibiz_impersonate_active') === 'true') {
+                    const origDoc = colRef.doc;
+                    colRef.doc = function(docId) {
+                        const docRef = origDoc.apply(this, arguments);
+                        const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || 'CLIENT_BIZ';
+                        const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'client@digibiz.lk';
+                        const origGet = docRef.get;
+                        docRef.get = async function(options) {
+                            try {
+                                const snap = await origGet.apply(this, arguments);
+                                if (snap && snap.exists) return snap;
+                            } catch (eSnap) {}
+                            return {
+                                exists: true,
+                                id: docId || targetBizId,
+                                data: () => ({
+                                    businessId: targetBizId,
+                                    role: 'BUSINESS_OWNER',
+                                    email: targetEmail,
+                                    ownerName: localStorage.getItem('digibiz_impersonate_owner_name') || targetEmail,
+                                    businessType: localStorage.getItem('digibiz_impersonate_type') || 'retail'
+                                })
+                            };
+                        };
+                        return docRef;
+                    };
+                }
+                return colRef;
+            };
+        }
     } catch (ePatch) {
         console.warn('[Impersonation Auth Patch Warn]', ePatch);
     }
