@@ -35,7 +35,7 @@
     const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || 'CLIENT_BIZ';
     const targetType = String(localStorage.getItem('digibiz_impersonate_type') || 'retail').toLowerCase();
 
-    // Ensure business context keys are set in Local and Session storage
+    // Enforce business context keys in Local and Session storage
     localStorage.setItem('currentBusinessId', targetBizId);
     sessionStorage.setItem('currentBusinessId', targetBizId);
     localStorage.setItem('businessId', targetBizId);
@@ -44,37 +44,12 @@
     localStorage.setItem('currentBusinessType', targetType);
     sessionStorage.setItem('currentBusinessType', targetType);
 
-    // Auto-authenticate unauthenticated Incognito sessions via Anonymous Auth to prevent landing page redirects
-    const ensureImpersonatedAuth = async () => {
-        if (window.firebase && window.firebase.auth) {
-            try {
-                const authInst = window.firebase.auth();
-                if (!authInst.currentUser) {
-                    await authInst.signInAnonymously().catch(e => console.warn('[Impersonation] Anonymous auth warn:', e));
-                }
-            } catch (err) {
-                console.warn('[Impersonation] Auth init warn:', err);
-            }
-        }
-    };
-
-    ensureImpersonatedAuth();
-
-    // If currently on Landing Page (index.html), redirect ONCE to target module page
+    // If on Landing Page or Login page, land directly on Universal Dashboard (/modules/core/dashboard.html)
     const path = window.location.pathname.toLowerCase();
-    if (path === '/' || path === '/index.html') {
-        let dest = '/modules/retail/workbench.html';
-        if (targetType.includes('tire')) dest = '/modules/tire_centre/workbench.html';
-        else if (targetType.includes('attendance') || targetType.includes('payroll')) dest = '/modules/attendance_payroll/employees.html';
-        else if (targetType.includes('distributor')) dest = '/modules/distributor/orders.html';
-        else if (targetType.includes('pharmacy')) dest = '/modules/pharmacy/inventory.html';
-        else if (targetType.includes('hardware')) dest = '/modules/hardware/inventory.html';
-
-        // Only redirect if not already on the destination
-        if (!window.location.href.includes(dest)) {
-            window.location.href = dest;
-            return;
-        }
+    if (path === '/' || path === '/index.html' || path.includes('/auth/login.html')) {
+        const targetDashboardUrl = `/modules/core/dashboard.html?impersonate=true&email=${encodeURIComponent(targetEmail)}&bizId=${encodeURIComponent(targetBizId)}&bizType=${encodeURIComponent(targetType)}`;
+        window.location.href = targetDashboardUrl;
+        return;
     }
 
     const setupBanner = () => {

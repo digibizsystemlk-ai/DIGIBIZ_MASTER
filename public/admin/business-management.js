@@ -868,24 +868,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (_eAudit) {}
 
-        let destUrl = '/modules/retail/workbench.html';
-        if (resolvedBizType.includes('scrap')) {
-            destUrl = '/modules/admin/scrap-master.html';
-        } else if (resolvedBizType.includes('attendance') || resolvedBizType.includes('payroll')) {
-            destUrl = '/modules/attendance_payroll/employees.html';
-        } else if (resolvedBizType.includes('tire')) {
-            destUrl = '/modules/tire_centre/workbench.html';
-        } else if (resolvedBizType.includes('distributor')) {
-            destUrl = '/modules/distributor/orders.html';
-        } else if (resolvedBizType.includes('pharmacy')) {
-            destUrl = '/modules/pharmacy/inventory.html';
-        } else if (resolvedBizType.includes('hardware')) {
-            destUrl = '/modules/hardware/inventory.html';
-        } else if (resolvedBizType.includes('auto') || resolvedBizType.includes('garage')) {
-            destUrl = '/modules/auto_care/appointments.html';
-        } else if (resolvedBizType.includes('retail') || resolvedBizType.includes('pos')) {
-            destUrl = '/modules/retail/workbench.html';
-        }
+        let destUrl = '/modules/core/dashboard.html';
 
         const queryParams = new URLSearchParams({
             impersonate: 'true',
@@ -939,14 +922,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (e) {}
 
-            let destUrl = '/modules/retail/workbench.html';
-            if (resolvedBizType.includes('scrap')) destUrl = '/modules/admin/scrap-master.html';
-            else if (resolvedBizType.includes('attendance') || resolvedBizType.includes('payroll')) destUrl = '/modules/attendance_payroll/employees.html';
-            else if (resolvedBizType.includes('tire')) destUrl = '/modules/tire_centre/workbench.html';
-            else if (resolvedBizType.includes('distributor')) destUrl = '/modules/distributor/orders.html';
-            else if (resolvedBizType.includes('pharmacy')) destUrl = '/modules/pharmacy/inventory.html';
-            else if (resolvedBizType.includes('hardware')) destUrl = '/modules/hardware/inventory.html';
-            else if (resolvedBizType.includes('auto') || resolvedBizType.includes('garage')) destUrl = '/modules/auto_care/appointments.html';
+            let destUrl = '/modules/core/dashboard.html';
 
             const queryParams = new URLSearchParams({
                 impersonate: 'true',
