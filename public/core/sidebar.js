@@ -2170,6 +2170,15 @@ class Sidebar {
 
             if (!resolvedName) resolvedName = String(this.businessName || 'No Business Connected').trim();
 
+            if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+                if (!resolvedName || resolvedName === 'No Business Connected' || resolvedName === 'Client Business') {
+                    const impBizName = localStorage.getItem('digibiz_impersonate_biz_name');
+                    const impEmail = localStorage.getItem('digibiz_impersonate_email') || 'CLIENT';
+                    const impOwner = localStorage.getItem('digibiz_impersonate_owner_name') || impEmail.split('@')[0].toUpperCase();
+                    resolvedName = impBizName || (impOwner + ' BUSINESS');
+                }
+            }
+
             this.businessId = resolvedBusinessId;
             this.businessName = resolvedName;
 

@@ -353,9 +353,14 @@
         // Load products from Firestore
         async function loadProducts(){
             if(!currentBusinessId) return;
-            const snapshot = await db.collection('products').doc(currentBusinessId).collection('list').get();
-            products = [];
-            snapshot.forEach(doc => products.push({id: doc.id, ...doc.data()}));
+            try {
+                const snapshot = await db.collection('products').doc(currentBusinessId).collection('list').get();
+                products = [];
+                snapshot.forEach(doc => products.push({id: doc.id, ...doc.data()}));
+            } catch (err) {
+                console.error('[Inventory] Error loading products:', err);
+                products = [];
+            }
 
             try {
                 const grnSnap = await db.collection('purchases').doc(currentBusinessId).collection('orders').get();
@@ -905,12 +910,12 @@
         document.getElementById('exportBtn').onclick = exportToCSV;
         document.getElementById('searchInput').onkeyup = applyFilters;
         
-        auth.onAuthStateChanged(async(user)=>{
+        async function initInventoryPage(user) {
             const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
             if (!user && !isImpersonating) { window.location.href='/'; return; }
             if (isImpersonating) {
                 currentBusinessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || (user && user.uid);
-            } else {
+            } else if (user) {
                 try {
                     const userDoc = await db.collection('users').doc(user.uid).get();
                     currentBusinessId = (userDoc && userDoc.exists && userDoc.data().businessId) ? userDoc.data().businessId : user.uid;
@@ -919,7 +924,14 @@
                 }
             }
             await loadProducts();
-        });
+        }
+
+        if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+            currentBusinessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId');
+            loadProducts();
+        }
+
+        auth.onAuthStateChanged(initInventoryPage);
     </script>
 </body>
 </html>
