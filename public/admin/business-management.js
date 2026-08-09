@@ -869,6 +869,62 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function copyIncognitoImpersonationLink(targetEmail, targetBizId, targetBizType) {
+        if (!targetEmail) {
+            alert('⚠️ Please search and select a business account first.');
+            return;
+        }
+
+        const type = String(targetBizType || '').toLowerCase();
+        let destUrl = '/index.html';
+        if (type.includes('attendance') || type.includes('payroll')) {
+            destUrl = '/modules/attendance_payroll/employees.html';
+        } else if (type.includes('tire')) {
+            destUrl = '/modules/tire_centre/workbench.html';
+        } else if (type.includes('distributor')) {
+            destUrl = '/modules/distributor/orders.html';
+        } else if (type.includes('pharmacy')) {
+            destUrl = '/modules/pharmacy/inventory.html';
+        } else if (type.includes('hardware')) {
+            destUrl = '/modules/hardware/inventory.html';
+        } else if (type.includes('auto') || type.includes('garage')) {
+            destUrl = '/modules/auto_care/appointments.html';
+        } else if (type.includes('retail') || type.includes('pos')) {
+            destUrl = '/modules/retail/workbench.html';
+        }
+
+        const queryParams = new URLSearchParams({
+            impersonate: 'true',
+            email: targetEmail,
+            bizId: targetBizId || '',
+            bizType: targetBizType || '',
+            ts: Date.now()
+        });
+
+        const fullUrl = `${window.location.origin}${destUrl}?${queryParams.toString()}`;
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(fullUrl).then(() => {
+                alert(`🕵️ Private/Incognito Link Copied!\n\nTarget Client: ${targetEmail}\n\n👉 Step 1: Open Private/Incognito Window (Press Ctrl + Shift + N)\n👉 Step 2: Paste (Ctrl + V) & hit Enter!`);
+            }).catch(() => {
+                prompt('🕵️ Copy this link to paste in Private/Incognito Window:', fullUrl);
+            });
+        } else {
+            prompt('🕵️ Copy this link to paste in Private/Incognito Window:', fullUrl);
+        }
+    }
+
+    const copyIncognitoBtn = document.getElementById('copy-incognito-link-btn');
+    if (copyIncognitoBtn) {
+        copyIncognitoBtn.onclick = () => {
+            const targetEmail = currentSelectedEmail || (currentSelectedUserData && currentSelectedUserData.email) || (currentSelectedBusinessData && (currentSelectedBusinessData.ownerEmail || currentSelectedBusinessData.email)) || (emailSearch && emailSearch.value.trim());
+            const targetBizId = currentSelectedBizId || (currentSelectedBusinessData && currentSelectedBusinessData.id) || businessId;
+            const targetBizType = currentSelectedBizType || (currentSelectedBusinessData && currentSelectedBusinessData.businessType) || (currentSelectedUserData && currentSelectedUserData.businessType);
+
+            copyIncognitoImpersonationLink(targetEmail, targetBizId, targetBizType);
+        };
+    }
+
     // Helper to identify Super Admin accounts (which must be EXCLUDED from active tenant analytics)
     function isSuperAdminAccount(u) {
         if (!u) return false;
