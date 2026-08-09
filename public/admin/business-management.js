@@ -916,6 +916,60 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    const copyChromeBtn = document.getElementById('copy-chrome-link-btn');
+    if (copyChromeBtn) {
+        copyChromeBtn.onclick = async () => {
+            const targetEmail = currentSelectedEmail || (currentSelectedUserData && currentSelectedUserData.email) || (currentSelectedBusinessData && (currentSelectedBusinessData.ownerEmail || currentSelectedBusinessData.email)) || (emailSearch && emailSearch.value.trim());
+            const targetBizId = currentSelectedBizId || (currentSelectedBusinessData && currentSelectedBusinessData.id) || businessId;
+            const targetBizType = currentSelectedBizType || (currentSelectedBusinessData && currentSelectedBusinessData.businessType) || (currentSelectedUserData && currentSelectedUserData.businessType);
+
+            if (!targetEmail) {
+                alert('⚠️ Please search and select a business account first.');
+                return;
+            }
+
+            let resolvedBizId = targetBizId || '';
+            let resolvedBizType = String(targetBizType || '').toLowerCase();
+            try {
+                if (window.db && !resolvedBizId && targetEmail) {
+                    const uSnap = await window.db.collection('users').where('email', '==', targetEmail).get();
+                    if (!uSnap.empty) {
+                        resolvedBizId = uSnap.docs[0].data().businessId || uSnap.docs[0].id;
+                    }
+                }
+            } catch (e) {}
+
+            let destUrl = '/modules/retail/workbench.html';
+            if (resolvedBizType.includes('scrap')) destUrl = '/modules/admin/scrap-master.html';
+            else if (resolvedBizType.includes('attendance') || resolvedBizType.includes('payroll')) destUrl = '/modules/attendance_payroll/employees.html';
+            else if (resolvedBizType.includes('tire')) destUrl = '/modules/tire_centre/workbench.html';
+            else if (resolvedBizType.includes('distributor')) destUrl = '/modules/distributor/orders.html';
+            else if (resolvedBizType.includes('pharmacy')) destUrl = '/modules/pharmacy/inventory.html';
+            else if (resolvedBizType.includes('hardware')) destUrl = '/modules/hardware/inventory.html';
+            else if (resolvedBizType.includes('auto') || resolvedBizType.includes('garage')) destUrl = '/modules/auto_care/appointments.html';
+
+            const queryParams = new URLSearchParams({
+                impersonate: 'true',
+                email: targetEmail,
+                bizId: resolvedBizId,
+                bizType: resolvedBizType,
+                ts: Date.now()
+            });
+
+            const fullUrl = `${window.location.origin}${destUrl}?${queryParams.toString()}`;
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(fullUrl).then(() => {
+                    alert(`📋 Google Chrome / 2nd Browser Link Copied!\n\nTarget Client: ${targetEmail}\n\n👉 Open Google Chrome, Paste (Ctrl + V) & hit Enter!`);
+                }).catch(() => {
+                    prompt('📋 Copy this link to paste into Google Chrome:', fullUrl);
+                });
+            } else {
+                prompt('📋 Copy this link to paste into Google Chrome:', fullUrl);
+            }
+        };
+    }
+
     // Helper to identify Super Admin accounts (which must be EXCLUDED from active tenant analytics)
     function isSuperAdminAccount(u) {
         if (!u) return false;
