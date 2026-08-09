@@ -42,6 +42,66 @@ if (!firebase.apps.length) {
 window.db = firebase.firestore();
 window.auth = firebase.auth();
 
+// Super Admin Direct Client Impersonation Auth Interceptor
+(function patchFirebaseAuthForImpersonation() {
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const isParamImpersonate = urlParams.get('impersonate') === 'true';
+        if (isParamImpersonate) {
+            const paramEmail = urlParams.get('email');
+            const paramBizId = urlParams.get('bizId');
+            const paramBizType = urlParams.get('bizType');
+            if (paramEmail) {
+                localStorage.setItem('digibiz_impersonate_email', paramEmail);
+                localStorage.setItem('userEmail', paramEmail);
+                localStorage.setItem('activeUserEmail', paramEmail);
+            }
+            if (paramBizId) {
+                localStorage.setItem('digibiz_impersonate_biz_id', paramBizId);
+                localStorage.setItem('businessId', paramBizId);
+                localStorage.setItem('currentBusinessId', paramBizId);
+                sessionStorage.setItem('currentBusinessId', paramBizId);
+                localStorage.setItem('activeBusinessId', paramBizId);
+            }
+            if (paramBizType) {
+                localStorage.setItem('digibiz_impersonate_type', paramBizType);
+                localStorage.setItem('currentBusinessType', paramBizType);
+                sessionStorage.setItem('currentBusinessType', paramBizType);
+            }
+            localStorage.setItem('digibiz_impersonate_active', 'true');
+            localStorage.setItem('currentUserRole', 'BUSINESS_OWNER');
+            sessionStorage.setItem('currentUserRole', 'BUSINESS_OWNER');
+            localStorage.setItem('currentBusinessNavRole', 'BUSINESS_OWNER');
+            sessionStorage.setItem('currentBusinessNavRole', 'BUSINESS_OWNER');
+        }
+
+        const isActive = localStorage.getItem('digibiz_impersonate_active') === 'true';
+        if (!isActive) return;
+
+        const origOnAuthStateChanged = firebase.auth().onAuthStateChanged;
+        firebase.auth().onAuthStateChanged = function(callback, optError, optCompleted) {
+            const wrappedCallback = async (user) => {
+                if (!user) {
+                    const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'client@digibiz.lk';
+                    const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || 'CLIENT_BIZ';
+                    const syntheticUser = {
+                        uid: targetBizId,
+                        email: targetEmail,
+                        displayName: localStorage.getItem('digibiz_impersonate_owner_name') || targetEmail,
+                        isAnonymous: true,
+                        getIdToken: async () => 'SYNTHETIC_IMPERSONATION_TOKEN'
+                    };
+                    return callback(syntheticUser);
+                }
+                return callback(user);
+            };
+            return origOnAuthStateChanged.call(firebase.auth(), wrappedCallback, optError, optCompleted);
+        };
+    } catch (ePatch) {
+        console.warn('[Impersonation Auth Patch Warn]', ePatch);
+    }
+})();
+
 try {
     firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function(e) {
         console.warn('[DigiBiz] Auth persistence error:', e);
