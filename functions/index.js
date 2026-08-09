@@ -1709,9 +1709,17 @@ exports.generateClientImpersonationToken = onCall(
         }
 
         let targetUid = targetBizId;
+        let resolvedBizId = targetBizId;
         try {
             const userRecord = await admin.auth().getUserByEmail(targetEmail);
             targetUid = userRecord.uid;
+
+            // Resolve real business ID from Firestore user document
+            const userDoc = await db.collection('users').doc(targetUid).get();
+            if (userDoc.exists) {
+                const uData = userDoc.data() || {};
+                resolvedBizId = uData.businessId || uData.assignedBusiness || uData.companyId || resolvedBizId || targetUid;
+            }
         } catch (eNotFound) {
             try {
                 const newRecord = await admin.auth().createUser({
@@ -1726,7 +1734,7 @@ exports.generateClientImpersonationToken = onCall(
 
         const customClaims = {
             role: "BUSINESS_OWNER",
-            businessId: targetBizId,
+            businessId: resolvedBizId,
             isImpersonated: true,
             impersonatedBy: requesterEmail
         };
