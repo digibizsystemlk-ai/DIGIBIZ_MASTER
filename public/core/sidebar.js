@@ -191,8 +191,8 @@ const DISTRIBUTOR_MENU_POOL = [
 ];
 /** Only the marketing root should skip the app sidebar — not module pages named index.html */
 const SHOULD_RESERVE_SIDEBAR_SPACE = (() => {
-    const raw = (window.location.pathname || '').split('?')[0].toLowerCase();
-    const p = raw.replace(/\/+/g, '/') || '/';
+    const raw = (window.location.pathname || '').split('?')[0];
+    const p = raw.replace(/\/+/g, '') || '/';
     return p !== '/' && p !== '/index.html';
 })();
 
@@ -347,25 +347,15 @@ function ensureMobileSidebarControls() {
     }
 }
 
-window.sidebarToggle = function() {
-    document.documentElement.classList.toggle('digibiz-sidebar-open');
-};
-
 function preReserveSidebarSpace() {
     if (!SHOULD_RESERVE_SIDEBAR_SPACE) return;
     ensureSidebarStyles();
     document.documentElement.classList.add('digibiz-sidebar-reserved');
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => ensureMobileSidebarControls());
-    } else {
-        ensureMobileSidebarControls();
-    }
 }
 
 class Sidebar {
     constructor() {
         preReserveSidebarSpace();
-        ensureMobileSidebarControls();
         this.mwBusinessId = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
         this.spranzaBusinessId = 'SPRANZA_PVT_LTD';
         this.kduTeaBusinessId = '0Uled5estVeQVN8cChmMTNRDNIE3';
@@ -465,86 +455,81 @@ class Sidebar {
     async init() {
         // Load subscription manager in background so sidebar can paint immediately.
         const subscriptionReady = ensureSubscriptionManagerLoaded();
-        const setupAuthListener = () => {
-            if (typeof firebase === 'undefined' || !firebase.auth) {
-                setTimeout(setupAuthListener, 100);
-                return;
-            }
-            try {
-                firebase.auth().onAuthStateChanged(async (user) => {
-                    const cachedTypeBeforeLoad = String(localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase();
-                    const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
-                    if ((user || isImpersonating) && SHOULD_RESERVE_SIDEBAR_SPACE) {
-                        this.primeFromCache(user ? user.uid : null);
-                        this.render();
-                        this.attachEvents();
-                        // ULTIMATE CACHE BUSTER: Clear all permission caches on every load/refresh for staff sync
-                        try {
-                            const bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
-                            if (bid) {
-                                sessionStorage.removeItem(`digibiz_perms_v2_${bid}`);
-                                sessionStorage.removeItem(`digibiz_perm_v_${bid}`);
-                                if (user) localStorage.removeItem(`digibiz_sidebar_cache_${user.uid}`);
-                            }
-                        } catch (e) { }
-
-                        // Paint sidebar immediately to prevent any load delay
-                        this.render();
-                        this.attachEvents();
-
-                        // Load database profile details asynchronously in the background
-                        (async () => {
-                            try {
-                                if (user) await this.loadUserData(user.uid);
-                                await this.refreshBusinessNameFromProfile();
-                                this.render();
-                                this.attachEvents();
-                            } catch (e) {
-                                console.warn('[Sidebar] Async background load failed:', e);
-                            }
-                        })();
-                        if (user) {
-                            try {
-                                const token = await user.getIdTokenResult(true);
-                                this.superAdmin = !!(token && token.claims && (token.claims.admin === true || token.claims.superAdmin === true));
-                            } catch (e) {
-                                this.superAdmin = false;
-                            }
-                        }
-                        if (!this.superAdmin && String(this.currentRole || '').toUpperCase() === 'SUPER_ADMIN') {
-                            this.superAdmin = true;
-                        }
-                        if (this.businessType === 'manufacturer') {
-                            const reloadKey = 'digibiz_sidebar_mfg_reload_once';
-                            if (cachedTypeBeforeLoad && cachedTypeBeforeLoad !== 'manufacturer' && sessionStorage.getItem(reloadKey) !== '1') {
-                                sessionStorage.setItem(reloadKey, '1');
-                                window.location.reload();
-                                return;
-                            }
-                            sessionStorage.removeItem(reloadKey);
-                        }
-                        if (this.shouldForceManufacturerMode() && this.businessType !== 'manufacturer') {
-                            this.businessType = 'manufacturer';
-                            localStorage.setItem('currentBusinessType', 'manufacturer');
-                            sessionStorage.setItem('currentBusinessType', 'manufacturer');
-                        }
-
-                        // Non-critical tasks continue after first paint.
-                        Promise.resolve().then(() => this.maybeShowUpdateAnnouncement(user)).catch(() => { });
-                        Promise.resolve(subscriptionReady).then(async () => {
-                            this.subscriptionState = window.subscriptionManager
-                                ? await window.subscriptionManager.initializeForUser(user, this.currentRole, this.businessId || (user ? user.uid : ''))
-                                : null;
-                            this.updateUserInfo();
-                            if (user) this.checkOnboardingStatus(user);
-                        }).catch(() => { });
+        firebase.auth().onAuthStateChanged(async (user) => {
+            const cachedTypeBeforeLoad = String(localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase();
+            if (user && SHOULD_RESERVE_SIDEBAR_SPACE) {
+                document.querySelectorAll('.retail-navbar').forEach((el) => el.remove());
+                const mountPoint = document.getElementById('sidebar-container');
+                if (mountPoint) mountPoint.innerHTML = '';
+                /* 
+                 * Disable pre-auth cache priming for distributor staff to avoid ghost menus.
+                 * Forced to wait for loadUserData and refreshBusinessNameFromProfile.
+                 */
+                // this.primeFromCache(user.uid);
+                // this.render();
+                // ULTIMATE CACHE BUSTER: Clear all permission caches on every load/refresh for staff sync
+                try {
+                    const bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                    if (bid) {
+                        sessionStorage.removeItem(`digibiz_perms_v2_${bid}`);
+                        sessionStorage.removeItem(`digibiz_perm_v_${bid}`);
+                        localStorage.removeItem(`digibiz_sidebar_cache_${user.uid}`);
                     }
-                });
-            } catch (eAuth) {
-                console.warn('[Sidebar] Auth listener setup failed:', eAuth);
+                } catch (e) { }
+
+                // Paint sidebar immediately to prevent any load delay
+                this.render();
+                this.attachEvents();
+
+                // Load database profile details asynchronously in the background
+                (async () => {
+                    try {
+                        await this.loadUserData(user.uid);
+                        await this.refreshBusinessNameFromProfile();
+                        this.render();
+                        this.attachEvents();
+                    } catch (e) {
+                        console.warn('[Sidebar] Async background load failed:', e);
+                    }
+                })();
+                try {
+                    const token = await user.getIdTokenResult(true);
+                    this.superAdmin = !!(token && token.claims && (token.claims.admin === true || token.claims.superAdmin === true));
+                } catch (e) {
+                    this.superAdmin = false;
+                }
+                if (!this.superAdmin && String(this.currentRole || '').toUpperCase() === 'SUPER_ADMIN') {
+                    this.superAdmin = true;
+                }
+                if (this.businessType === 'manufacturer') {
+                    const reloadKey = 'digibiz_sidebar_mfg_reload_once';
+                    if (cachedTypeBeforeLoad && cachedTypeBeforeLoad !== 'manufacturer' && sessionStorage.getItem(reloadKey) !== '1') {
+                        sessionStorage.setItem(reloadKey, '1');
+                        window.location.reload();
+                        return;
+                    }
+                    sessionStorage.removeItem(reloadKey);
+                }
+                if (this.shouldForceManufacturerMode() && this.businessType !== 'manufacturer') {
+                    this.businessType = 'manufacturer';
+                    localStorage.setItem('currentBusinessType', 'manufacturer');
+                    sessionStorage.setItem('currentBusinessType', 'manufacturer');
+                }
+                // First paint sidebar immediately (without waiting on optional fetches).
+                this.render();
+                this.attachEvents();
+                // Non-critical tasks continue after first paint.
+                Promise.resolve().then(() => this.maybeShowUpdateAnnouncement(user)).catch(() => { });
+                // Promise.resolve().then(() => this.showNewFeatureAnnouncement(user)).catch(() => { });
+                Promise.resolve(subscriptionReady).then(async () => {
+                    this.subscriptionState = window.subscriptionManager
+                        ? await window.subscriptionManager.initializeForUser(user, this.currentRole, this.businessId || user.uid)
+                        : null;
+                    this.updateUserInfo();
+                    this.checkOnboardingStatus(user);
+                }).catch(() => { });
             }
-        };
-        setupAuthListener();
+        });
     }
 
     injectOnboardingStyles() {
@@ -1232,8 +1217,8 @@ class Sidebar {
         try {
             this.currentUserId = userId;
             const opt = navigator.onLine ? {} : { source: 'cache' };
-            const userDoc = await db.collection('users').doc(userId).get(opt).catch(() => null);
-            const userData = userDoc && userDoc.exists ? (userDoc.data() || {}) : {};
+            const userDoc = await db.collection('users').doc(userId).get(opt);
+            const userData = userDoc.exists ? (userDoc.data() || {}) : {};
         if (!firebase.auth().currentUser) {
             await new Promise(resolve => {
                 const unsubscribe = firebase.auth().onAuthStateChanged(user => {
@@ -1283,8 +1268,8 @@ class Sidebar {
             }
             if (this.businessId && String(this.businessId).trim()) {
                 const opt = navigator.onLine ? {} : { source: 'cache' };
-                const businessDoc = await db.collection('businesses').doc(String(this.businessId).trim()).get(opt).catch(() => null);
-                if (businessDoc && businessDoc.exists) {
+                const businessDoc = await db.collection('businesses').doc(String(this.businessId).trim()).get(opt);
+                if (businessDoc.exists) {
                     const bData = businessDoc.data() || {};
                     this.businessType = this.normalizeBusinessType(bData.businessType || bData.type || userData.businessType || userData.type || 'retail');
                     console.log(`[Sidebar] Detected BusinessType: ${this.businessType} for BID: ${this.businessId}`);
@@ -1618,10 +1603,11 @@ class Sidebar {
     }
 
     isScrapSuiteContext() {
-        const path = String(window.location.pathname || '').toLowerCase();
-        const isScrapPath = path.includes('/scrap-') || path.includes('/admin/scrap') || path.includes('cash-counting');
-        const isScrapType = this.businessType === 'scrap_collection_center';
-        return isScrapType || isScrapPath;
+        const isScrapType = this.businessType === 'scrap_collection_center' || window.location.pathname.includes('/scrap-');
+        const roleNorm = String(this.currentRole || '').toUpperCase();
+        const isOwnerOrStaff = this.isScrapMasterOwner() || 
+                              ['ACCOUNTANT', 'MANAGER', 'BUSINESS_OWNER', 'SUPER_ADMIN', 'ADMIN'].includes(roleNorm);
+        return isScrapType && isOwnerOrStaff;
     }
 
     getDashboardMenu() {
@@ -1729,11 +1715,14 @@ class Sidebar {
         const storedEmail = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
         const emailNorm = String(authEmail || storedEmail || '').trim().toLowerCase();
 
-        // Strict Email Override for Himeshi (Accountant)
-        const isHimeshiAccountant = emailNorm === 'biz.himeshi@gmail.com';
+        // ULTIMATE TOP-LEVEL OVERRIDE FOR RASIKA
+        const isRasikaIdentity = emailNorm === 'biz.himeshi@gmail.com' || 
+                               (this.ownerName && this.ownerName.includes('Rasika')) || 
+                               (document.getElementById('sidebarUserName') && document.getElementById('sidebarUserName').textContent.includes('Rasika'));
 
-        if (isHimeshiAccountant) {
+        if (isRasikaIdentity) {
             const path = window.location.pathname;
+            // If on landing/dashboard OR on the Owner-only Buying Bill page, force redirect to expenses
             if (path.includes('dashboard.html') || path === '/' || path.includes('index.html') || path.includes('scrap-vba') || path.includes('scrap-buying')) {
                 window.location.href = '/modules/admin/scrap-expenses.html';
                 return [];
@@ -2122,49 +2111,17 @@ class Sidebar {
         }
 
         const user = firebase.auth().currentUser;
-        if (!user && !isImpersonating) return;
+        if (!user) return;
         try {
             const opt = navigator.onLine ? {} : { source: 'cache' };
-            let userDoc = null;
-            if (user) {
-                try { userDoc = await window.db.collection('users').doc(user.uid).get(opt); } catch (eU) {}
-            }
-            const userData = userDoc && userDoc.exists ? userDoc.data() : {};
+            const userDoc = await window.db.collection('users').doc(user.uid).get(opt);
+            const userData = userDoc.exists ? userDoc.data() : {};
             this.ownerName = String(userData.ownerName || userData.name || this.ownerName || '').trim();
-            let resolvedBusinessId = userData.businessId || userData.assignedBusiness || userData.companyId || (isImpersonating ? localStorage.getItem('digibiz_impersonate_biz_id') : null) || this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || (user ? user.uid : null);
+            const resolvedBusinessId = userData.businessId || this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || user.uid;
             let resolvedName = '';
-
-            const targetEmail = (isImpersonating ? localStorage.getItem('digibiz_impersonate_email') : null) || (user && user.email) || '';
-
-            // Fallback 1: Query users collection by email if businessId is missing or default
-            if ((!resolvedBusinessId || (user && resolvedBusinessId === user.uid)) && targetEmail) {
-                try {
-                    const uSnap = await window.db.collection('users').where('email', '==', targetEmail).limit(1).get();
-                    if (!uSnap.empty) {
-                        const uData = uSnap.docs[0].data() || {};
-                        if (uData.businessId) resolvedBusinessId = uData.businessId;
-                        if (uData.ownerName || uData.name) this.ownerName = uData.ownerName || uData.name;
-                    }
-                } catch (eUq) {}
-            }
-
-            // Fallback 2: Query businesses collection by ownerEmail if resolvedBusinessId is missing
-            if (!resolvedBusinessId && targetEmail) {
-                try {
-                    const bSnap = await window.db.collection('businesses').where('ownerEmail', '==', targetEmail).limit(1).get();
-                    if (!bSnap.empty) {
-                        resolvedBusinessId = bSnap.docs[0].id;
-                        const bd = bSnap.docs[0].data() || {};
-                        resolvedName = String(bd.name || bd.businessName || bd.companyName || '').trim();
-                        if (bd.ownerName) this.ownerName = String(bd.ownerName).trim();
-                    }
-                } catch (eBq) {}
-            }
 
             if (resolvedBusinessId) {
                 this.businessId = resolvedBusinessId;
-                localStorage.setItem('currentBusinessId', resolvedBusinessId);
-                sessionStorage.setItem('currentBusinessId', resolvedBusinessId);
 
                 // Fetch Business Info & Permissions Bridge
                 try {
@@ -2172,7 +2129,7 @@ class Sidebar {
                     const businessDoc = await window.db.collection('businesses').doc(resolvedBusinessId).get(opt);
                     if (businessDoc.exists) {
                         const bd = businessDoc.data() || {};
-                        resolvedName = String(bd.name || bd.businessName || bd.companyName || bd.title || '').trim();
+                        resolvedName = String(bd.name || bd.businessName || '').trim();
 
                         // Sync Permissions from Bridge (Staff Path) with Version Tracking
                         const cachedVersion = sessionStorage.getItem(`digibiz_perm_v_${resolvedBusinessId}`);
@@ -2211,24 +2168,9 @@ class Sidebar {
                 } catch (eBiz) { console.warn('Sidebar biz lookup failed:', eBiz); }
             }
 
-            // Fallback 3: Query businesses collection by ownerEmail if name is still missing
-            if ((!resolvedName || resolvedName === 'No Business Connected') && targetEmail) {
-                try {
-                    const bSnap2 = await window.db.collection('businesses').where('ownerEmail', '==', targetEmail).limit(1).get();
-                    if (!bSnap2.empty) {
-                        const bd2 = bSnap2.docs[0].data() || {};
-                        resolvedBusinessId = bSnap2.docs[0].id;
-                        resolvedName = String(bd2.name || bd2.businessName || bd2.companyName || bd2.title || '').trim();
-                        if (bd2.ownerName) this.ownerName = String(bd2.ownerName).trim();
-                        this.businessId = resolvedBusinessId;
-                        localStorage.setItem('currentBusinessId', resolvedBusinessId);
-                    }
-                } catch (eBq2) {}
-            }
-
             if (!resolvedName) resolvedName = String(this.businessName || 'No Business Connected').trim();
 
-            if (isImpersonating) {
+            if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
                 if (!resolvedName || resolvedName === 'No Business Connected' || resolvedName === 'Client Business') {
                     const impBizName = localStorage.getItem('digibiz_impersonate_biz_name');
                     const impEmail = localStorage.getItem('digibiz_impersonate_email') || 'CLIENT';
@@ -2270,7 +2212,7 @@ class Sidebar {
         const authEmail = (user && user.email) || '';
         const storedEmail = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
         const emailNorm = String(authEmail || storedEmail || '').trim().toLowerCase();
-        const isRasika = emailNorm === 'biz.himeshi@gmail.com';
+        const isRasika = emailNorm === 'biz.himeshi@gmail.com' || (this.ownerName && this.ownerName.includes('Rasika'));
 
         let settingsItems = (this.isRepRole() || isRasika) ? [] : settingsItemsBase.slice();
         if (this.businessType === 'distributor' && window.DigibizDistributorPermissions && !this.isRepRole()) {
@@ -2409,19 +2351,22 @@ class Sidebar {
 
         const existingSidebar = document.querySelector('.retail-navbar');
         const mountPoint = document.getElementById('sidebar-container');
-        if (existingSidebar) {
-            const temp = document.createElement('div');
-            temp.innerHTML = html.trim();
-            const fresh = temp.firstElementChild;
-            if (fresh) {
-                existingSidebar.replaceWith(fresh);
+        if (mountPoint) {
+            if (mountPoint.innerHTML !== html) {
+                mountPoint.innerHTML = html;
             }
-        } else if (mountPoint) {
-            mountPoint.innerHTML = html;
-        } else if (document.body) {
-            document.body.insertAdjacentHTML('afterbegin', html);
+        } else {
+            if (existingSidebar) {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = html;
+                const newSidebar = tempDiv.querySelector('.retail-navbar');
+                if (newSidebar && existingSidebar.innerHTML !== newSidebar.innerHTML) {
+                    existingSidebar.innerHTML = newSidebar.innerHTML;
+                }
+            } else {
+                document.body.insertAdjacentHTML('afterbegin', html);
+            }
         }
-        ensureMobileSidebarControls();
         this.updateUserInfo();
         this.refreshScrapPoolBadge();
         this.initRetailRevenueBadge();
