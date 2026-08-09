@@ -35,7 +35,7 @@
     const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || 'CLIENT_BIZ';
     const targetType = String(localStorage.getItem('digibiz_impersonate_type') || 'retail').toLowerCase();
 
-    // Ensure business context keys are set for current business
+    // Ensure business context keys are set in Local and Session storage
     localStorage.setItem('currentBusinessId', targetBizId);
     sessionStorage.setItem('currentBusinessId', targetBizId);
     localStorage.setItem('businessId', targetBizId);
@@ -44,7 +44,23 @@
     localStorage.setItem('currentBusinessType', targetType);
     sessionStorage.setItem('currentBusinessType', targetType);
 
-    // If currently on Landing Page (index.html), redirect straight to target module page
+    // Auto-authenticate unauthenticated Incognito sessions via Anonymous Auth to prevent landing page redirects
+    const ensureImpersonatedAuth = async () => {
+        if (window.firebase && window.firebase.auth) {
+            try {
+                const authInst = window.firebase.auth();
+                if (!authInst.currentUser) {
+                    await authInst.signInAnonymously().catch(e => console.warn('[Impersonation] Anonymous auth warn:', e));
+                }
+            } catch (err) {
+                console.warn('[Impersonation] Auth init warn:', err);
+            }
+        }
+    };
+
+    ensureImpersonatedAuth();
+
+    // If currently on Landing Page (index.html), redirect ONCE to target module page
     const path = window.location.pathname.toLowerCase();
     if (path === '/' || path === '/index.html') {
         let dest = '/modules/retail/workbench.html';
@@ -53,8 +69,12 @@
         else if (targetType.includes('distributor')) dest = '/modules/distributor/orders.html';
         else if (targetType.includes('pharmacy')) dest = '/modules/pharmacy/inventory.html';
         else if (targetType.includes('hardware')) dest = '/modules/hardware/inventory.html';
-        window.location.href = dest;
-        return;
+
+        // Only redirect if not already on the destination
+        if (!window.location.href.includes(dest)) {
+            window.location.href = dest;
+            return;
+        }
     }
 
     const setupBanner = () => {
