@@ -912,6 +912,27 @@ document.addEventListener('DOMContentLoaded', () => {
         window.open(targetUrl, '_blank');
     }
 
+    async function wipeUserAccount(targetEmail) {
+        if (!targetEmail) return;
+        if (!confirm(`⚠️ ARE YOU ABSOLUTELY SURE?\n\nThis will PERMANENTLY DELETE account "${targetEmail}" from Firebase Auth, Firestore users, and businesses collections.\n\nThis action cannot be undone and will allow a fresh registration under this email.`)) return;
+
+        try {
+            if (window.firebase && window.firebase.functions) {
+                const wipeFn = window.firebase.functions().httpsCallable('deleteUserAccountByEmail');
+                const res = await wipeFn({ targetEmail: targetEmail });
+                if (res && res.data && res.data.success) {
+                    alert(`✅ Account "${targetEmail}" has been completely wiped from the system.\n\nThe email is now free for a fresh registration!`);
+                    location.reload();
+                    return;
+                }
+            }
+        } catch (eWipe) {
+            console.error('Wipe error:', eWipe);
+            alert('Wipe error: ' + (eWipe.message || String(eWipe)));
+        }
+    }
+    window.wipeUserAccount = wipeUserAccount;
+
     const impersonateClientBtn = document.getElementById('impersonate-client-btn');
     if (impersonateClientBtn) {
         impersonateClientBtn.onclick = () => {
@@ -1574,6 +1595,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <button class="quick-impersonate-btn" data-email="${safeStr(item.email)}" data-bizid="${safeStr(item.bizId)}" data-type="${safeStr(item.businessType)}" style="background:#d97706; color:#ffffff; border:none; padding:7px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;" type="button">🔑 Log in</button>
                                 <button class="inspect-user-btn" data-email="${safeStr(item.email)}" style="background:#0284c7; color:#ffffff; border:none; padding:7px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;" type="button">🔍 Inspect</button>
                                 <button class="quick-pro-btn" data-email="${safeStr(item.email)}" style="background:#10b981; color:#ffffff; border:none; padding:7px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;" type="button">⭐ Give Pro</button>
+                                <button class="quick-wipe-btn" data-email="${safeStr(item.email)}" style="background:#dc2626; color:#ffffff; border:none; padding:7px 12px; border-radius:8px; font-size:11.5px; font-weight:700; cursor:pointer;" type="button">🗑️ Wipe</button>
                             </div>
                         </div>
                     </div>
@@ -1581,6 +1603,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         }).join('');
+
+        container.querySelectorAll('.quick-wipe-btn').forEach((btn) => {
+            btn.onclick = () => {
+                wipeUserAccount(btn.dataset.email);
+            };
+        });
 
         container.querySelectorAll('.quick-impersonate-btn').forEach((btn) => {
             btn.onclick = () => {

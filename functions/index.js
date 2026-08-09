@@ -1746,8 +1746,88 @@ exports.generateClientImpersonationToken = onCall(
             customToken: customToken,
             targetUid: targetUid,
             targetEmail: targetEmail,
-            targetBizId: targetBizId
+            targetBizId: resolvedBizId,
         };
     }
 );
 
+/**
+ * Super Admin Account Wiping Tool
+ * Deletes user from Firebase Auth, Firestore users, and businesses collections by email.
+ */
+exports.deleteUserAccountByEmail = onCall(
+    {
+        timeoutSeconds: 60,
+        memory: "256MiB",
+    },
+    async (request) => {
+        const auth = request.auth;
+        const data = request.data || {};
+        const targetEmail = String(data.targetEmail || "").trim().toLowerCase();
+
+        const requesterEmail = String((auth && auth.token && auth.token.email) || "").trim().toLowerCase();
+        if (requesterEmail !== "biz.sirimal@gmail.com" && requesterEmail !== "2biz.sirimal@gmail.com") {
+            throw new HttpsError("permission-denied", "Only Super Admin can wipe user accounts.");
+        }
+
+        if (!targetEmail) {
+            throw new HttpsError("invalid-argument", "targetEmail is required.");
+        }
+
+        let targetUid = null;
+        let deletedAuth = false;
+        let deletedUserDocs = 0;
+        let deletedBizDocs = 0;
+
+        // 1. Delete from Firebase Auth
+        try {
+            const userRecord = await admin.auth().getUserByEmail(targetEmail);
+            targetUid = userRecord.uid;
+            await admin.auth().deleteUser(targetUid);
+            deletedAuth = true;
+        } catch (eAuth) {
+            console.warn('[AccountWipe] Auth delete warn:', eAuth.message);
+        }
+
+        // 2. Delete from users collection
+        try {
+            const usersSnap = await db.collection('users').where('email', '==', targetEmail).get();
+            for (const doc of usersSnap.docs) {
+                targetUid = targetUid || doc.id;
+                await db.collection('users').doc(doc.id).delete();
+                deletedUserDocs++;
+            }
+        } catch (eUsers) {
+            console.warn('[AccountWipe] Users delete warn:', eUsers.message);
+        }
+
+        // 3. Delete from businesses collection
+        try {
+            const bizSnap = await db.collection('businesses').where('ownerEmail', '==', targetEmail).get();
+            for (const doc of bizSnap.docs) {
+                await db.collection('businesses').doc(doc.id).delete();
+                deletedBizDocs++;
+            }
+        } catch (eBiz) {
+            console.warn('[AccountWipe] Biz delete warn:', eBiz.message);
+        }
+
+        if (targetUid) {
+            try {
+                const bDoc = await db.collection('businesses').doc(targetUid).get();
+                if (bDoc.exists) {
+                    await db.collection('businesses').doc(targetUid).delete();
+                    deletedBizDocs++;
+                }
+            } catch (eBizUid) {}
+        }
+
+        return {
+            success: true,
+            targetEmail: targetEmail,
+            deletedAuth: deletedAuth,
+            deletedUserDocs: deletedUserDocs,
+            deletedBizDocs: deletedBizDocs
+        };
+    }
+);
