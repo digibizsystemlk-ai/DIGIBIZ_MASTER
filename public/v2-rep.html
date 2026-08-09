@@ -20,6 +20,9 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/core/firebase-init.js?v=400"></script>
+    <script src="/core/auth-roles.js?v=115"></script>
+    <script src="/core/dashboard-core.js?v=46"></script>
+    <script src="/core/sidebar.js?v=1030"></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
@@ -29,7 +32,7 @@
         .spinner { width: 36px; height: 36px; border: 4px solid rgba(255,255,255,0.2); border-top-color: #10b981; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         
-        .app-header { background: #0f3b2c; color: #ffffff; padding: 14px 16px; position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
+        .app-header { background: #0f3b2c; color: #ffffff; padding: 12px 16px; position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
         .header-row { display: flex; justify-content: space-between; align-items: center; }
         .biz-title { font-size: 16px; font-weight: 800; color: #ffffff; }
         .rep-subtitle { font-size: 12px; color: #34d399; font-weight: 600; margin-top: 2px; }
@@ -96,9 +99,12 @@
     <!-- Header -->
     <div class="app-header">
         <div class="header-row">
-            <div>
-                <div class="biz-title" id="hdrBizName">🏬 SPI Holdings</div>
-                <div class="rep-subtitle" id="hdrRepEmail">Rep: Sales Rep</div>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <button type="button" onclick="window.sidebarToggle()" style="background:rgba(255,255,255,0.2); color:#ffffff; border:none; border-radius:10px; width:42px; height:42px; font-size:22px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center;" title="Open Sidebar Menu">☰</button>
+                <div>
+                    <div class="biz-title" id="hdrBizName">🏬 SPI Holdings</div>
+                    <div class="rep-subtitle" id="hdrRepEmail">Rep: Sales Rep</div>
+                </div>
             </div>
             <div>
                 <a href="/v2-rep.html?logout=true" onclick="localStorage.clear(); sessionStorage.clear();" class="nav-link">🚪 Sign Out</a>
@@ -124,11 +130,16 @@
                 <span>🏪 1. Select Shop / Customer</span>
                 <button type="button" onclick="toggleNewShopForm()" style="background:#0f766e; color:#fff; border:none; padding:6px 10px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer;">➕ New Shop</button>
             </div>
-            <select id="shopSelect" class="form-input">
-                <option value="">-- Select Shop / Customer --</option>
-            </select>
+            
+            <!-- Type-to-Search Shop Selector (Prevents Window Overflow) -->
+            <div style="margin-bottom:8px;">
+                <input type="text" id="shopSearchInput" class="form-input" placeholder="🔍 Type to search shop by name or town..." oninput="filterShopList()" style="margin-bottom:6px; border-color:#0f766e; background:#f0fdf4;">
+                <select id="shopSelect" class="form-input" size="5" style="height:140px; overflow-y:auto; cursor:pointer;">
+                    <option value="">-- Select Shop / Customer --</option>
+                </select>
+            </div>
 
-            <!-- Inline New Shop Creation -->
+            <!-- Inline New Shop Creation with Address Box -->
             <div id="newShopForm" style="display:none; margin-top:12px; padding:12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px;">
                 <div style="font-weight:800; color:#0f766e; margin-bottom:8px; font-size:13px;">➕ Add New Customer Shop</div>
                 <form action="javascript:void(0);" onsubmit="saveNewShop(event)">
@@ -136,9 +147,13 @@
                         <label>Shop / Customer Name</label>
                         <input type="text" id="newShopName" class="form-input" placeholder="e.g. Nimal Stores" required>
                     </div>
+                    <div style="margin-bottom:8px;">
+                        <label>Shop / Delivery Address (ලිපිනය)</label>
+                        <input type="text" id="newShopAddress" class="form-input" placeholder="e.g. 45 Main Street, Galle" required>
+                    </div>
                     <div style="margin-bottom:10px;">
-                        <label>Phone Number (Optional)</label>
-                        <input type="tel" id="newShopPhone" class="form-input" placeholder="e.g. 0771234567">
+                        <label>Phone Number (දුරකථන අංකය)</label>
+                        <input type="tel" id="newShopPhone" class="form-input" placeholder="e.g. 0771234567" required>
                     </div>
                     <div style="display:flex; gap:8px;">
                         <input type="submit" class="form-submit" style="padding:10px; flex:1;" value="Save & Select">
@@ -154,7 +169,8 @@
             <form action="javascript:void(0);" onsubmit="addItemToOrder(event)">
                 <div style="margin-bottom:12px;">
                     <label>Select Item / Product</label>
-                    <select id="productSelect" class="form-input" onchange="onProductSelected()">
+                    <input type="text" id="productSearchInput" class="form-input" placeholder="🔍 Type to search product by name or code..." oninput="filterProductList()" style="margin-bottom:6px; background:#f0fdf4; border-color:#0f766e;">
+                    <select id="productSelect" class="form-input" size="5" style="height:140px; overflow-y:auto; cursor:pointer;" onchange="onProductSelected()">
                         <option value="">-- Select Product --</option>
                     </select>
                 </div>
@@ -333,8 +349,26 @@
             }
         }
 
+        let corpDetails = {
+            name: 'SPI HOLDINGS (PVT) LTD',
+            address: 'Head Office, Colombo 03',
+            phone: '+94 11 234 5678',
+            email: 'info@spiholdings.lk'
+        };
+
         async function loadRepBusinessData() {
             const db = firebase.firestore();
+            try {
+                const corpSnap = await db.collection('corporate_details').doc(targetBid).get().catch(() => null);
+                if (corpSnap && corpSnap.exists) {
+                    const cData = corpSnap.data() || {};
+                    if (cData.name) corpDetails.name = cData.name;
+                    if (cData.address) corpDetails.address = cData.address;
+                    if (cData.phone) corpDetails.phone = cData.phone;
+                    if (cData.email) corpDetails.email = cData.email;
+                }
+            } catch(e) {}
+
             try {
                 const bizDoc = await db.collection('businesses').doc(targetBid).get().catch(() => null);
                 if (bizDoc && bizDoc.exists) {
@@ -345,30 +379,86 @@
 
             let shopsSnap = { docs: [] };
             try {
-                shopsSnap = await db.collection('shops').get().catch(() => ({ docs: [] }));
+                shopsSnap = await db.collection('shops')
+                    .where('businessId', '==', targetBid)
+                    .get()
+                    .catch(() => ({ docs: [] }));
             } catch (e) {}
 
-            shopsList = (shopsSnap.docs || []).map(d => ({ id: d.id, ...d.data() }));
-            const shopSelect = document.getElementById('shopSelect');
-            if (shopsList.length === 0) {
-                shopSelect.innerHTML = '<option value="">-- No Shops Found --</option>';
-            } else {
-                shopSelect.innerHTML = '<option value="">-- Select Shop --</option>' +
-                    shopsList.map(s => `<option value="${s.id}">${escapeHtml(s.name || s.shopName || 'Shop')}</option>`).join('');
-            }
+            var rawShops = (shopsSnap.docs || []).map(d => ({ id: d.id, ...d.data() }));
+            shopsList = rawShops.filter(s => s.isActive !== false);
 
-            const pSnap = await db.collection('products').get().catch(() => ({ docs: [] }));
+            renderSearchableShopList();
+
+            let pSnap = { docs: [] };
+            try {
+                pSnap = await db.collection('products')
+                    .where('businessId', '==', targetBid)
+                    .get()
+                    .catch(() => ({ docs: [] }));
+            } catch(e) {}
+
             productsMap = {};
-            (pSnap.docs || []).forEach(d => { productsMap[d.id] = { id: d.id, ...d.data() }; });
+            (pSnap.docs || []).forEach(d => {
+                const p = d.data() || {};
+                if (p.isActive !== false) {
+                    productsMap[d.id] = { id: d.id, ...p };
+                }
+            });
 
+            renderSearchableProductList();
+        }
+
+        function filterShopList() {
+            renderSearchableShopList();
+        }
+
+        function renderSearchableShopList() {
+            const query = (document.getElementById('shopSearchInput').value || '').trim().toLowerCase();
+            const shopSelect = document.getElementById('shopSelect');
+            const filtered = shopsList.filter(s => {
+                const nm = (s.name || s.shopName || '').toLowerCase();
+                const addr = (s.address || s.shopAddress || '').toLowerCase();
+                const ph = (s.phone || s.shopPhone || '').toLowerCase();
+                return !query || nm.includes(query) || addr.includes(query) || ph.includes(query);
+            });
+
+            if (filtered.length === 0) {
+                shopSelect.innerHTML = '<option value="">-- No Shops Match Search --</option>';
+            } else {
+                shopSelect.innerHTML = '<option value="">-- Select Shop (' + filtered.length + ') --</option>' +
+                    filtered.map(s => {
+                        const addrLabel = s.address || s.shopAddress ? ' (' + s.address + ')' : '';
+                        return `<option value="${s.id}">${escapeHtml((s.name || s.shopName || 'Shop') + addrLabel)}</option>`;
+                    }).join('');
+            }
+        }
+
+        function filterProductList() {
+            renderSearchableProductList();
+        }
+
+        function renderSearchableProductList() {
+            const query = (document.getElementById('productSearchInput').value || '').trim().toLowerCase();
             const prodSelect = document.getElementById('productSelect');
             const pList = Object.values(productsMap);
-            if (pList.length === 0) {
-                prodSelect.innerHTML = '<option value="">-- No Products Found --</option>';
+            const filtered = pList.filter(p => {
+                const nm = (p.name || p.productName || '').toLowerCase();
+                const code = (p.code || p.sku || '').toLowerCase();
+                return !query || nm.includes(query) || code.includes(query);
+            });
+
+            if (filtered.length === 0) {
+                prodSelect.innerHTML = '<option value="">-- No Products Match Search --</option>';
             } else {
-                prodSelect.innerHTML = '<option value="">-- Select Product --</option>' +
-                    pList.map(p => `<option value="${p.id}">${escapeHtml(p.name || p.productName || 'Item')} (Rs. ${Number(p.price || p.unitPrice || 0).toFixed(2)})</option>`).join('');
+                prodSelect.innerHTML = '<option value="">-- Select Product (' + filtered.length + ') --</option>' +
+                    filtered.map(p => `<option value="${p.id}">${escapeHtml(p.name || p.productName || 'Item')} (Rs. ${Number(p.price || p.unitPrice || 0).toFixed(2)})</option>`).join('');
             }
+        }
+
+        function selectShopById(sid) {
+            const shopSelect = document.getElementById('shopSelect');
+            if (shopSelect) shopSelect.value = sid;
         }
 
         function onProductSelected() {
@@ -390,23 +480,36 @@
         async function saveNewShop(e) {
             if (e && e.preventDefault) e.preventDefault();
             const name = document.getElementById('newShopName').value.trim();
+            const address = document.getElementById('newShopAddress').value.trim();
             const phone = document.getElementById('newShopPhone').value.trim();
-            if (!name) return;
 
-            const db = firebase.firestore();
-            const shopObj = { name, phone, businessId: targetBid, createdAt: firebase.firestore.FieldValue.serverTimestamp() };
-            const docRef = await db.collection('shops').add(shopObj);
+            if (!name) { alert('Shop name is required'); return; }
 
-            shopsList.push({ id: docRef.id, ...shopObj });
-            const shopSelect = document.getElementById('shopSelect');
-            const opt = document.createElement('option');
-            opt.value = docRef.id;
-            opt.textContent = name;
-            opt.selected = true;
-            shopSelect.appendChild(opt);
+            try {
+                const db = firebase.firestore();
+                const shopObj = {
+                    businessId: targetBid,
+                    name: name,
+                    address: address,
+                    phone: phone,
+                    createdByRep: currentUser.email,
+                    assignedRepId: currentUser.uid,
+                    isActive: true,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                const docRef = await db.collection('shops').add(shopObj);
 
-            toggleNewShopForm();
-            alert('✅ Shop saved and selected!');
+                alert('🎉 New Shop Saved Successfully!');
+                document.getElementById('newShopName').value = '';
+                document.getElementById('newShopAddress').value = '';
+                document.getElementById('newShopPhone').value = '';
+                toggleNewShopForm();
+
+                await loadRepBusinessData();
+                selectShopById(docRef.id);
+            } catch (err) {
+                alert('Failed to save shop: ' + err.message);
+            }
         }
 
         function addItemToOrder(e) {
@@ -566,32 +669,55 @@
             activeOrderForPrint = o;
             const paper = document.getElementById('receiptPaperContent');
             const items = o.items || [];
-            
+            const shopAddr = o.shopAddress || o.address || 'Standard Delivery Location';
+            const shopPh = o.shopPhone || o.phone || 'N/A';
+            const cName = o.corpName || corpDetails.name || 'SPI HOLDINGS (PVT) LTD';
+            const cAddr = o.corpAddress || corpDetails.address || 'Head Office, Colombo 03';
+            const cHotline = o.corpHotline || corpDetails.phone || '+94 11 234 5678';
+            const repDisp = o.repName || getRepDisplayName(o);
+
             paper.innerHTML = `
-                <div style="text-align:center; border-bottom:1px dashed #000; padding-bottom:8px; margin-bottom:8px;">
-                    <strong style="font-size:16px;">SPI HOLDINGS</strong><br>
-                    <span>Sales Order Receipt</span>
+                <div style="text-align:center; border-bottom:2px solid #0f3b2c; padding-bottom:8px; margin-bottom:10px;">
+                    <strong style="font-size:18px; color:#0f3b2c;">${escapeHtml(cName)}</strong><br>
+                    <span style="font-size:11px; color:#475569;">${escapeHtml(cAddr)} | Hotline: ${escapeHtml(cHotline)}</span><br>
+                    <span style="font-weight:800; color:#0f766e; font-size:13px; margin-top:4px; display:inline-block;">Sales Order Receipt</span>
                 </div>
-                <div class="receipt-row"><span>Order ID:</span><span>#${o.id.substring(0, 8)}</span></div>
-                <div class="receipt-row"><span>Shop:</span><span>${escapeHtml(o.shopName || 'Shop')}</span></div>
-                <div class="receipt-row"><span>Rep:</span><span>${escapeHtml(o.repEmail || '')}</span></div>
-                <div style="border-top:1px dashed #000; margin:8px 0;"></div>
+
+                <div style="font-size:12px; margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between;"><span><strong>Order ID:</strong> #${escapeHtml((o.id || '').substring(0, 10))}</span><span><strong>Date:</strong> ${new Date().toLocaleDateString()}</span></div>
+                    <div><strong>Sales Rep:</strong> ${escapeHtml(repDisp)}</div>
+                </div>
+
+                <!-- BOX 1: Customer & Delivery Address Box -->
+                <div style="border:1.5px solid #0ea5e9; background:#f0f9ff; border-radius:8px; padding:8px; margin-bottom:8px; font-size:11px;">
+                    <div style="font-weight:800; color:#0369a1; margin-bottom:2px;">📦 BOX 1: CUSTOMER & DELIVERY ADDRESS</div>
+                    <div><strong>Shop:</strong> ${escapeHtml(o.shopName || 'Shop')}</div>
+                    <div><strong>Address:</strong> ${escapeHtml(shopAddr)}</div>
+                    <div><strong>Phone:</strong> ${escapeHtml(shopPh)}</div>
+                </div>
+
+                <!-- BOX 2: Corporate Holding & Branch Details Box -->
+                <div style="border:1.5px solid #6366f1; background:#f5f3ff; border-radius:8px; padding:8px; margin-bottom:10px; font-size:11px;">
+                    <div style="font-weight:800; color:#4338ca; margin-bottom:2px;">🏢 BOX 2: CORPORATE & BRANCH DETAILS</div>
+                    <div><strong>Holding:</strong> ${escapeHtml(cName)}</div>
+                    <div><strong>Hotline:</strong> ${escapeHtml(cHotline)}</div>
+                    <div><strong>Payment Method:</strong> ${escapeHtml(o.paymentMethod || 'CASH')}</div>
+                </div>
+
+                <div style="font-weight:800; font-size:12px; margin-bottom:4px;">Order Items:</div>
                 ${items.map(i => {
                     const qty = Number(i.qty || i.quantity || 1);
                     const pr = Number(i.price || i.unitPrice || 0);
                     const sub = Number(i.subtotal || i.total || (qty * pr)) || 0;
-                    return `<div class="receipt-row"><span>${escapeHtml(i.name || 'Item')} x${qty}</span><span>Rs.${sub.toFixed(2)}</span></div>`;
+                    return `<div class="receipt-row"><span>${escapeHtml(i.name || 'Item')} (x${qty})</span><span>Rs.${sub.toFixed(2)}</span></div>`;
                 }).join('')}
-                <div style="border-top:1px dashed #000; margin:8px 0;"></div>
-                <div class="receipt-row" style="font-weight:bold; font-size:14px;"><span>GRAND TOTAL:</span><span>Rs.${Number(o.totalAmount || o.grandTotal || 0).toFixed(2)}</span></div>
-            `;
 
-            const isChirath = ((currentUser && currentUser.email) || '').toLowerCase().includes('chirathkavinda38') || 
-                              ((o && o.repEmail) || '').toLowerCase().includes('chirathkavinda38');
-            const btnML = document.getElementById('btnMLabelPrint');
-            if (btnML) {
-                btnML.style.display = isChirath ? 'block' : 'none';
-            }
+                <div style="border-top:2px dashed #000; margin:10px 0 6px;"></div>
+                <div style="background:#0f172a; color:#fff; padding:10px; border-radius:8px; text-align:center; margin-top:8px;">
+                    <div style="font-size:11px; text-transform:uppercase; color:#94a3b8; font-weight:700;">Grand Total</div>
+                    <div style="font-size:20px; font-weight:900; color:#38bdf8;">Rs. ${Number(o.totalAmount || o.grandTotal || 0).toFixed(2)}</div>
+                </div>
+            `;
 
             document.getElementById('receiptModal').style.display = 'flex';
         }

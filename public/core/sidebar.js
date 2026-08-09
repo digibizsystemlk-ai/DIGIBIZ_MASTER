@@ -191,8 +191,8 @@ const DISTRIBUTOR_MENU_POOL = [
 ];
 /** Only the marketing root should skip the app sidebar — not module pages named index.html */
 const SHOULD_RESERVE_SIDEBAR_SPACE = (() => {
-    const raw = (window.location.pathname || '').split('?')[0];
-    const p = raw.replace(/\/+/g, '') || '/';
+    const raw = (window.location.pathname || '').split('?')[0].toLowerCase();
+    const p = raw.replace(/\/+/g, '/') || '/';
     return p !== '/' && p !== '/index.html';
 })();
 
@@ -347,15 +347,25 @@ function ensureMobileSidebarControls() {
     }
 }
 
+window.sidebarToggle = function() {
+    document.documentElement.classList.toggle('digibiz-sidebar-open');
+};
+
 function preReserveSidebarSpace() {
     if (!SHOULD_RESERVE_SIDEBAR_SPACE) return;
     ensureSidebarStyles();
     document.documentElement.classList.add('digibiz-sidebar-reserved');
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => ensureMobileSidebarControls());
+    } else {
+        ensureMobileSidebarControls();
+    }
 }
 
 class Sidebar {
     constructor() {
         preReserveSidebarSpace();
+        ensureMobileSidebarControls();
         this.mwBusinessId = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
         this.spranzaBusinessId = 'SPRANZA_PVT_LTD';
         this.kduTeaBusinessId = '0Uled5estVeQVN8cChmMTNRDNIE3';
@@ -458,15 +468,9 @@ class Sidebar {
         firebase.auth().onAuthStateChanged(async (user) => {
             const cachedTypeBeforeLoad = String(localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase();
             if (user && SHOULD_RESERVE_SIDEBAR_SPACE) {
-                document.querySelectorAll('.retail-navbar').forEach((el) => el.remove());
-                const mountPoint = document.getElementById('sidebar-container');
-                if (mountPoint) mountPoint.innerHTML = '';
-                /* 
-                 * Disable pre-auth cache priming for distributor staff to avoid ghost menus.
-                 * Forced to wait for loadUserData and refreshBusinessNameFromProfile.
-                 */
-                // this.primeFromCache(user.uid);
-                // this.render();
+                this.primeFromCache(user.uid);
+                this.render();
+                this.attachEvents();
                 // ULTIMATE CACHE BUSTER: Clear all permission caches on every load/refresh for staff sync
                 try {
                     const bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
@@ -1217,8 +1221,8 @@ class Sidebar {
         try {
             this.currentUserId = userId;
             const opt = navigator.onLine ? {} : { source: 'cache' };
-            const userDoc = await db.collection('users').doc(userId).get(opt);
-            const userData = userDoc.exists ? (userDoc.data() || {}) : {};
+            const userDoc = await db.collection('users').doc(userId).get(opt).catch(() => null);
+            const userData = userDoc && userDoc.exists ? (userDoc.data() || {}) : {};
         if (!firebase.auth().currentUser) {
             await new Promise(resolve => {
                 const unsubscribe = firebase.auth().onAuthStateChanged(user => {
@@ -1268,8 +1272,8 @@ class Sidebar {
             }
             if (this.businessId && String(this.businessId).trim()) {
                 const opt = navigator.onLine ? {} : { source: 'cache' };
-                const businessDoc = await db.collection('businesses').doc(String(this.businessId).trim()).get(opt);
-                if (businessDoc.exists) {
+                const businessDoc = await db.collection('businesses').doc(String(this.businessId).trim()).get(opt).catch(() => null);
+                if (businessDoc && businessDoc.exists) {
                     const bData = businessDoc.data() || {};
                     this.businessType = this.normalizeBusinessType(bData.businessType || bData.type || userData.businessType || userData.type || 'retail');
                     console.log(`[Sidebar] Detected BusinessType: ${this.businessType} for BID: ${this.businessId}`);
@@ -1603,11 +1607,10 @@ class Sidebar {
     }
 
     isScrapSuiteContext() {
-        const isScrapType = this.businessType === 'scrap_collection_center' || window.location.pathname.includes('/scrap-');
-        const roleNorm = String(this.currentRole || '').toUpperCase();
-        const isOwnerOrStaff = this.isScrapMasterOwner() || 
-                              ['ACCOUNTANT', 'MANAGER', 'BUSINESS_OWNER', 'SUPER_ADMIN', 'ADMIN'].includes(roleNorm);
-        return isScrapType && isOwnerOrStaff;
+        const path = String(window.location.pathname || '').toLowerCase();
+        const isScrapPath = path.includes('/scrap-') || path.includes('/admin/scrap') || path.includes('cash-counting');
+        const isScrapType = this.businessType === 'scrap_collection_center';
+        return isScrapType || isScrapPath;
     }
 
     getDashboardMenu() {
@@ -1715,14 +1718,11 @@ class Sidebar {
         const storedEmail = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
         const emailNorm = String(authEmail || storedEmail || '').trim().toLowerCase();
 
-        // ULTIMATE TOP-LEVEL OVERRIDE FOR RASIKA
-        const isRasikaIdentity = emailNorm === 'biz.himeshi@gmail.com' || 
-                               (this.ownerName && this.ownerName.includes('Rasika')) || 
-                               (document.getElementById('sidebarUserName') && document.getElementById('sidebarUserName').textContent.includes('Rasika'));
+        // Strict Email Override for Himeshi (Accountant)
+        const isHimeshiAccountant = emailNorm === 'biz.himeshi@gmail.com';
 
-        if (isRasikaIdentity) {
+        if (isHimeshiAccountant) {
             const path = window.location.pathname;
-            // If on landing/dashboard OR on the Owner-only Buying Bill page, force redirect to expenses
             if (path.includes('dashboard.html') || path === '/' || path.includes('index.html') || path.includes('scrap-vba') || path.includes('scrap-buying')) {
                 window.location.href = '/modules/admin/scrap-expenses.html';
                 return [];
@@ -2082,6 +2082,34 @@ class Sidebar {
 
     async refreshBusinessNameFromProfile() {
         const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+        if (isImpersonating) {
+            this.currentRole = 'BUSINESS_OWNER';
+            this.businessNavRole = 'BUSINESS_OWNER';
+            this.businessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || this.businessId;
+            this.businessType = localStorage.getItem('digibiz_impersonate_type') || localStorage.getItem('currentBusinessType') || 'retail';
+            
+            const impEmail = localStorage.getItem('digibiz_impersonate_email') || '';
+            if (this.businessId) {
+                try {
+                    const bDoc = await window.db.collection('businesses').doc(this.businessId).get();
+                    if (bDoc.exists) {
+                        const bd = bDoc.data() || {};
+                        this.businessName = bd.businessName || bd.name || bd.companyName || bd.title || localStorage.getItem('digibiz_impersonate_biz_name') || 'Client Business';
+                        this.ownerName = bd.ownerName || bd.name || localStorage.getItem('digibiz_impersonate_owner_name') || impEmail;
+                    }
+                } catch (eB) {}
+            }
+            if (!this.businessName || this.businessName === 'Client Business' || this.businessName === 'My Business') {
+                this.businessName = localStorage.getItem('digibiz_impersonate_biz_name') || (impEmail ? `${impEmail.split('@')[0].toUpperCase()} BUSINESS` : 'CLIENT BUSINESS');
+            }
+            this.renderBusinessName(this.businessName);
+            const ownerEl = document.getElementById('sidebarUserName');
+            if (ownerEl) ownerEl.textContent = this.ownerName || impEmail;
+            const roleBadgeEl = document.getElementById('sidebarRoleBadge');
+            if (roleBadgeEl) roleBadgeEl.textContent = 'BUSINESS OWNER';
+            return;
+        }
+
         const user = firebase.auth().currentUser;
         if (!user && !isImpersonating) return;
         try {
@@ -2092,14 +2120,13 @@ class Sidebar {
             }
             const userData = userDoc && userDoc.exists ? userDoc.data() : {};
             this.ownerName = String(userData.ownerName || userData.name || this.ownerName || '').trim();
-            const userUid = user ? user.uid : null;
-            let resolvedBusinessId = userData.businessId || userData.assignedBusiness || userData.companyId || (isImpersonating ? localStorage.getItem('digibiz_impersonate_biz_id') : null) || this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || userUid;
+            let resolvedBusinessId = userData.businessId || userData.assignedBusiness || userData.companyId || (isImpersonating ? localStorage.getItem('digibiz_impersonate_biz_id') : null) || this.businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || (user ? user.uid : null);
             let resolvedName = '';
 
             const targetEmail = (isImpersonating ? localStorage.getItem('digibiz_impersonate_email') : null) || (user && user.email) || '';
 
             // Fallback 1: Query users collection by email if businessId is missing or default
-            if ((!resolvedBusinessId || resolvedBusinessId === userUid) && targetEmail) {
+            if ((!resolvedBusinessId || (user && resolvedBusinessId === user.uid)) && targetEmail) {
                 try {
                     const uSnap = await window.db.collection('users').where('email', '==', targetEmail).limit(1).get();
                     if (!uSnap.empty) {
@@ -2232,7 +2259,7 @@ class Sidebar {
         const authEmail = (user && user.email) || '';
         const storedEmail = localStorage.getItem('digibizMwSyncEmail') || sessionStorage.getItem('digibizMwSyncEmail') || '';
         const emailNorm = String(authEmail || storedEmail || '').trim().toLowerCase();
-        const isRasika = emailNorm === 'biz.himeshi@gmail.com' || (this.ownerName && this.ownerName.includes('Rasika'));
+        const isRasika = emailNorm === 'biz.himeshi@gmail.com';
 
         let settingsItems = (this.isRepRole() || isRasika) ? [] : settingsItemsBase.slice();
         if (this.businessType === 'distributor' && window.DigibizDistributorPermissions && !this.isRepRole()) {
@@ -2371,22 +2398,19 @@ class Sidebar {
 
         const existingSidebar = document.querySelector('.retail-navbar');
         const mountPoint = document.getElementById('sidebar-container');
-        if (mountPoint) {
-            if (mountPoint.innerHTML !== html) {
-                mountPoint.innerHTML = html;
+        if (existingSidebar) {
+            const temp = document.createElement('div');
+            temp.innerHTML = html.trim();
+            const fresh = temp.firstElementChild;
+            if (fresh) {
+                existingSidebar.replaceWith(fresh);
             }
-        } else {
-            if (existingSidebar) {
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = html;
-                const newSidebar = tempDiv.querySelector('.retail-navbar');
-                if (newSidebar && existingSidebar.innerHTML !== newSidebar.innerHTML) {
-                    existingSidebar.innerHTML = newSidebar.innerHTML;
-                }
-            } else {
-                document.body.insertAdjacentHTML('afterbegin', html);
-            }
+        } else if (mountPoint) {
+            mountPoint.innerHTML = html;
+        } else if (document.body) {
+            document.body.insertAdjacentHTML('afterbegin', html);
         }
+        ensureMobileSidebarControls();
         this.updateUserInfo();
         this.refreshScrapPoolBadge();
         this.initRetailRevenueBadge();
