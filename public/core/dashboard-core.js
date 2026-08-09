@@ -194,9 +194,11 @@ class DashboardCore {
 
         const userEmail = String(user.email || '').trim().toLowerCase();
         
-        // FORCE SCRAP CONTEXT FOR HIMESHI/SIRIMAL (ONLY ON LIVE)
-        const isStaging = window.location.hostname.includes('digibiz-test');
-        if ((userEmail === 'biz.himeshi@gmail.com' || userEmail === 'biz.sirimal@gmail.com' || userEmail === '2biz.sirimal@gmail.com' || userEmail === 'scrap@chinthaka.com')) {
+        const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+        if (isImpersonating) {
+            businessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || businessId;
+            businessType = this.normalizeBusinessType(localStorage.getItem('digibiz_impersonate_type') || localStorage.getItem('currentBusinessType') || 'retail');
+        } else if ((userEmail === 'biz.himeshi@gmail.com' || userEmail === 'biz.sirimal@gmail.com' || userEmail === '2biz.sirimal@gmail.com' || userEmail === 'scrap@chinthaka.com')) {
             businessId = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
             businessType = 'scrap_collection_center';
         }
