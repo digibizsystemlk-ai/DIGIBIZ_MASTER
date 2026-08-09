@@ -2498,63 +2498,67 @@
         };
 
         async function bootProductsPage(user) {
-            if (!user) return;
+            const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+            if (!user && !isImpersonating) return;
             try {
-                var userDoc = await db.collection('users').doc(user.uid).get();
-                if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
-                    var context = await window.dashboardCore.getContext(user);
-                    currentBusinessId = context && context.businessId ? context.businessId : null;
-                }
-                if (!currentBusinessId) {
-                    var bizQuery = await db.collection('businesses').where('ownerId', '==', user.uid).limit(1).get();
-                    if (!bizQuery.empty) {
-                        currentBusinessId = bizQuery.docs[0].id;
-                        localStorage.setItem('currentBusinessId', currentBusinessId);
+                if (isImpersonating) {
+                    currentBusinessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId');
+                } else if (user) {
+                    try {
+                        var userDoc = await db.collection('users').doc(user.uid).get();
+                    } catch (eU) {}
+                    if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+                        var context = await window.dashboardCore.getContext(user);
+                        currentBusinessId = context && context.businessId ? context.businessId : null;
+                    }
+                    if (!currentBusinessId) {
+                        try {
+                            var bizQuery = await db.collection('businesses').where('ownerId', '==', user.uid).limit(1).get();
+                            if (!bizQuery.empty) {
+                                currentBusinessId = bizQuery.docs[0].id;
+                                localStorage.setItem('currentBusinessId', currentBusinessId);
+                            }
+                        } catch (eQ) {}
                     }
                 }
+
+                if (!currentBusinessId) {
+                    currentBusinessId = localStorage.getItem('currentBusinessId') || localStorage.getItem('digibiz_impersonate_biz_id');
+                }
+
                 if (currentBusinessId) {
                     localStorage.setItem('currentBusinessId', currentBusinessId);
                     sessionStorage.setItem('currentBusinessId', currentBusinessId);
                     localStorage.setItem('currentBusinessType', 'distributor');
                     sessionStorage.setItem('currentBusinessType', 'distributor');
-                    var roleInfo = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
-                    var resolvedRole = String((roleInfo && roleInfo.role) || '').toUpperCase();
-                    try {
-                        // Fallback: when business-role resolution is missing, use users/{uid}.role.
-                        if (!resolvedRole || resolvedRole === 'VIEWER') {
-                            var userData = userDoc && userDoc.exists ? (userDoc.data() || {}) : {};
-                            if (userData.role) resolvedRole = String(userData.role).toUpperCase();
-                        }
-                    } catch (roleFallbackErr) {
-                        console.warn('User role fallback failed:', roleFallbackErr && (roleFallbackErr.message || roleFallbackErr));
-                    }
-                    try {
-                        var bizUserDoc = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(user.uid).get();
-                        if (bizUserDoc.exists && bizUserDoc.data().role) {
-                            resolvedRole = String(bizUserDoc.data().role).toUpperCase();
-                        }
-                    } catch (roleErr) {
-                        console.warn('Business role lookup failed:', roleErr && (roleErr.message || roleErr));
+                    var resolvedRole = isImpersonating ? 'BUSINESS_OWNER' : 'BUSINESS_OWNER';
+                    if (!isImpersonating && user) {
+                        try {
+                            var roleInfo = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
+                            if (roleInfo && roleInfo.role) resolvedRole = String(roleInfo.role).toUpperCase();
+                        } catch (rErr) {}
                     }
                     currentBusinessId = String(currentBusinessId || '').trim();
                     currentUserRole = resolvedRole;
-                    if (currentBusinessId && String(currentBusinessId).trim()) {
-                        var bizDoc = await db.collection('businesses').doc(String(currentBusinessId).trim()).get();
-                        currentBusinessData = bizDoc.exists ? bizDoc.data() : null;
-                    }
-                    if (window.DigibizMwDslConfig && currentBusinessId) {
-                        await window.DigibizMwDslConfig.ensureMwTradingTenantProvisioned(db, currentBusinessId);
+                    try {
                         if (currentBusinessId && String(currentBusinessId).trim()) {
-                            var bizDocAfter = await db.collection('businesses').doc(String(currentBusinessId).trim()).get();
-                            if (bizDocAfter.exists) currentBusinessData = bizDocAfter.data();
+                            var bizDoc = await db.collection('businesses').doc(String(currentBusinessId).trim()).get();
+                            currentBusinessData = bizDoc.exists ? bizDoc.data() : null;
                         }
-                        await window.DigibizMwDslConfig.resolveMwTradingBusinessId(db);
-                    }
+                    } catch (eBD) {}
+                    try {
+                        if (window.DigibizMwDslConfig && currentBusinessId) {
+                            await window.DigibizMwDslConfig.ensureMwTradingTenantProvisioned(db, currentBusinessId);
+                            await window.DigibizMwDslConfig.resolveMwTradingBusinessId(db);
+                        }
+                    } catch (eDsl) {}
                     updateMwBuyingPriceUi();
                     applyDistributorProductChrome();
                     applyRepReadOnlyProductsChrome();
-                    document.getElementById('productPrice').addEventListener('input', updateSellingBuyingAutoLink);
-                    updateSellingBuyingAutoLink();
+                    try {
+                        document.getElementById('productPrice').addEventListener('input', updateSellingBuyingAutoLink);
+                        updateSellingBuyingAutoLink();
+                    } catch (eUi) {}
                     await loadProducts();
                 } else {
                     document.getElementById('productsList').innerHTML = '<div class="loading">No business found.</div>';
@@ -2565,9 +2569,14 @@
             }
         }
 
+        if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+            currentBusinessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId');
+            bootProductsPage(firebase.auth().currentUser);
+        }
+
         // Initialize
         firebase.auth().onAuthStateChanged(async function (user) {
-            if (user) {
+            if (user || localStorage.getItem('digibiz_impersonate_active') === 'true') {
                 await bootProductsPage(user);
                 return;
             }
