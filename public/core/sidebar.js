@@ -2072,6 +2072,35 @@ class Sidebar {
     }
 
     async refreshBusinessNameFromProfile() {
+        const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+        if (isImpersonating) {
+            this.currentRole = 'BUSINESS_OWNER';
+            this.businessNavRole = 'BUSINESS_OWNER';
+            this.businessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || this.businessId;
+            this.businessType = localStorage.getItem('digibiz_impersonate_type') || localStorage.getItem('currentBusinessType') || 'retail';
+            
+            const impEmail = localStorage.getItem('digibiz_impersonate_email') || '';
+            if (this.businessId) {
+                try {
+                    const bDoc = await window.db.collection('businesses').doc(this.businessId).get();
+                    if (bDoc.exists) {
+                        const bd = bDoc.data() || {};
+                        this.businessName = bd.businessName || bd.name || bd.companyName || bd.title || localStorage.getItem('digibiz_impersonate_biz_name') || 'Client Business';
+                        this.ownerName = bd.ownerName || bd.name || localStorage.getItem('digibiz_impersonate_owner_name') || impEmail;
+                    }
+                } catch (eB) {}
+            }
+            if (!this.businessName || this.businessName === 'Client Business' || this.businessName === 'My Business') {
+                this.businessName = localStorage.getItem('digibiz_impersonate_biz_name') || (impEmail ? `${impEmail.split('@')[0].toUpperCase()} BUSINESS` : 'CLIENT BUSINESS');
+            }
+            this.renderBusinessName(this.businessName);
+            const ownerEl = document.getElementById('sidebarUserName');
+            if (ownerEl) ownerEl.textContent = this.ownerName || impEmail;
+            const roleBadgeEl = document.getElementById('sidebarRoleBadge');
+            if (roleBadgeEl) roleBadgeEl.textContent = 'BUSINESS OWNER';
+            return;
+        }
+
         const user = firebase.auth().currentUser;
         if (!user) return;
         try {
