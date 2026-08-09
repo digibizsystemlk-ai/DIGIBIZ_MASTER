@@ -35,7 +35,13 @@
     const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || 'CLIENT_BIZ';
     const targetType = String(localStorage.getItem('digibiz_impersonate_type') || 'retail').toLowerCase();
 
-    // Enforce business context keys in Local and Session storage
+    // Force business context keys in Local and Session storage
+    localStorage.setItem('digibiz_impersonate_active', 'true');
+    localStorage.setItem('currentUserRole', 'BUSINESS_OWNER');
+    sessionStorage.setItem('currentUserRole', 'BUSINESS_OWNER');
+    localStorage.setItem('currentBusinessNavRole', 'BUSINESS_OWNER');
+    sessionStorage.setItem('currentBusinessNavRole', 'BUSINESS_OWNER');
+
     localStorage.setItem('currentBusinessId', targetBizId);
     sessionStorage.setItem('currentBusinessId', targetBizId);
     localStorage.setItem('businessId', targetBizId);
@@ -51,6 +57,69 @@
         window.location.href = targetDashboardUrl;
         return;
     }
+
+    let resolvedBizName = localStorage.getItem('digibiz_impersonate_biz_name') || '';
+    let resolvedOwnerName = localStorage.getItem('digibiz_impersonate_owner_name') || '';
+
+    const fetchLiveTenantProfile = async () => {
+        if (window.db && targetBizId && (!resolvedBizName || resolvedBizName === 'Client Business')) {
+            try {
+                const bDoc = await window.db.collection('businesses').doc(targetBizId).get();
+                if (bDoc.exists) {
+                    const bd = bDoc.data() || {};
+                    resolvedBizName = bd.businessName || bd.name || bd.companyName || bd.title || resolvedBizName;
+                    resolvedOwnerName = bd.ownerName || bd.name || resolvedOwnerName;
+                    if (resolvedBizName) {
+                        localStorage.setItem('digibiz_impersonate_biz_name', resolvedBizName);
+                        localStorage.setItem('currentBusinessName', resolvedBizName);
+                        sessionStorage.setItem('currentBusinessName', resolvedBizName);
+                    }
+                }
+            } catch (e) {}
+        }
+        if (!resolvedBizName || resolvedBizName === 'Client Business') {
+            const handle = targetEmail.split('@')[0].toUpperCase();
+            resolvedBizName = `${handle} BUSINESS`;
+        }
+        if (!resolvedOwnerName) resolvedOwnerName = targetEmail;
+    };
+
+    fetchLiveTenantProfile();
+
+    // Continuous 150ms DOM & State Enforcer to override any cached sidebar elements
+    const enforceDOMState = () => {
+        const roleBadge = document.getElementById('sidebarRoleBadge');
+        if (roleBadge && roleBadge.textContent !== 'BUSINESS OWNER') {
+            roleBadge.textContent = 'BUSINESS OWNER';
+        }
+
+        const bizNameEl = document.getElementById('sidebarBusinessName');
+        if (bizNameEl && (bizNameEl.textContent === 'BUSINESS' || bizNameEl.textContent === 'MY BUSINESS' || !bizNameEl.textContent)) {
+            const bName = resolvedBizName || localStorage.getItem('digibiz_impersonate_biz_name') || `${targetEmail.split('@')[0].toUpperCase()} BUSINESS`;
+            bizNameEl.textContent = bName.toUpperCase();
+            bizNameEl.title = bName.toUpperCase();
+        }
+
+        const mobileBizEl = document.getElementById('digibizMobileBusinessName');
+        if (mobileBizEl && (mobileBizEl.textContent === 'BUSINESS' || mobileBizEl.textContent === 'MY BUSINESS' || !mobileBizEl.textContent)) {
+            const bName = resolvedBizName || localStorage.getItem('digibiz_impersonate_biz_name') || `${targetEmail.split('@')[0].toUpperCase()} BUSINESS`;
+            mobileBizEl.textContent = bName.toUpperCase();
+        }
+
+        const userNameEl = document.getElementById('sidebarUserName');
+        if (userNameEl && (userNameEl.textContent === 'User' || !userNameEl.textContent)) {
+            userNameEl.textContent = resolvedOwnerName || targetEmail;
+        }
+
+        if (window.sidebarInstance) {
+            window.sidebarInstance.currentRole = 'BUSINESS_OWNER';
+            window.sidebarInstance.businessNavRole = 'BUSINESS_OWNER';
+            if (targetBizId) window.sidebarInstance.businessId = targetBizId;
+            if (resolvedBizName) window.sidebarInstance.businessName = resolvedBizName;
+        }
+    };
+
+    setInterval(enforceDOMState, 150);
 
     const setupBanner = () => {
         const existingBanner = document.getElementById('super-admin-impersonation-banner');
@@ -108,8 +177,12 @@
     };
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', setupBanner);
+        document.addEventListener('DOMContentLoaded', () => {
+            setupBanner();
+            enforceDOMState();
+        });
     } else {
         setupBanner();
+        enforceDOMState();
     }
 })();
