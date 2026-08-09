@@ -83,25 +83,39 @@ window.auth = firebase.auth();
             const wrappedCallback = async (user) => {
                 const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'client@digibiz.lk';
                 const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || 'CLIENT_BIZ';
-                if (!user) {
-                    const syntheticUser = {
-                        uid: targetBizId,
-                        email: targetEmail,
-                        displayName: localStorage.getItem('digibiz_impersonate_owner_name') || targetEmail,
-                        isAnonymous: true,
-                        getIdToken: async () => 'SYNTHETIC_IMPERSONATION_TOKEN'
-                    };
-                    return callback(syntheticUser);
-                }
-                if (!user.email) {
+                const activeUser = user || {
+                    uid: targetBizId,
+                    email: targetEmail,
+                    displayName: localStorage.getItem('digibiz_impersonate_owner_name') || targetEmail,
+                    isAnonymous: true,
+                    getIdToken: async () => 'SYNTHETIC_IMPERSONATION_TOKEN'
+                };
+
+                if (!activeUser.email) {
                     try {
-                        Object.defineProperty(user, 'email', { value: targetEmail, writable: true });
+                        Object.defineProperty(activeUser, 'email', { value: targetEmail, writable: true });
                     } catch (_eE) {
-                        try { user.email = targetEmail; } catch (_eE2) {}
+                        try { activeUser.email = targetEmail; } catch (_eE2) {}
                     }
                 }
-                return callback(user);
+                return callback(activeUser);
             };
+
+            // Immediately invoke callback with Synthetic Impersonation User so inline page scripts never return early
+            const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'client@digibiz.lk';
+            const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || 'CLIENT_BIZ';
+            const initialSyntheticUser = firebase.auth().currentUser || {
+                uid: targetBizId,
+                email: targetEmail,
+                displayName: localStorage.getItem('digibiz_impersonate_owner_name') || targetEmail,
+                isAnonymous: true,
+                getIdToken: async () => 'SYNTHETIC_IMPERSONATION_TOKEN'
+            };
+
+            setTimeout(() => {
+                try { callback(initialSyntheticUser); } catch (_eInitCb) {}
+            }, 0);
+
             return origOnAuthStateChanged.call(firebase.auth(), wrappedCallback, optError, optCompleted);
         };
 
