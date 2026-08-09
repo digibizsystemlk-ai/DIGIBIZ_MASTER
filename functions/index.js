@@ -1831,3 +1831,50 @@ exports.deleteUserAccountByEmail = onCall(
         };
     }
 );
+
+/**
+ * Self-healing Stale Auth Wiping Tool for Registration
+ * Safely removes orphaned Auth records when a user attempts registration if no business profile exists.
+ */
+exports.wipeStaleAuthOnRegister = onCall(
+    {
+        timeoutSeconds: 60,
+        memory: "256MiB",
+    },
+    async (request) => {
+        const data = request.data || {};
+        const targetEmail = String(data.targetEmail || "").trim().toLowerCase();
+        if (!targetEmail) {
+            throw new HttpsError("invalid-argument", "targetEmail is required.");
+        }
+
+        let targetUid = null;
+        let deletedAuth = false;
+
+        try {
+            const userRecord = await admin.auth().getUserByEmail(targetEmail);
+            targetUid = userRecord.uid;
+
+            const uDoc = await db.collection('users').doc(targetUid).get();
+            const bDoc = await db.collection('businesses').doc(targetUid).get();
+            const uSnap = await db.collection('users').where('email', '==', targetEmail).get();
+            const bSnap = await db.collection('businesses').where('ownerEmail', '==', targetEmail).get();
+
+            // If no active business profile exists, wipe stale auth user so user can register freshly
+            if (!bDoc.exists && bSnap.empty) {
+                await admin.auth().deleteUser(targetUid);
+                deletedAuth = true;
+                if (uDoc.exists) await db.collection('users').doc(targetUid).delete();
+                for (const d of uSnap.docs) await db.collection('users').doc(d.id).delete();
+            }
+        } catch (eAuth) {
+            console.warn('[WipeStale] warn:', eAuth.message);
+        }
+
+        return {
+            success: true,
+            targetEmail: targetEmail,
+            deletedAuth: deletedAuth
+        };
+    }
+);

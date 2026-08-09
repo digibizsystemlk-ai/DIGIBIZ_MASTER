@@ -438,8 +438,31 @@
 
                 const finalBusinessType = selectedType === 'other' ? 'distributor' : selectedType;
 
-                // 1. Create Auth User
-                const userCred = await auth.createUserWithEmailAndPassword(email, password);
+                // 1. Create Auth User with automatic stale auth self-healing fallback
+                let userCred;
+                try {
+                    userCred = await auth.createUserWithEmailAndPassword(email, password);
+                } catch (eAuth) {
+                    if (eAuth && eAuth.code === 'auth/email-already-in-use') {
+                        try {
+                            if (window.firebase && window.firebase.functions) {
+                                const wipeFn = window.firebase.functions().httpsCallable('wipeStaleAuthOnRegister');
+                                const wipeRes = await wipeFn({ targetEmail: email });
+                                if (wipeRes && wipeRes.data && wipeRes.data.deletedAuth) {
+                                    userCred = await auth.createUserWithEmailAndPassword(email, password);
+                                } else {
+                                    throw eAuth;
+                                }
+                            } else {
+                                throw eAuth;
+                            }
+                        } catch (eRetry) {
+                            throw eAuth;
+                        }
+                    } else {
+                        throw eAuth;
+                    }
+                }
                 const userId = userCred.user.uid;
                 const businessId = userId;
 
