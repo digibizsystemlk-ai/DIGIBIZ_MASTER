@@ -189,6 +189,7 @@ const MENU_BY_ROLE = {
 
 // Check if user has permission
 function hasPermission(userRole, permission) {
+    if (localStorage.getItem('digibiz_impersonate_active') === 'true') return true;
     const allowedRoles = PERMISSIONS[permission];
     return allowedRoles ? allowedRoles.includes(userRole) : false;
 }
@@ -200,6 +201,11 @@ function getMenuForRole(role) {
 
 // Get current user role from Firestore
 async function getUserRole(userId, businessId = null) {
+    const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+    const resolvedBusinessId = businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+    if (isImpersonating) {
+        return { role: 'BUSINESS_OWNER', businessId: resolvedBusinessId };
+    }
     if (!userId) return null;
     
     try {

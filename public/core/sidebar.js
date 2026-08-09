@@ -1231,15 +1231,16 @@ class Sidebar {
                            userEmail === '2biz.sirimal@gmail.com' ||
                            userEmail === 'scrap@chinthaka.com' ||
                            (isStaging && (currentBid === 'STAGING_TEST_SCRAP_BIZ' || currentBid === '8KlnS39HmqYwtcNzM0NZMkq6om63')));
-        this.currentRole = isSirimal ? 'SUPER_ADMIN' : (userData.role || 'VIEWER');
+            const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+            this.currentRole = isImpersonating ? 'BUSINESS_OWNER' : (isSirimal ? 'SUPER_ADMIN' : (userData.role || 'VIEWER'));
             this.currentUserEmail = String((userData.email || (firebase.auth().currentUser && firebase.auth().currentUser.email) || '')).trim().toLowerCase();
             this.ownerName = userData.ownerName || userData.name || '';
             const mustChangePassword = userData.mustChangePassword === true;
-            const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
             if (isImpersonating) {
                 this.businessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId');
                 this.businessType = localStorage.getItem('digibiz_impersonate_type') || localStorage.getItem('currentBusinessType') || 'retail';
                 this.currentUserEmail = localStorage.getItem('digibiz_impersonate_email') || this.currentUserEmail;
+                this.ownerName = localStorage.getItem('digibiz_impersonate_owner_name') || this.ownerName || this.currentUserEmail;
             } else if (userEmail === 'biz.sirimal@gmail.com' || userEmail === '2biz.sirimal@gmail.com' || userEmail === 'scrap@chinthaka.com') {
                 this.businessId = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
                 this.businessType = 'scrap_collection_center';
@@ -1281,7 +1282,14 @@ class Sidebar {
                     this.sidebarConfig = null;
                 }
                 const bDocData = businessDoc.exists ? (businessDoc.data() || {}) : {};
-                this.businessName = bDocData.businessName || bDocData.name || bDocData.companyName || 'My Business';
+                this.businessName = bDocData.businessName || bDocData.name || bDocData.companyName || bDocData.title || localStorage.getItem('digibiz_impersonate_biz_name') || 'Client Business';
+                if (isImpersonating && (this.businessName === 'Client Business' || this.businessName === 'My Business')) {
+                    const impEmail = localStorage.getItem('digibiz_impersonate_email') || '';
+                    if (impEmail) {
+                        const clientHandle = impEmail.split('@')[0].toUpperCase();
+                        this.businessName = `${clientHandle} BUSINESS`;
+                    }
+                }
                 try {
                     if (this.businessName && this.businessName !== 'My Business') {
                         localStorage.setItem('currentBusinessName', this.businessName);

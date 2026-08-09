@@ -850,10 +850,10 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('currentBusinessType', resolvedBizType);
             sessionStorage.setItem('currentBusinessType', resolvedBizType);
         }
-        if (resolvedBizName) {
-            localStorage.setItem('currentBusinessName', resolvedBizName);
-            sessionStorage.setItem('currentBusinessName', resolvedBizName);
-        }
+        localStorage.setItem('currentUserRole', 'BUSINESS_OWNER');
+        sessionStorage.setItem('currentUserRole', 'BUSINESS_OWNER');
+        localStorage.setItem('currentBusinessNavRole', 'BUSINESS_OWNER');
+        sessionStorage.setItem('currentBusinessNavRole', 'BUSINESS_OWNER');
 
         try {
             if (window.db && window.db.collection) {
