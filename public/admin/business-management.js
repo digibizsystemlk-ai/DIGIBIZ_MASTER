@@ -799,25 +799,31 @@ document.addEventListener('DOMContentLoaded', () => {
         let resolvedOwnerName = targetEmail;
 
         try {
-            if (window.db) {
-                // If bizId is missing, query by email
-                if (!resolvedBizId && targetEmail) {
-                    const uSnap = await window.db.collection('users').where('email', '==', targetEmail).get();
-                    if (!uSnap.empty) {
-                        const uData = uSnap.docs[0].data();
-                        resolvedBizId = uData.businessId || uSnap.docs[0].id;
-                        resolvedBizType = resolvedBizType || String(uData.businessType || '').toLowerCase();
-                        resolvedOwnerName = uData.ownerName || uData.name || targetEmail;
-                    }
+            if (window.db && targetEmail) {
+                const uSnap = await window.db.collection('users').where('email', '==', targetEmail).get().catch(() => null);
+                if (uSnap && !uSnap.empty) {
+                    const uData = uSnap.docs[0].data() || {};
+                    resolvedBizId = uData.businessId || uData.assignedBusiness || uData.companyId || resolvedBizId || uSnap.docs[0].id;
+                    if (uData.businessType) resolvedBizType = String(uData.businessType).toLowerCase();
+                    if (uData.name || uData.ownerName) resolvedOwnerName = uData.ownerName || uData.name;
                 }
 
-                if (resolvedBizId) {
-                    const bDoc = await window.db.collection('businesses').doc(resolvedBizId).get();
-                    if (bDoc.exists) {
-                        const bData = bDoc.data() || {};
-                        resolvedBizType = String(bData.businessType || bData.type || resolvedBizType || 'retail').toLowerCase();
-                        resolvedBizName = bData.businessName || bData.name || bData.companyName || 'Client Business';
-                        if (bData.ownerName) resolvedOwnerName = bData.ownerName;
+                const bSnap = await window.db.collection('businesses').where('ownerEmail', '==', targetEmail).get().catch(() => null);
+                if (bSnap && !bSnap.empty) {
+                    const bData = bSnap.docs[0].data() || {};
+                    resolvedBizId = bSnap.docs[0].id || resolvedBizId;
+                    if (bData.businessType || bData.type) resolvedBizType = String(bData.businessType || bData.type).toLowerCase();
+                    resolvedBizName = bData.businessName || bData.name || bData.companyName || resolvedBizName;
+                    if (bData.ownerName) resolvedOwnerName = bData.ownerName;
+                }
+
+                if (resolvedBizId && (!resolvedBizName || resolvedBizName === 'Client Business')) {
+                    const bDoc = await window.db.collection('businesses').doc(resolvedBizId).get().catch(() => null);
+                    if (bDoc && bDoc.exists) {
+                        const bd = bDoc.data() || {};
+                        resolvedBizName = bd.businessName || bd.name || bd.companyName || resolvedBizName;
+                        if (bd.ownerName) resolvedOwnerName = bd.ownerName;
+                        if (bd.businessType) resolvedBizType = String(bd.businessType).toLowerCase();
                     }
                 }
             }
