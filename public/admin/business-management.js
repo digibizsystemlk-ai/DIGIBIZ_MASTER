@@ -487,6 +487,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 changeBusinessTypeSelect.value = currentType;
             }
 
+            // Assign active state for 1-Click Super Admin Impersonation
+            currentSelectedUserData = userData;
+            currentSelectedBusinessData = businessData;
+            currentSelectedEmail = userData.email || businessData.ownerEmail || businessData.email || query;
+            currentSelectedBizId = businessId;
+            currentSelectedBizType = currentType;
+
             const settingsRef = window.db.collection('settings').doc(businessId);
             const settingsDoc = await settingsRef.get();
             const settingsData = settingsDoc.exists ? settingsDoc.data() : {};
@@ -773,6 +780,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    let currentSelectedUserData = null;
+    let currentSelectedBusinessData = null;
+    let currentSelectedEmail = '';
+    let currentSelectedBizId = '';
+    let currentSelectedBizType = '';
+
     // Super Admin Direct Impersonation Login Handler
     async function impersonateClientAccount(targetEmail, targetBizId, targetBizType) {
         if (!targetEmail) {
@@ -784,8 +797,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         localStorage.setItem('digibiz_impersonate_active', 'true');
         localStorage.setItem('digibiz_impersonate_email', targetEmail);
-        if (targetBizId) localStorage.setItem('digibiz_impersonate_biz_id', targetBizId);
-        if (targetBizType) localStorage.setItem('digibiz_impersonate_type', targetBizType);
+        localStorage.setItem('digibiz_impersonate_biz_id', targetBizId || '');
+        localStorage.setItem('digibiz_impersonate_type', targetBizType || '');
+
+        if (targetBizId) {
+            localStorage.setItem('businessId', targetBizId);
+            localStorage.setItem('activeBusinessId', targetBizId);
+        }
+        if (targetEmail) {
+            localStorage.setItem('userEmail', targetEmail);
+            localStorage.setItem('activeUserEmail', targetEmail);
+        }
 
         try {
             if (window.db && window.db.collection) {
@@ -826,13 +848,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const impersonateClientBtn = document.getElementById('impersonate-client-btn');
     if (impersonateClientBtn) {
         impersonateClientBtn.onclick = () => {
-            if (!selectedBusinessData && !selectedUserData) {
-                alert('⚠️ Please select a business account first.');
+            const targetEmail = currentSelectedEmail || (currentSelectedUserData && currentSelectedUserData.email) || (currentSelectedBusinessData && (currentSelectedBusinessData.ownerEmail || currentSelectedBusinessData.email)) || (emailSearch && emailSearch.value.trim());
+            const targetBizId = currentSelectedBizId || (currentSelectedBusinessData && currentSelectedBusinessData.id) || businessId;
+            const targetBizType = currentSelectedBizType || (currentSelectedBusinessData && currentSelectedBusinessData.businessType) || (currentSelectedUserData && currentSelectedUserData.businessType);
+
+            if (!targetEmail) {
+                alert('⚠️ Please search and select a business account first.');
                 return;
             }
-            const targetEmail = (selectedBusinessData && (selectedBusinessData.ownerEmail || selectedBusinessData.email)) || (selectedUserData && selectedUserData.email);
-            const targetBizId = (selectedBusinessData && selectedBusinessData.id) || (selectedUserData && selectedUserData.businessId);
-            const targetBizType = (selectedBusinessData && selectedBusinessData.businessType) || (selectedUserData && selectedUserData.businessType);
             impersonateClientAccount(targetEmail, targetBizId, targetBizType);
         };
     }
