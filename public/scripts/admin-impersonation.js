@@ -17,16 +17,67 @@
         if (paramBizId) {
             localStorage.setItem('digibiz_impersonate_biz_id', paramBizId);
             localStorage.setItem('businessId', paramBizId);
+            localStorage.setItem('currentBusinessId', paramBizId);
+            sessionStorage.setItem('currentBusinessId', paramBizId);
             localStorage.setItem('activeBusinessId', paramBizId);
         }
         if (paramBizType) {
             localStorage.setItem('digibiz_impersonate_type', paramBizType);
+            localStorage.setItem('currentBusinessType', paramBizType);
+            sessionStorage.setItem('currentBusinessType', paramBizType);
         }
     }
 
     if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
         const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'Client Business';
-        const targetType = localStorage.getItem('digibiz_impersonate_type') || 'PWA App';
+        const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || 'CLIENT_BIZ';
+        const targetType = localStorage.getItem('digibiz_impersonate_type') || 'retail';
+
+        // Ensure business context keys are set for current business
+        localStorage.setItem('currentBusinessId', targetBizId);
+        sessionStorage.setItem('currentBusinessId', targetBizId);
+        localStorage.setItem('businessId', targetBizId);
+        sessionStorage.setItem('businessId', targetBizId);
+
+        localStorage.setItem('currentBusinessType', targetType);
+        sessionStorage.setItem('currentBusinessType', targetType);
+
+        // Impersonated Firebase Auth User Mock to prevent auth guards from redirecting unauthenticated sessions in Incognito
+        const impersonatedUserMock = {
+            uid: targetBizId,
+            email: targetEmail,
+            displayName: 'Super Admin Impersonation',
+            emailVerified: true,
+            isAnonymous: false,
+            getIdToken: async () => 'IMPERSONATED_SUPER_ADMIN_TOKEN',
+            getIdTokenResult: async () => ({ claims: { role: 'BUSINESS_OWNER', isSuperAdmin: true } })
+        };
+
+        // Intercept Firebase Auth onAuthStateChanged
+        const patchAuth = () => {
+            if (window.firebase && window.firebase.auth) {
+                try {
+                    const authInstance = window.firebase.auth();
+                    if (authInstance && !authInstance.__impersonate_patched) {
+                        authInstance.__impersonate_patched = true;
+                        const origOnAuth = authInstance.onAuthStateChanged.bind(authInstance);
+                        authInstance.onAuthStateChanged = function (cb, ...rest) {
+                            try {
+                                cb(impersonatedUserMock);
+                            } catch (eCb) {
+                                console.warn('[Impersonation] Auth callback warning:', eCb);
+                            }
+                            return origOnAuth(cb, ...rest);
+                        };
+                    }
+                } catch (eAuth) {
+                    console.warn('[Impersonation] Auth patch warn:', eAuth);
+                }
+            }
+        };
+
+        patchAuth();
+        window.addEventListener('DOMContentLoaded', patchAuth);
 
         const setupBanner = () => {
             const existingBanner = document.getElementById('super-admin-impersonation-banner');
@@ -55,7 +106,7 @@
 
             banner.innerHTML = `
                 <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                    <span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:800;">👑 SUPER ADMIN IMPERSONATION</span>
+                    <span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:800;">👑 SUPER ADMIN IMPERSONATION MODE</span>
                     <span>Viewing Live Client: <strong>${targetEmail}</strong> (${targetType})</span>
                 </div>
                 <div style="display:flex; gap:8px; align-items:center;">
