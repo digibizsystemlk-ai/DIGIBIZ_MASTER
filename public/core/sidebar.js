@@ -465,75 +465,86 @@ class Sidebar {
     async init() {
         // Load subscription manager in background so sidebar can paint immediately.
         const subscriptionReady = ensureSubscriptionManagerLoaded();
-        firebase.auth().onAuthStateChanged(async (user) => {
-            const cachedTypeBeforeLoad = String(localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase();
-            if (user && SHOULD_RESERVE_SIDEBAR_SPACE) {
-                this.primeFromCache(user.uid);
-                this.render();
-                this.attachEvents();
-                // ULTIMATE CACHE BUSTER: Clear all permission caches on every load/refresh for staff sync
-                try {
-                    const bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
-                    if (bid) {
-                        sessionStorage.removeItem(`digibiz_perms_v2_${bid}`);
-                        sessionStorage.removeItem(`digibiz_perm_v_${bid}`);
-                        localStorage.removeItem(`digibiz_sidebar_cache_${user.uid}`);
-                    }
-                } catch (e) { }
-
-                // Paint sidebar immediately to prevent any load delay
-                this.render();
-                this.attachEvents();
-
-                // Load database profile details asynchronously in the background
-                (async () => {
-                    try {
-                        await this.loadUserData(user.uid);
-                        await this.refreshBusinessNameFromProfile();
+        const setupAuthListener = () => {
+            if (typeof firebase === 'undefined' || !firebase.auth) {
+                setTimeout(setupAuthListener, 100);
+                return;
+            }
+            try {
+                firebase.auth().onAuthStateChanged(async (user) => {
+                    const cachedTypeBeforeLoad = String(localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase();
+                    const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+                    if ((user || isImpersonating) && SHOULD_RESERVE_SIDEBAR_SPACE) {
+                        this.primeFromCache(user ? user.uid : null);
                         this.render();
                         this.attachEvents();
-                    } catch (e) {
-                        console.warn('[Sidebar] Async background load failed:', e);
+                        // ULTIMATE CACHE BUSTER: Clear all permission caches on every load/refresh for staff sync
+                        try {
+                            const bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                            if (bid) {
+                                sessionStorage.removeItem(`digibiz_perms_v2_${bid}`);
+                                sessionStorage.removeItem(`digibiz_perm_v_${bid}`);
+                                if (user) localStorage.removeItem(`digibiz_sidebar_cache_${user.uid}`);
+                            }
+                        } catch (e) { }
+
+                        // Paint sidebar immediately to prevent any load delay
+                        this.render();
+                        this.attachEvents();
+
+                        // Load database profile details asynchronously in the background
+                        (async () => {
+                            try {
+                                if (user) await this.loadUserData(user.uid);
+                                await this.refreshBusinessNameFromProfile();
+                                this.render();
+                                this.attachEvents();
+                            } catch (e) {
+                                console.warn('[Sidebar] Async background load failed:', e);
+                            }
+                        })();
+                        if (user) {
+                            try {
+                                const token = await user.getIdTokenResult(true);
+                                this.superAdmin = !!(token && token.claims && (token.claims.admin === true || token.claims.superAdmin === true));
+                            } catch (e) {
+                                this.superAdmin = false;
+                            }
+                        }
+                        if (!this.superAdmin && String(this.currentRole || '').toUpperCase() === 'SUPER_ADMIN') {
+                            this.superAdmin = true;
+                        }
+                        if (this.businessType === 'manufacturer') {
+                            const reloadKey = 'digibiz_sidebar_mfg_reload_once';
+                            if (cachedTypeBeforeLoad && cachedTypeBeforeLoad !== 'manufacturer' && sessionStorage.getItem(reloadKey) !== '1') {
+                                sessionStorage.setItem(reloadKey, '1');
+                                window.location.reload();
+                                return;
+                            }
+                            sessionStorage.removeItem(reloadKey);
+                        }
+                        if (this.shouldForceManufacturerMode() && this.businessType !== 'manufacturer') {
+                            this.businessType = 'manufacturer';
+                            localStorage.setItem('currentBusinessType', 'manufacturer');
+                            sessionStorage.setItem('currentBusinessType', 'manufacturer');
+                        }
+
+                        // Non-critical tasks continue after first paint.
+                        Promise.resolve().then(() => this.maybeShowUpdateAnnouncement(user)).catch(() => { });
+                        Promise.resolve(subscriptionReady).then(async () => {
+                            this.subscriptionState = window.subscriptionManager
+                                ? await window.subscriptionManager.initializeForUser(user, this.currentRole, this.businessId || (user ? user.uid : ''))
+                                : null;
+                            this.updateUserInfo();
+                            if (user) this.checkOnboardingStatus(user);
+                        }).catch(() => { });
                     }
-                })();
-                try {
-                    const token = await user.getIdTokenResult(true);
-                    this.superAdmin = !!(token && token.claims && (token.claims.admin === true || token.claims.superAdmin === true));
-                } catch (e) {
-                    this.superAdmin = false;
-                }
-                if (!this.superAdmin && String(this.currentRole || '').toUpperCase() === 'SUPER_ADMIN') {
-                    this.superAdmin = true;
-                }
-                if (this.businessType === 'manufacturer') {
-                    const reloadKey = 'digibiz_sidebar_mfg_reload_once';
-                    if (cachedTypeBeforeLoad && cachedTypeBeforeLoad !== 'manufacturer' && sessionStorage.getItem(reloadKey) !== '1') {
-                        sessionStorage.setItem(reloadKey, '1');
-                        window.location.reload();
-                        return;
-                    }
-                    sessionStorage.removeItem(reloadKey);
-                }
-                if (this.shouldForceManufacturerMode() && this.businessType !== 'manufacturer') {
-                    this.businessType = 'manufacturer';
-                    localStorage.setItem('currentBusinessType', 'manufacturer');
-                    sessionStorage.setItem('currentBusinessType', 'manufacturer');
-                }
-                // First paint sidebar immediately (without waiting on optional fetches).
-                this.render();
-                this.attachEvents();
-                // Non-critical tasks continue after first paint.
-                Promise.resolve().then(() => this.maybeShowUpdateAnnouncement(user)).catch(() => { });
-                // Promise.resolve().then(() => this.showNewFeatureAnnouncement(user)).catch(() => { });
-                Promise.resolve(subscriptionReady).then(async () => {
-                    this.subscriptionState = window.subscriptionManager
-                        ? await window.subscriptionManager.initializeForUser(user, this.currentRole, this.businessId || user.uid)
-                        : null;
-                    this.updateUserInfo();
-                    this.checkOnboardingStatus(user);
-                }).catch(() => { });
+                });
+            } catch (eAuth) {
+                console.warn('[Sidebar] Auth listener setup failed:', eAuth);
             }
-        });
+        };
+        setupAuthListener();
     }
 
     injectOnboardingStyles() {
