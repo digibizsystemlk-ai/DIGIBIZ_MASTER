@@ -1235,7 +1235,12 @@ class Sidebar {
             this.currentUserEmail = String((userData.email || (firebase.auth().currentUser && firebase.auth().currentUser.email) || '')).trim().toLowerCase();
             this.ownerName = userData.ownerName || userData.name || '';
             const mustChangePassword = userData.mustChangePassword === true;
-            if (userEmail === 'biz.sirimal@gmail.com' || userEmail === '2biz.sirimal@gmail.com' || userEmail === 'scrap@chinthaka.com') {
+            const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+            if (isImpersonating) {
+                this.businessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId');
+                this.businessType = localStorage.getItem('digibiz_impersonate_type') || localStorage.getItem('currentBusinessType') || 'retail';
+                this.currentUserEmail = localStorage.getItem('digibiz_impersonate_email') || this.currentUserEmail;
+            } else if (userEmail === 'biz.sirimal@gmail.com' || userEmail === '2biz.sirimal@gmail.com' || userEmail === 'scrap@chinthaka.com') {
                 this.businessId = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
                 this.businessType = 'scrap_collection_center';
                 localStorage.setItem('currentBusinessId', 'oDhSDYHQ2dV1DP33koysmZAqaY13');

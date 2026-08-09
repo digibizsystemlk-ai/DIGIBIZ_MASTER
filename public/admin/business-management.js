@@ -793,20 +793,66 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (!confirm(`🔑 Log in as client business "${targetEmail}"?\n\nYou will enter live PWA app as this business to inspect layout and troubleshoot reported issues directly.`)) return;
+        let resolvedBizId = targetBizId || '';
+        let resolvedBizType = String(targetBizType || '').toLowerCase();
+        let resolvedBizName = 'Client Business';
+        let resolvedOwnerName = targetEmail;
+
+        try {
+            if (window.db) {
+                // If bizId is missing, query by email
+                if (!resolvedBizId && targetEmail) {
+                    const uSnap = await window.db.collection('users').where('email', '==', targetEmail).get();
+                    if (!uSnap.empty) {
+                        const uData = uSnap.docs[0].data();
+                        resolvedBizId = uData.businessId || uSnap.docs[0].id;
+                        resolvedBizType = resolvedBizType || String(uData.businessType || '').toLowerCase();
+                        resolvedOwnerName = uData.ownerName || uData.name || targetEmail;
+                    }
+                }
+
+                if (resolvedBizId) {
+                    const bDoc = await window.db.collection('businesses').doc(resolvedBizId).get();
+                    if (bDoc.exists) {
+                        const bData = bDoc.data() || {};
+                        resolvedBizType = String(bData.businessType || bData.type || resolvedBizType || 'retail').toLowerCase();
+                        resolvedBizName = bData.businessName || bData.name || bData.companyName || 'Client Business';
+                        if (bData.ownerName) resolvedOwnerName = bData.ownerName;
+                    }
+                }
+            }
+        } catch (eFetch) {
+            console.warn('[Impersonation] Profile fetch warn:', eFetch);
+        }
+
+        if (!resolvedBizType) resolvedBizType = 'retail';
+
+        if (!confirm(`🔑 Log in as client business "${resolvedBizName}" (${targetEmail})?\n\nYou will enter their live PWA app with their business profile, inventory, and transactions to inspect layout and troubleshoot reported issues directly.`)) return;
 
         localStorage.setItem('digibiz_impersonate_active', 'true');
         localStorage.setItem('digibiz_impersonate_email', targetEmail);
-        localStorage.setItem('digibiz_impersonate_biz_id', targetBizId || '');
-        localStorage.setItem('digibiz_impersonate_type', targetBizType || '');
+        localStorage.setItem('digibiz_impersonate_biz_id', resolvedBizId);
+        localStorage.setItem('digibiz_impersonate_type', resolvedBizType);
+        localStorage.setItem('digibiz_impersonate_biz_name', resolvedBizName);
+        localStorage.setItem('digibiz_impersonate_owner_name', resolvedOwnerName);
 
-        if (targetBizId) {
-            localStorage.setItem('businessId', targetBizId);
-            localStorage.setItem('activeBusinessId', targetBizId);
+        if (resolvedBizId) {
+            localStorage.setItem('businessId', resolvedBizId);
+            localStorage.setItem('currentBusinessId', resolvedBizId);
+            sessionStorage.setItem('currentBusinessId', resolvedBizId);
+            localStorage.setItem('activeBusinessId', resolvedBizId);
         }
         if (targetEmail) {
             localStorage.setItem('userEmail', targetEmail);
             localStorage.setItem('activeUserEmail', targetEmail);
+        }
+        if (resolvedBizType) {
+            localStorage.setItem('currentBusinessType', resolvedBizType);
+            sessionStorage.setItem('currentBusinessType', resolvedBizType);
+        }
+        if (resolvedBizName) {
+            localStorage.setItem('currentBusinessName', resolvedBizName);
+            sessionStorage.setItem('currentBusinessName', resolvedBizName);
         }
 
         try {
@@ -815,36 +861,37 @@ document.addEventListener('DOMContentLoaded', () => {
                     action: 'SUPER_ADMIN_IMPERSONATION_LOGIN',
                     performedByEmail: 'biz.sirimal@gmail.com',
                     targetEmail: targetEmail,
-                    targetBizId: targetBizId || '',
-                    targetBizType: targetBizType || '',
+                    targetBizId: resolvedBizId,
+                    targetBizType: resolvedBizType,
                     timestamp: new Date().toISOString()
                 }).catch(() => {});
             }
         } catch (_eAudit) {}
 
-        const type = String(targetBizType || '').toLowerCase();
-        let destUrl = '/index.html';
-        if (type.includes('attendance') || type.includes('payroll')) {
+        let destUrl = '/modules/retail/workbench.html';
+        if (resolvedBizType.includes('scrap')) {
+            destUrl = '/modules/admin/scrap-master.html';
+        } else if (resolvedBizType.includes('attendance') || resolvedBizType.includes('payroll')) {
             destUrl = '/modules/attendance_payroll/employees.html';
-        } else if (type.includes('tire')) {
+        } else if (resolvedBizType.includes('tire')) {
             destUrl = '/modules/tire_centre/workbench.html';
-        } else if (type.includes('distributor')) {
+        } else if (resolvedBizType.includes('distributor')) {
             destUrl = '/modules/distributor/orders.html';
-        } else if (type.includes('pharmacy')) {
+        } else if (resolvedBizType.includes('pharmacy')) {
             destUrl = '/modules/pharmacy/inventory.html';
-        } else if (type.includes('hardware')) {
+        } else if (resolvedBizType.includes('hardware')) {
             destUrl = '/modules/hardware/inventory.html';
-        } else if (type.includes('auto') || type.includes('garage')) {
+        } else if (resolvedBizType.includes('auto') || resolvedBizType.includes('garage')) {
             destUrl = '/modules/auto_care/appointments.html';
-        } else if (type.includes('retail') || type.includes('pos')) {
+        } else if (resolvedBizType.includes('retail') || resolvedBizType.includes('pos')) {
             destUrl = '/modules/retail/workbench.html';
         }
 
         const queryParams = new URLSearchParams({
             impersonate: 'true',
             email: targetEmail,
-            bizId: targetBizId || '',
-            bizType: targetBizType || '',
+            bizId: resolvedBizId,
+            bizType: resolvedBizType,
             ts: Date.now()
         });
 
