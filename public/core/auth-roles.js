@@ -252,8 +252,16 @@ async function getUserRole(userId, businessId = null) {
 
             // Check if Owner of this specific business
             const bizDoc = await db.collection('businesses').doc(resolvedBusinessId).get();
-            if (bizDoc.exists && bizDoc.data().ownerId === userId) {
-                return { role: 'BUSINESS_OWNER', businessId: resolvedBusinessId };
+            if (bizDoc.exists) {
+                const bData = bizDoc.data() || {};
+                const authUser = firebase.auth().currentUser;
+                const authEmail = String(authUser && authUser.email || '').toLowerCase();
+                const isOwner = (bData.ownerId === userId) ||
+                                (bData.ownerEmail && String(bData.ownerEmail).toLowerCase() === authEmail) ||
+                                (bizDoc.id === userId);
+                if (isOwner) {
+                    return { role: 'BUSINESS_OWNER', businessId: resolvedBusinessId };
+                }
             }
         }
 
@@ -266,7 +274,11 @@ async function getUserRole(userId, businessId = null) {
             return { role: 'SUPER_ADMIN', businessId: resolvedBusinessId || null };
         }
         
-        return { role: 'VIEWER', businessId: resolvedBusinessId || null };
+        if (globalRole === 'BUSINESS_OWNER' || globalRole === 'DISTRIBUTOR_OWNER' || globalRole === 'OWNER') {
+            return { role: 'BUSINESS_OWNER', businessId: resolvedBusinessId || null };
+        }
+
+        return { role: globalRole || 'VIEWER', businessId: resolvedBusinessId || null };
     } catch (error) {
         console.error('Error getting user role:', error);
         return { role: 'VIEWER', businessId: null };

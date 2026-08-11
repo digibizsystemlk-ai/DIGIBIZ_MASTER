@@ -1279,8 +1279,21 @@ class Sidebar {
                 const businessDoc = await db.collection('businesses').doc(String(this.businessId).trim()).get(opt);
                 if (businessDoc.exists) {
                     const bData = businessDoc.data() || {};
+                    const isOwnerOfBiz = (bData.ownerId === userId) ||
+                                         (bData.ownerEmail && String(bData.ownerEmail).toLowerCase() === userEmail) ||
+                                         (String(this.businessId).trim() === userId);
+                    if (isOwnerOfBiz && !isSirimal && !isImpersonating) {
+                        this.currentRole = 'BUSINESS_OWNER';
+                        this.businessNavRole = 'BUSINESS_OWNER';
+                        try {
+                            localStorage.setItem('currentUserRole', 'BUSINESS_OWNER');
+                            sessionStorage.setItem('currentUserRole', 'BUSINESS_OWNER');
+                            localStorage.setItem('currentBusinessNavRole', 'BUSINESS_OWNER');
+                            sessionStorage.setItem('currentBusinessNavRole', 'BUSINESS_OWNER');
+                        } catch (e) {}
+                    }
                     this.businessType = this.normalizeBusinessType(bData.businessType || bData.type || userData.businessType || userData.type || 'retail');
-                    console.log(`[Sidebar] Detected BusinessType: ${this.businessType} for BID: ${this.businessId}`);
+                    console.log(`[Sidebar] Detected BusinessType: ${this.businessType} for BID: ${this.businessId}, Role: ${this.currentRole}`);
                     this.sidebarConfig = bData.sidebarConfig || null;
 
                     // RE-POPULATE SESSION CACHE WITH LATEST RBAC CONFIG FOR AUTH-ROLES

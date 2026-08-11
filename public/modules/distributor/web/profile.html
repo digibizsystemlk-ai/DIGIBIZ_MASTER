@@ -557,17 +557,29 @@
             const userDoc = await db.collection('users').doc(currentUserId).get();
             const userData = userDoc.exists ? (userDoc.data() || {}) : {};
             const hasSuperAdminAccess = await resolveSuperAdminAccess(user, userData);
-            currentUserRole = hasSuperAdminAccess ? 'SUPER_ADMIN' : (userData.role || 'VIEWER');
+            
+            if (userDoc.exists && userDoc.data().businessId) {
+                currentCompanyId = userDoc.data().businessId;
+            } else {
+                currentCompanyId = user.uid;
+            }
+
+            const compSnap = await db.collection('businesses').doc(currentCompanyId).get();
+            const bData = compSnap.exists ? (compSnap.data() || {}) : {};
+            const userEmail = String(user.email || '').toLowerCase();
+            const isOwner = (bData.ownerId === user.uid) ||
+                            (bData.ownerEmail && String(bData.ownerEmail).toLowerCase() === userEmail) ||
+                            (currentCompanyId === user.uid);
+
+            currentUserRole = hasSuperAdminAccess ? 'SUPER_ADMIN' : (isOwner ? 'BUSINESS_OWNER' : (userData.role || 'VIEWER'));
+            
             syncBusinessTypeOptionVisibility();
             if (String(currentUserRole || '').toUpperCase() === 'REP') {
                 window.location.href = '../distributor/mobile/order.html';
                 return;
             }
             
-            if (userDoc.exists && userDoc.data().businessId) {
-                currentCompanyId = userDoc.data().businessId;
-            } else {
-                currentCompanyId = user.uid;
+            if (!userDoc.exists || !userDoc.data().businessId) {
                 const bizDoc = await db.collection('businesses').doc(currentCompanyId).get();
                 if (!bizDoc.exists) {
                     await db.collection('businesses').doc(currentCompanyId).set({
