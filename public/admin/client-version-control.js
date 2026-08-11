@@ -8,8 +8,16 @@
     document.addEventListener('DOMContentLoaded', () => {
         initAuthAndPermissions();
         bindEventListeners();
+        setDefaultFreezeDate();
         loadAllVersionConfigs();
     });
+
+    function setDefaultFreezeDate() {
+        const freezeDateEl = document.getElementById('freezeDateInput');
+        if (freezeDateEl && !freezeDateEl.value) {
+            freezeDateEl.value = new Date().toISOString().split('T')[0];
+        }
+    }
 
     function initAuthAndPermissions() {
         firebase.auth().onAuthStateChanged((user) => {
@@ -96,6 +104,7 @@
         }
 
         const versionTag = document.getElementById('versionTagSelect').value;
+        const freezeDate = document.getElementById('freezeDateInput').value || new Date().toISOString().split('T')[0];
         const lockStatus = document.getElementById('lockStatusSelect').value;
         const notes = String(document.getElementById('isolationNotesInput').value || '').trim();
 
@@ -109,6 +118,7 @@
         const configPayload = {
             email: email,
             versionTag: versionTag,
+            freezeDate: freezeDate,
             lockStatus: lockStatus,
             isLocked: lockStatus === 'LOCKED',
             flags: flags,
@@ -130,10 +140,10 @@
             // 2. Also mirror lock flag on matching users & businesses docs for instant client-side lookup
             try {
                 const uSnap = await window.db.collection('users').where('email', '==', email).get();
-                uSnap.forEach(d => d.ref.set({ versionLock: lockStatus === 'LOCKED', lockedVersionTag: versionTag }, { merge: true }));
+                uSnap.forEach(d => d.ref.set({ versionLock: lockStatus === 'LOCKED', lockedVersionTag: versionTag, freezeDate: freezeDate }, { merge: true }));
 
                 const bSnap = await window.db.collection('businesses').where('ownerEmail', '==', email).get();
-                bSnap.forEach(d => d.ref.set({ versionLock: lockStatus === 'LOCKED', lockedVersionTag: versionTag }, { merge: true }));
+                bSnap.forEach(d => d.ref.set({ versionLock: lockStatus === 'LOCKED', lockedVersionTag: versionTag, freezeDate: freezeDate }, { merge: true }));
             } catch (eMirror) {
                 console.warn('Mirror update warn:', eMirror);
             }
@@ -195,6 +205,7 @@
                     id: doc.id,
                     email: d.email || doc.id.replace(/_/g, '.'),
                     versionTag: d.versionTag || 'v2000_STABLE',
+                    freezeDate: d.freezeDate || 'N/A',
                     lockStatus: d.lockStatus || (d.isLocked ? 'LOCKED' : 'UNLOCKED'),
                     flags: d.flags || {},
                     notes: d.notes || '',
@@ -212,7 +223,7 @@
 
     function updateMetricsSummary(configs) {
         const lockedList = configs.filter(c => c.lockStatus === 'LOCKED' || c.isLocked);
-        const stableList = lockedList.filter(c => c.versionTag.includes('STABLE'));
+        const stableList = lockedList.filter(c => c.versionTag.includes('STABLE') || c.versionTag.includes('FREEZE'));
         const devList = configs.filter(c => c.versionTag === 'LATEST_DEV' || c.lockStatus === 'UNLOCKED');
 
         let overridesCount = 0;
@@ -238,18 +249,19 @@
 
         tbody.innerHTML = configs.map(item => {
             const isLocked = item.lockStatus === 'LOCKED' || item.isLocked;
-            const badgeClass = isLocked ? (item.versionTag.includes('STABLE') ? 'badge-locked' : 'badge-custom') : 'badge-dev';
+            const badgeClass = isLocked ? (item.versionTag.includes('STABLE') || item.versionTag.includes('FREEZE') ? 'badge-locked' : 'badge-custom') : 'badge-dev';
             const flagsArr = [];
             if (item.flags.suppressAutoUpdates) flagsArr.push('🔒 Freeze UI');
             if (item.flags.suppressBetaFeatures) flagsArr.push('🛡️ No Beta');
             if (item.flags.lockBusinessType) flagsArr.push('💾 Schema Lock');
             if (item.flags.bypassPwaPrompt) flagsArr.push('🚫 No PWA Prompt');
             const flagsText = flagsArr.length > 0 ? flagsArr.join(', ') : 'Default';
+            const displayTag = `${item.versionTag} ${item.freezeDate && item.freezeDate !== 'N/A' ? `(📅 ${item.freezeDate})` : ''}`;
 
             return `
                 <tr>
                     <td><strong>${escapeHtml(item.email)}</strong></td>
-                    <td><span class="badge-version ${badgeClass}">${escapeHtml(item.versionTag)}</span></td>
+                    <td><span class="badge-version ${badgeClass}">${escapeHtml(displayTag)}</span></td>
                     <td><span style="font-weight:700; color:${isLocked ? '#dc2626' : '#059669'};">${isLocked ? '🔒 LOCKED' : '🔓 UNLOCKED'}</span></td>
                     <td><span style="font-size:12px; color:#475569;">${flagsText}</span></td>
                     <td><span style="font-size:12px; color:#64748b;">${escapeHtml(item.notes || '-')}</span></td>
@@ -284,7 +296,8 @@
 
     function populateFormWithConfig(config) {
         document.getElementById('targetEmailInput').value = config.email || '';
-        document.getElementById('versionTagSelect').value = config.versionTag || 'v2000_STABLE';
+        document.getElementById('versionTagSelect').value = config.versionTag || 'STABLE_FREEZE_2026_08_11';
+        document.getElementById('freezeDateInput').value = config.freezeDate && config.freezeDate !== 'N/A' ? config.freezeDate : new Date().toISOString().split('T')[0];
         document.getElementById('lockStatusSelect').value = config.lockStatus || (config.isLocked ? 'LOCKED' : 'UNLOCKED');
         document.getElementById('isolationNotesInput').value = config.notes || '';
 
@@ -301,7 +314,8 @@
 
     function resetFormFieldsExceptEmail(email) {
         document.getElementById('targetEmailInput').value = email || '';
-        document.getElementById('versionTagSelect').value = 'v2000_STABLE';
+        document.getElementById('versionTagSelect').value = 'STABLE_FREEZE_2026_08_11';
+        document.getElementById('freezeDateInput').value = new Date().toISOString().split('T')[0];
         document.getElementById('lockStatusSelect').value = 'LOCKED';
         document.getElementById('isolationNotesInput').value = '';
         document.getElementById('flagSuppressAutoUpdates').checked = true;
