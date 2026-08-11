@@ -27,11 +27,11 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
-    <script src="../../core/firebase-init.js?v=100"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
     <script src="/scripts/admin-impersonation.js"></script>
-    <script src="../../core/auth-roles.js?v=120"></script>
-    <script src="../../core/dashboard-core.js?v=64"></script>
-    <script src="../../core/sidebar.js?v=2000"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/dashboard-core.js?v=64"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -778,15 +778,25 @@
         setTimeout(() => { t.style.display = 'none'; }, 3000);
     }
 
-    auth.onAuthStateChanged(async (user) => {
-        if (!user) { window.location.href = '/'; return; }
+        auth.onAuthStateChanged(async (user) => {
+        const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true' || window.location.search.includes('impersonate=true');
+        if (!user && !isImpersonating) { window.location.href = '/'; return; }
         
-        let businessId = user.uid;
-        try {
-            const userDoc = await db.collection('users').doc(user.uid).get();
-            businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
-        } catch (e) {
-            console.warn('[Workbench] Context fetch failed, using UID.');
+        let businessId = null;
+        if (isImpersonating) {
+            businessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+        }
+        if (!businessId && user) {
+            businessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || user.uid;
+            if (!businessId || businessId === user.uid) {
+                try {
+                    const userDoc = await db.collection('users').doc(user.uid).get();
+                    businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+                } catch (e) {
+                    console.warn('[Workbench] Context fetch failed, using UID.');
+                    businessId = user.uid;
+                }
+            }
         }
 
         currentBusinessId = businessId;

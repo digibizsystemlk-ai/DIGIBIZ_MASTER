@@ -8,7 +8,7 @@ const BUSINESS_TYPES = {
         icon: "🛒",
         description: "POS, Inventory, Sales management",
         menus: [
-            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "VIEWER", "STAFF", "BUSINESS_STAFF"] },
+            { icon: "📊", name: "Dashboard", link: "/modules/retail/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "VIEWER", "STAFF", "BUSINESS_STAFF"] },
             { icon: "🛒", name: "Point of Sale", link: "/modules/retail/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "CASHIER", "STAFF", "BUSINESS_STAFF"] },
             { icon: "📜", name: "Sales History", link: "/modules/retail/sales-history.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "BUSINESS_STAFF"] },
             { icon: "📦", name: "Stock", link: "/modules/retail/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF"] },
@@ -28,7 +28,7 @@ const BUSINESS_TYPES = {
         icon: "🛞",
         description: "POS, Inventory, Sales, and Appointment Services",
         menus: [
-            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "CASHIER", "VIEWER"] },
+            { icon: "📊", name: "Dashboard", link: "/modules/retail/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "CASHIER", "VIEWER"] },
             { icon: "🛒", name: "Point of Sale", link: "/modules/tire_centre/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "CASHIER"] },
             { icon: "📜", name: "Sales History", link: "/modules/tire_centre/sales-history.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ACCOUNTANT", "CASHIER"] },
             { icon: "📦", name: "Stock", link: "/modules/tire_centre/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
@@ -93,7 +93,7 @@ const BUSINESS_TYPES = {
         icon: "💊",
         description: "Medicine management, expiry tracking",
         menus: [
-            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF", "USER", "VIEWER"] },
+            { icon: "📊", name: "Dashboard", link: "/modules/retail/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF", "USER", "VIEWER"] },
             { icon: "🛒", name: "Point of Sale", link: "/modules/pharmacy/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF", "USER", "VIEWER"] },
             { icon: "📦", name: "Inventory", link: "/modules/pharmacy/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF", "USER", "VIEWER"] },
             { icon: "⚠️", name: "Expiry Alerts", link: "/modules/pharmacy/expiry.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "STAFF", "BUSINESS_STAFF", "USER", "VIEWER"] },
@@ -119,7 +119,7 @@ const BUSINESS_TYPES = {
         icon: "🍽️",
         description: "Table management, kitchen orders",
         menus: [
-            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "MANAGER"] },
+            { icon: "📊", name: "Dashboard", link: "/modules/retail/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "MANAGER"] },
             { icon: "🍽️", name: "Tables", link: "/modules/restaurant/tables.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "CASHIER"] },
             { icon: "📝", name: "Orders", link: "/modules/restaurant/orders.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "CASHIER"] },
             { icon: "👨‍🍳", name: "Kitchen Display", link: "/modules/restaurant/kitchen.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "KITCHEN"] },
@@ -138,7 +138,7 @@ const BUSINESS_TYPES = {
         icon: "👕",
         description: "Size/color variants, stock management",
         menus: [
-            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "📊", name: "Dashboard", link: "/modules/retail/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
             { icon: "🛒", name: "Point of Sale", link: "/modules/garment/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "CASHIER"] },
             { icon: "📦", name: "Inventory", link: "/modules/garment/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
             { icon: "🎨", name: "Variants", link: "/modules/garment/variants.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
@@ -157,7 +157,7 @@ const BUSINESS_TYPES = {
         icon: "🔧",
         description: "Bulk items, weight/measurement",
         menus: [
-            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "📊", name: "Dashboard", link: "/modules/retail/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
             { icon: "🛒", name: "Point of Sale", link: "/modules/hardware/pos.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "CASHIER"] },
             { icon: "📦", name: "Inventory", link: "/modules/hardware/inventory.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STORE_KEEPER"] },
             { icon: "⚖️", name: "Bulk Items", link: "/modules/hardware/bulk.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
@@ -183,7 +183,7 @@ const BUSINESS_TYPES = {
         icon: "💇",
         description: "Appointments, service billing, client management",
         menus: [
-            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
+            { icon: "📊", name: "Dashboard", link: "/modules/retail/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
             { icon: "📅", name: "Appointments", link: "/modules/service/appointments.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STAFF"] },
             { icon: "👥", name: "Clients", link: "/modules/service/clients.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STAFF"] },
             { icon: "🧾", name: "Service Billing", link: "/modules/service/billing.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "STAFF"] },
@@ -292,27 +292,25 @@ const BUSINESS_TYPES = {
 
     scrap_collection_center: {
         id: "scrap_collection_center",
-        name: "Scrap Collection Center",
+        name: "Scrap Collection Center / Scrap Merchant",
         icon: "♻️",
         description: "Scrap buying, inventory, debts and messaging suite",
-        hidden: true,
-        restrictedToUid: "oDhSDYHQ2dV1DP33koysmZAqaY13",
+        isReady: true,
         menus: [
-            { icon: "📊", name: "Dashboard", link: "/modules/core/dashboard.html?no-redirect=1", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📍", name: "Public Leads", link: "/modules/admin/scrap-leads.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "🧾", name: "Bill", link: "/modules/admin/scrap-buying.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "💸", name: "Sell", link: "/modules/admin/scrap-sell.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📦", name: "Stock", link: "/modules/admin/scrap-workbench.html?view=STOCK", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📚", name: "Buying History", link: "/modules/admin/scrap-workbench.html?view=BUY", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📜", name: "Selling History", link: "/modules/admin/scrap-selling-history.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "🏦", name: "Advance", link: "/modules/admin/scrap-advance.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📘", name: "Daily Transactions", link: "/modules/admin/scrap-workbench.html?view=DAILYTR", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] },
-            { icon: "📈", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER"] }
+            { icon: "📊", name: "Dashboard", link: "/modules/?no-redirect=1/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📍", name: "Public Leads", link: "/modules/admin/scrap-leads.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🧾", name: "Bill", link: "/modules/admin/scrap-buying.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "💸", name: "Sell", link: "/modules/admin/scrap-sell.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📦", name: "Stock", link: "/modules/admin/scrap-workbench.html?view=STOCK", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📚", name: "Buying History", link: "/modules/admin/scrap-workbench.html?view=BUY", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📜", name: "Selling History", link: "/modules/admin/scrap-selling-history.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🏦", name: "Advance", link: "/modules/admin/scrap-advance.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📘", name: "Daily Transactions", link: "/modules/admin/scrap-workbench.html?view=DAILYTR", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STAFF", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] },
+            { icon: "📈", name: "Reports", link: "/modules/reports/index.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] }
         ],
         dashboardComponents: ["sales", "inventory", "recentSales", "lowStock"],
-        demoEmail: "test@scrap.com",
-        isReady: true
+        demoEmail: "test@scrap.com"
     },
 
     attendance_payroll: {
@@ -424,6 +422,12 @@ function getMobileConfig(businessType) {
     if (!business || !business.mobile) return null;
     return business.mobile;
 }
+
+// Aliases for scrap business type variants
+BUSINESS_TYPES.scrap = BUSINESS_TYPES.scrap_collection_center;
+BUSINESS_TYPES.scrap_dealer = BUSINESS_TYPES.scrap_collection_center;
+BUSINESS_TYPES.scrap_merchant = BUSINESS_TYPES.scrap_collection_center;
+BUSINESS_TYPES.scrap_center = BUSINESS_TYPES.scrap_collection_center;
 
 // Export to window
 window.BUSINESS_TYPES = BUSINESS_TYPES;

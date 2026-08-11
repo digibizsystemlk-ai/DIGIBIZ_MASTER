@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=3"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loans Hub Dashboard - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/dashboard-core.js?v=66"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <script src="/core/scrap-daily-loans.js?v=5"></script>
+    
+    <style>
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #f8fafc;
+            margin: 0;
+            color: #0f172a;
+        }
+        .wrap {
+            padding: 24px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+        }
+        .link-card {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 18px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            text-decoration: none;
+            color: #0f172a;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .link-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05), 0 4px 6px -4px rgba(0,0,0,0.05);
+            border-color: #0f3b2c;
+        }
+        .link-card .icon-wrap {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        .link-card .title {
+            font-weight: 700;
+            font-size: 14px;
+            color: #475569;
+        }
+        .link-card .balance {
+            font-size: 16px;
+            font-weight: 800;
+            color: #0f172a;
+            margin-top: 2px;
+        }
+        .link-card .count {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+        .spinner {
+            border: 4px solid rgba(15, 59, 44, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #0f3b2c;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .data-table th {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 2px solid #e2e8f0;
+            color: #475569;
+            font-weight: 600;
+            background: #f8fafc;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .data-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: middle;
+        }
+        .data-table tbody tr:hover {
+            background: #f8fafc;
+        }
+        .badge-flow {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            display: inline-block;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #475569;
+        }
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <!-- Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+        <div>
+            <h1 style="margin: 0; font-size: 26px; font-weight: 800; color: #0f3b2c;">DIGIBIZ Loans Hub</h1>
+            <p style="margin: 4px 0 0; color: #64748b; font-size: 14px;">Unified portfolio management for all customer debt channels.</p>
+        </div>
+        <div id="systemDebtHealthBadge" style="display: none; align-items: center; gap: 10px; padding: 10px 20px; border-radius: 12px; font-weight: 800; font-size: 14px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); transition: all 0.3s ease;">
+             <span id="healthIndicatorDot" style="width: 12px; height: 12px; border-radius: 50%; display: inline-block;"></span>
+             <span id="healthIndicatorText">ණය හැසිරීම: පරීක්ෂා කරමින්...</span>
+        </div>
+        <button id="refreshBtn" onclick="loadDashboardData()" style="padding: 10px 18px; background: #0f3b2c; color: white; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(15, 59, 44, 0.1);">
+            🔄 Sync Dashboard
+        </button>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 400px;">
+        <div class="spinner"></div>
+        <p style="margin-top: 16px; color: #64748b; font-weight: 500;">Aggregating Firestore loan accounts...</p>
+    </div>
+
+    <!-- Dashboard Content (hidden during load) -->
+    <div id="dashboardContent" style="display: none;">
+        <!-- Prominent Portfolio Trend Card (Full Width) -->
+        <div class="card" style="display: flex; flex-direction: column; padding: 24px; min-height: 300px; margin-bottom: 24px; background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+                <div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.05em;">ණය කළඹේ ප්‍රවණතාවය (Portfolio Trend - Past 30 Days)</h3>
+                    <div style="display: flex; gap: 12px; align-items: center; margin-top: 6px; flex-wrap: wrap;">
+                        <span class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span>ණය වැඩිවීම (Outflow) 🔴</span>
+                        <span class="legend-item"><span class="legend-dot" style="background:#10b981;"></span>ණය අඩුවීම (Inflow) 🟢</span>
+                        <span style="color: #64748b; font-size: 11px; font-weight: 500; margin-left: 8px;">* ප්‍රස්ථාරයේ ලක්ෂ්‍ය (dots) මත ක්ලික් කර එදින සිදු වූ සියලුම ගනුදෙනු popup එකකින් බලන්න.</span>
+                    </div>
+                </div>
+                <span id="trendPercentText" style="font-size: 13px; font-weight: 800; color: #64748b; padding: 6px 12px; border-radius: 8px; background: #f1f5f9; white-space: nowrap; box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);">--</span>
+            </div>
+            <div style="flex-grow: 1; height: 220px; position: relative;">
+                <canvas id="portfolioTrendChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Top Summary Bar -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 24px;">
+            <!-- Grand Total Card -->
+            <div class="card" style="background: linear-gradient(135deg, #0f3b2c 0%, #1e4d3a 100%); color: white; display: flex; flex-direction: column; justify-content: space-between; padding: 24px; min-height: 180px; position: relative; overflow: hidden;">
+                <div style="z-index: 1;">
+                    <div style="font-size: 13px; font-weight: 700; color: #a7f3d0; text-transform: uppercase; letter-spacing: 0.05em;">Total Outstanding Portfolio</div>
+                    <div id="grandTotalText" style="font-size: 38px; font-weight: 900; margin-top: 8px; letter-spacing: -0.02em;">LKR 0.00</div>
+                    <div id="activeAccountsText" style="font-size: 14px; margin-top: 6px; color: #cbd5e1;">Active loan accounts: 0</div>
+                </div>
+                <!-- Subtle decorative graphic -->
+                <div style="position: absolute; right: -20px; bottom: -20px; font-size: 120px; opacity: 0.08; transform: rotate(-15deg); font-weight: 900; user-select: none;">💸</div>
+            </div>
+            <!-- Distribution Chart Card -->
+            <div class="card" style="display: flex; align-items: center; gap: 20px; padding: 20px;">
+                <div style="width: 130px; height: 130px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+                    <canvas id="distributionChart"></canvas>
+                </div>
+                <div style="flex-grow: 1;">
+                    <h3 style="margin: 0 0 10px; font-size: 15px; font-weight: 700; color: #1e293b;">Portfolio Allocation</h3>
+                    <div id="distributionLegend" style="display: flex; flex-direction: column; gap: 6px;">
+                        <!-- JS generated legend -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Portfolio Health Card -->
+            <div id="healthCard" class="card" style="display: flex; flex-direction: column; justify-content: space-between; padding: 20px; min-height: 180px; position: relative; overflow: hidden; transition: all 0.3s ease;">
+                <div style="z-index: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;">ණය හැසිරීම (Portfolio Health)</span>
+                        <span id="healthCardIcon" style="font-size: 22px;">🛡️</span>
+                    </div>
+                    <div id="healthStatusText" style="font-size: 28px; font-weight: 900; margin-top: 8px; letter-spacing: -0.02em; line-height: 1.2;">Checking...</div>
+                    <div id="healthStatsSubtext" style="font-size: 12px; margin-top: 6px; color: #64748b; font-weight: 500;">Analyzing borrower accounts...</div>
+                </div>
+                <!-- Progress Indicator -->
+                <div style="margin-top: 14px; z-index: 1;">
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 4px;">
+                        <span style="letter-spacing: 0.05em;">HEALTH INDEX</span>
+                        <span id="healthScorePercent">0%</span>
+                    </div>
+                    <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+                        <div id="healthProgressBar" style="width: 0%; height: 100%; background: #16a34a; transition: width 0.5s ease;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Links Grid -->
+        <h3 style="margin: 0 0 12px; font-size: 16px; font-weight: 700; color: #0f3b2c; border-left: 4px solid #0f3b2c; padding-left: 10px;">Loan Channels</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 30px;">
+            <!-- Today's Repayments -->
+            <a href="javascript:showTodayDetails('repaid')" class="link-card" style="border-color: #10b981; background: #f0fdf4;">
+                <div class="icon-wrap" style="background: #dcfce7; color: #16a34a;">💰</div>
+                <div>
+                    <div class="title" style="color: #14532d;">අද නය ආපසු ලැබීම</div>
+                    <div id="todayRepaidText" class="balance" style="color: #16a34a;">LKR 0.00</div>
+                    <div class="count" style="color: #15803d;">Click to view details</div>
+                </div>
+            </a>
+            <!-- Today's New Loans -->
+            <a href="javascript:showTodayDetails('issued')" class="link-card" style="border-color: #ef4444; background: #fef2f2;">
+                <div class="icon-wrap" style="background: #fee2e2; color: #dc2626;">💸</div>
+                <div>
+                    <div class="title" style="color: #7f1d1d;">අද නය නිකුත් කිරීම්</div>
+                    <div id="todayIssuedText" class="balance" style="color: #dc2626;">LKR 0.00</div>
+                    <div class="count" style="color: #b91c1c;">Click to view details</div>
+                </div>
+            </a>
+            <!-- Weekly -->
+            <a href="/modules/scrap_collection_center/loans.html" class="link-card">
+                <div class="icon-wrap" style="background: #eff6ff; color: #1d4ed8;">📅</div>
+                <div>
+                    <div class="title">Weekly Loan</div>
+                    <div id="weeklyTotalText" class="balance">LKR 0.00</div>
+                    <div id="weeklyCountText" class="count">0 accounts</div>
+                </div>
+            </a>
+            <!-- Daily -->
+            <a href="/modules/scrap_collection_center/loan-daily.html" class="link-card">
+                <div class="icon-wrap" style="background: #fdf2f8; color: #db2777;">📆</div>
+                <div>
+                    <div class="title">Daily Loan</div>
+                    <div id="dailyTotalText" class="balance">LKR 0.00</div>
+                    <div id="dailyCountText" class="count">0 accounts</div>
+                </div>
+            </a>
+            <!-- Hand -->
+            <a href="/modules/scrap_collection_center/hand-loans.html" class="link-card">
+                <div class="icon-wrap" style="background: #fef3c7; color: #d97706;">🤝</div>
+                <div>
+                    <div class="title">Hand Loans</div>
+                    <div id="handTotalText" class="balance">LKR 0.00</div>
+                    <div id="handCountText" class="count">0 accounts</div>
+                </div>
+            </a>
+            <!-- No-Interest -->
+            <a href="/modules/scrap_collection_center/loan-no-interest.html" class="link-card">
+                <div class="icon-wrap" style="background: #ecfdf5; color: #059669;">🟢</div>
+                <div>
+                    <div class="title">No-interest Loan</div>
+                    <div id="noIntTotalText" class="balance">LKR 0.00</div>
+                    <div id="noIntCountText" class="count">0 accounts</div>
+                </div>
+            </a>
+            <!-- Interest 10% -->
+            <a href="/modules/scrap_collection_center/loan-interest.html" class="link-card">
+                <div class="icon-wrap" style="background: #f5f3ff; color: #7c3aed;">📈</div>
+                <div>
+                    <div class="title">Interest Loan (10%)</div>
+                    <div id="interestTotalText" class="balance">LKR 0.00</div>
+                    <div id="interestCountText" class="count">0 accounts</div>
+                </div>
+            </a>
+            <!-- Advanced -->
+            <a href="/modules/scrap_collection_center/loan-advanced-investor.html" class="link-card">
+                <div class="icon-wrap" style="background: #fff1f2; color: #e11d48;">🏦</div>
+                <div>
+                    <div class="title">Advanced Loan</div>
+                    <div id="advancedTotalText" class="balance">LKR 0.00</div>
+                    <div id="advancedCountText" class="count">0 accounts</div>
+                </div>
+            </a>
+        </div>
+
+        <!-- Flow tracker (Repayments vs Disbursements) -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 24px; margin-bottom: 30px;">
+            <!-- Chart Card -->
+            <div class="card" style="padding: 20px;">
+                <h3 style="margin: 0 0 15px; font-size: 16px; font-weight: 700; color: #1e293b;">Daily Cash Flow (Issued vs Repaid)</h3>
+                <div style="height: 250px; position: relative;">
+                    <canvas id="flowChart"></canvas>
+                </div>
+            </div>
+            <!-- Table Card -->
+            <div class="card" style="padding: 20px; display: flex; flex-direction: column;">
+                <h3 style="margin: 0 0 12px; font-size: 16px; font-weight: 700; color: #1e293b;">Cash Flow Summary (Past 14 Days)</h3>
+                <div style="overflow-y: auto; flex-grow: 1; max-height: 250px;">
+                    <table class="data-table" id="flowTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th style="text-align: right;">Issued</th>
+                                <th style="text-align: right;">Repaid</th>
+                                <th style="text-align: right;">Net Flow</th>
+                            </tr>
+                        </thead>
+                        <tbody id="flowTableBody">
+                            <!-- Generated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ledger & Customer tables -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 24px; margin-bottom: 40px;">
+            <!-- Customer Debt Table Card -->
+            <div class="card" style="padding: 20px; display: flex; flex-direction: column; min-height: 480px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #1e293b;">Outstanding Debts by Customer</h3>
+                    <input id="customerSearch" oninput="filterCustomerTable()" placeholder="🔍 Search customer..." style="padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; max-width: 200px;">
+                </div>
+                <div style="overflow-y: auto; flex-grow: 1; max-height: 380px; border: 1px solid #e2e8f0; border-radius: 10px;">
+                    <table class="data-table" id="customerTable">
+                        <thead>
+                            <tr>
+                                <th>Customer Name</th>
+                                <th style="text-align: right;">Weekly Loan</th>
+                                <th style="text-align: right;">Daily Loan</th>
+                                <th style="text-align: right;">Hand Loan</th>
+                                <th style="text-align: right;">No-Interest</th>
+                                <th style="text-align: right;">Interest 10%</th>
+                                <th style="text-align: right;">Advanced</th>
+                                <th style="text-align: right;">Total Debt</th>
+                            </tr>
+                        </thead>
+                        <tbody id="customerTableBody">
+                            <!-- Generated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Repayments Log Card -->
+            <div class="card" style="padding: 20px; display: flex; flex-direction: column; min-height: 480px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #1e293b;">Daily Repayment Ledger</h3>
+                    <input id="repaymentSearch" oninput="filterRepaymentTable()" placeholder="🔍 Search customer..." style="padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; max-width: 200px;">
+                </div>
+                <div style="overflow-y: auto; flex-grow: 1; max-height: 380px; border: 1px solid #e2e8f0; border-radius: 10px;">
+                    <table class="data-table" id="repaymentTable">
+                        <thead>
+                            <tr>
+                                <th>Date & Time</th>
+                                <th>Customer Name</th>
+                                <th>Loan Type</th>
+                                <th style="text-align: center;">Method</th>
+                                <th style="text-align: right;">Amount Paid</th>
+                            </tr>
+                        </thead>
+                        <tbody id="repaymentTableBody">
+                            <!-- Generated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let businessId = null;
+
+// Raw snapshot arrays
+let weeklyList = [];
+let dailyList = [];
+let handList = [];
+let noIntList = [];
+let interestList = [];
+let advancedList = [];
+let journalEntries = [];
+
+// Grouped stats
+let customerBalances = [];
+let repaymentLedger = [];
+let dailyFlowList = [];
+
+// Chart instances
+let distributionChartInst = null;
+let flowChartInst = null;
+let portfolioTrendChartInst = null;
+let historyList = [];
+let grandTotalOutstanding = 0;
+
+const GL_CASH = { accountCode:'1-1010-01', accountName:'Cash - Main' };
+const GL_BANK = { accountCode:'1-1020-01', accountName:'Bank - Current Account' };
+
+function n(v) { const x = Number(v); return Number.isFinite(x) ? x : 0; }
+function m(v) { return `Rs. ${n(v).toLocaleString('en-LK',{minimumFractionDigits:2,maximumFractionDigits:2})}`; }
+
+function showLoading(show) {
+    document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
+    document.getElementById('dashboardContent').style.display = show ? 'none' : 'block';
+}
+
+firebase.auth().onAuthStateChanged(async (u) => {
+    if (!u) {
+        location.href = '/';
+        return;
+    }
+    const ctx = await window.dashboardCore.getContext(u);
+    businessId = String((ctx && ctx.businessId) || u.uid);
+    await loadDashboardData();
+});
+
+async function loadDashboardData() {
+    showLoading(true);
+    try {
+        const db = firebase.firestore();
+
+        // 1. Fetch Weekly Loans
+        const wSnap = await db.collection('weekly_loans')
+            .where('businessId', '==', businessId)
+            .where('active', '==', true)
+            .get().catch(() => ({ docs: [] }));
+        weeklyList = wSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // 2. Fetch Daily Loans
+        const dSnap = await db.collection('loan_daily_entries')
+            .where('businessId', '==', businessId)
+            .where('active', '==', true)
+            .get().catch(() => ({ docs: [] }));
+        dailyList = dSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // 3. Fetch Hand Loans
+        const hSnap = await db.collection('hand_loans')
+            .where('businessId', '==', businessId)
+            .where('type', '==', 'GIVEN')
+            .where('active', '==', true)
+            .get().catch(() => ({ docs: [] }));
+        handList = hSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // 4. Fetch No-interest Loans
+        const niSnap = await db.collection('loan_no_interest')
+            .where('businessId', '==', businessId)
+            .where('active', '==', true)
+            .get().catch(() => ({ docs: [] }));
+        noIntList = niSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // 5. Fetch Interest Loans
+        const iSnap = await db.collection('loan_interest_entries')
+            .where('businessId', '==', businessId)
+            .where('active', '==', true)
+            .get().catch(() => ({ docs: [] }));
+        interestList = iSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // 6. Fetch Advanced Loans
+        const advSnap = await db.collection('loan_advanced_entries')
+            .where('businessId', '==', businessId)
+            .where('active', '==', true)
+            .get().catch(() => ({ docs: [] }));
+        advancedList = advSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // 7. Fetch Journal Entries (up to 1000 entries)
+        const journalSnap = await db.collection('journal').doc(businessId).collection('entries')
+            .orderBy('date', 'desc')
+            .limit(1000)
+            .get().catch(() => ({ docs: [] }));
+        journalEntries = journalSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Self-healing cleanup for Sudinna's mistake daily loan journal entries
+        try {
+            const dlSnapAll = await db.collection('loan_daily_entries')
+                .where('businessId', '==', businessId)
+                .get();
+            const validDlIds = new Set(dlSnapAll.docs.map(doc => doc.id));
+
+            const jIssueSnap = await db.collection('journal').doc(businessId).collection('entries')
+                .where('referenceType', '==', 'LOAN_DAILY_ISSUE')
+                .get();
+            
+            const toDelete = [];
+            jIssueSnap.docs.forEach(doc => {
+                const data = doc.data();
+                if (data.loanDocId && !validDlIds.has(data.loanDocId)) {
+                    if (String(data.description || '').includes('Sudinna')) {
+                        toDelete.push(doc.ref);
+                    }
+                }
+            });
+
+            if (toDelete.length > 0) {
+                console.log(`[Self-healing Cleanup] Deleting ${toDelete.length} orphaned daily loan journal entries for Sudinna.`);
+                const batch = db.batch();
+                toDelete.forEach(ref => batch.delete(ref));
+                await batch.commit();
+                
+                // Re-fetch journal entries after deletion
+                const journalSnapNew = await db.collection('journal').doc(businessId).collection('entries')
+                    .orderBy('date', 'desc')
+                    .limit(1000)
+                    .get().catch(() => ({ docs: [] }));
+                journalEntries = journalSnapNew.docs.map(d => ({ id: d.id, ...d.data() }));
+            }
+        } catch (cleanupErr) {
+            console.error("[Self-healing Cleanup] Error:", cleanupErr);
+        }
+
+        // Self-healing: Patch missing Daily Loan credits in old SCRAP_BUYING journal entries
+        try {
+            const jScrapEntries = journalEntries.filter(e => {
+                if (e.referenceType !== 'SCRAP_BUYING') return false;
+                const has1050 = (e.entries || []).some(l => l.accountCode === '1-1050-01');
+                return !has1050; // Only those missing the credit
+            });
+            
+            if (jScrapEntries.length > 0) {
+                const toPatch = [];
+                
+                // Bulk fetch recent buying_history
+                const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+                const buySnap = await db.collection('buying_history')
+                    .where('businessId', '==', businessId)
+                    .where('date', '>=', sevenDaysAgo)
+                    .get().catch(() => ({ docs: [] }));
+                const buyDocsMap = new Map();
+                buySnap.docs.forEach(d => buyDocsMap.set(d.data().billNo, d.data()));
+                
+                // Bulk fetch active daily loans
+                const dlSnap = await db.collection('loan_daily_entries')
+                    .where('businessId', '==', businessId)
+                    .get().catch(() => ({ docs: [] }));
+                const dlDocs = dlSnap.docs.map(d => d.data());
+                
+                for (const j of jScrapEntries) {
+                    let cName = String(j.description || '').replace('Scrap buying - ', '').trim();
+                    if (!cName || cName === 'Customer') continue;
+                    
+                    const buyData = buyDocsMap.get(j.reference);
+                    if (!buyData) continue;
+                    
+                    const dailyDeduct = Number(buyData.dailyLoanDeduction || (buyData.loanApplyBreakdown && buyData.loanApplyBreakdown.DAILY) || 0);
+                    
+                    if (dailyDeduct > 0.01) {
+                        let pPaid = dailyDeduct;
+                        let iPaid = 0;
+                        
+                        const dlData = dlDocs.find(d => d.customerName === cName);
+                        if (dlData) {
+                            const ledger = dlData.ledger || [];
+                            const lEntry = ledger.find(l => String(l.description || '').includes(`Bill #${j.reference}`));
+                            if (lEntry) {
+                                pPaid = Math.abs(lEntry.principalChange || 0);
+                                iPaid = Math.abs(lEntry.interestChange || 0);
+                            }
+                        }
+                        
+                        const newEntries = [...(j.entries || [])];
+                        if (pPaid > 0) newEntries.push({ accountCode: '1-1050-01', accountName: 'Loans Given', debit: 0, credit: pPaid });
+                        if (iPaid > 0) newEntries.push({ accountCode: '4-4020-01', accountName: 'Interest Income', debit: 0, credit: iPaid });
+                        
+                        toPatch.push({ ref: db.collection('journal').doc(businessId).collection('entries').doc(j.id), entries: newEntries });
+                    }
+                }
+            
+            if (toPatch.length > 0) {
+                console.log(`[Self-healing] Patching ${toPatch.length} SCRAP_BUYING journal entries with missing Daily Loan deductions.`);
+                const batch = db.batch();
+                toPatch.forEach(p => batch.update(p.ref, { entries: p.entries }));
+                await batch.commit();
+                
+                const journalSnapPatch = await db.collection('journal').doc(businessId).collection('entries')
+                    .orderBy('date', 'desc')
+                    .limit(1000)
+                    .get().catch(() => ({ docs: [] }));
+                journalEntries = journalSnapPatch.docs.map(d => ({ id: d.id, ...d.data() }));
+            }
+            } // Close if (jScrapEntries.length > 0)
+        } catch (patchErr) {
+            console.error("[Self-healing Patch] Error:", patchErr);
+        }
+
+        // 8. Fetch Portfolio History (Past 365 Days rollup)
+        const histSnap = await db.collection('total_loan_history')
+            .where('businessId', '==', businessId)
+            .get().catch((err) => {
+                console.error("Error fetching total_loan_history:", err);
+                return { docs: [] };
+            });
+        historyList = histSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // Process everything
+        processAggregations();
+    } catch (e) {
+        console.error("Dashboard calculation error:", e);
+    } finally {
+        showLoading(false);
+    }
+}
+
+function processAggregations() {
+    let weeklyTotal = 0;
+    let dailyTotal = 0;
+    let handTotal = 0;
+    let noIntTotal = 0;
+    let interestTotal = 0;
+    let advancedTotal = 0;
+
+    let weeklyCount = 0;
+    let dailyCount = 0;
+    let handCount = 0;
+    let noIntCount = 0;
+    let interestCount = 0;
+    let advancedCount = 0;
+
+    const customerMap = {};
+
+    const addBal = (name, type, val) => {
+        if (!name || val <= 0.01) return;
+        const key = String(name).trim();
+        if (!customerMap[key]) {
+            customerMap[key] = { name: key, weekly: 0, daily: 0, hand: 0, noInterest: 0, interest: 0, advanced: 0, total: 0 };
+        }
+        customerMap[key][type] += val;
+        customerMap[key].total += val;
+    };
+
+    // Process Weekly
+    weeklyList.forEach(wl => {
+        const bal = (wl.schedule || []).reduce((sum, inst) => sum + (n(inst.amount) - n(inst.paidAmount)), 0);
+        if (bal > 0.01) {
+            weeklyTotal += bal;
+            weeklyCount++;
+            addBal(wl.customerName, 'weekly', bal);
+        }
+    });
+
+    // Process Daily (Accruing interest dynamically in real-time)
+    dailyList.forEach(dl => {
+        let refreshed = dl;
+        if (window.DailyLoanCore) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            refreshed = window.DailyLoanCore.refreshDailyLoanAccruedInterest(dl, todayStr);
+        }
+        const bal = n(refreshed.balance);
+        if (bal > 0.01) {
+            dailyTotal += bal;
+            dailyCount++;
+            addBal(refreshed.customerName, 'daily', bal);
+        }
+    });
+
+    // Process Hand
+    handList.forEach(hl => {
+        const bal = n(hl.balance);
+        if (bal > 0.01) {
+            handTotal += bal;
+            handCount++;
+            addBal(hl.customerName, 'hand', bal);
+        }
+    });
+
+    // Process No-interest
+    noIntList.forEach(nil => {
+        const bal = n(nil.balance || nil.principalOutstanding);
+        if (bal > 0.01) {
+            noIntTotal += bal;
+            noIntCount++;
+            addBal(nil.customerName, 'noInterest', bal);
+        }
+    });
+
+    // Process Interest
+    interestList.forEach(il => {
+        const bal = n(il.principalOutstanding) + n(il.interestOutstanding);
+        if (bal > 0.01) {
+            interestTotal += bal;
+            interestCount++;
+            addBal(il.customerName, 'interest', bal);
+        }
+    });
+
+    // Process Advanced
+    advancedList.forEach(al => {
+        const bal = n(al.balance || al.principalOutstanding) + n(al.interestOutstanding);
+        if (bal > 0.01) {
+            advancedTotal += bal;
+            advancedCount++;
+            addBal(al.customerName || al.memberName, 'advanced', bal);
+        }
+    });
+
+    // Set totals in UI
+    const grandTotal = weeklyTotal + dailyTotal + handTotal + noIntTotal + interestTotal + advancedTotal;
+    grandTotalOutstanding = grandTotal;
+    const grandCount = weeklyCount + dailyCount + handCount + noIntCount + interestCount + advancedCount;
+
+    document.getElementById('grandTotalText').textContent = m(grandTotal);
+    document.getElementById('activeAccountsText').textContent = `Active loan accounts: ${grandCount}`;
+
+    document.getElementById('weeklyTotalText').textContent = m(weeklyTotal);
+    document.getElementById('weeklyCountText').textContent = `${weeklyCount} accounts`;
+
+    document.getElementById('dailyTotalText').textContent = m(dailyTotal);
+    document.getElementById('dailyCountText').textContent = `${dailyCount} accounts`;
+
+    document.getElementById('handTotalText').textContent = m(handTotal);
+    document.getElementById('handCountText').textContent = `${handCount} accounts`;
+
+    document.getElementById('noIntTotalText').textContent = m(noIntTotal);
+    document.getElementById('noIntCountText').textContent = `${noIntCount} accounts`;
+
+    document.getElementById('interestTotalText').textContent = m(interestTotal);
+    document.getElementById('interestCountText').textContent = `${interestCount} accounts`;
+
+    document.getElementById('advancedTotalText').textContent = m(advancedTotal);
+    document.getElementById('advancedCountText').textContent = `${advancedCount} accounts`;
+
+    // 1. Render Allocation Chart & Legend
+    renderAllocationChart(weeklyTotal, dailyTotal, handTotal, noIntTotal, interestTotal, advancedTotal);
+
+    // 2. Process Customer Balances
+    customerBalances = Object.values(customerMap).sort((a, b) => b.total - a.total);
+    renderCustomerTable(customerBalances);
+    updateSystemDebtHealthStatus();
+
+    // 3. Process Ledger Repayments
+    processRepaymentsLedger();
+
+    // 4. Process Flow comparison
+    processCashFlow();
+
+    // 5. Process Portfolio History Trend Chart
+    processPortfolioTrend();
+}
+
+function renderAllocationChart(weekly, daily, hand, noInt, interest, advanced) {
+    const ctx = document.getElementById('distributionChart')?.getContext('2d');
+    if (!ctx) return;
+
+    if (distributionChartInst) {
+        distributionChartInst.destroy();
+    }
+
+    const dataVals = [weekly, daily, hand, noInt, interest, advanced];
+    const labels = ['Weekly Loan', 'Daily Loan', 'Hand Loan', 'No-interest', 'Interest 10%', 'Advanced'];
+    const colors = ['#1d4ed8', '#db2777', '#d97706', '#059669', '#7c3aed', '#e11d48'];
+
+    const hasFunds = dataVals.reduce((a, b) => a + b, 0) > 0;
+
+    distributionChartInst = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: hasFunds ? dataVals : [1],
+                backgroundColor: hasFunds ? colors : ['#cbd5e1'],
+                borderWidth: 1,
+                borderColor: '#ffffff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
+            },
+            cutout: '65%'
+        }
+    });
+
+    // Render legend
+    const legendWrap = document.getElementById('distributionLegend');
+    if (legendWrap) {
+        const total = weekly + daily + hand + noInt + interest + advanced;
+        legendWrap.innerHTML = labels.map((lbl, idx) => {
+            const val = dataVals[idx];
+            const pct = total > 0 ? ((val / total) * 100).toFixed(1) + '%' : '0.0%';
+            return `
+                <div class="legend-item">
+                    <span class="legend-dot" style="background:${colors[idx]}"></span>
+                    <span style="flex-grow:1; text-align:left;">${lbl}</span>
+                    <span style="font-weight:700; color:#1e293b;">${pct}</span>
+                </div>
+            `;
+        }).join('');
+    }
+}
+
+function renderCustomerTable(data) {
+    const tbody = document.getElementById('customerTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = data.map(r => {
+        const isBad = isCustomerDebtBehaviorBad(r.name);
+        const lineColor = isBad ? '#b91c1c' : '#15803d'; // dark red / dark green
+        
+        return `
+            <tr>
+                <td style="font-weight: 700; color:#1e293b; padding-bottom: 12px; vertical-align: middle;">
+                    <span style="border-bottom: 3px solid ${lineColor}; padding-bottom: 2px; display: inline-block;">${escapeHtml(r.name)}</span>
+                </td>
+                <td style="text-align: right; font-weight: ${r.weekly > 0 ? '700' : '400'};">
+                    ${r.weekly > 0 ? `<a href="/modules/scrap_collection_center/loans.html?customer=${encodeURIComponent(r.name)}" style="color: #1d4ed8; text-decoration: underline dashed; font-weight: 700;">${n(r.weekly).toLocaleString()}</a>` : '-'}
+                </td>
+                <td style="text-align: right; font-weight: ${r.daily > 0 ? '700' : '400'};">
+                    ${r.daily > 0 ? `<a href="/modules/scrap_collection_center/loan-daily.html?customer=${encodeURIComponent(r.name)}" style="color: #db2777; text-decoration: underline dashed; font-weight: 700;">${n(r.daily).toLocaleString()}</a>` : '-'}
+                </td>
+                <td style="text-align: right; font-weight: ${r.hand > 0 ? '700' : '400'};">
+                    ${r.hand > 0 ? `<a href="/modules/scrap_collection_center/hand-loans.html?customer=${encodeURIComponent(r.name)}" style="color: #d97706; text-decoration: underline dashed; font-weight: 700;">${n(r.hand).toLocaleString()}</a>` : '-'}
+                </td>
+                <td style="text-align: right; font-weight: ${r.noInterest > 0 ? '700' : '400'};">
+                    ${r.noInterest > 0 ? `<a href="/modules/scrap_collection_center/loan-no-interest.html?customer=${encodeURIComponent(r.name)}" style="color: #059669; text-decoration: underline dashed; font-weight: 700;">${n(r.noInterest).toLocaleString()}</a>` : '-'}
+                </td>
+                <td style="text-align: right; font-weight: ${r.interest > 0 ? '700' : '400'};">
+                    ${r.interest > 0 ? `<a href="/modules/scrap_collection_center/loan-interest.html?customer=${encodeURIComponent(r.name)}" style="color: #7c3aed; text-decoration: underline dashed; font-weight: 700;">${n(r.interest).toLocaleString()}</a>` : '-'}
+                </td>
+                <td style="text-align: right; font-weight: ${r.advanced > 0 ? '700' : '400'};">
+                    ${r.advanced > 0 ? `<a href="/modules/scrap_collection_center/loan-advanced-investor.html?customer=${encodeURIComponent(r.name)}" style="color: #e11d48; text-decoration: underline dashed; font-weight: 700;">${n(r.advanced).toLocaleString()}</a>` : '-'}
+                </td>
+                <td style="text-align: right; font-weight: 800; color:#0f3b2c; background:#f0fdf4;">${n(r.total).toLocaleString()}</td>
+            </tr>
+        `;
+    }).join('') || '<tr><td colspan="8" style="text-align:center;color:#64748b;">No active outstanding customer loans.</td></tr>';
+}
+
+function filterCustomerTable() {
+    const q = String(document.getElementById('customerSearch').value || '').trim().toLowerCase();
+    const filtered = customerBalances.filter(r => r.name.toLowerCase().includes(q));
+    renderCustomerTable(filtered);
+}
+
+function isCustomerDebtBehaviorBad(name) {
+    const nameLower = String(name).trim().toLowerCase();
+    const todayStr = new Date().toISOString().split('T')[0];
+    const nowMs = new Date().getTime();
+    
+    // 1. Hand Loans Check
+    const customerHandLoans = handList.filter(hl => String(hl.customerName || '').trim().toLowerCase() === nameLower);
+    for (const hl of customerHandLoans) {
+        const balance = Number(hl.balance || 0);
+        if (balance > 0.01) {
+            const loanTime = hl.date ? new Date(hl.date).getTime() : nowMs;
+            const diffDays = Math.floor((nowMs - loanTime) / (24 * 3600000));
+            if (balance > 20000 || diffDays > 10) return true;
+        }
+    }
+    
+    // 2. No Interest Loans Check
+    const customerNoIntLoans = noIntList.filter(nil => String(nil.customerName || '').trim().toLowerCase() === nameLower);
+    for (const nil of customerNoIntLoans) {
+        const balance = Number(nil.balance || nil.principalOutstanding || 0);
+        if (balance > 0.01) {
+            const loanTime = nil.date ? new Date(nil.date).getTime() : nowMs;
+            const diffDays = Math.floor((nowMs - loanTime) / (24 * 3600000));
+            if (balance > 20000 || diffDays > 10) return true;
+        }
+    }
+    
+    // 3. Weekly Loans Check (Overdue installments)
+    const customerWeeklyLoans = weeklyList.filter(wl => String(wl.customerName || '').trim().toLowerCase() === nameLower);
+    for (const wl of customerWeeklyLoans) {
+        const schedule = wl.schedule || [];
+        for (const inst of schedule) {
+            const isInstOverdue = inst.status === 'OVERDUE' || (inst.dueDate && inst.dueDate < todayStr && (Number(inst.amount) - Number(inst.paidAmount) > 0.01));
+            if (isInstOverdue) return true;
+        }
+    }
+    
+    // 4. Daily Loans Check (Outstanding interest or balance)
+    const customerDailyLoans = dailyList.filter(dl => String(dl.customerName || '').trim().toLowerCase() === nameLower);
+    for (const dl of customerDailyLoans) {
+        let refreshed = dl;
+        if (window.DailyLoanCore) {
+            refreshed = window.DailyLoanCore.refreshDailyLoanAccruedInterest(dl, todayStr);
+        }
+        if (refreshed.interestOutstanding > 0.01) return true;
+        
+        const lastCalc = refreshed.lastInterestCalcAt || refreshed.date;
+        if (lastCalc) {
+            const diffDays = Math.floor((nowMs - new Date(lastCalc).getTime()) / (24 * 3600000));
+            if (diffDays > 5 && refreshed.balance > 0.01) return true;
+        }
+    }
+    
+    // 5. Interest Loans Check (Min Rs. 500 payment in last 10 days)
+    const customerInterestLoans = interestList.filter(il => String(il.customerName || '').trim().toLowerCase() === nameLower);
+    if (customerInterestLoans.length > 0) {
+        const tenDaysAgoTime = nowMs - 10 * 24 * 3600000;
+        let totalPaidLast10Days = 0;
+        
+        journalEntries.forEach(entry => {
+            const entryTime = entry.date ? new Date(entry.date).getTime() : 0;
+            if (entryTime >= tenDaysAgoTime) {
+                const desc = String(entry.description || '').toLowerCase();
+                if (desc.includes(nameLower) && (desc.includes('repayment') || desc.includes('deduct') || desc.includes('settle'))) {
+                    (entry.entries || []).forEach(e => {
+                        if (e.accountCode === '1-1050-01' || e.accountCode === '4-4020-01') {
+                            totalPaidLast10Days += Number(e.credit || 0);
+                        }
+                    });
+                }
+            }
+        });
+        
+        if (totalPaidLast10Days < 500 - 0.01) return true;
+    }
+    
+    return false;
+}
+
+function updateSystemDebtHealthStatus() {
+    let badCustomersCount = 0;
+    const totalCustomersCount = customerBalances.length;
+    
+    customerBalances.forEach(c => {
+        if (isCustomerDebtBehaviorBad(c.name)) {
+            badCustomersCount++;
+        }
+    });
+    
+    // Update the header badge
+    const healthBadge = document.getElementById('systemDebtHealthBadge');
+    const healthDot = document.getElementById('healthIndicatorDot');
+    const healthText = document.getElementById('healthIndicatorText');
+    
+    if (healthBadge && healthDot && healthText) {
+        if (badCustomersCount > 0) {
+            healthBadge.style.background = '#fee2e2';
+            healthBadge.style.color = '#b91c1c';
+            healthBadge.style.border = '1px solid #fecaca';
+            healthDot.style.background = '#ef4444';
+            healthText.innerHTML = `ණය හැසිරීම: <b>අවදානම්</b> (${badCustomersCount} දෙනෙකුගේ හිඟ පවතී)`;
+        } else {
+            healthBadge.style.background = '#f0fdf4';
+            healthBadge.style.color = '#15803d';
+            healthBadge.style.border = '1px solid #bbf7d0';
+            healthDot.style.background = '#16a34a';
+            if (totalCustomersCount > 0) {
+                healthText.innerHTML = `ණය හැසිරීම: <b>යහපත්</b> (සියලු පාරිභෝගිකයින් සාමාන්‍යයි)`;
+            } else {
+                healthText.innerHTML = `ණය හැසිරීම: <b>යහපත්</b> (ක්‍රියාකාරී ණය නොමැත)`;
+            }
+        }
+        healthBadge.style.display = 'flex';
+    }
+    
+    // Update the advanced health card
+    const healthCard = document.getElementById('healthCard');
+    const healthCardIcon = document.getElementById('healthCardIcon');
+    const healthStatusText = document.getElementById('healthStatusText');
+    const healthStatsSubtext = document.getElementById('healthStatsSubtext');
+    const healthScorePercent = document.getElementById('healthScorePercent');
+    const healthProgressBar = document.getElementById('healthProgressBar');
+    
+    if (healthCard) {
+        const goodCustomersCount = totalCustomersCount - badCustomersCount;
+        const healthPct = totalCustomersCount > 0 ? Math.round((goodCustomersCount / totalCustomersCount) * 100) : 100;
+        
+        if (healthScorePercent) healthScorePercent.textContent = `${healthPct}%`;
+        if (healthProgressBar) {
+            healthProgressBar.style.width = `${healthPct}%`;
+            healthProgressBar.style.background = badCustomersCount > 0 ? '#dc2626' : '#16a34a';
+        }
+        
+        if (badCustomersCount > 0) {
+            // Bad/Attention Required State
+            healthCard.style.background = 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)';
+            healthCard.style.borderColor = '#fca5a5';
+            healthCard.style.boxShadow = '0 10px 15px -3px rgba(220, 38, 38, 0.08), 0 4px 6px -4px rgba(220, 38, 38, 0.08)';
+            if (healthCardIcon) healthCardIcon.textContent = '🚨';
+            if (healthStatusText) {
+                healthStatusText.innerHTML = `<span style="color: #991b1b;">අවදානම්</span>`;
+            }
+            if (healthStatsSubtext) {
+                healthStatsSubtext.innerHTML = `<span style="color: #7f1d1d;">ගනුදෙනුකරුවන් <b>${badCustomersCount}</b> දෙනෙකුගේ ණය ගෙවීම් පමාවී ඇත.</span>`;
+            }
+        } else {
+            // Good/Healthy State
+            healthCard.style.background = 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)';
+            healthCard.style.borderColor = '#bbf7d0';
+            healthCard.style.boxShadow = '0 10px 15px -3px rgba(22, 163, 74, 0.08), 0 4px 6px -4px rgba(22, 163, 74, 0.08)';
+            if (healthCardIcon) healthCardIcon.textContent = '🛡️';
+            if (healthStatusText) {
+                healthStatusText.innerHTML = `<span style="color: #14532d;">යහපත්</span>`;
+            }
+            if (healthStatsSubtext) {
+                if (totalCustomersCount > 0) {
+                    healthStatsSubtext.innerHTML = `<span style="color: #166534;">සියලුම ණය ගිණුම් <b>${totalCustomersCount}</b> සාමාන්‍ය තත්වයේ පවතී.</span>`;
+                } else {
+                    healthStatsSubtext.innerHTML = `<span style="color: #166534;">ක්‍රියාකාරී ණය ගිණුම් නොමැත.</span>`;
+                }
+            }
+        }
+    }
+}
+
+function getLoanTypeName(refType) {
+    switch (refType) {
+        case 'HAND_LOAN_GIVEN_SETTLE':
+            return 'Hand Loan';
+        case 'LOAN_NO_INTEREST_REPAY':
+            return 'No-interest';
+        case 'LOAN_INTEREST_REPAY':
+            return 'Interest 10%';
+        case 'ADV_LOAN_REPAY':
+            return 'Advanced Loan';
+        case 'WEEKLY_LOAN_PAYMENT':
+            return 'Weekly Loan';
+        case 'LOAN_DAILY_REPAY':
+            return 'Daily Loan';
+        default:
+            return 'Other';
+    }
+}
+
+function parseRepaymentDesc(desc) {
+    let customer = 'Customer';
+    let method = 'CASH';
+    
+    let parts = String(desc || '').split(' - ');
+    if (parts.length < 2) {
+        parts = String(desc || '').split(': ');
+    }
+    if (parts.length < 2) {
+        parts = String(desc || '').split(':');
+    }
+    if (parts.length < 2) {
+        parts = String(desc || '').split('-');
+    }
+    
+    if (parts.length >= 2) {
+        let cPart = parts[parts.length - 1].trim();
+        const mMatch = cPart.match(/\(([^)]+)\)/);
+        if (mMatch) {
+            method = mMatch[1].trim().toUpperCase();
+            cPart = cPart.replace(/\([^)]+\)/g, '').trim();
+        }
+        customer = cPart;
+    }
+    return { customer, method };
+}
+
+function getLocalYMD(d) {
+    if (!d) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function processRepaymentsLedger() {
+    repaymentLedger = [];
+
+    const targetTypes = [
+        'HAND_LOAN_GIVEN_SETTLE',
+        'LOAN_NO_INTEREST_REPAY',
+        'LOAN_INTEREST_REPAY',
+        'ADV_LOAN_REPAY',
+        'WEEKLY_LOAN_PAYMENT',
+        'LOAN_DAILY_REPAY',
+        'SCRAP_BUYING'
+    ];
+
+    journalEntries.forEach(entry => {
+        const refType = entry.referenceType || '';
+        if (!targetTypes.includes(refType)) return;
+
+        const dt = entry.date?.toDate ? entry.date.toDate() : (entry.date ? new Date(entry.date) : new Date());
+        
+        let amt = 0;
+        if (refType === 'SCRAP_BUYING') {
+            const credit1050 = (entry.entries || []).filter(line => line.accountCode === '1-1050-01').reduce((sum, line) => sum + n(line.credit), 0);
+            const credit4020 = (entry.entries || []).filter(line => line.accountCode === '4-4020-01').reduce((sum, line) => sum + n(line.credit), 0);
+            const credit1030_13 = (entry.entries || []).filter(line => line.accountCode === '1-1030-13').reduce((sum, line) => sum + n(line.credit), 0);
+            const credit2060_10 = (entry.entries || []).filter(line => line.accountCode === '2-2060-10').reduce((sum, line) => sum + n(line.credit), 0);
+            amt = credit1050 + credit4020 + credit1030_13 + credit2060_10;
+            if (amt <= 0.01) return; // ignore non-loan-repayment scrap purchases
+        } else {
+            // Sum total amount paid (sum of debits)
+            amt = (entry.entries || []).reduce((sum, line) => sum + n(line.debit), 0);
+        }
+        
+        const { customer, method } = parseRepaymentDesc(entry.description);
+
+        repaymentLedger.push({
+            id: entry.id,
+            timestamp: dt,
+            customerName: customer,
+            loanType: refType === 'SCRAP_BUYING' ? 'Scrap Purchase Deduction' : getLoanTypeName(refType),
+            method: refType === 'SCRAP_BUYING' ? 'BILL DEDUCTION' : method,
+            amount: amt
+        });
+    });
+
+    renderRepaymentsTable(repaymentLedger);
+}
+
+function renderRepaymentsTable(data) {
+    const tbody = document.getElementById('repaymentTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = data.map(r => `
+        <tr>
+            <td style="color:#64748b;">${r.timestamp.toLocaleDateString()} ${r.timestamp.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'})}</td>
+            <td style="font-weight: 700; color:#1e293b;">${escapeHtml(r.customerName)}</td>
+            <td style="font-weight: 600;">${r.loanType}</td>
+            <td style="text-align: center;"><span class="badge-flow" style="background:#f1f5f9;color:#475569;">${r.method}</span></td>
+            <td style="text-align: right; font-weight: 800; color:#16a34a;">+${n(r.amount).toLocaleString()}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="5" style="text-align:center;color:#64748b;">No repayments logged in journal history.</td></tr>';
+}
+
+function filterRepaymentTable() {
+    const q = String(document.getElementById('repaymentSearch').value || '').trim().toLowerCase();
+    const filtered = repaymentLedger.filter(r => r.customerName.toLowerCase().includes(q) || r.loanType.toLowerCase().includes(q));
+    renderRepaymentsTable(filtered);
+}
+
+function processCashFlow() {
+    const dailyMap = {};
+
+    const repTypes = [
+        'HAND_LOAN_GIVEN_SETTLE',
+        'LOAN_NO_INTEREST_REPAY',
+        'LOAN_INTEREST_REPAY',
+        'ADV_LOAN_REPAY',
+        'WEEKLY_LOAN_PAYMENT',
+        'LOAN_DAILY_REPAY',
+        'SCRAP_BUYING'
+    ];
+
+    const issueTypes = [
+        'HAND_LOAN_GIVEN',
+        'LOAN_NO_INTEREST',
+        'LOAN_INTEREST_GIVEN',
+        'ADV_LOAN_ISSUE',
+        'LOAN_WEEKLY_ISSUE',
+        'LOAN_DAILY_ISSUE'
+    ];
+
+    // Read repayments and disbursements from journal
+    journalEntries.forEach(entry => {
+        const refType = entry.referenceType || '';
+        const isRep = repTypes.includes(refType);
+        const isIss = issueTypes.includes(refType);
+
+        if (!isRep && !isIss) return;
+
+        const dt = entry.date?.toDate ? entry.date.toDate() : (entry.date ? new Date(entry.date) : new Date());
+        const dateStr = getLocalYMD(dt);
+
+        if (!dailyMap[dateStr]) {
+            dailyMap[dateStr] = { date: dateStr, issued: 0, repaid: 0 };
+        }
+
+        let amt = 0;
+        if (isRep) {
+            if (refType === 'SCRAP_BUYING') {
+                const credit1050 = (entry.entries || []).filter(line => line.accountCode === '1-1050-01').reduce((sum, line) => sum + n(line.credit), 0);
+                const credit4020 = (entry.entries || []).filter(line => line.accountCode === '4-4020-01').reduce((sum, line) => sum + n(line.credit), 0);
+                const credit1030_13 = (entry.entries || []).filter(line => line.accountCode === '1-1030-13').reduce((sum, line) => sum + n(line.credit), 0);
+                const credit2060_10 = (entry.entries || []).filter(line => line.accountCode === '2-2060-10').reduce((sum, line) => sum + n(line.credit), 0);
+                amt = credit1050 + credit4020 + credit1030_13 + credit2060_10;
+            } else {
+                amt = (entry.entries || []).reduce((sum, line) => sum + n(line.debit), 0);
+            }
+            dailyMap[dateStr].repaid += amt;
+        } else if (isIss) {
+            amt = (entry.entries || []).reduce((sum, line) => sum + n(line.debit), 0);
+            dailyMap[dateStr].issued += amt;
+        }
+    });
+
+    // Populate missing dates to have a continuous 14-day history
+    const today = new Date();
+    for (let i = 0; i < 14; i++) {
+        const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+        const dStr = getLocalYMD(d);
+        if (!dailyMap[dStr]) {
+            dailyMap[dStr] = { date: dStr, issued: 0, repaid: 0 };
+        }
+    }
+
+    // Convert to array and sort by date descending (newest on top)
+    dailyFlowList = Object.values(dailyMap).sort((a, b) => b.date.localeCompare(a.date));
+
+    // Update Today's Flow Cards
+    const todayStr = getLocalYMD(new Date());
+    const todayFlow = dailyMap[todayStr] || { date: todayStr, issued: 0, repaid: 0 };
+    document.getElementById('todayRepaidText').textContent = m(todayFlow.repaid);
+    document.getElementById('todayIssuedText').textContent = m(todayFlow.issued);
+
+    // Render table
+    const tbody = document.getElementById('flowTableBody');
+    if (tbody) {
+        tbody.innerHTML = dailyFlowList.map(r => {
+            const net = r.repaid - r.issued;
+            let netBadge = '';
+            if (net > 0.01) {
+                netBadge = `<span class="badge-flow" style="background:#dcfce7;color:#15803d;">+${n(net).toLocaleString()} (Inflow)</span>`;
+            } else if (net < -0.01) {
+                netBadge = `<span class="badge-flow" style="background:#fee2e2;color:#b91c1c;">${n(net).toLocaleString()} (Outflow)</span>`;
+            } else {
+                netBadge = `<span class="badge-flow" style="background:#f1f5f9;color:#475569;">0.00</span>`;
+            }
+
+            return `
+                <tr>
+                    <td style="font-weight:600;color:#334155;">${r.date}</td>
+                    <td style="text-align: right; color:#b91c1c;">
+                        ${r.issued > 0 ? `<a href="javascript:showDailyDetails('${r.date}', 'issued')" style="color:#b91c1c; text-decoration:underline dashed; font-weight:700;">${n(r.issued).toLocaleString()}</a>` : '-'}
+                    </td>
+                    <td style="text-align: right; color:#16a34a;">
+                        ${r.repaid > 0 ? `<a href="javascript:showDailyDetails('${r.date}', 'repaid')" style="color:#16a34a; text-decoration:underline dashed; font-weight:700;">${n(r.repaid).toLocaleString()}</a>` : '-'}
+                    </td>
+                    <td style="text-align: right;">${netBadge}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // Render chart
+    renderFlowChart(dailyFlowList.slice(0, 10).reverse()); // Show last 10 days ascending on chart
+}
+
+function showDailyDetails(dateStr, type) {
+    const repTypes = [
+        'HAND_LOAN_GIVEN_SETTLE',
+        'LOAN_NO_INTEREST_REPAY',
+        'LOAN_INTEREST_REPAY',
+        'ADV_LOAN_REPAY',
+        'WEEKLY_LOAN_PAYMENT',
+        'LOAN_DAILY_REPAY',
+        'SCRAP_BUYING'
+    ];
+
+    const issueTypes = [
+        'HAND_LOAN_GIVEN',
+        'LOAN_NO_INTEREST',
+        'LOAN_INTEREST_GIVEN',
+        'ADV_LOAN_ISSUE',
+        'LOAN_WEEKLY_ISSUE',
+        'LOAN_DAILY_ISSUE'
+    ];
+
+    const details = [];
+
+    journalEntries.forEach(entry => {
+        const refType = entry.referenceType || '';
+        const isRep = repTypes.includes(refType);
+        const isIss = issueTypes.includes(refType);
+        
+        if (type === 'repaid' && !isRep) return;
+        if (type === 'issued' && !isIss) return;
+        if (type === 'all' && !isRep && !isIss) return;
+
+        const dt = entry.date?.toDate ? entry.date.toDate() : (entry.date ? new Date(entry.date) : new Date());
+        const entryDateStr = getLocalYMD(dt);
+        if (entryDateStr !== dateStr) return;
+
+        let amt = 0;
+        let loanType = '';
+        let customer = 'Customer';
+        let txType = ''; // 'issued' or 'repaid'
+
+        if (isRep && (type === 'repaid' || type === 'all')) {
+            txType = 'repaid';
+            if (refType === 'SCRAP_BUYING') {
+                const credit1050 = (entry.entries || []).filter(line => line.accountCode === '1-1050-01').reduce((sum, line) => sum + n(line.credit), 0);
+                const credit4020 = (entry.entries || []).filter(line => line.accountCode === '4-4020-01').reduce((sum, line) => sum + n(line.credit), 0);
+                const credit1030_13 = (entry.entries || []).filter(line => line.accountCode === '1-1030-13').reduce((sum, line) => sum + n(line.credit), 0);
+                const credit2060_10 = (entry.entries || []).filter(line => line.accountCode === '2-2060-10').reduce((sum, line) => sum + n(line.credit), 0);
+                amt = credit1050 + credit4020 + credit1030_13 + credit2060_10;
+                loanType = 'Scrap Purchase Deduction';
+            } else {
+                amt = (entry.entries || []).reduce((sum, line) => sum + n(line.debit), 0);
+                loanType = getLoanTypeName(refType);
+            }
+            if (amt <= 0.01) return;
+            customer = parseRepaymentDesc(entry.description).customer;
+        } else if (isIss && (type === 'issued' || type === 'all')) {
+            txType = 'issued';
+            amt = (entry.entries || []).reduce((sum, line) => sum + n(line.debit), 0);
+            if (amt <= 0.01) return;
+            
+            customer = parseRepaymentDesc(entry.description).customer;
+            
+            if (refType === 'HAND_LOAN_GIVEN') loanType = 'Hand Loan';
+            else if (refType === 'LOAN_NO_INTEREST') loanType = 'No-interest';
+            else if (refType === 'LOAN_INTEREST_GIVEN') loanType = 'Interest 10%';
+            else if (refType === 'ADV_LOAN_ISSUE') loanType = 'Advanced Loan';
+            else if (refType === 'LOAN_WEEKLY_ISSUE') loanType = 'Weekly Loan';
+            else if (refType === 'LOAN_DAILY_ISSUE') loanType = 'Daily Loan';
+            else loanType = 'Other';
+        }
+
+        details.push({
+            time: dt.toLocaleTimeString(undefined, {hour: '2-digit', minute: '2-digit'}),
+            customer: customer,
+            loanType: loanType,
+            amount: amt,
+            txType: txType
+        });
+    });
+
+    details.sort((a, b) => a.time.localeCompare(b.time));
+    openDetailsModal(dateStr, type, details);
+}
+
+function showTodayDetails(type) {
+    const todayStr = getLocalYMD(new Date());
+    showDailyDetails(todayStr, type);
+}
+
+function openDetailsModal(dateStr, type, details) {
+    const modal = document.getElementById('detailsModal');
+    const title = document.getElementById('modalTitle');
+    const tbody = document.getElementById('modalTableBody');
+    
+    title.textContent = `${type === 'issued' ? 'New Loans Issued' : (type === 'repaid' ? 'Loan Repayments' : 'All Loan Transactions')} on ${dateStr}`;
+    
+    if (details.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#64748b;padding:20px;">No transactions recorded.</td></tr>`;
+    } else {
+        tbody.innerHTML = details.map(r => {
+            let link = '#';
+            if (r.loanType === 'Hand Loan') link = `/modules/scrap_collection_center/hand-loans.html?customer=${encodeURIComponent(r.customer)}`;
+            else if (r.loanType === 'No-interest') link = `/modules/scrap_collection_center/loan-no-interest.html?customer=${encodeURIComponent(r.customer)}`;
+            else if (r.loanType === 'Interest 10%') link = `/modules/scrap_collection_center/loan-interest.html?customer=${encodeURIComponent(r.customer)}`;
+            else if (r.loanType === 'Advanced Loan') link = `/modules/scrap_collection_center/loan-advanced-investor.html?customer=${encodeURIComponent(r.customer)}`;
+            else if (r.loanType === 'Weekly Loan') link = `/modules/scrap_collection_center/loans.html?customer=${encodeURIComponent(r.customer)}`;
+            else if (r.loanType === 'Daily Loan') link = `/modules/scrap_collection_center/loan-daily.html?customer=${encodeURIComponent(r.customer)}`;
+            
+            const typeDisplay = link !== '#' 
+                ? `<a href="${link}" style="color:#0f3b2c; font-weight:700; text-decoration:underline dashed;">${r.loanType}</a>`
+                : `<span style="color:#64748b; font-weight:500;">${r.loanType}</span>`;
+                
+            const isRep = r.txType === 'repaid';
+            const sign = isRep ? '+' : '-';
+            const color = isRep ? '#16a34a' : '#b91c1c';
+            
+            const txTypeLabel = isRep 
+                ? `<span class="badge-flow" style="background:#dcfce7;color:#15803d;font-weight:800;font-size:11px;">ලැබුන (Repaid) 💰</span>`
+                : `<span class="badge-flow" style="background:#fee2e2;color:#b91c1c;font-weight:800;font-size:11px;">දුන්න (Issued) 💸</span>`;
+
+            return `
+                <tr>
+                    <td style="color:#64748b;">${r.time}</td>
+                    <td style="font-weight:700;color:#1e293b;font-size:13px;">${escapeHtml(r.customer)}</td>
+                    <td>${txTypeLabel}</td>
+                    <td>${typeDisplay}</td>
+                    <td style="text-align:right; font-weight:800; color:${color}; font-size:13px;">
+                        ${sign}LKR ${n(r.amount).toLocaleString()}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+    modal.style.display = 'flex';
+}
+
+function closeDetailsModal() {
+    document.getElementById('detailsModal').style.display = 'none';
+}
+
+function renderFlowChart(chartData) {
+    const ctx = document.getElementById('flowChart')?.getContext('2d');
+    if (!ctx) return;
+
+    if (flowChartInst) {
+        flowChartInst.destroy();
+    }
+
+    const labels = chartData.map(r => {
+        const dt = new Date(r.date);
+        return dt.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+    });
+    const issuedData = chartData.map(r => r.issued);
+    const repaidData = chartData.map(r => r.repaid);
+
+    flowChartInst = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'New Issued (Outflow)',
+                    data: issuedData,
+                    backgroundColor: 'rgba(239, 68, 68, 0.75)',
+                    borderColor: '#ef4444',
+                    borderWidth: 1,
+                    borderRadius: 6
+                },
+                {
+                    label: 'Repayments (Inflow)',
+                    data: repaidData,
+                    backgroundColor: 'rgba(16, 185, 129, 0.75)',
+                    borderColor: '#10b981',
+                    borderWidth: 1,
+                    borderRadius: 6
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: { boxWidth: 12, font: { family: 'Inter', size: 11 } }
+                }
+            },
+            scales: {
+                x: { grid: { display: false } },
+                y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 } } }
+            }
+        }
+    });
+}
+
+function processPortfolioTrend() {
+    const dates = [];
+    const today = new Date();
+    const todayStr = getLocalYMD(today);
+    
+    // Generate exactly 30 days of dates ending today
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+        dates.push(getLocalYMD(d));
+    }
+    dates.sort((a, b) => a.localeCompare(b));
+
+    const repTypes = [
+        'HAND_LOAN_GIVEN_SETTLE',
+        'LOAN_NO_INTEREST_REPAY',
+        'LOAN_INTEREST_REPAY',
+        'ADV_LOAN_REPAY',
+        'WEEKLY_LOAN_PAYMENT',
+        'LOAN_DAILY_REPAY',
+        'SCRAP_BUYING'
+    ];
+
+    const issueTypes = [
+        'HAND_LOAN_GIVEN',
+        'LOAN_NO_INTEREST',
+        'LOAN_INTEREST_GIVEN',
+        'ADV_LOAN_ISSUE',
+        'LOAN_WEEKLY_ISSUE',
+        'LOAN_DAILY_ISSUE'
+    ];
+
+    // Map to hold daily aggregate changes
+    const dailyChanges = {};
+    dates.forEach(dStr => {
+        dailyChanges[dStr] = { issued: 0, repaid: 0 };
+    });
+
+    // Aggregate all journal entries by date
+    journalEntries.forEach(entry => {
+        if (!entry.date) return;
+        const entryDate = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date);
+        if (!entryDate || isNaN(entryDate.getTime())) return;
+        const entryDateStr = getLocalYMD(entryDate);
+        
+        // Only count if it's within our 30-day window
+        if (!dailyChanges[entryDateStr]) return;
+
+        const refType = entry.referenceType || '';
+        const isRep = repTypes.includes(refType);
+        const isIss = issueTypes.includes(refType);
+
+        if (!isRep && !isIss) return;
+
+        let amt = 0;
+        if (isRep) {
+            if (refType === 'SCRAP_BUYING') {
+                const credit1050 = (entry.entries || []).filter(line => line.accountCode === '1-1050-01').reduce((sum, line) => sum + n(line.credit), 0);
+                const credit4020 = (entry.entries || []).filter(line => line.accountCode === '4-4020-01').reduce((sum, line) => sum + n(line.credit), 0);
+                const credit1030_13 = (entry.entries || []).filter(line => line.accountCode === '1-1030-13').reduce((sum, line) => sum + n(line.credit), 0);
+                const credit2060_10 = (entry.entries || []).filter(line => line.accountCode === '2-2060-10').reduce((sum, line) => sum + n(line.credit), 0);
+                amt = credit1050 + credit4020 + credit1030_13 + credit2060_10;
+            } else {
+                amt = (entry.entries || []).reduce((sum, line) => sum + n(line.debit), 0);
+            }
+            dailyChanges[entryDateStr].repaid += amt;
+        } else if (isIss) {
+            amt = (entry.entries || []).reduce((sum, line) => sum + n(line.debit), 0);
+            dailyChanges[entryDateStr].issued += amt;
+        }
+    });
+
+    // Start with current outstanding balance today (calculated from real-time database lists)
+    const currentGrandTotal = grandTotalOutstanding;
+
+    // Daily balances tracking
+    const dailyTotalsMap = {};
+    dailyTotalsMap[todayStr] = currentGrandTotal;
+
+    // Roll backward day-by-day
+    let currentBal = currentGrandTotal;
+    for (let i = dates.length - 1; i > 0; i--) {
+        const currentDay = dates[i];
+        const prevDay = dates[i - 1];
+        
+        const change = dailyChanges[currentDay] || { issued: 0, repaid: 0 };
+        currentBal = currentBal - change.issued + change.repaid;
+        if (currentBal < 0) currentBal = 0;
+        dailyTotalsMap[prevDay] = currentBal;
+    }
+
+    // Convert to list for the chart
+    const dailyTotals = dates.map(dStr => ({
+        dateStr: dStr,
+        total: dailyTotalsMap[dStr] || 0
+    }));
+
+    // Render variance percentage over the visible 30-day window
+    const firstVal = dailyTotals[0]?.total || 0;
+    const lastVal = dailyTotals.find(t => t.dateStr === todayStr)?.total || 0;
+    
+    const trendEl = document.getElementById('trendPercentText');
+    if (trendEl) {
+        if (firstVal > 0.01) {
+            const diffPct = ((lastVal - firstVal) / firstVal) * 100;
+            if (diffPct > 0.05) {
+                // Outflow (debt increased) -> Red color
+                trendEl.textContent = `+${diffPct.toFixed(1)}% ණය වැඩිවීම (Outflow) ⚠️`;
+                trendEl.style.color = '#b91c1c'; // dark red
+                trendEl.style.background = '#fee2e2'; // light red
+            } else if (diffPct < -0.05) {
+                // Inflow (debt decreased) -> Green color
+                trendEl.textContent = `${Math.abs(diffPct).toFixed(1)}% ණය අඩුවීම (Inflow) ✅`;
+                trendEl.style.color = '#15803d'; // dark green
+                trendEl.style.background = '#dcfce7'; // light green
+            } else {
+                trendEl.textContent = '0.0% වෙනසක් නැත';
+                trendEl.style.color = '#475569';
+                trendEl.style.background = '#f1f5f9';
+            }
+        } else {
+            trendEl.textContent = '--';
+            trendEl.style.color = '#64748b';
+            trendEl.style.background = '#f1f5f9';
+        }
+    }
+
+    renderPortfolioTrendChart(dailyTotals, lastVal >= firstVal, dailyChanges);
+}
+
+function renderPortfolioTrendChart(chartData, isGrowing, dailyChanges) {
+    const canvas = document.getElementById('portfolioTrendChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    if (portfolioTrendChartInst) {
+        portfolioTrendChartInst.destroy();
+    }
+
+    const labels = chartData.map(r => {
+        const dt = new Date(r.dateStr + 'T00:00:00');
+        return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    });
+
+    const dataPoints = chartData.map(r => r.total);
+
+    // Calculate dynamic point and border colors for each point
+    const pointBorderColors = [];
+    const pointBgColors = [];
+    for (let i = 0; i < dataPoints.length; i++) {
+        const dStr = chartData[i].dateStr;
+        const change = dailyChanges[dStr] || { issued: 0, repaid: 0 };
+        const netChange = change.issued - change.repaid;
+        
+        if (netChange > 0.01) {
+            pointBorderColors.push('#ef4444'); // Red for increase (Outflow)
+            pointBgColors.push('#fee2e2');
+        } else if (netChange < -0.01) {
+            pointBorderColors.push('#10b981'); // Green for decrease (Inflow)
+            pointBgColors.push('#dcfce7');
+        } else {
+            pointBorderColors.push('#64748b'); // Gray for neutral
+            pointBgColors.push('#f1f5f9');
+        }
+    }
+
+    const themeColor = isGrowing ? '#ef4444' : '#10b981';
+    const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+    if (isGrowing) {
+        gradient.addColorStop(0, 'rgba(239, 68, 68, 0.15)'); // Red
+        gradient.addColorStop(1, 'rgba(239, 68, 68, 0.00)');
+    } else {
+        gradient.addColorStop(0, 'rgba(16, 185, 129, 0.15)'); // Green
+        gradient.addColorStop(1, 'rgba(16, 185, 129, 0.00)');
+    }
+
+    portfolioTrendChartInst = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Outstanding Portfolio',
+                data: dataPoints,
+                borderWidth: 3.5,
+                // Use dynamic segment color to change line color based on daily direction
+                segment: {
+                    borderColor: ctxSegment => {
+                        const p0 = ctxSegment.p0.parsed.y;
+                        const p1 = ctxSegment.p1.parsed.y;
+                        if (p1 > p0) return '#ef4444'; // Red segment going up
+                        if (p1 < p0) return '#10b981'; // Green segment going down
+                        return '#94a3b8'; // Slate segment for flat
+                    }
+                },
+                pointRadius: 6,
+                pointBackgroundColor: pointBgColors,
+                pointBorderColor: pointBorderColors,
+                pointBorderWidth: 2.5,
+                pointHoverRadius: 9,
+                pointHoverBackgroundColor: ctx => pointBorderColors[ctx.dataIndex],
+                pointHoverBorderColor: '#ffffff',
+                pointHoverBorderWidth: 2,
+                tension: 0.3,
+                fill: true,
+                backgroundColor: gradient
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: {
+                    left: 6,
+                    right: 6,
+                    top: 15,
+                    bottom: 6
+                }
+            },
+            onClick: (event, activeElements) => {
+                if (activeElements && activeElements.length > 0) {
+                    const index = activeElements[0].index;
+                    const dateStr = chartData[index].dateStr;
+                    showDailyDetails(dateStr, 'all');
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#0f172a',
+                    titleFont: { family: 'Inter', size: 12, weight: 'bold' },
+                    bodyFont: { family: 'Inter', size: 12 },
+                    padding: 12,
+                    cornerRadius: 10,
+                    displayColors: false,
+                    callbacks: {
+                        title: function(context) {
+                            const index = context[0].dataIndex;
+                            const dStr = chartData[index].dateStr;
+                            return new Date(dStr + 'T00:00:00').toLocaleDateString(undefined, {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                            }) + ' (ගනුදෙනු බැලීමට ක්ලික් කරන්න)';
+                        },
+                        label: function(context) {
+                            const index = context.dataIndex;
+                            const dStr = chartData[index].dateStr;
+                            const outstanding = context.raw;
+                            const change = dailyChanges[dStr] || { issued: 0, repaid: 0 };
+                            const netChange = change.issued - change.repaid;
+                            
+                            let changeText = 'දවසේ වෙනස: වෙනසක් නැත';
+                            if (netChange > 0.01) {
+                                changeText = `දවසේ වෙනස: +LKR ${Math.round(netChange).toLocaleString()} (ණය වැඩිවීම ⚠️)`;
+                            } else if (netChange < -0.01) {
+                                changeText = `දවසේ වෙනස: -LKR ${Math.abs(Math.round(netChange)).toLocaleString()} (ණය අඩුවීම ✅)`;
+                            }
+                            
+                            return [
+                                'ණය කළඹ: LKR ' + Math.round(outstanding).toLocaleString(),
+                                changeText
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        font: { family: 'Inter', size: 10, weight: 600 },
+                        color: '#64748b'
+                    }
+                },
+                y: {
+                    beginAtZero: false,
+                    grid: { color: '#f1f5f9' },
+                    ticks: {
+                        font: { family: 'Inter', size: 10, weight: 500 },
+                        color: '#64748b',
+                        callback: function(value) {
+                            return 'LKR ' + (Number(value) / 1000).toFixed(0) + 'K';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function escapeHtml(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>
+
+<!-- Details Modal HTML -->
+<div id="detailsModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.6); backdrop-filter:blur(8px); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)closeDetailsModal();">
+    <div class="card" style="background:#ffffff; border-radius:18px; width:90%; max-width:650px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.1); display:flex; flex-direction:column; overflow:hidden;">
+        <div style="padding:18px 24px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; background:#f8fafc;">
+            <h3 id="modalTitle" style="margin:0; font-size:18px; font-weight:800; color:#0f3b2c;">Transaction Details</h3>
+            <button onclick="closeDetailsModal()" style="background:#f1f5f9; border:none; padding:6px 12px; border-radius:8px; font-size:12px; font-weight:700; color:#475569; cursor:pointer;">Close</button>
+        </div>
+        <div style="padding:20px; overflow-y:auto; max-height:400px;">
+            <table class="data-table" style="width:100%;">
+                <thead>
+                    <tr>
+                        <th>Time (වේලාව)</th>
+                        <th>Customer Name (නම)</th>
+                        <th>Action (ගනුදෙනුව)</th>
+                        <th>Category (ණය වර්ගය)</th>
+                        <th style="text-align:right;">Amount (මුදල)</th>
+                    </tr>
+                </thead>
+                <tbody id="modalTableBody">
+                    <!-- Dynamic -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

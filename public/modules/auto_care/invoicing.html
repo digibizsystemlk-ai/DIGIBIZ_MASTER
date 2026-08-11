@@ -18,14 +18,14 @@
     
     <script src="/core/firebase-init.js?v=100"></script>
     <script src="/scripts/admin-impersonation.js?v=100"></script>
-    <script src="../../core/event-validation.js?v=3"></script>
-    <script src="../../core/event-bus.js?v=3"></script>
-    <script src="../../core/accounts-core.js?v=3"></script>
-    <script src="../../core/auth-roles.js?v=120"></script>
-    <script src="../../core/business-types.js?v=4"></script>
-    <script src="../../core/dashboard-core.js?v=3"></script>
-    <script src="../../core/subscription-manager.js?v=3"></script>
-    <script src="../../core/sidebar.js?v=2000"></script>
+    <script src="/core/event-validation.js?v=3"></script>
+    <script src="/core/event-bus.js?v=3"></script>
+    <script src="/core/accounts-core.js?v=3"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/dashboard-core.js?v=3"></script>
+    <script src="/core/subscription-manager.js?v=3"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
     <script src="autocare-utils.js?v=2"></script>
     
     <style>
@@ -146,9 +146,8 @@
         <!-- Quick Spare Part Stock Inserter Bar -->
         <div class="no-print" style="background:#0f172a; padding:14px; border-radius:12px; margin-bottom:16px; border:1px solid #334155; display:flex; gap:12px; align-items:center;">
             <i class="fa-solid fa-box-open" style="color:#38bdf8; font-size:20px;"></i>
-            <select id="quickPartPicker" style="flex:1;">
-                <option value="">-- Add Spare Part from Available Stock Inventory --</option>
-            </select>
+            <input type="text" id="quickPartPicker" list="quickPartList" placeholder="Search and type Spare Part No or Name..." style="flex:1;">
+            <datalist id="quickPartList"></datalist>
             <button type="button" class="btn btn-primary" onclick="addPickedPartToBill()"><i class="fa-solid fa-plus"></i> Add Part to Bill</button>
         </div>
 
@@ -257,12 +256,14 @@
             }
 
             // Populate Quick Spare Part Picker
-            const picker = document.getElementById('quickPartPicker');
-            picker.innerHTML = '<option value="">-- Add Spare Part from Available Stock Inventory --</option>';
-            inventoryParts.forEach(p => {
-                const stockLabel = p.qty <= p.min ? `⚠️ LOW (${p.qty})` : `Stock: ${p.qty}`;
-                picker.innerHTML += `<option value="${p.no}">${p.no} - ${p.name} [Rs. ${p.price.toLocaleString()}] (${stockLabel})</option>`;
-            });
+            const pickerList = document.getElementById('quickPartList');
+            if (pickerList) {
+                const options = inventoryParts.map(p => {
+                    const stockLabel = p.qty <= p.min ? `⚠️ LOW (${p.qty})` : `Stock: ${p.qty}`;
+                    return `<option value="${p.no} - ${p.name}">Rs. ${p.price.toLocaleString()} (${stockLabel})</option>`;
+                });
+                pickerList.innerHTML = options.join('');
+            }
 
             // Populate Customer Datalists
             const nameList = document.getElementById('customerNameList');
@@ -321,10 +322,17 @@
         }
 
         function addPickedPartToBill() {
-            const partNo = document.getElementById('quickPartPicker').value;
-            if(!partNo) return;
+            const inputVal = document.getElementById('quickPartPicker').value;
+            if(!inputVal) return;
+            
+            // Extract Part No from "PART-NO - Part Name" format
+            const partNo = inputVal.split(' - ')[0].trim();
             const p = inventoryParts.find(x => x.no === partNo);
-            if(!p) return;
+            
+            if(!p) {
+                alert("⚠️ Please select a valid part from the list.");
+                return;
+            }
 
             if(p.qty <= 0) {
                 alert(`⚠️ Warning: Part ${p.name} (${p.no}) has 0 stock remaining! Please re-order via Stock Purchases (GRN).`);
@@ -341,12 +349,15 @@
                         <option value="Oil & Fluid">Oil & Fluid</option>
                     </select>
                 </td>
-                <td><input type="number" class="b-qty" value="1" max="${p.qty}" onchange="calcBillTotal()" style="width:100%;"></td>
-                <td><input type="number" class="b-price" value="${p.price}" onchange="calcBillTotal()" style="width:100%;"></td>
+                <td><input type="number" class="b-qty" value="1" max="${p.qty}" onchange="calcBillTotal()" onkeyup="calcBillTotal()" style="width:100%;"></td>
+                <td><input type="number" class="b-price" value="${p.price}" onchange="calcBillTotal()" onkeyup="calcBillTotal()" style="width:100%;" title="You can edit the unit price here"></td>
                 <td class="b-row-total" style="font-weight:700; color:#38bdf8;">Rs. ${p.price.toLocaleString('en-US', {minimumFractionDigits:2})}</td>
             `;
             tbody.appendChild(tr);
             calcBillTotal();
+            
+            // Clear input
+            document.getElementById('quickPartPicker').value = '';
         }
 
         function calcBillTotal() {

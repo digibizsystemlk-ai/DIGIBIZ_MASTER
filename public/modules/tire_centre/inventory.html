@@ -16,14 +16,14 @@
     
     <script src="/core/firebase-init.js?v=100"></script>
     <script src="/scripts/admin-impersonation.js?v=100"></script>
-    <script src="../../core/event-validation.js?v=3"></script>
-    <script src="../../core/event-bus.js?v=3"></script>
-    <script src="../../core/accounts-core.js?v=3"></script>
-    <script src="../../core/auth-roles.js?v=120"></script>
-    <script src="../../core/business-types.js?v=4"></script>
-    <script src="../../core/dashboard-core.js?v=3"></script>
-    <script src="../../core/subscription-manager.js?v=3"></script>
-    <script src="../../core/sidebar.js?v=2000"></script>
+    <script src="/core/event-validation.js?v=3"></script>
+    <script src="/core/event-bus.js?v=3"></script>
+    <script src="/core/accounts-core.js?v=3"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/dashboard-core.js?v=3"></script>
+    <script src="/core/subscription-manager.js?v=3"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
     
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
@@ -284,15 +284,35 @@
             });
         }
 
-        // Load products from Firestore
+        // Load products from Firestore with smart deduplication & total stock sum
         async function loadProducts(){
             if(!currentBusinessId) return;
             const snapshot = await db.collection('products').doc(currentBusinessId).collection('list').get();
-            products = [];
-            snapshot.forEach(doc => products.push({id: doc.id, ...doc.data()}));
+            const rawList = [];
+            snapshot.forEach(doc => rawList.push({id: doc.id, ...doc.data()}));
             
+            // Smart deduplication: group duplicate item entries (e.g. TL300-18) into 1 row with combined stock
+            const mergedMap = new Map();
+            rawList.forEach(p => {
+                const codeStr = String(p.code || p.name || p.id || '').trim().toUpperCase();
+                const brandStr = String(p.brand || '').trim().toUpperCase();
+                const nameStr = String(p.name || '').trim().toUpperCase();
+                const key = `${codeStr}__${nameStr}__${brandStr}`;
+                
+                if (!mergedMap.has(key)) {
+                    mergedMap.set(key, { ...p, stock: Number(p.stock || 0), docIds: [p.id] });
+                } else {
+                    const existing = mergedMap.get(key);
+                    existing.stock += Number(p.stock || 0);
+                    if (!existing.docIds.includes(p.id)) existing.docIds.push(p.id);
+                    if (Number(p.price) > Number(existing.price || 0)) existing.price = p.price;
+                    if (Number(p.cost) > Number(existing.cost || 0)) existing.cost = p.cost;
+                }
+            });
+
+            products = Array.from(mergedMap.values());
+
             populateCategoryLists();
-            // No demo products seeded automatically
             applyFilters();
         }
         
@@ -314,18 +334,19 @@
         window.quickUpdateRestockLevel = async (id, val) => {
             const numVal = (val !== '' && !isNaN(val)) ? Number(val) : 10;
             try {
-                await db.collection('products').doc(currentBusinessId).collection('list').doc(id).set({
+                const prod = products.find(p => p.id === id);
+                const targetDocId = (prod.docIds && prod.docIds[0]) || id;
+                await db.collection('products').doc(currentBusinessId).collection('list').doc(targetDocId).set({
                     restockLevel: numVal,
                     minStockLevel: numVal,
                     reorderLevel: numVal,
                     updatedAt: new Date()
                 }, { merge: true });
 
-                const p = products.find(prod => prod.id === id);
-                if (p) {
-                    p.restockLevel = numVal;
-                    p.minStockLevel = numVal;
-                    p.reorderLevel = numVal;
+                if (prod) {
+                    prod.restockLevel = numVal;
+                    prod.minStockLevel = numVal;
+                    prod.reorderLevel = numVal;
                 }
                 applyFilters();
                 showToast('Restock level updated successfully!');
@@ -337,11 +358,19 @@
 
         function applyFilters(){
             let filtered = [...products];
-            const search = document.getElementById('searchInput').value.toLowerCase();
+            const search = document.getElementById('searchInput').value.toLowerCase().trim();
             const category = document.getElementById('categoryFilter').value;
             const stockFilter = document.getElementById('stockFilter').value;
             
-            if(search) filtered = filtered.filter(p => p.name.toLowerCase().includes(search) || p.code?.toLowerCase().includes(search) || p.barcode?.includes(search) || p.brand?.toLowerCase().includes(search) || p.model?.toLowerCase().includes(search));
+            if(search) filtered = filtered.filter(p => {
+                const nameMatch = (p.name || '').toLowerCase().includes(search);
+                const codeMatch = (p.code || '').toLowerCase().includes(search);
+                const barMatch = (p.barcode || '').toLowerCase().includes(search);
+                const brandMatch = (p.brand || '').toLowerCase().includes(search);
+                const modelMatch = (p.model || '').toLowerCase().includes(search);
+                const idMatch = (p.id || '').toLowerCase().includes(search);
+                return nameMatch || codeMatch || barMatch || brandMatch || modelMatch || idMatch;
+            });
             if(category !== 'all') filtered = filtered.filter(p => p.category === category);
             if(stockFilter === 'low') filtered = filtered.filter(p => p.stock > 0 && p.stock < getRestockVal(p));
             if(stockFilter === 'out') filtered = filtered.filter(p => p.stock === 0);
@@ -491,58 +520,43 @@
             
             let productId = editingProductId;
             if (!productId) {
-                // Generate a guaranteed unique Firestore document ID for new products
                 const autoDocRef = db.collection('products').doc(currentBusinessId).collection('list').doc();
                 productId = autoDocRef.id;
             }
             const productData = { 
                 id: productId, 
                 code: rawCode || productId, 
-                brand, 
-                model, 
-                name, 
-                category, 
-                price, 
-                normalPrice, 
-                cost, 
-                stock, 
-                restockLevel: restockLevel, 
-                minStockLevel: restockLevel, 
-                reorderLevel: restockLevel, 
-                barcode, 
-                isService, 
-                updatedAt: new Date() 
+                brand: brand, 
+                model: model, 
+                name: name, 
+                category: category, 
+                price: price, 
+                normalPrice: normalPrice, 
+                cost: cost, 
+                stock: stock,
+                restockLevel: restockLevel,
+                minStockLevel: restockLevel,
+                reorderLevel: restockLevel,
+                barcode: barcode,
+                isService: isService,
+                updatedAt: new Date()
             };
             
-            const btn = document.getElementById('saveProductBtn');
-            try {
-                btn.disabled = true;
-                btn.textContent = 'Saving...';
-                if(editingProductId){
-                    await db.collection('products').doc(currentBusinessId).collection('list').doc(editingProductId).set(productData, { merge: true });
-                    showToast('Product updated successfully!');
-                } else {
-                    productData.createdAt = new Date();
-                    await db.collection('products').doc(currentBusinessId).collection('list').doc(productId).set(productData);
-                    showToast('Product added successfully!');
-                }
-                document.getElementById('productModal').style.display = 'none';
-                await loadProducts();
-            } catch(err) {
-                console.error('Error saving product:', err);
-                showToast('Failed to save product: ' + (err.message || err), true);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Save Product';
-            }
+            await db.collection('products').doc(currentBusinessId).collection('list').doc(productId).set(productData, { merge: true });
+            showToast('Product saved successfully!');
+            document.getElementById('productModal').style.display = 'none';
+            await loadProducts();
         }
         
         window.deleteProduct = async (id) => {
-            if(confirm('Are you sure you want to delete this product?')){
-                await db.collection('products').doc(currentBusinessId).collection('list').doc(id).delete();
-                showToast('Product deleted!');
-                await loadProducts();
+            if(!confirm('Are you sure you want to delete this product?')) return;
+            const prod = products.find(p => p.id === id);
+            const docIdsToDelete = (prod && prod.docIds) || [id];
+            for (const dId of docIdsToDelete) {
+                await db.collection('products').doc(currentBusinessId).collection('list').doc(dId).delete().catch(() => {});
             }
+            showToast('Product deleted');
+            await loadProducts();
         };
         
         // Stock Adjustment
@@ -550,7 +564,7 @@
         window.adjustStock = (id) => {
             currentStockProduct = products.find(p => p.id === id);
             if(currentStockProduct){
-                document.getElementById('stockProductName').innerHTML = `<strong>${currentStockProduct.name}</strong><br>Current Stock: ${currentStockProduct.stock}`;
+                document.getElementById('stockProductName').innerHTML = `<strong>${currentStockProduct.name}</strong><br>Current Combined Stock: ${currentStockProduct.stock}`;
                 document.getElementById('stockAdjustment').value = '';
                 document.getElementById('stockModal').style.display = 'flex';
             }
@@ -571,12 +585,12 @@
                 return;
             }
             
-            await db.collection('products').doc(currentBusinessId).collection('list').doc(currentStockProduct.id).update({ stock: newStock });
+            const targetDocId = (currentStockProduct.docIds && currentStockProduct.docIds[0]) || currentStockProduct.id;
+            await db.collection('products').doc(currentBusinessId).collection('list').doc(targetDocId).update({ stock: newStock });
             showToast(`Stock updated: ${adjustment > 0 ? '+' : ''}${adjustment} (${reason})`);
             document.getElementById('stockModal').style.display = 'none';
             await loadProducts();
             
-            // Publish event for low stock alert
             if(newStock < 10 && newStock > 0){
                 window.eventBus.publish('LOW_STOCK_ALERT', { product: currentStockProduct.name, stock: newStock });
             }
@@ -677,20 +691,20 @@
                     <div class="footer">
                         DIGIBIZ System - Auto-generated low stock reorder list
                     </div>
-                    <\/script>
+                    <script>
                         window.onload = function() {
                             window.print();
                             window.onafterprint = function() { window.close(); };
                         };
                     <\/script>
-                <\/body>
-                <\/html>
+                </body>
+                </html>
             `;
             printWindow.document.write(html);
             printWindow.document.close();
         }
         
-        // Event listeners
+        // Event listeners - INSTANT LIVE FILTERING ON KEYSTROKE ('input')
         document.getElementById('addProductBtn').onclick = openAddModal;
         document.getElementById('closeModalBtn').onclick = () => document.getElementById('productModal').style.display = 'none';
         document.getElementById('saveProductBtn').onclick = saveProduct;
@@ -698,15 +712,45 @@
         document.getElementById('saveStockBtn').onclick = updateStock;
         document.getElementById('applyFilterBtn').onclick = applyFilters;
         document.getElementById('exportBtn').onclick = exportToCSV;
-        document.getElementById('searchInput').onkeyup = applyFilters;
+
+        const sInput = document.getElementById('searchInput');
+        if (sInput) {
+            sInput.addEventListener('input', applyFilters);
+            sInput.addEventListener('keyup', applyFilters);
+            sInput.addEventListener('change', applyFilters);
+        }
+        const cFilter = document.getElementById('categoryFilter');
+        if (cFilter) cFilter.addEventListener('change', applyFilters);
+        const stFilter = document.getElementById('stockFilter');
+        if (stFilter) stFilter.addEventListener('change', applyFilters);
+
         document.getElementById('lowStockCard').onclick = openLowStockReport;
         document.getElementById('closeLowStockModalBtn').onclick = () => document.getElementById('lowStockModal').style.display = 'none';
         document.getElementById('printLowStockBtn').onclick = printLowStockReport;
         
         auth.onAuthStateChanged(async(user)=>{
-            if(!user){ window.location.href='/'; return; }
-            const userDoc = await db.collection('users').doc(user.uid).get();
-            currentBusinessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+            const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true' || window.location.search.includes('impersonate=true');
+            if(!user && !isImpersonating){ window.location.href='/'; return; }
+
+            let resolvedBid = null;
+            if (isImpersonating) {
+                resolvedBid = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            }
+
+            if (!resolvedBid && user) {
+                resolvedBid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                if (!resolvedBid) {
+                    try {
+                        const userDoc = await db.collection('users').doc(user.uid).get();
+                        resolvedBid = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+                    } catch (e) {
+                        resolvedBid = user.uid;
+                    }
+                }
+            }
+
+            currentBusinessId = resolvedBid || (user && user.uid);
+            console.log('[Tire Centre Inventory] Current Business ID resolved:', currentBusinessId);
             await loadProducts();
         });
     </script>

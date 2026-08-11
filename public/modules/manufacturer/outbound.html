@@ -194,7 +194,7 @@
             <!-- Finished Goods Stock Directory Card -->
             <div class="mfg-card" style="margin-bottom:16px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
-                    <h3 style="margin:0; border:none; padding:0;">📦 Manufactured Finished Goods Stock (නිමි භාණ්ඩ තොගය)</h3>
+                    <h3 style="margin:0; border:none; padding:0; color:#059669;">📦 Manufactured Finished Goods Stock (නිමි භාණ්ඩ තොගය)</h3>
                     <span style="font-size:12px; color:#059669; font-weight:700;" id="fgStockTotalBadge">0 Items in Stock</span>
                 </div>
                 <table style="width:100%; border-collapse:collapse; font-size:13px;">
@@ -468,7 +468,7 @@ function renderIngredientTable() {
                 <td style="padding:6px; font-weight:700; color:#0284c7;">Rs. ${item.subtotal.toFixed(2)}</td>
                 <td style="padding:6px; font-weight:700; color:${remStock < 0 ? '#ef4444' : '#059669'};">${remStock.toLocaleString()} ${item.unit || 'Kg'}</td>
                 <td style="padding:6px; text-align:center;">
-                    <button type="button" onclick="removeIngredient(${idx})" style="background:#ef4444; color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-weight:bold;">🗑️</button>
+                    <button type="button" onclick="removeIngredient(${idx})" style="background:#ef4444; color:#fff; border:none; padding:4px 10px; border-radius:6px; cursor:pointer; font-weight:700; font-size:11px; white-space:nowrap;" title="Remove this material from production batch">🗑️ Remove</button>
                 </td>
             </tr>
         `;
@@ -661,6 +661,7 @@ async function saveProductionBatch() {
 
         await loadRawMaterialsOptions();
         await loadFinishedProductDatalist();
+        await refreshRawMaterialsStockTable();
         await refreshFinishedGoodsStockTable();
         await refreshProductionHistory();
         await updateProductionAssetSummary();
@@ -766,7 +767,7 @@ function renderProductionHistoryTable() {
         const laborOverheadTotal = (Number(x.laborCost || 0) + Number(x.overheadCost || 0));
         const actionBtn = x.transferredToStock
             ? `<span style="background:#dcfce7; color:#15803d; padding:4px 8px; border-radius:12px; font-weight:800; font-size:11px;">✅ In Stock</span>`
-            : `<button type="button" onclick="transferBatchToStock('${x.id}')" style="background:#7c3aed; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; cursor:pointer; font-size:12px; white-space:nowrap;">📦 Transfer to Stock</button>`;
+            : `<button type="button" onclick="transferBatchToStock('${x.id}')" style="background:#7c3aed; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; cursor:pointer; font-size:12px; white-space:nowrap;">📦 TRANSFER TO FINISHED GOODS</button>`;
 
         return `
             <tr>
@@ -824,11 +825,62 @@ async function deleteProdBatch(batchId) {
             await docRef.delete();
             alert('✅ Production batch deleted and stock balances successfully restored!');
         }
+        await refreshRawMaterialsStockTable();
         await refreshFinishedGoodsStockTable();
         await refreshProductionHistory();
         await updateProductionAssetSummary();
     } catch (e) {
         alert('Error deleting batch: ' + e.message);
+    }
+}
+
+async function refreshRawMaterialsStockTable() {
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    const tbody = document.getElementById('outboundRmStockRows');
+    const badge = document.getElementById('rmStockTotalBadge');
+    if (!tbody || !bid) return;
+    try {
+        const snap = await db.collection('manufacturer_raw_materials')
+            .where('businessId', '==', bid)
+            .get()
+            .catch(() => ({ docs: [] }));
+
+        const items = snap.docs
+            .map(d => ({ id: d.id, ...(d.data() || {}) }))
+            .filter(x => x.isActive !== false);
+
+        if (!items.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">No raw materials found in stock. Use "Inbound Purchases" to add raw materials.</td></tr>';
+            if (badge) badge.textContent = '0 Materials';
+            return;
+        }
+
+        let totalQty = 0;
+        tbody.innerHTML = items.map(x => {
+            const qty = Number(x.stockQty || 0);
+            const uCost = Number(x.lastUnitCost || x.unitCost || 0);
+            const totalVal = qty * uCost;
+            const unit = x.unit || 'Kg';
+            if (qty > 0) totalQty += qty;
+
+            let statusBadge = '<span style="background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">IN STOCK</span>';
+            if (qty <= 0) statusBadge = '<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">OUT OF STOCK</span>';
+            else if (qty < 5) statusBadge = '<span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">LOW STOCK</span>';
+
+            return `
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:8px 10px; font-weight:700; color:#0f172a;">${escPrint(x.name || '-')}</td>
+                    <td style="padding:8px 10px; font-weight:800; color:#0284c7;">${qty.toLocaleString()} ${escPrint(unit)}</td>
+                    <td style="padding:8px 10px;">Rs. ${uCost.toFixed(2)}</td>
+                    <td style="padding:8px 10px; font-weight:700; color:#059669;">Rs. ${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td style="padding:8px 10px;">${statusBadge}</td>
+                </tr>
+            `;
+        }).join('');
+
+        if (badge) badge.textContent = `${items.length} Material Types`;
+    } catch (e) {
+        console.warn('[Production] RM Stock refresh error:', e);
     }
 }
 
@@ -916,6 +968,7 @@ async function refreshFinishedGoodsStockTable() {
 
     await loadRawMaterialsOptions();
     await loadFinishedProductDatalist();
+    await refreshRawMaterialsStockTable();
     await refreshFinishedGoodsStockTable();
     await refreshProductionHistory();
     await updateProductionAssetSummary();

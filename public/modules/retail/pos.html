@@ -33,13 +33,13 @@
     
     <script src="/core/firebase-init.js?v=100"></script>
     <script src="/scripts/admin-impersonation.js?v=100"></script>
-    <script src="../../core/event-validation.js?v=58"></script>
-    <script src="../../core/event-bus.js?v=58"></script>
-    <script src="../../core/auth-roles.js?v=120"></script>
-    <script src="../../core/business-types.js?v=58"></script>
-    <script src="../../core/dashboard-core.js?v=66"></script>
-    <script src="../../core/subscription-manager.js?v=58"></script>
-    <script src="../../core/sidebar.js?v=2000"></script>
+    <script src="/core/event-validation.js?v=58"></script>
+    <script src="/core/event-bus.js?v=58"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=58"></script>
+    <script src="/core/dashboard-core.js?v=66"></script>
+    <script src="/core/subscription-manager.js?v=58"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
     
     <style>
         :root {
@@ -722,10 +722,22 @@
         async function getBusinessContext() {
             if (typeof firebase === 'undefined' || typeof firebase.auth !== 'function') return null;
             const user = firebase.auth().currentUser;
-            if (!user) return null;
-            if (window.dashboardCore) return await window.dashboardCore.getContext(user);
-            const userDoc = await db.collection('users').doc(user.uid).get();
-            return { businessId: userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid };
+            if (!user && localStorage.getItem('digibiz_impersonate_active') !== 'true') return null;
+            if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+                const imp = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || localStorage.getItem('businessId');
+                if (imp) return { businessId: imp };
+            }
+            if (window.dashboardCore && user) return await window.dashboardCore.getContext(user);
+            let businessId = user ? user.uid : 'CLIENT_BIZ';
+            try {
+                if (user) {
+                    const userDoc = await db.collection('users').doc(user.uid).get();
+                    businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(userDoc, user.uid) : (userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid);
+                }
+            } catch(e) {
+                businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(null, user ? user.uid : 'CLIENT_BIZ') : (user ? user.uid : 'CLIENT_BIZ');
+            }
+            return { businessId: businessId };
         }
         
         async function loadInitialData() {
@@ -805,7 +817,7 @@
                 prodSnap = await prodRef.get();
             }
 
-            products = prodSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            products = prodSnap.docs.map(doc => ({ ...doc.data(), id: doc.id, docId: doc.id }));
             try { localStorage.setItem(`cached_pos_prods_${currentBusinessId}`, JSON.stringify(products)); } catch(e){}
             
             // Build Categories list
@@ -828,7 +840,7 @@
             // Real-time listener for product updates
             prodRef.onSnapshot(snapshot => {
                 if (!snapshot.empty) {
-                    products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    products = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, docId: doc.id }));
                     try { localStorage.setItem(`cached_pos_prods_${currentBusinessId}`, JSON.stringify(products)); } catch(e){}
                     renderProducts(activeCategory === 'all' ? products : products.filter(p => p.category === activeCategory));
                 }
@@ -1809,6 +1821,43 @@
                 // Write accounting journal entry
                 await createJournalEntryForSale({ ...orderData, invoiceNo: invoiceNo }, orderRef.id);
                 
+                // Deduct stock for each cart item and write to stock history
+                try {
+                    const batch = db.batch();
+                    cart.forEach(item => {
+                        const targetId = item.docId || item.id;
+                        if (targetId) {
+                            const prodRef = db.collection('products').doc(currentBusinessId).collection('list').doc(targetId);
+                            const qtySold = Number(item.quantity || 0);
+                            
+                            // 1. Decrement stock in Firestore
+                            batch.update(prodRef, {
+                                stock: firebase.firestore.FieldValue.increment(-qtySold)
+                            });
+
+                            // 2. Add Stock Movement History log
+                            const histRef = db.collection('stock_history').doc(currentBusinessId).collection('list').doc();
+                            batch.set(histRef, {
+                                productId: targetId,
+                                productName: item.name || '',
+                                qtyChange: -qtySold,
+                                type: 'SALE',
+                                ref: invoiceNo,
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+
+                            // Update local in-memory products array
+                            const pLocal = products.find(p => p.id === targetId || p.docId === targetId);
+                            if (pLocal) {
+                                pLocal.stock = Math.max(0, (pLocal.stock || 0) - qtySold);
+                            }
+                        }
+                    });
+                    await batch.commit();
+                } catch (errStock) {
+                    console.warn('[POS] Stock deduction warning:', errStock);
+                }
+                
                 // Show Printable Receipt
                 printReceipt(orderData, invoiceNo);
                 
@@ -2080,7 +2129,7 @@
                 const ctx = await getBusinessContext();
                 const bType = String((ctx && ctx.businessType) || localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || '').toLowerCase();
                 if (bType === 'distributor') {
-                    window.location.href = '/modules/core/dashboard.html';
+                    window.location.href = '/modules/retail/dashboard.html';
                     return;
                 }
                 currentBusinessId = (ctx && ctx.businessId) ? ctx.businessId : user.uid;

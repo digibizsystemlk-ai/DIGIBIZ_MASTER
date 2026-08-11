@@ -12,8 +12,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
     <script src="/core/firebase-init.js?v=100"></script>
     <script src="/scripts/admin-impersonation.js?v=100"></script>
-    <script src="../../core/auth-roles.js?v=120"></script>
-    <script src="../../core/sidebar.js?v=2000"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -64,6 +64,10 @@
         .detail-profit { font-weight: 800; color: #16a34a; font-family: monospace; text-align: right; }
         .customer-link { color: #2563eb; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; transition: color 0.2s; }
         .customer-link:hover { color: #1d4ed8; background: #eff6ff; border-radius: 4px; }
+        
+        .filter-btn { background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 8px 14px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+        .filter-btn:hover { background: #e2e8f0; color: #0f172a; }
+        .filter-btn.active { background: #0f172a; color: #fff; border-color: #0f172a; }
     </style>
 </head>
 <body>
@@ -79,28 +83,69 @@
             </button>
         </div>
     </div>
+
+    <!-- Date Range Filter Bar -->
+    <div class="card" style="padding:16px 20px; margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
+            <div style="display:flex; gap:8px; flex-wrap:wrap;" id="filterPills">
+                <button type="button" class="filter-btn active" data-period="today" onclick="setFilterPeriod('today')">📅 Today (අද)</button>
+                <button type="button" class="filter-btn" data-period="week" onclick="setFilterPeriod('week')">📅 This Week (මේ සතියේ)</button>
+                <button type="button" class="filter-btn" data-period="month" onclick="setFilterPeriod('month')">📅 This Month (මේ මාසයේ)</button>
+                <button type="button" class="filter-btn" data-period="custom" onclick="setFilterPeriod('custom')">📅 Custom Date Range</button>
+            </div>
+            <div id="customDateWrap" style="display:none; align-items:center; gap:10px;">
+                <label style="font-size:12px; font-weight:700; color:#64748b;">From:</label>
+                <input type="date" id="startDate" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                <label style="font-size:12px; font-weight:700; color:#64748b;">To:</label>
+                <input type="date" id="endDate" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                <button type="button" class="btn" onclick="applyCustomFilter()" style="padding:6px 14px; font-size:12px;">Apply Filter</button>
+            </div>
+        </div>
+    </div>
  
     <div class="kpis" id="kpis">
         <div class="kpi">
-            <div class="l">Total Sales (Today)</div>
+            <div class="l" id="lblSales">Total Sales</div>
             <div class="v" id="kSales">LKR 0.00</div>
         </div>
         <div class="kpi highlight">
-            <div class="l">Actual Profit (Margin)</div>
+            <div class="l" id="lblMargin">Actual Profit (Margin)</div>
             <div class="v" id="kMargin">LKR 0.00</div>
         </div>
         <div class="kpi danger">
-            <div class="l">Daily Expenses</div>
+            <div class="l" id="lblExp">Expenses</div>
             <div class="v" id="kExp">LKR 0.00</div>
         </div>
         <div class="kpi highlight" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none;">
-            <div class="l" style="color: rgba(255,255,255,0.8);">Net Daily Profit</div>
+            <div class="l" style="color: rgba(255,255,255,0.8);" id="lblNet">Net Profit</div>
             <div class="v" id="kNet" style="color: #fff;">LKR 0.00</div>
+        </div>
+    </div>
+
+    <!-- Item-wise Sales & Profit Breakdown -->
+    <div class="card">
+        <div class="section-title"><i class="fa-solid fa-boxes-stacked" style="color:#3b82f6;"></i> Item-wise Sales & Profit Breakdown (අයිතම මට්ටමේ විකුණුම් හා ලාභ විශ්ලේෂණය)</div>
+        <div style="overflow:auto; max-height:400px;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Item Name</th>
+                        <th class="num">Units Sold</th>
+                        <th class="num">Total Revenue</th>
+                        <th class="num">Total Cost</th>
+                        <th class="num">Total Profit</th>
+                        <th class="num">Profit Margin</th>
+                    </tr>
+                </thead>
+                <tbody id="itemBreakdownBody">
+                    <tr><td colspan="6" style="text-align:center; padding:30px; color:#64748b;">Select a date range to view item-wise breakdown.</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
  
     <div class="card">
-        <div class="section-title"><i class="fa-solid fa-shopping-cart" style="color:#10b981;"></i> Sales Sessions & Profits</div>
+        <div class="section-title" id="salesSectionTitle"><i class="fa-solid fa-shopping-cart" style="color:#10b981;"></i> Today's Sales Sessions & Profits (අද දින විකුණුම් හා ලාභ)</div>
         <div style="overflow:auto;">
             <table>
                 <thead>
@@ -120,7 +165,7 @@
     </div>
  
     <div class="card">
-        <div class="section-title"><i class="fa-solid fa-wallet" style="color:#ef4444;"></i> Daily Expenses Breakdown</div>
+        <div class="section-title"><i class="fa-solid fa-wallet" style="color:#ef4444;"></i> Expenses Breakdown</div>
         <div style="overflow:auto;">
             <table>
                 <thead>
@@ -132,7 +177,7 @@
                     </tr>
                 </thead>
                 <tbody id="expBody">
-                    <tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">No expenses recorded today.</td></tr>
+                    <tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">No expenses recorded in this period.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -187,33 +232,93 @@ function rowLocalDateKey(row) {
     if (!dt || Number.isNaN(dt.getTime())) return '';
     return localDateKey(dt);
 }
- 
-function isTodayRow(row) {
-    const rk = rowLocalDateKey(row);
-    const tk = localDateKey();
-    return rk && tk && rk.slice(0, 10) === tk.slice(0, 10);
+
+let currentPeriod = 'today';
+
+function setFilterPeriod(period) {
+    currentPeriod = period;
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.period === period);
+    });
+    const wrap = document.getElementById('customDateWrap');
+    if (wrap) wrap.style.display = period === 'custom' ? 'flex' : 'none';
+    
+    // Update KPI labels
+    const periodLabels = {
+        'today': 'Today',
+        'week': 'This Week',
+        'month': 'This Month',
+        'custom': 'Custom Range'
+    };
+    const lbl = periodLabels[period] || '';
+    document.getElementById('lblSales').textContent = `Total Sales (${lbl})`;
+    document.getElementById('lblMargin').textContent = `Actual Profit (${lbl})`;
+    document.getElementById('lblExp').textContent = `Expenses (${lbl})`;
+    document.getElementById('lblNet').textContent = `Net Profit (${lbl})`;
+
+    const salesSectionTitles = {
+        'today': `<i class="fa-solid fa-shopping-cart" style="color:#10b981;"></i> Today's Sales Sessions & Profits (අද දින විකුණුම් හා ලාභ)`,
+        'week': `<i class="fa-solid fa-shopping-cart" style="color:#10b981;"></i> This Week's Sales Sessions & Profits`,
+        'month': `<i class="fa-solid fa-shopping-cart" style="color:#10b981;"></i> This Month's Sales Sessions & Profits`,
+        'custom': `<i class="fa-solid fa-shopping-cart" style="color:#10b981;"></i> Sales Sessions & Profits (Selected Period)`
+    };
+    const sTitleEl = document.getElementById('salesSectionTitle');
+    if (sTitleEl) sTitleEl.innerHTML = salesSectionTitles[period] || salesSectionTitles['today'];
+
+    if (period !== 'custom') refresh();
 }
- 
+
+function applyCustomFilter() {
+    refresh();
+}
+
+function isRowInSelectedPeriod(rawDate) {
+    if (!rawDate) return false;
+    let dt = null;
+    if (rawDate && typeof rawDate.toDate === 'function') dt = rawDate.toDate();
+    else if (typeof rawDate === 'string' || rawDate instanceof Date) dt = new Date(rawDate);
+    if (!dt || Number.isNaN(dt.getTime())) return false;
+    
+    const now = new Date();
+    if (currentPeriod === 'today') {
+        return dt.toDateString() === now.toDateString();
+    } else if (currentPeriod === 'week') {
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - 7);
+        return dt >= weekStart && dt <= now;
+    } else if (currentPeriod === 'month') {
+        return dt.getMonth() === now.getMonth() && dt.getFullYear() === now.getFullYear();
+    } else if (currentPeriod === 'custom') {
+        const sVal = document.getElementById('startDate').value;
+        const eVal = document.getElementById('endDate').value;
+        if (!sVal || !eVal) return true;
+        const sDt = new Date(sVal + 'T00:00:00');
+        const eDt = new Date(eVal + 'T23:59:59');
+        return dt >= sDt && dt <= eDt;
+    }
+    return true;
+}
+
 async function refresh() {
     try {
         if (!RETAIL_BUSINESS_ID) return;
-        const todayK = localDateKey();
         const opt = navigator.onLine ? {} : { source: 'cache' };
  
         const [salesSnap, expSnap] = await Promise.all([
-            db.collection('orders').doc(RETAIL_BUSINESS_ID).collection('list').orderBy('createdAt', 'desc').limit(1500).get(opt).catch(() => ({ docs: [] })),
-            db.collection('expenses').doc(RETAIL_BUSINESS_ID).collection('list').orderBy('expenseDate', 'desc').limit(1500).get(opt).catch(() => ({ docs: [] }))
+            db.collection('orders').doc(RETAIL_BUSINESS_ID).collection('list').orderBy('createdAt', 'desc').limit(2000).get(opt).catch(() => ({ docs: [] })),
+            db.collection('expenses').doc(RETAIL_BUSINESS_ID).collection('list').orderBy('expenseDate', 'desc').limit(2000).get(opt).catch(() => ({ docs: [] }))
         ]);
  
         let salesTotal = 0;
         let marginTotal = 0;
         const salesRows = [];
- 
+        const itemSummaryMap = {};
+
         salesSnap.docs.forEach((d) => {
             const b = d.data() || {};
-            const isToday = isTodayRow(b);
+            const rawBt = b.createdAt;
+            const inPeriod = isRowInSelectedPeriod(rawBt || b.date);
             
-            // Calculate item-by-item profit margin
             let orderCogs = 0;
             const items = Array.isArray(b.items) ? b.items : [];
             items.forEach((line) => {
@@ -223,28 +328,41 @@ async function refresh() {
             });
             const total = Number(b.total || 0);
             const margin = Math.max(0, total - orderCogs);
- 
-            if (isToday) {
+
+            if (inPeriod) {
                 salesTotal += total;
                 marginTotal += margin;
- 
-                const rawBt = b.createdAt;
+
                 const btDt = rawBt && rawBt.toDate ? rawBt.toDate() : (rawBt ? new Date(rawBt) : null);
-                const tlabel = btDt && !Number.isNaN(btDt.getTime()) ? btDt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : (rowLocalDateKey(b) || '-');
- 
+                const tlabel = btDt && !Number.isNaN(btDt.getTime()) ? btDt.toLocaleString([], {month:'short', day:'2-digit', hour: '2-digit', minute:'2-digit'}) : (rowLocalDateKey(b) || '-');
+
                 const breakdown = items.map(line => {
                     const qty = Number(line.quantity || 0);
                     const cost = Number(line.cost || 0);
                     const price = Number(line.price || 0);
+                    const name = line.name || 'Unknown Item';
+                    const rev = qty * price;
+                    const cogs = qty * cost;
+                    const profit = rev - cogs;
+
+                    // Aggregate for Item Breakdown Table
+                    if (!itemSummaryMap[name]) {
+                        itemSummaryMap[name] = { qty: 0, revenue: 0, cost: 0, profit: 0 };
+                    }
+                    itemSummaryMap[name].qty += qty;
+                    itemSummaryMap[name].revenue += rev;
+                    itemSummaryMap[name].cost += cogs;
+                    itemSummaryMap[name].profit += profit;
+
                     return {
-                        name: line.name || 'Unknown Item',
+                        name: name,
                         qty: qty,
                         cost: cost,
                         price: price,
-                        profit: qty * (price - cost)
+                        profit: profit
                     };
                 });
- 
+
                 salesRows.push({
                     t: tlabel,
                     customer: b.customer ? (b.customer.name || b.customer.fullName || 'Guest') : 'Guest',
@@ -256,15 +374,41 @@ async function refresh() {
                 });
             }
         });
- 
+
         document.getElementById('kSales').textContent = fmt(salesTotal);
         document.getElementById('kMargin').textContent = fmt(marginTotal);
- 
+
+        // Render Item-wise Breakdown Table
+        const itemRows = Object.keys(itemSummaryMap).map(k => ({
+            name: k,
+            ...itemSummaryMap[k]
+        })).sort((a, b) => b.profit - a.profit);
+
+        const itemTbody = document.getElementById('itemBreakdownBody');
+        if (itemRows.length === 0) {
+            itemTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:30px; color:#64748b;">No items sold in the selected period.</td></tr>';
+        } else {
+            itemTbody.innerHTML = itemRows.map(it => {
+                const marginPct = it.revenue > 0 ? ((it.profit / it.revenue) * 100).toFixed(1) : '0.0';
+                return `
+                    <tr>
+                        <td style="font-weight:700; color:#0f172a;">${it.name}</td>
+                        <td class="num">${it.qty.toLocaleString()}</td>
+                        <td class="num">${fmt(it.revenue)}</td>
+                        <td class="num">${fmt(it.cost)}</td>
+                        <td class="num" style="color:#16a34a; font-weight:800;">+ ${fmt(it.profit)}</td>
+                        <td class="num"><span class="badge" style="background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;">${marginPct}%</span></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
         let expTotal = 0;
         const expRows = [];
         expSnap.docs.forEach((d) => {
             const r = d.data() || {};
-            if (String(r.expenseDate || '') === todayK) {
+            const expDt = r.expenseDate || r.createdAt;
+            if (isRowInSelectedPeriod(expDt)) {
                 const a = Number(r.amount) || 0;
                 expTotal += a;
                 expRows.push({ 
@@ -369,8 +513,13 @@ function closeModal() {
  
 auth.onAuthStateChanged(async (user) => {
     if (!user) { window.location.href = '/'; return; }
-    const userDoc = await db.collection('users').doc(user.uid).get();
-    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    let businessId = user.uid;
+    try {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(userDoc, user.uid) : (userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid);
+    } catch(e) {
+        businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(null, user.uid) : user.uid;
+    }
     RETAIL_BUSINESS_ID = businessId;
     
     await refresh();

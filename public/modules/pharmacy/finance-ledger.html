@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Finance & Ledger Hub - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/dashboard-core.js?v=70"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <script src="/core/sms-wallet-core.js?v=4"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=9"></script>
+    <style id="mfgStyle"></style>
+</head>
+<body>
+<div class="mfg-wrap">
+    <div class="mfg-head">
+        <h2>Global Finance & Ledger Management Hub</h2>
+        <p id="mfgBusinessCtx"></p>
+    </div>
+    <div class="mfg-grid">
+        <div class="mfg-card" style="grid-column: 1 / -1;">
+            <h3>Finance & Payments Hub</h3>
+            <form id="financeForm">
+                <div class="mfg-row3">
+                    <div>
+                        <label>Select Customer / Supplier</label>
+                        <select id="financeCustomerId" class="mfg-select-customer" required>
+                            <option value="">Select…</option>
+                        </select>
+                        <div id="financeCustomerBanner" class="mfg-customer-banner" role="status"></div>
+                    </div>
+                    <div>
+                        <label>Transaction Type</label>
+                        <select id="financeType" required>
+                            <option value="PAYMENT_GIVEN">අපි මුදල් ගෙවුවා (Payment Given)</option>
+                            <option value="PAYMENT_RECEIVED">අපට මුදල් ලැබුණා (Payment Received)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Outstanding Balance (Real-time)</label>
+                        <div id="outstandingDisplay" style="font-size:18px;font-weight:700;color:#0f766e;padding:8px 0;">Rs. 0.00</div>
+                    </div>
+                </div>
+
+                <div class="mfg-row3" style="margin-top:15px;">
+                    <div>
+                        <label>Amount (Rs.)</label>
+                        <input id="financeAmount" type="number" step="0.01" placeholder="0.00" required>
+                    </div>
+                    <div>
+                        <label>Payment Method</label>
+                        <select id="financeMethod">
+                            <option value="CASH">Cash</option>
+                            <option value="BANK">Bank</option>
+                            <option value="CHEQUE">Cheque</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Date</label>
+                        <input id="financeDate" type="date" required>
+                    </div>
+                </div>
+
+                <div id="chequeDetails" style="display:none;margin-top:10px;background:#f8fafc;padding:15px;border-radius:12px;border:1px solid #e2e8f0;">
+                    <div class="mfg-row">
+                        <div><label>Cheque Number</label><input id="chequeNo" type="text"></div>
+                        <div><label>Clearance Date</label><input id="chequeDate" type="date"></div>
+                    </div>
+                </div>
+
+                <div style="margin-top:15px;">
+                    <label>Description (Optional)</label>
+                    <textarea id="financeNote" rows="2" placeholder="අමතර විස්තර..."></textarea>
+                </div>
+
+                <div style="margin-top:15px;">
+                    <button type="submit" id="saveFinanceBtn">තහවුරු කර සුරකින්න (Confirm & Save)</button>
+                </div>
+            </form>
+            <div id="msg" class="mfg-msg"></div>
+            <div id="financeLinkedInfo" style="margin-top:10px;font-size:12px;color:#334155;"></div>
+            <div style="overflow-x:auto;margin-top:8px;">
+                <table>
+                    <thead><tr><th>Linked Entry</th><th>Reference</th><th>Type</th><th>Outstanding</th><th>Due</th></tr></thead>
+                    <tbody id="linkedRows"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="mfg-card">
+            <h3>Payables (අප ගෙවිය යුතු ණය)</h3>
+            <div style="overflow-x:auto;">
+                <table><thead><tr><th>Supplier</th><th>Material</th><th>Amount</th><th>Due</th><th>Status</th></tr></thead><tbody id="payableRows"></tbody></table>
+            </div>
+        </div>
+        <div class="mfg-card">
+            <h3>Receivables (අපට ලැබිය යුතු ණය)</h3>
+            <div style="overflow-x:auto;">
+                <table><thead><tr><th>Company</th><th>Product</th><th>Amount</th><th>Due</th><th>Status</th></tr></thead><tbody id="receivableRows"></tbody></table>
+            </div>
+        </div>
+        <div class="mfg-card" style="grid-column: 1 / -1;">
+            <h3>Transaction History & Export</h3>
+            <div class="mfg-row3">
+                <div>
+                    <label>Customer / Supplier</label>
+                    <select id="historyCustomerFilter">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Type</label>
+                    <select id="historyTypeFilter">
+                        <option value="">All</option>
+                        <option value="PAYMENT_GIVEN">Payment Given</option>
+                        <option value="PAYMENT_RECEIVED">Payment Received</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Method</label>
+                    <select id="historyMethodFilter">
+                        <option value="">All</option>
+                        <option value="CASH">Cash</option>
+                        <option value="BANK">Bank</option>
+                        <option value="BANK_TRANSFER">Bank Transfer (legacy)</option>
+                        <option value="CHEQUE">Cheque</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>From Date</label><input id="historyFromDate" type="date"></div>
+                <div><label>To Date</label><input id="historyToDate" type="date"></div>
+                <div><label>Search (Name / Note)</label><input id="historySearch" type="text" placeholder="Customer or note..."></div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                <button type="button" id="applyHistoryFilterBtn">Apply Filters</button>
+                <button type="button" class="secondary" id="resetHistoryFilterBtn">Reset</button>
+                <button type="button" class="secondary" id="exportCsvBtn">Export CSV</button>
+                <button type="button" class="secondary" id="exportPdfBtn">Export PDF</button>
+            </div>
+            <div id="historySummary" style="margin-top:10px;font-size:12px;color:#334155;"></div>
+            <div style="overflow-x:auto;margin-top:8px;">
+                <table>
+                    <thead>
+                        <tr><th>Date</th><th>Name</th><th>Type</th><th>Method</th><th>Amount</th><th>Balance Before</th><th>Balance After</th><th>Note</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody id="historyRows"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
+const financeCustomerById = {};
+let selectedOutstanding = 0;
+let selectedSnapshot = null;
+let allFinanceTransactions = [];
+let editingFinanceId = '';
+
+async function loadFinanceCustomers(){
+    const bid = ManufacturerModule.businessId;
+    const snap = await db.collection('customers').where('businessId','==',bid).limit(300).get().catch(()=>({docs:[]}));
+    const sel = document.getElementById('financeCustomerId');
+    sel.innerHTML = '<option value="">Select customer / supplier…</option>';
+    snap.docs.forEach(doc => {
+        const d = doc.data();
+        financeCustomerById[doc.id] = d;
+        const o = document.createElement('option');
+        o.value = doc.id;
+        o.textContent = `${d.fullName || doc.id} (${d.mobile || 'no mobile'})`;
+        sel.appendChild(o);
+    });
+    const historySel = document.getElementById('historyCustomerFilter');
+    historySel.innerHTML = '<option value="">All</option>';
+    snap.docs.forEach(doc => {
+        const d = doc.data() || {};
+        const o = document.createElement('option');
+        o.value = doc.id;
+        o.textContent = d.fullName || doc.id;
+        historySel.appendChild(o);
+    });
+}
+
+document.getElementById('financeCustomerId').onchange = async function(){
+    const cid = this.value;
+    const bid = ManufacturerModule.businessId;
+    const banner = document.getElementById('financeCustomerBanner');
+    const outDisplay = document.getElementById('outstandingDisplay');
+    const amountInput = document.getElementById('financeAmount');
+    const linkedRows = document.getElementById('linkedRows');
+    const linkedInfo = document.getElementById('financeLinkedInfo');
+    const typeSel = document.getElementById('financeType');
+
+    if(!cid) {
+        banner.style.display = 'none';
+        outDisplay.textContent = 'Rs. 0.00';
+        amountInput.value = '';
+        linkedRows.innerHTML = '';
+        linkedInfo.textContent = '';
+        selectedOutstanding = 0;
+        selectedSnapshot = null;
+        return;
+    }
+
+    const c = financeCustomerById[cid] || {};
+    banner.textContent = c.mobile ? `SMS will go to ${c.mobile}` : 'No mobile number saved.';
+    banner.className = 'mfg-customer-banner show ' + (c.mobile ? 'ok' : 'warn');
+
+    const isScrap = ManufacturerModule.context && ManufacturerModule.context.businessType === 'scrap_collection_center';
+    const inboundColl = isScrap ? 'buying_history' : 'manufacturer_raw_material_history';
+    const outboundColl = isScrap ? 'selling_history' : 'manufacturer_sales';
+
+    const cData = financeCustomerById[cid] || {};
+    const [snapshot, inbound, outbound] = await Promise.all([
+        ManufacturerModule.getCustomerFinanceSnapshot(bid, cid, cData.fullName),
+        db.collection(inboundColl)
+            .where('businessId','==',bid)
+            .where(isScrap ? 'supplierName' : 'customerId','==',isScrap ? (financeCustomerById[cid] ? financeCustomerById[cid].fullName : cid) : cid)
+            .limit(25).get().catch(()=>({docs:[]})),
+        db.collection(outboundColl)
+            .where('businessId','==',bid)
+            .where(isScrap ? 'customerName' : 'customerId','==',isScrap ? (financeCustomerById[cid] ? financeCustomerById[cid].fullName : cid) : cid)
+            .limit(25).get().catch(()=>({docs:[]}))
+    ]);
+    selectedSnapshot = snapshot;
+    selectedOutstanding = Number(snapshot.netBalance || 0);
+
+    outDisplay.textContent = `Rs. ${Math.abs(selectedOutstanding).toFixed(2)} ${selectedOutstanding > 0 ? '(Receivable)' : (selectedOutstanding < 0 ? '(Payable)' : '(Settled)')}`;
+    outDisplay.style.color = selectedOutstanding > 0 ? '#15803d' : (selectedOutstanding < 0 ? '#b91c1c' : '#0f766e');
+    typeSel.value = selectedOutstanding < 0 ? 'PAYMENT_GIVEN' : 'PAYMENT_RECEIVED';
+    amountInput.value = Math.abs(selectedOutstanding).toFixed(2);
+
+    const inboundRows = inbound.docs.map((d)=>{
+        const x=d.data()||{};
+        if (isScrap) {
+            return `<tr><td>Scrap Purchase</td><td>${x.purchaseId || d.id}</td><td>${(x.items || []).map(i => i.itemName).join(', ') || '-'}</td><td>Rs ${ManufacturerModule.money(x.totalAmount)}</td><td>${x.date ? x.date.slice(0,10) : '-'}</td></tr>`;
+        }
+        return `<tr><td>Inbound Purchase</td><td>${x.purchaseId || d.id}</td><td>${x.materialName || '-'}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td>${x.dueDate || x.chequeClearanceDate || '-'}</td></tr>`;
+    });
+    const outboundRows = outbound.docs.map((d)=>{
+        const x=d.data()||{};
+        if (isScrap) {
+            return `<tr><td>Scrap Sale</td><td>${x.billNo || d.id}</td><td>${(x.items || []).map(i => i.itemName).join(', ') || '-'}</td><td>Rs ${ManufacturerModule.money(x.totalAmount)}</td><td>${x.date ? x.date.slice(0,10) : '-'}</td></tr>`;
+        }
+        return `<tr><td>Outbound Sale</td><td>${x.saleId || d.id}</td><td>${x.productName || '-'}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td>${x.dueDate || x.chequeClearanceDate || '-'}</td></tr>`;
+    });
+    linkedRows.innerHTML = [...inboundRows, ...outboundRows].join('') || '<tr><td colspan="5">No pending linked transactions.</td></tr>';
+    linkedInfo.textContent = `Payable: Rs ${ManufacturerModule.money(snapshot.payableTotal)} | Receivable: Rs ${ManufacturerModule.money(snapshot.receivableTotal)} | Paid Out: Rs ${ManufacturerModule.money(snapshot.paymentGivenTotal)} | Collected: Rs ${ManufacturerModule.money(snapshot.paymentReceivedTotal)}`;
+};
+
+document.getElementById('financeMethod').onchange = function(){
+    document.getElementById('chequeDetails').style.display = this.value === 'CHEQUE' ? 'block' : 'none';
+};
+
+document.getElementById('financeForm').onsubmit = async function(e){
+    e.preventDefault();
+    const bid = ManufacturerModule.businessId;
+    const cid = document.getElementById('financeCustomerId').value;
+    const type = document.getElementById('financeType').value;
+    const amount = Number(document.getElementById('financeAmount').value);
+    const method = document.getElementById('financeMethod').value;
+    const date = document.getElementById('financeDate').value;
+    const note = document.getElementById('financeNote').value;
+    const msg = document.getElementById('msg');
+    const targetOutstanding = Math.abs(selectedOutstanding);
+
+    if(!cid){
+        msg.textContent = 'Please select a customer/supplier first.';
+        msg.className = 'mfg-msg err';
+        return;
+    }
+    if(!Number.isFinite(amount) || amount <= 0){
+        msg.textContent = 'Amount should be greater than 0.';
+        msg.className = 'mfg-msg err';
+        return;
+    }
+
+    if(targetOutstanding > 0 && amount > targetOutstanding){
+        const over = amount - targetOutstanding;
+        if(!confirm(`Entered amount is Rs. ${over.toFixed(2)} higher than current outstanding. Continue as advance/over-settlement?`)) return;
+    }
+    if(!confirm(`මෙම Rs. ${amount.toFixed(2)} ක ගනුදෙනුව තහවුරු කරනවාද?`)) return;
+
+    const btn = document.getElementById('saveFinanceBtn');
+    btn.disabled = true;
+    msg.textContent = 'Saving...';
+
+    try {
+        const payload = {
+            businessId: bid,
+            customerId: cid,
+            customerName: financeCustomerById[cid].fullName,
+            type,
+            amount,
+            method,
+            date,
+            note,
+            chequeNo: method === 'CHEQUE' ? document.getElementById('chequeNo').value : null,
+            chequeDate: method === 'CHEQUE' ? document.getElementById('chequeDate').value : null,
+            balanceBefore: Number(selectedOutstanding || 0),
+            balanceAfter: type === 'PAYMENT_GIVEN'
+                ? Number(selectedOutstanding || 0) + amount
+                : Number(selectedOutstanding || 0) - amount,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        let docRef = null;
+        if (editingFinanceId) {
+            await db.collection('finance_transactions').doc(editingFinanceId).set({
+                ...payload,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            docRef = { id: editingFinanceId };
+        } else {
+            docRef = await db.collection('finance_transactions').add(payload);
+        }
+
+        if(window.eventBus){
+            window.eventBus.publish('FINANCE_TRANSACTION_RECORDED', { ...payload, transactionId: docRef.id });
+        }
+
+        await ManufacturerModule.enqueueSms('PAYMENT_CONFIRMATION', null, {
+            name: payload.customerName,
+            mobile: financeCustomerById[cid].mobile,
+            amount: payload.amount,
+            customerId: cid,
+            paymentStatus: 'PAID',
+            type,
+            applyDelta: false
+        });
+
+        msg.textContent = editingFinanceId ? 'Transaction updated and SMS queued!' : 'Transaction saved and SMS queued!';
+        msg.className = 'mfg-msg ok';
+        this.reset();
+        editingFinanceId = '';
+        document.getElementById('saveFinanceBtn').textContent = 'තහවුරු කර සුරකින්න (Confirm & Save)';
+        document.getElementById('chequeDetails').style.display = 'none';
+        document.getElementById('linkedRows').innerHTML = '';
+        document.getElementById('financeLinkedInfo').textContent = '';
+        selectedOutstanding = 0;
+        selectedSnapshot = null;
+        document.getElementById('outstandingDisplay').textContent = 'Rs. 0.00';
+        await loadTransactionHistory();
+        refresh();
+    } catch (err) {
+        console.error(err);
+        msg.textContent = 'Error: ' + err.message;
+        msg.className = 'mfg-msg err';
+    } finally {
+        btn.disabled = false;
+    }
+};
+function ageClass(due){
+    if(!due) return '';
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const d = new Date(due);
+    if(Number.isNaN(d.getTime())) return '';
+    d.setHours(0,0,0,0);
+    const diffDays = Math.floor((d - today) / 86400000);
+    if(diffDays < 0) return 'aging-overdue';
+    if(diffDays <= 5) return 'aging-soon';
+    return '';
+}
+
+async function maybeRunAutoDebtReminders(overdue){
+    if(!overdue.length) return;
+    const bid = ManufacturerModule.businessId;
+    const settingsSnap = await db.collection('settings').doc(bid).get().catch(()=>null);
+    const settingsData = settingsSnap && settingsSnap.exists ? (settingsSnap.data() || {}) : {};
+    const smsManager = { ...ManufacturerModule.defaultSmsManager(), ...(settingsData.smsManager || {}) };
+    if(!smsManager.autoDebtReminders) return;
+}
+async function refresh(){
+    const bid = ManufacturerModule.businessId;
+    const isScrap = ManufacturerModule.context && ManufacturerModule.context.businessType === 'scrap_collection_center';
+    
+    const inboundColl = isScrap ? 'buying_history' : 'manufacturer_raw_material_history';
+    const outboundColl = isScrap ? 'selling_history' : 'manufacturer_sales';
+
+    const [inb, out] = await Promise.all([
+        db.collection(inboundColl).where('businessId','==',bid).limit(100).get().catch(()=>({docs:[]})),
+        db.collection(outboundColl).where('businessId','==',bid).limit(100).get().catch(()=>({docs:[]}))
+    ]);
+    const overdue = [];
+    document.getElementById('payableRows').innerHTML = inb.docs.map((d)=>{
+        const x=d.data()||{};
+        if (isScrap) {
+            return `<tr><td>${x.supplierName||'-'}</td><td class="wrap-name">${(x.items || []).map(i => i.itemName).join(', ')}</td><td>Rs ${ManufacturerModule.money(x.totalAmount)}</td><td>${x.date ? x.date.slice(0,10) : '-'}</td><td>PAID</td></tr>`;
+        }
+        const due=x.dueDate || x.chequeClearanceDate;
+        const cls = ageClass(due);
+        if (cls === 'aging-overdue') overdue.push({ name: x.supplierName || 'Customer', amount: Number(x.amount || 0) });
+        return `<tr class="${cls}"><td>${x.supplierName||'-'}</td><td class="wrap-name">${x.materialName||'-'}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td>${due||'-'}</td><td>${x.paymentStatus||'-'}</td></tr>`;
+    }).join('');
+    document.getElementById('receivableRows').innerHTML = out.docs.map((d)=>{
+        const x=d.data()||{};
+        if (isScrap) {
+            return `<tr><td>${x.customerName||'-'}</td><td class="wrap-name">${(x.items || []).map(i => i.itemName).join(', ')}</td><td>Rs ${ManufacturerModule.money(x.totalAmount)}</td><td>${x.date ? x.date.slice(0,10) : '-'}</td><td>PAID</td></tr>`;
+        }
+        const due=x.dueDate || x.chequeClearanceDate;
+        const cls = ageClass(due);
+        if (cls === 'aging-overdue') overdue.push({ name: x.companyName || 'Customer', amount: Number(x.amount || 0) });
+        return `<tr class="${cls}"><td>${x.companyName||'-'}</td><td class="wrap-name">${x.productName||'-'}</td><td>Rs ${ManufacturerModule.money(x.amount)}</td><td>${due||'-'}</td><td>${x.paymentStatus||'-'}</td></tr>`;
+    }).join('');
+    await maybeRunAutoDebtReminders(overdue);
+}
+
+function safeCell(value){
+    return String(value == null ? '' : value).replace(/[<>&"]/g, (ch)=>{
+        if(ch === '<') return '&lt;';
+        if(ch === '>') return '&gt;';
+        if(ch === '&') return '&amp;';
+        return '&quot;';
+    });
+}
+
+function getFilteredHistory(){
+    const customerId = document.getElementById('historyCustomerFilter').value;
+    const type = document.getElementById('historyTypeFilter').value;
+    const method = document.getElementById('historyMethodFilter').value;
+    const from = document.getElementById('historyFromDate').value;
+    const to = document.getElementById('historyToDate').value;
+    const search = String(document.getElementById('historySearch').value || '').trim().toLowerCase();
+
+    return allFinanceTransactions.filter((x)=>{
+        if(customerId && x.customerId !== customerId) return false;
+        if(type && x.type !== type) return false;
+        if(method && x.method !== method) return false;
+        if(from && String(x.date || '') < from) return false;
+        if(to && String(x.date || '') > to) return false;
+        if(search){
+            const hay = `${x.customerName || ''} ${x.note || ''}`.toLowerCase();
+            if(!hay.includes(search)) return false;
+        }
+        return true;
+    });
+}
+
+function renderHistoryRows(){
+    const rows = getFilteredHistory();
+    const tbody = document.getElementById('historyRows');
+    if(!rows.length){
+        tbody.innerHTML = '<tr><td colspan="9">No transactions for selected filters.</td></tr>';
+    } else {
+        tbody.innerHTML = rows.map((x)=>{
+            const typeLabel = x.type === 'PAYMENT_GIVEN' ? 'Given' : 'Received';
+            return `<tr>
+                <td>${safeCell(x.date || '-')}</td>
+                <td>${safeCell(x.customerName || '-')}</td>
+                <td>${safeCell(typeLabel)}</td>
+                <td>${safeCell(x.method || '-')}</td>
+                <td>Rs ${ManufacturerModule.money(x.amount)}</td>
+                <td>Rs ${ManufacturerModule.money(x.balanceBefore)}</td>
+                <td>Rs ${ManufacturerModule.money(x.balanceAfter)}</td>
+                <td class="wrap-name">${safeCell(x.note || '-')}</td>
+                <td>
+                    <button type="button" onclick="openEditFinanceTx('${x.id}')">✏️</button>
+                    <button type="button" onclick="deleteFinanceTx('${x.id}')">🗑️</button>
+                    <button type="button" onclick="printFinanceReceipt('${x.id}')">🖨️</button>
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    const totalAmount = rows.reduce((sum, x)=>sum + (Number(x.amount) || 0), 0);
+    const given = rows.reduce((sum, x)=>x.type === 'PAYMENT_GIVEN' ? sum + (Number(x.amount) || 0) : sum, 0);
+    const received = rows.reduce((sum, x)=>x.type === 'PAYMENT_RECEIVED' ? sum + (Number(x.amount) || 0) : sum, 0);
+    document.getElementById('historySummary').textContent = `Records: ${rows.length} | Total: Rs ${ManufacturerModule.money(totalAmount)} | Given: Rs ${ManufacturerModule.money(given)} | Received: Rs ${ManufacturerModule.money(received)}`;
+}
+
+async function printFinanceReceipt(id) {
+    const tx = allFinanceTransactions.find((r) => r.id === id);
+    if (!tx) return;
+
+    try {
+        const bid = ManufacturerModule.businessId;
+        const bizSnap = await db.collection('businesses').doc(bid).get();
+        const bizData = bizSnap.exists ? bizSnap.data() : {};
+        const docSettings = bizData.documentSettings || {};
+        const s = docSettings.collection_receipt || {};
+
+        const header = s.header || bizData.name || 'Collection Receipt';
+        const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+        const footer = s.footer || 'Thank you for your business!';
+        const agentNote = s.showAgentDetails && bizData.agentName ? `Agent: ${bizData.agentName}` : '';
+
+        const netBalance = Number(tx.balanceAfter || 0);
+        const balanceDisp = Math.abs(netBalance).toLocaleString(undefined, { minimumFractionDigits: 2 });
+        const balanceSign = netBalance > 0 ? ' (Receivable)' : (netBalance < 0 ? ' (Payable)' : ' (Settled)');
+
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Receipt ${id}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 5mm; }
+            body { width: 70mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; line-height: 1.4; color: #000; padding: 10px; width: 70mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 10px; margin: 4px 0 0; }
+        .receipt-title { font-size: 13px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; text-decoration: underline; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .meta-label { font-weight: 600; }
+        .amount-box { border: 2px solid #000; padding: 8px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: 800; }
+        .balance-box { background: #f0f0f0; padding: 6px; text-align: center; font-size: 11px; margin-top: 10px; border-radius: 4px; }
+        .footer { text-align: center; font-size: 10px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; }
+        .sig-space { margin-top: 40px; display: flex; justify-content: space-between; font-size: 10px; }
+        .sig-line { border-top: 1px solid #000; width: 45%; text-align: center; padding-top: 2px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Collection Receipt</div>
+    
+    <div class="meta-row"><span class="meta-label">Receipt No:</span><span>${id.slice(-8).toUpperCase()}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${tx.date || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Customer:</span><span>${tx.customerName || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Pay Mode:</span><span>${tx.method || 'CASH'}</span></div>
+    ${tx.chequeNo ? `<div class="meta-row"><span class="meta-label">Cheque No:</span><span>${tx.chequeNo}</span></div>` : ''}
+    
+    <div class="amount-box">Rs. ${Number(tx.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+    
+    ${tx.note ? `<div style="margin-bottom: 10px;"><span class="meta-label">Note:</span> <span style="font-style: italic;">${tx.note}</span></div>` : ''}
+    
+    <div class="balance-box">
+        Outstanding Balance: <strong>Rs. ${balanceDisp}</strong>${balanceSign}
+    </div>
+    
+    <div class="sig-space">
+        <div class="sig-line">Customer</div>
+        <div class="sig-line">Authorized</div>
+    </div>
+    
+    <div class="footer">
+        <div>${footer}</div>
+        ${agentNote ? `<div style="margin-top:4px;">${agentNote}</div>` : ''}
+        <div style="font-size: 8px; color: #666; margin-top: 8px;">Software Solution by DIGIBIZ - 0713446500</div>
+    </div>
+
+    <\/script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    <\/script>
+<\/body>
+<\/html>`;
+
+        const win = window.open('', '_blank', 'width=400,height=600');
+        if (!win) {
+            alert('Popup blocked. Please allow popups to print the receipt.');
+            return;
+        }
+        win.document.write(html);
+        win.document.close();
+
+    } catch (e) {
+        console.error(e);
+        alert('Failed to generate receipt: ' + e.message);
+    }
+}
+
+function openEditFinanceTx(id){
+    const x = allFinanceTransactions.find((r) => r.id === id);
+    if (!x) return;
+    editingFinanceId = id;
+    document.getElementById('financeCustomerId').value = x.customerId || '';
+    document.getElementById('financeType').value = x.type || 'PAYMENT_GIVEN';
+    document.getElementById('financeAmount').value = Number(x.amount || 0);
+    document.getElementById('financeMethod').value = x.method || 'CASH';
+    document.getElementById('financeDate').value = x.date || '';
+    document.getElementById('financeNote').value = x.note || '';
+    document.getElementById('saveFinanceBtn').textContent = 'Update Transaction';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function deleteFinanceTx(id){
+    if(!confirm('Soft delete this transaction?')) return;
+    await db.collection('finance_transactions').doc(id).set({
+        isActive: false,
+        deletedAt: new Date(),
+        updatedAt: new Date()
+    }, { merge: true });
+    await loadTransactionHistory();
+}
+
+window.openEditFinanceTx = openEditFinanceTx;
+window.deleteFinanceTx = deleteFinanceTx;
+
+function csvEscape(value){
+    const s = String(value == null ? '' : value);
+    if(/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+}
+
+function exportHistoryCsv(){
+    const rows = getFilteredHistory();
+    if(!rows.length){
+        alert('No records to export.');
+        return;
+    }
+    const header = ['Date','CustomerName','Type','Method','Amount','BalanceBefore','BalanceAfter','Note'];
+    const lines = [header.join(',')];
+    rows.forEach((x)=>{
+        lines.push([
+            x.date || '',
+            x.customerName || '',
+            x.type || '',
+            x.method || '',
+            Number(x.amount || 0).toFixed(2),
+            Number(x.balanceBefore || 0).toFixed(2),
+            Number(x.balanceAfter || 0).toFixed(2),
+            x.note || ''
+        ].map(csvEscape).join(','));
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `finance-transactions-${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function exportHistoryPdf(){
+    const rows = getFilteredHistory();
+    if(!rows.length){
+        alert('No records to export.');
+        return;
+    }
+    const totalAmount = rows.reduce((sum, x)=>sum + (Number(x.amount) || 0), 0);
+    const given = rows.reduce((sum, x)=>x.type === 'PAYMENT_GIVEN' ? sum + (Number(x.amount) || 0) : sum, 0);
+    const received = rows.reduce((sum, x)=>x.type === 'PAYMENT_RECEIVED' ? sum + (Number(x.amount) || 0) : sum, 0);
+    const printableRows = rows.map((x)=>`<tr>
+        <td>${safeCell(x.date || '-')}</td>
+        <td>${safeCell(x.customerName || '-')}</td>
+        <td>${safeCell(x.type === 'PAYMENT_GIVEN' ? 'Given' : 'Received')}</td>
+        <td>${safeCell(x.method || '-')}</td>
+        <td>${ManufacturerModule.money(x.amount)}</td>
+        <td>${ManufacturerModule.money(x.balanceBefore)}</td>
+        <td>${ManufacturerModule.money(x.balanceAfter)}</td>
+        <td>${safeCell(x.note || '-')}</td>
+    </tr>`).join('');
+
+    const win = window.open('', '_blank');
+    if(!win){
+        alert('Popup blocked. Please allow popups and try again.');
+        return;
+    }
+    win.document.write(`<!DOCTYPE html><html><head><title>Finance Transactions</title>
+        <style>
+            body{font-family:Arial,sans-serif;padding:16px;color:#111827;}
+            h2{margin:0 0 8px;}
+            .meta{font-size:12px;margin-bottom:10px;color:#374151;}
+            table{width:100%;border-collapse:collapse;font-size:11px;}
+            th,td{border:1px solid #d1d5db;padding:6px;text-align:left;vertical-align:top;}
+            th{background:#f3f4f6;}
+        </style></head><body>
+        <h2>Finance Transaction Report</h2>
+        <div class="meta">Generated: ${new Date().toLocaleString()}</div>
+        <div class="meta">Records: ${rows.length} | Total: Rs ${ManufacturerModule.money(totalAmount)} | Given: Rs ${ManufacturerModule.money(given)} | Received: Rs ${ManufacturerModule.money(received)}</div>
+        <table><thead><tr><th>Date</th><th>Name</th><th>Type</th><th>Method</th><th>Amount</th><th>Before</th><th>After</th><th>Note</th></tr></thead>
+        <tbody>${printableRows}</tbody></table>
+        <\/body><\/html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+}
+
+async function loadTransactionHistory(){
+    const bid = ManufacturerModule.businessId;
+    const snap = await db.collection('finance_transactions')
+        .where('businessId','==',bid)
+        .limit(500)
+        .get()
+        .catch(()=>({docs:[]}));
+    allFinanceTransactions = snap.docs
+        .map((d)=>({ id: d.id, ...(d.data() || {}) }))
+        .filter((x) => x.isActive !== false)
+        .sort((a,b)=>{
+            const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || a.date || 0).getTime();
+            const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || b.date || 0).getTime();
+            return tb - ta;
+        });
+    renderHistoryRows();
+}
+(async function(){
+    await ManufacturerModule.init('global-finance');
+    document.getElementById('financeDate').valueAsDate = new Date();
+    await loadFinanceCustomers();
+    document.getElementById('applyHistoryFilterBtn').onclick = renderHistoryRows;
+    document.getElementById('resetHistoryFilterBtn').onclick = function(){
+        document.getElementById('historyCustomerFilter').value = '';
+        document.getElementById('historyTypeFilter').value = '';
+        document.getElementById('historyMethodFilter').value = '';
+        document.getElementById('historyFromDate').value = '';
+        document.getElementById('historyToDate').value = '';
+        document.getElementById('historySearch').value = '';
+        renderHistoryRows();
+    };
+    document.getElementById('exportCsvBtn').onclick = exportHistoryCsv;
+    document.getElementById('exportPdfBtn').onclick = exportHistoryPdf;
+    document.getElementById('historySearch').addEventListener('input', renderHistoryRows);
+    await loadTransactionHistory();
+    refresh();
+})();
+</script>
+</body>
+</html>

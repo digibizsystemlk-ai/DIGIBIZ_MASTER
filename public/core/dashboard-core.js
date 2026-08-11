@@ -16,6 +16,19 @@ class DashboardCore {
         return raw;
     }
 
+    getVerticalDashboardUrl(typeRaw) {
+        const norm = this.normalizeBusinessType(typeRaw);
+        if (norm === 'distributor') return '/modules/distributor/web/dashboard.html';
+        if (norm === 'manufacturer') return '/modules/manufacturer/dashboard.html';
+        if (norm === 'retail') return '/modules/retail/dashboard.html';
+        if (norm === 'pharmacy') return '/modules/pharmacy/dashboard.html';
+        if (norm === 'auto_care') return '/modules/auto_care/dashboard.html';
+        if (norm === 'hardware') return '/modules/hardware/dashboard.html';
+        if (norm === 'tire_centre') return '/modules/tire_centre/dashboard.html';
+        if (norm === 'scrap_collection_center') return '/modules/scrap_collection_center/dashboard.html';
+        return `/modules/${norm}/dashboard.html`;
+    }
+
     getMwTradingCanonicalBusinessId() {
         return 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
     }
@@ -161,6 +174,21 @@ class DashboardCore {
     }
 
     async getContext(user) {
+        if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+            const impBizId = localStorage.getItem('digibiz_impersonate_biz_id') || 
+                             localStorage.getItem('currentBusinessId') || 
+                             localStorage.getItem('businessId');
+            const impType = localStorage.getItem('digibiz_impersonate_type') || 'retail';
+            if (impBizId) {
+                return {
+                    businessId: impBizId,
+                    businessType: impType,
+                    role: 'BUSINESS_OWNER',
+                    userDocData: { role: 'BUSINESS_OWNER', businessId: impBizId }
+                };
+            }
+        }
+
         if (!user) return null;
 
         const userDoc = await window.db.collection('users').doc(user.uid).get();
@@ -256,7 +284,7 @@ class DashboardCore {
             }
         } catch (eBud) { /* ignore */ }
 
-        const context = { userId: user.uid, businessId, businessType, businessName, userRole, logoUrl };
+        const context = { userId: user.uid, businessId, businessType, businessName, userRole, logoUrl, userEmail: user.email };
         
         // Pre-fetch permission overrides if applicable
         if (businessId && window.DigibizDistributorPermissions && typeof window.DigibizDistributorPermissions.fetchAndCachePermissions === 'function') {
@@ -388,6 +416,169 @@ class DashboardCore {
         return byCode;
     }
 
+    async fetchUnifiedOrders(bid, userEmail) {
+        if (!bid) return { docs: [] };
+        try {
+            const flatSnapshot = await window.db.collection('orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] }));
+            const listSnapshot = await window.db.collection('orders').doc(bid).collection('list').get().catch(() => ({ docs: [] }));
+            let emailSnapshot = { docs: [] };
+            if (userEmail) {
+                emailSnapshot = await window.db.collection('orders').where('ownerEmail', '==', userEmail).get().catch(() => ({ docs: [] }));
+            }
+            
+            const map = {};
+            [...flatSnapshot.docs, ...listSnapshot.docs, ...emailSnapshot.docs].forEach(doc => {
+                map[doc.id] = doc;
+            });
+            
+            return { docs: Object.values(map) };
+        } catch (e) {
+            console.error('[DashboardCore] fetchUnifiedOrders failed', e);
+            return { docs: [] };
+        }
+    }
+
+    parseDateAny(val) {
+        if (!val) return null;
+        if (typeof val.toDate === 'function') return val.toDate();
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    async syncUnjournaledTransactions(bid, userEmail) {
+        if (!bid || !window.db) return;
+        try {
+            const existingEntries = await window.db.collection('journal').doc(bid).collection('entries').get();
+            const existingRefs = new Set();
+            const existingIds = new Set();
+            
+            const batch = window.db.batch();
+            let newEntriesAdded = 0;
+            let migratedCount = 0;
+
+            existingEntries.docs.forEach(d => {
+                const data = d.data();
+                if (data.ref) existingRefs.add(data.ref);
+                existingIds.add(d.id);
+                
+                // On-the-fly migration for old AC-XXXX codes to legacy formats
+                let needsUpdate = false;
+                const newEntries = (data.entries || []).map(entry => {
+                    let ac = entry.accountCode;
+                    if (ac === 'AC-40100') { ac = '4-4010-01'; needsUpdate = true; }
+                    if (ac === 'AC-10100') { ac = '1-1010-01'; needsUpdate = true; }
+                    if (ac === 'AC-10200') { ac = '1-1020-01'; needsUpdate = true; }
+                    if (ac === 'AC-10300') { ac = '1-1030-01'; needsUpdate = true; }
+                    if (ac === 'AC-50100') { ac = '5-5010-01'; needsUpdate = true; }
+                    return { ...entry, accountCode: ac };
+                });
+                
+                let updates = {};
+                if (needsUpdate) updates.entries = newEntries;
+                if (data.referenceType === undefined && data.description && data.description.includes('Sales Order')) {
+                    updates.referenceType = 'SALE';
+                    needsUpdate = true;
+                }
+                if (data.referenceType === undefined && data.description && data.description.includes('Expense:')) {
+                    updates.referenceType = 'EXPENSE';
+                    needsUpdate = true;
+                }
+                
+                if (needsUpdate) {
+                    batch.update(d.ref, updates);
+                    migratedCount++;
+                }
+            });
+
+            const [unifiedOrders, expensesSnap] = await Promise.all([
+                this.fetchUnifiedOrders(bid, userEmail),
+                window.db.collection('expenses').where('businessId', '==', bid).get().catch(() => ({ docs: [] }))
+            ]);
+
+
+
+            for (const doc of unifiedOrders.docs) {
+                const data = doc.data() || {};
+                const orderId = data.orderId || data.orderNumber || doc.id;
+                const refStr = `orders/${orderId}`;
+                const customId = `JE_${orderId}`;
+
+                if (existingRefs.has(refStr) || existingIds.has(customId)) continue;
+                const status = String(data.status || '').toLowerCase();
+                if (status === 'rejected' || status === 'cancelled') continue;
+
+                const total = Number(data.totalAmount || data.total || data.netTotal || 0);
+                if (total <= 0) continue;
+
+                const dt = this.parseDateAny(data.orderDate || data.createdAt) || new Date();
+                const pm = String(data.paymentMethod || 'CASH').toUpperCase();
+                const isCash = pm === 'CASH';
+                const customer = data.customerName || data.shopName || 'Customer';
+
+                const jRef = window.db.collection('journal').doc(bid).collection('entries').doc(customId);
+                const jObj = {
+                    businessId: bid,
+                    date: window.firebase.firestore.Timestamp.fromDate(dt),
+                    description: `Sales Order #${orderId} - ${customer}`,
+                    ref: refStr,
+                    referenceType: 'SALE',
+                    totalDebit: total,
+                    totalCredit: total,
+                    entries: [
+                        { accountCode: isCash ? '1-1010-01' : '1-1030-01', accountName: isCash ? 'Cash in Drawer' : 'Accounts Receivable', debit: total, credit: 0 },
+                        { accountCode: '4-4010-01', accountName: 'Sales Revenue', debit: 0, credit: total }
+                    ]
+                };
+                batch.set(jRef, jObj, { merge: true });
+                existingRefs.add(refStr);
+                existingIds.add(customId);
+                newEntriesAdded++;
+            }
+
+            for (const doc of expensesSnap.docs) {
+                const data = doc.data() || {};
+                const expId = doc.id;
+                const refStr = `expenses/${expId}`;
+                const customId = `JE_EXP_${expId}`;
+
+                if (existingRefs.has(refStr) || existingIds.has(customId)) continue;
+                const amt = Number(data.amount || 0);
+                if (amt <= 0) continue;
+
+                const dt = this.parseDateAny(data.expenseDate || data.createdAt || data.date) || new Date();
+                const cat = data.category || data.description || 'Expense';
+                const pm = String(data.paymentMethod || 'CASH').toUpperCase();
+                const isCash = pm === 'CASH';
+
+                const jRef = window.db.collection('journal').doc(bid).collection('entries').doc(customId);
+                const jObj = {
+                    businessId: bid,
+                    date: window.firebase.firestore.Timestamp.fromDate(dt),
+                    description: `Expense: ${cat}`,
+                    ref: refStr,
+                    referenceType: 'EXPENSE',
+                    totalDebit: amt,
+                    totalCredit: amt,
+                    entries: [
+                        { accountCode: '5-5010-01', accountName: `Operational Expense (${cat})`, debit: amt, credit: 0 },
+                        { accountCode: isCash ? '1-1010-01' : '1-1020-01', accountName: isCash ? 'Cash in Drawer' : 'Bank Account', debit: 0, credit: amt }
+                    ]
+                };
+                batch.set(jRef, jObj, { merge: true });
+                existingRefs.add(refStr);
+                existingIds.add(customId);
+                newEntriesAdded++;
+            }
+
+            if (newEntriesAdded > 0 || migratedCount > 0) {
+                await batch.commit();
+                console.log(`[DashboardCore] Auto-synced ${newEntriesAdded} unjournaled transactions. Migrated ${migratedCount} old transactions.`);
+            }
+        } catch (e) {
+            console.error('[DashboardCore] syncUnjournaledTransactions error:', e);
+        }
+    }
+
     /**
      * Journal entries posted from web loan modules (stored in journal/{bid}/entries only).
      * Scrap GL view otherwise ignores entries to avoid double-counting stock — loans must still appear.
@@ -495,8 +686,9 @@ class DashboardCore {
 
     async getDistributorMetrics(context) {
         const bid = context.businessId;
+        await this.syncUnjournaledTransactions(bid, context.userEmail);
         const [snapshot, pendingSnap, productsSnap, repsSnap, shopsSnap, journalSnap] = await Promise.all([
-            window.db.collection('orders').where('businessId', '==', bid).get(),
+            this.fetchUnifiedOrders(bid, context.userEmail),
             window.db.collection('pendingOrders').where('businessId', '==', bid).get(),
             window.db.collection('products').where('businessId', '==', bid).get(),
             window.db.collection('reps').where('businessId', '==', bid).get(),
@@ -720,7 +912,8 @@ class DashboardCore {
         startToday.setHours(0, 0, 0, 0);
         const startMonth = new Date(startToday.getFullYear(), startToday.getMonth(), 1);
 
-        const orderSnapshot = await window.db.collection('orders').doc(context.businessId).collection('list').get();
+        await this.syncUnjournaledTransactions(context.businessId, context.userEmail);
+        const orderSnapshot = await this.fetchUnifiedOrders(context.businessId, context.userEmail);
         let pendingOrders = 0;
         orderSnapshot.docs.forEach(doc => {
             const order = doc.data();
@@ -1272,7 +1465,7 @@ class DashboardCore {
         });
 
         const baseMetrics = await this.getRetailMetrics(context);
-        const ordersSnapshot = await window.db.collection('orders').doc(context.businessId).collection('list').get();
+        const ordersSnapshot = await this.fetchUnifiedOrders(context.businessId, context.userEmail);
         let quotationCount = 0;
         let convertedCount = 0;
         let invoiceCount = 0;
@@ -1381,6 +1574,7 @@ class DashboardCore {
 
     async getScrapMetrics(context) {
         const bid = context.businessId;
+        await this.syncUnjournaledTransactions(bid, context.userEmail);
         const startToday = new Date();
         startToday.setHours(0, 0, 0, 0);
         const startMonth = new Date(startToday.getFullYear(), startToday.getMonth(), 1);
@@ -1685,6 +1879,7 @@ class DashboardCore {
 
     async getManufacturerMetrics(context) {
         const bid = context.businessId;
+        await this.syncUnjournaledTransactions(bid, context.userEmail);
         const startToday = new Date();
         startToday.setHours(0, 0, 0, 0);
         const startMonth = new Date(startToday.getFullYear(), startToday.getMonth(), 1);

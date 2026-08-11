@@ -56,7 +56,7 @@
                     });
                 });
             }
-            navigator.serviceWorker.register('/sw.js?v=3001').then(function(reg) {
+            navigator.serviceWorker.register('/sw.js?v=3138').then(function(reg) {
                 if (reg && reg.update) reg.update();
             }).catch(function (err) {
                 console.warn('[PWA] Service worker registration error:', err);

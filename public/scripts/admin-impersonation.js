@@ -1,4 +1,22 @@
 // DIGIBIZ Super Admin Direct Client Impersonation & Debug Suite
+window.getEffectiveBusinessId = function(userDoc, fallbackUid) {
+    if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+        const impBizId = localStorage.getItem('digibiz_impersonate_biz_id') || 
+                         localStorage.getItem('currentBusinessId') || 
+                         localStorage.getItem('businessId');
+        if (impBizId) return impBizId;
+    }
+    if (userDoc) {
+        if (typeof userDoc.data === 'function') {
+            const data = userDoc.data();
+            if (data && data.businessId) return data.businessId;
+        } else if (userDoc.businessId) {
+            return userDoc.businessId;
+        }
+    }
+    return fallbackUid || (userDoc && userDoc.uid ? userDoc.uid : null);
+};
+
 (function initSuperAdminImpersonation() {
     const urlParams = new URLSearchParams(window.location.search);
     const isParamImpersonate = urlParams.get('impersonate') === 'true';

@@ -81,12 +81,9 @@ window.AuthUI = {
             console.warn('[AuthUI] Login context resolution failed:', error);
         }
         
-        if (businessType === 'scrap_collection_center') {
-            window.location.href = '../modules/admin/scrap-master.html';
-        } else if (businessType === 'auto_care') {
-            window.location.href = '../modules/auto_care/dashboard.html';
-        } else {
-            window.location.href = '../modules/core/dashboard.html';
-        }
+        const targetUrl = (window.dashboardCore && window.dashboardCore.getVerticalDashboardUrl)
+            ? window.dashboardCore.getVerticalDashboardUrl(businessType)
+            : (businessType === 'distributor' ? '/modules/distributor/web/dashboard.html' : `/modules/${businessType}/dashboard.html`);
+        window.location.href = targetUrl;
     }
 };

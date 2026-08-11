@@ -16,9 +16,9 @@
     
     <script src="/core/firebase-init.js?v=100"></script>
     <script src="/scripts/admin-impersonation.js?v=100"></script>
-    <script src="../../core/auth-roles.js?v=120"></script>
-    <script src="../../core/business-types.js?v=4"></script>
-    <script src="../../core/sidebar.js?v=2000"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
     
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
@@ -282,34 +282,38 @@
             initFirestoreEmployeeListener();
         });
 
-        function initFirestoreEmployeeListener() {
+                function initFirestoreEmployeeListener() {
             const firestoreDb = window.db || (window.firebase && window.firebase.firestore ? window.firebase.firestore() : null);
             if (firestoreDb) {
                 const bizId = localStorage.getItem('currentBusinessId') || 'ATTENDANCE_BIZ_001';
                 firestoreDb.collection('businesses').doc(bizId).onSnapshot(doc => {
-                    if (doc.exists) {
-                        const data = doc.data();
-                        if (data && Array.isArray(data.registered_employees) && data.registered_employees.length > 0) {
-                            let localList = [];
-                            try {
-                                const stored = localStorage.getItem('digibiz_registered_employees');
-                                if (stored) localList = JSON.parse(stored);
-                            } catch(e) {}
+                    if (!doc.exists) return;
+                    const data = doc.data();
+                    if (!data || !Array.isArray(data.registered_employees)) return;
 
-                            const map = new Map();
-                            [...data.registered_employees, ...localList].forEach(emp => {
-                                if (emp) {
-                                    const key = String(emp.empId || emp.nic || emp.phone).trim();
-                                    if (!map.has(key)) map.set(key, emp);
-                                }
-                            });
+                    // Local storage is the source of truth. Only pull server data into
+                    // the local list when the server has employees that are NOT already
+                    // present locally (e.g. added from another device). We NEVER
+                    // overwrite local edits with older server snapshots.
+                    let localList = [];
+                    try {
+                        const stored = localStorage.getItem('digibiz_registered_employees');
+                        if (stored) localList = JSON.parse(stored) || [];
+                    } catch(e) { localList = []; }
 
-                            const merged = Array.from(map.values());
-                            localStorage.setItem('digibiz_registered_employees', JSON.stringify(merged));
-                            localStorage.setItem('digibiz_employees_initialized', 'true');
-                            renderEmployeeDirectory();
+                    const map = new Map();
+                    // Local first => local data takes precedence on conflicts.
+                    [...localList, ...(data.registered_employees || [])].forEach(emp => {
+                        if (emp) {
+                            const key = String(emp.empId || emp.nic || emp.phone).trim();
+                            if (!map.has(key)) map.set(key, emp);
                         }
-                    }
+                    });
+
+                    const merged = Array.from(map.values());
+                    localStorage.setItem('digibiz_registered_employees', JSON.stringify(merged));
+                    localStorage.setItem('digibiz_employees_initialized', 'true');
+                    renderEmployeeDirectory();
                 }, err => console.warn('Firestore employee sync error:', err));
             }
         }
@@ -341,14 +345,23 @@
             return defaultSeed;
         }
 
-        function saveEmployeesToStorage(list) {
+                async function saveEmployeesToStorage(list) {
+            // 1. Always save to localStorage first (source of truth)
             localStorage.setItem('digibiz_registered_employees', JSON.stringify(list));
             localStorage.setItem('digibiz_employees_initialized', 'true');
+
+            // 2. Then sync to Firestore. The real-time listener is configured to
+            //    give LOCAL data precedence, so even if an old server snapshot
+            //    briefly arrives it will NOT revert the local changes.
             const firestoreDb = window.db || (window.firebase && window.firebase.firestore ? window.firebase.firestore() : null);
             if (firestoreDb) {
                 const bizId = localStorage.getItem('currentBusinessId') || 'ATTENDANCE_BIZ_001';
-                firestoreDb.collection('businesses').doc(bizId).set({ registered_employees: list }, { merge: true }).catch(e => console.warn(e));
-                firestoreDb.collection('registered_employees').doc(bizId).set({ list: list }, { merge: true }).catch(e => console.warn(e));
+                try {
+                    await firestoreDb.collection('businesses').doc(bizId).set({ registered_employees: list }, { merge: true });
+                } catch(e) { console.warn('Firestore businesses sync failed:', e); }
+                try {
+                    await firestoreDb.collection('registered_employees').doc(bizId).set({ list: list }, { merge: true });
+                } catch(e) { console.warn('Firestore registered_employees sync failed:', e); }
             }
         }
 

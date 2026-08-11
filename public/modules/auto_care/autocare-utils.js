@@ -108,12 +108,7 @@ window.AutoCareUtils = {
         const bizId = this.getBizId();
         const key = `autocare_techs_${bizId}`;
         const cached = localStorage.getItem(key);
-        const defaults = [
-            "Nimal Kumara (Senior Mechanic)",
-            "Kamal Perera (Auto Electrician)",
-            "Suneth Jayasinghe (Tuning Specialist)",
-            "Priyantha Silva (General Tech)"
-        ];
+        const defaults = [];
 
         if (cached) {
             try {
@@ -141,11 +136,7 @@ window.AutoCareUtils = {
         const bizId = this.getBizId();
         const key = `autocare_brands_${bizId}`;
         const cached = localStorage.getItem(key);
-        const defaults = [
-            "Toyota", "Honda", "Nissan", "Mitsubishi", "Suzuki",
-            "Hyundai", "Kia", "Mercedes-Benz", "BMW", "Audi",
-            "Isuzu", "Land Rover", "Peugeot", "Mazda", "Subaru"
-        ];
+        const defaults = [];
 
         if (cached) {
             try {
@@ -172,11 +163,7 @@ window.AutoCareUtils = {
         const bizId = this.getBizId();
         const key = `autocare_models_${bizId}`;
         const cached = localStorage.getItem(key);
-        const defaults = [
-            "Prius", "Axio", "Allion", "Premio", "Vezel", "Fit GP5",
-            "WagonR", "X-Trail", "Montero", "Alto", "Civic", "Corolla",
-            "Grace", "Raize", "CHR", "Rocky", "Outlander", "Aqua"
-        ];
+        const defaults = [];
 
         if (cached) {
             try {

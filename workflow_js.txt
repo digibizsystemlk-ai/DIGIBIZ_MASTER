@@ -1,0 +1,150 @@
+        // --- REP ORDER WORKFLOW FUNCTIONS ---
+        let repOrderWorkflowMode = 'DIRECT_AUTO';
+
+        async function loadRepWorkflowSetting() {
+            try {
+                if (!currentBusinessId) return;
+                const doc = await db.collection('businesses').doc(currentBusinessId).get();
+                if (doc.exists) {
+                    repOrderWorkflowMode = doc.data().repOrderWorkflowMode || 'DIRECT_AUTO';
+                    const radioDirect = document.querySelector('input[name="repOrderMode"][value="DIRECT_AUTO"]');
+                    const radioApproval = document.querySelector('input[name="repOrderMode"][value="OWNER_APPROVAL"]');
+                    if (radioDirect && radioApproval) {
+                        if (repOrderWorkflowMode === 'OWNER_APPROVAL') {
+                            radioApproval.checked = true;
+                        } else {
+                            radioDirect.checked = true;
+                        }
+                    }
+                    updateRepOrderModeUi();
+                    adjustTabsForWorkflowMode();
+                }
+            } catch (err) {
+                console.error("Error loading workflow setting:", err);
+            }
+        }
+
+        function updateRepOrderModeUi() {
+            const mode = document.querySelector('input[name="repOrderMode"]:checked').value;
+            const lbl = document.getElementById('lblCurrentWorkflowStatus');
+            const lDirect = document.getElementById('labelModeDirect');
+            const lApproval = document.getElementById('labelModeApproval');
+            if (!lbl || !lDirect || !lApproval) return;
+            
+            if (mode === 'DIRECT_AUTO') {
+                lbl.innerText = 'Mode: Instant Direct Stock Deduct (Default)';
+                lbl.style.background = '#dbeafe';
+                lbl.style.color = '#1e40af';
+                lDirect.style.borderColor = '#3b82f6';
+                lDirect.style.background = '#eff6ff';
+                lApproval.style.borderColor = '#cbd5e1';
+                lApproval.style.background = '#f8fafc';
+            } else {
+                lbl.innerText = 'Mode: Require Owner Approval';
+                lbl.style.background = '#d1fae5';
+                lbl.style.color = '#065f46';
+                lApproval.style.borderColor = '#10b981';
+                lApproval.style.background = '#ecfdf5';
+                lDirect.style.borderColor = '#cbd5e1';
+                lDirect.style.background = '#f8fafc';
+            }
+        }
+
+        async function saveRepWorkflowSetting() {
+            try {
+                const mode = document.querySelector('input[name="repOrderMode"]:checked').value;
+                if (!currentBusinessId) return;
+                await db.collection('businesses').doc(currentBusinessId).set({
+                    repOrderWorkflowMode: mode
+                }, { merge: true });
+                repOrderWorkflowMode = mode;
+                
+                const btn = document.querySelector('#btnLockSettings');
+                if (btn) btn.innerHTML = '? Saved Successfully!';
+                
+                setTimeout(() => {
+                    lockWorkflowSettings();
+                    adjustTabsForWorkflowMode();
+                    if (btn) btn.innerHTML = '?? Lock & Close';
+                    
+                    if (mode === 'DIRECT_AUTO' && ['pending', 'approved', 'rejected'].includes(currentTab)) {
+                        switchTab('all');
+                    } else {
+                        loadStats();
+                        loadOrders();
+                    }
+                }, 1000);
+            } catch (err) {
+                console.error("Error saving workflow setting:", err);
+                alert("Failed to save setting.");
+            }
+        }
+
+        function unlockWorkflowSettings() {
+            const container = document.getElementById('repWorkflowConfigCard');
+            let pwdContainer = document.getElementById('pwdInputContainer');
+            
+            if (pwdContainer) {
+                pwdContainer.remove();
+            }
+
+            pwdContainer = document.createElement('div');
+            pwdContainer.id = 'pwdInputContainer';
+            pwdContainer.style = 'margin-top:10px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:15px; display:flex; gap:10px; align-items:center;';
+            pwdContainer.innerHTML = `
+                <input type="password" id="inlinePwdInput" placeholder="Enter Owner Password" style="flex:1; padding:8px 12px; border:1px solid #94a3b8; border-radius:6px; font-size:14px;">
+                <button type="button" id="inlinePwdVerifyBtn" style="background:#047857; color:#fff; font-weight:700; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">Unlock</button>
+                <button type="button" id="inlinePwdCancelBtn" style="background:#ef4444; color:#fff; font-weight:700; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">Cancel</button>
+            `;
+
+            container.querySelector('div').appendChild(pwdContainer);
+            document.getElementById('inlinePwdInput').focus();
+
+            document.getElementById('inlinePwdVerifyBtn').onclick = () => {
+                const pwd = document.getElementById('inlinePwdInput').value;
+                if (pwd === "Sirimal123") {
+                    document.getElementById('workflowSettingsBody').style.display = 'block';
+                    document.getElementById('btnUnlockSettings').style.display = 'none';
+                    document.getElementById('btnLockSettings').style.display = 'inline-flex';
+                    pwdContainer.remove();
+                } else {
+                    alert("Incorrect Password!");
+                }
+            };
+            
+            document.getElementById('inlinePwdCancelBtn').onclick = () => {
+                pwdContainer.remove();
+            };
+        }
+
+        function lockWorkflowSettings() {
+            document.getElementById('workflowSettingsBody').style.display = 'none';
+            document.getElementById('btnUnlockSettings').style.display = 'inline-flex';
+            document.getElementById('btnLockSettings').style.display = 'none';
+        }
+
+        function adjustTabsForWorkflowMode() {
+            const pendingTab = document.getElementById('tabPending');
+            const approvedTab = document.getElementById('tabApproved');
+            const rejectedTab = document.getElementById('tabRejected');
+            const statPending = document.getElementById('statCardPending');
+            const statApproved = document.getElementById('statCardApproved');
+            const statRejected = document.getElementById('statCardRejected');
+            
+            if (repOrderWorkflowMode === 'DIRECT_AUTO') {
+                if (pendingTab) pendingTab.style.display = 'none';
+                if (approvedTab) approvedTab.style.display = 'none';
+                if (rejectedTab) rejectedTab.style.display = 'none';
+                if (statPending) statPending.style.display = 'none';
+                if (statApproved) statApproved.style.display = 'none';
+                if (statRejected) statRejected.style.display = 'none';
+            } else {
+                if (pendingTab) pendingTab.style.display = 'inline-block';
+                if (approvedTab) approvedTab.style.display = 'inline-block';
+                if (rejectedTab) rejectedTab.style.display = 'inline-block';
+                if (statPending) statPending.style.display = 'block';
+                if (statApproved) statApproved.style.display = 'block';
+                if (statRejected) statRejected.style.display = 'block';
+            }
+        }
+        // --- END REP ORDER WORKFLOW FUNCTIONS ---

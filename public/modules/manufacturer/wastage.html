@@ -270,12 +270,44 @@ function renderWastageTableAndStats() {
 }
 
 async function deleteWastageEntry(id) {
-    if (!confirm('Are you sure you want to delete this wastage record?')) return;
+    if (!confirm('Are you sure you want to delete this wastage record? Deducted stock will be restored back to stock balance.')) return;
     try {
-        await db.collection('manufacturer_wastage_history').doc(id).update({
-            isActive: false,
-            deletedAt: new Date()
-        });
+        const docRef = db.collection('manufacturer_wastage_history').doc(id);
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+            const data = docSnap.data() || {};
+            const itemType = data.itemType; // 'RAW_MATERIAL' or 'FINISHED_PRODUCT'
+            const itemId = data.itemId;
+            const qty = Number(data.qty || 0);
+            const itemName = String(data.itemName || '').trim();
+            const bid = data.businessId || ManufacturerModule.businessId;
+
+            // RESTORE DEDUCTED STOCK BACK TO STOCK BALANCE
+            if (qty > 0) {
+                if (itemType === 'RAW_MATERIAL') {
+                    const targetId = itemId || (bid && itemName ? `${bid}_${itemName.toUpperCase()}` : null);
+                    if (targetId) {
+                        await db.collection('manufacturer_raw_materials').doc(targetId).set({
+                            stockQty: firebase.firestore.FieldValue.increment(qty),
+                            updatedAt: new Date()
+                        }, { merge: true }).catch(e => console.warn('[Wastage] RM Stock restore error:', e));
+                    }
+                } else if (itemType === 'FINISHED_PRODUCT') {
+                    const targetId = itemId || (bid && itemName ? `${bid}_${itemName.toUpperCase()}` : null);
+                    if (targetId) {
+                        await db.collection('manufacturer_finished_products').doc(targetId).set({
+                            stockQty: firebase.firestore.FieldValue.increment(qty),
+                            updatedAt: new Date()
+                        }, { merge: true }).catch(e => console.warn('[Wastage] FG Stock restore error:', e));
+                    }
+                }
+            }
+
+            await docRef.update({
+                isActive: false,
+                deletedAt: new Date()
+            });
+        }
         await loadWastageAnalytics();
     } catch (e) {
         alert('Error deleting record: ' + e.message);

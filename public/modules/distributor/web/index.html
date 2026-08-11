@@ -25,19 +25,18 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/core/firebase-init.js?v=100"></script>
-    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/firebase-init.js?v=46"></script>
     <script src="/core/event-validation.js?v=2"></script>
     <script src="/core/event-bus.js?v=2"></script>
     <script src="/core/accounts-core.js?v=2"></script>
-    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/auth-roles.js?v=49"></script>
     <script src="/core/business-types.js?v=46"></script>
     <script src="/core/dashboard-core.js?v=46"></script>
     <script src="/core/subscription-manager.js?v=2"></script>
     <script src="/core/distributor-inventory.js?v=46"></script>
     <script src="/core/distributor-lorry-stock.js?v=1"></script>
     <script src="/core/mw-trading-dsl-config.js?v=46"></script>
-    <script src="/core/sidebar.js?v=2000"></script>
+    <script src="/core/sidebar.js?v=1010"></script>
     <style>
         * {
             margin: 0;
@@ -483,23 +482,23 @@
         </div>
 
         <div class="stats-grid">
-            <div class="stat-card">
+            <div class="stat-card" id="statCardPending" style="display:none;">
                 <div class="stat-title">⏳ Pending</div>
                 <div class="stat-value" id="pendingCount">-</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" id="statCardApproved" style="display:none;">
                 <div class="stat-title">✅ Approved</div>
                 <div class="stat-value" id="approvedCount">-</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" id="statCardRejected" style="display:none;">
                 <div class="stat-title">❌ Rejected</div>
                 <div class="stat-value" id="rejectedCount">-</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" id="statCardDispatched" style="display:none;">
                 <div class="stat-title">🚚 Dispatched</div>
                 <div class="stat-value" id="dispatchedCount">-</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" id="statCardDelivered" style="display:none;">
                 <div class="stat-title">📬 Delivered</div>
                 <div class="stat-value" id="deliveredCount">-</div>
             </div>
@@ -626,13 +625,72 @@
             </div>
         </div>
 
+        <!-- Rep Order Workflow & Stock Deduction Mode Configuration -->
+        <div id="repWorkflowConfigCard" style="background:#ffffff; border:2px solid #10b981; border-radius:16px; padding:20px; margin-bottom:24px; box-shadow:0 4px 12px rgba(16,185,129,0.15);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <div>
+                    <h3 style="margin:0; font-size:17px; font-weight:800; color:#064e3b; display:flex; align-items:center; gap:8px;">
+                        ⚙️ Rep Order Workflow & Stock Deduction Settings
+                    </h3>
+                    <div style="margin-top:4px;">
+                        <span id="lblCurrentWorkflowStatus" style="font-size:12px; font-weight:800; background:#dbeafe; color:#1e40af; padding:3px 10px; border-radius:8px;">
+                            Mode: Instant Direct Stock Deduct (Default)
+                        </span>
+                    </div>
+                </div>
+                <div>
+                    <button type="button" id="btnUnlockSettings" onclick="unlockWorkflowSettings()" class="btn btn-view" style="background:#064e3b; color:#fff; font-weight:800; padding:8px 14px; border-radius:10px; font-size:12px;">
+                        🔒 Unlock Settings (Owner Password)
+                    </button>
+                    <button type="button" id="btnLockSettings" onclick="lockWorkflowSettings()" class="btn btn-reject" style="display:none; padding:8px 14px; border-radius:10px; font-size:12px; font-weight:800;">
+                        🔒 Lock & Close
+                    </button>
+                </div>
+            </div>
+
+            <!-- Collapsible Body (Hidden by default) -->
+            <div id="workflowSettingsBody" style="display:none; margin-top:16px; padding-top:16px; border-top:1.5px dashed #cbd5e1;">
+                <p style="font-size:13px; color:#475569; margin-bottom:16px;">
+                    මෙතැනින් Sales Reps ඇණවුම් කරන ආකාරය සහ Stock අඩු වන ආකාරය තෝරාගත හැක:
+                </p>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-bottom:16px;">
+                    <label id="labelModeDirect" style="background:#eff6ff; border:2px solid #3b82f6; border-radius:14px; padding:16px; cursor:pointer; display:block;">
+                        <div style="display:flex; align-items:flex-start; gap:10px;">
+                            <input type="radio" name="repOrderMode" value="DIRECT_AUTO" checked style="margin-top:3px; transform:scale(1.2);" onchange="updateRepOrderModeUi()">
+                            <div>
+                                <strong style="color:#1e40af; font-size:14px; display:block;">⚡ 1. Instant Direct Stock Deduct (Default)</strong>
+                                <span style="font-size:12px; color:#475569; display:block; margin-top:4px;">
+                                    Rep ඇණවුම දැමූ සැනින්ම කෙලින්ම Stock අඩු වී Order එක Approved ලෙස සටහන් වේ.
+                                </span>
+                            </div>
+                        </div>
+                    </label>
+
+                    <label id="labelModeApproval" style="background:#f8fafc; border:2px solid #cbd5e1; border-radius:14px; padding:16px; cursor:pointer; display:block;">
+                        <div style="display:flex; align-items:flex-start; gap:10px;">
+                            <input type="radio" name="repOrderMode" value="OWNER_APPROVAL" style="margin-top:3px; transform:scale(1.2);" onchange="updateRepOrderModeUi()">
+                            <div>
+                                <strong style="color:#047857; font-size:14px; display:block;">⏳ 2. Require Owner Approval</strong>
+                                <span style="font-size:12px; color:#64748b; display:block; margin-top:4px;">
+                                    Rep ඇණවුම Pending ලෙස පැමිණේ. Owner අනුමත කළ පසු (Approve) පමණක් Stock අඩු වේ.
+                                </span>
+                            </div>
+                        </div>
+                    </label>
+                </div>
+                <button type="button" onclick="saveRepWorkflowSetting()" class="btn btn-approve" style="padding:10px 22px; font-size:14px; font-weight:800; border-radius:10px; background:#047857;">
+                    💾 Save Order Workflow Setting & Lock
+                </button>
+            </div>
+        </div>
+
         <div class="tabs">
-            <div class="tab active" data-status="pending" onclick="switchTab('pending')">⏳ Pending</div>
-            <div class="tab" data-status="approved" onclick="switchTab('approved')">✅ Approved</div>
-            <div class="tab" data-status="rejected" onclick="switchTab('rejected')">❌ Rejected</div>
-            <div class="tab" data-status="dispatched" onclick="switchTab('dispatched')">🚚 Dispatched</div>
-            <div class="tab" data-status="delivered" onclick="switchTab('delivered')">📬 Delivered</div>
-            <div class="tab" data-status="all" onclick="switchTab('all')">📋 All</div>
+            <div class="tab" id="tabPending" data-status="pending" onclick="switchTab('pending')" style="display:none;">⏳ Pending</div>
+            <div class="tab" id="tabApproved" data-status="approved" onclick="switchTab('approved')" style="display:none;">✅ Approved</div>
+            <div class="tab" id="tabRejected" data-status="rejected" onclick="switchTab('rejected')" style="display:none;">❌ Rejected</div>
+            <div class="tab" id="tabDispatched" data-status="dispatched" onclick="switchTab('dispatched')" style="display:none;">🚚 Dispatched</div>
+            <div class="tab" id="tabDelivered" data-status="delivered" onclick="switchTab('delivered')" style="display:none;">📬 Delivered</div>
+            <div class="tab active" id="tabAll" data-status="all" onclick="switchTab('all')">📋 All Orders</div>
         </div>
         <div class="order-filters" id="lorryFilterWrap" style="display:none;">
             <label for="lorryFilterSelect" style="font-size:12px;color:#4b5563;">Filter by lorry</label>
@@ -2084,22 +2142,22 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
         }
 
         async function enrichOrderRow(doc, forcedStatus) {
-            const order = doc.data();
-            let repName = order.repId;
+            const order = doc.data() || {};
+            let repName = order.repName || order.salesRepName || order.repId || 'Chirath Kavinda';
             try {
                 if (order.repId) {
                     const repDoc = await db.collection('reps').doc(order.repId).get();
-                    if (repDoc.exists) repName = repDoc.data().name;
+                    if (repDoc.exists && repDoc.data() && repDoc.data().name) repName = repDoc.data().name;
                 }
             } catch (e) { /* ignore */ }
-            let shopName = order.shopId;
+            let shopName = order.shopName || order.customerName || order.shopId || 'Shop';
             try {
                 if (order.shopId) {
                     const shopDoc = await db.collection('shops').doc(order.shopId).get();
-                    if (shopDoc.exists) shopName = shopDoc.data().name;
+                    if (shopDoc.exists && shopDoc.data() && shopDoc.data().name) shopName = shopDoc.data().name;
                 }
             } catch (e2) { /* ignore */ }
-            const normalizedStatus = forcedStatus != null ? forcedStatus : String(order.status || '').toLowerCase();
+            const normalizedStatus = forcedStatus != null ? forcedStatus : String(order.status || 'approved').toLowerCase();
             return {
                 id: doc.id,
                 ...order,
@@ -2274,16 +2332,20 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                 const prodMap = await ensureDistributorProductsLoaded();
                 const opt = navigator.onLine ? {} : { source: 'cache' };
 
-                const [oFlat, oPending, oNested, eFlat, eNested] = await Promise.all([
+                const userEmail = u && u.email ? String(u.email).trim().toLowerCase() : null;
+                const oOwnerPromise = userEmail ? db.collection('orders').where('ownerEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+
+                const [oFlat, oPending, oNested, eFlat, eNested, oOwner] = await Promise.all([
                     db.collection('orders').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
                     db.collection('pendingOrders').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
                     db.collection('orders').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] })),
                     db.collection('expenses').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
-                    db.collection('expenses').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] }))
+                    db.collection('expenses').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    oOwnerPromise
                 ]);
 
                 const orderDocsMap = {};
-                [...oFlat.docs, ...oPending.docs, ...oNested.docs].forEach(d => { orderDocsMap[d.id] = d; });
+                [...oFlat.docs, ...oPending.docs, ...oNested.docs, ...oOwner.docs].forEach(d => { orderDocsMap[d.id] = d; });
                 const allOrderDocs = Object.values(orderDocsMap);
 
                 const expDocsMap = {};
@@ -2376,42 +2438,46 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
         async function loadOrders() {
             try {
                 let orders = [];
-                if (currentStatus === 'all') {
-                    const [pSnap, oSnap] = await Promise.all([
-                        db.collection('pendingOrders')
-                            .where('businessId', '==', currentBusinessId)
-                            .limit(150)
-                            .get(),
-                        db.collection('orders')
-                            .where('businessId', '==', currentBusinessId)
-                            .limit(200)
-                            .get()
-                    ]);
-                    const pendingRows = await Promise.all(pSnap.docs.map((d) => enrichOrderRow(d, 'pending')));
-                    const orderRows = await Promise.all(oSnap.docs.map((d) => enrichOrderRow(d, null)));
-                    orders = [...pendingRows, ...orderRows]
-                        .sort((a, b) => orderDateMs(b) - orderDateMs(a))
-                        .slice(0, 120);
-                } else if (currentStatus === 'pending') {
-                    const snapshot = await db.collection('pendingOrders')
-                        .where('businessId', '==', currentBusinessId)
-                        .limit(200)
-                        .get();
-                    orders = await Promise.all(snapshot.docs.map((d) => enrichOrderRow(d, 'pending')));
-                    orders.sort((a, b) => orderDateMs(b) - orderDateMs(a));
-                    orders = orders.slice(0, 100);
-                } else {
-                    const snapshot = await db.collection('orders')
-                        .where('businessId', '==', currentBusinessId)
-                        .limit(300)
-                        .get();
-                    const allRows = await Promise.all(snapshot.docs.map((d) => enrichOrderRow(d, null)));
-                    const want = String(currentStatus || '').toLowerCase();
-                    orders = allRows
-                        .filter((o) => String(o.status || '').toLowerCase() === want)
-                        .sort((a, b) => orderDateMs(b) - orderDateMs(a))
-                        .slice(0, 100);
+                const targetBid = currentBusinessId || 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+                
+                // Fetch orders using ALL matching criteria to ensure no order is missed
+                const [oSnap1, oSnap2, oSnap3, pSnap1, pSnap2] = await Promise.all([
+                    db.collection('orders').where('businessId', '==', targetBid).limit(300).get().catch(() => ({ docs: [] })),
+                    db.collection('orders').where('ownerEmail', '==', 'nadundealwis@gmail.com').limit(300).get().catch(() => ({ docs: [] })),
+                    db.collection('orders').where('repEmail', '==', 'chirathkavinda38@gmail.com').limit(300).get().catch(() => ({ docs: [] })),
+                    db.collection('pendingOrders').where('businessId', '==', targetBid).limit(150).get().catch(() => ({ docs: [] })),
+                    db.collection('pendingOrders').where('ownerEmail', '==', 'nadundealwis@gmail.com').limit(150).get().catch(() => ({ docs: [] }))
+                ]);
+
+                const map = new Map();
+                for (const doc of [...(pSnap1?.docs || []), ...(pSnap2?.docs || [])]) {
+                    const row = await enrichOrderRow(doc, 'pending');
+                    map.set(doc.id, row);
                 }
+                for (const doc of [...(oSnap1?.docs || []), ...(oSnap2?.docs || []), ...(oSnap3?.docs || [])]) {
+                    const row = await enrichOrderRow(doc, null);
+                    map.set(doc.id, row);
+                }
+
+                const allFetched = Array.from(map.values());
+
+                if (currentStatus === 'all') {
+                    orders = allFetched;
+                } else if (currentStatus === 'pending') {
+                    orders = allFetched.filter(o => {
+                        const st = String(o.status || '').toLowerCase();
+                        return st === 'pending' || st === 'submitted' || st === 'approved';
+                    });
+                    if (orders.length === 0) {
+                        orders = allFetched;
+                    }
+                } else {
+                    const want = String(currentStatus || '').toLowerCase();
+                    orders = allFetched.filter(o => String(o.status || '').toLowerCase() === want);
+                }
+
+                orders.sort((a, b) => orderDateMs(b) - orderDateMs(a));
+                orders = orders.slice(0, 200);
 
                 allOrders = isRepOrderView()
                     ? orders.filter((o) => orderVisibleForCurrentRole(o))
@@ -2522,14 +2588,14 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                 const dRaw = order.orderDate || order.createdAt || null;
                 let dText = '-';
                 if (dRaw && typeof dRaw.toDate === 'function') {
-                    dText = dRaw.toDate().toLocaleDateString();
+                    dText = dRaw.toDate().toLocaleString('en-LK', { dateStyle: 'short', timeStyle: 'short', hour12: true });
                 } else if (dRaw && dRaw.seconds) {
-                    dText = new Date(dRaw.seconds * 1000).toLocaleDateString();
+                    dText = new Date(dRaw.seconds * 1000).toLocaleString('en-LK', { dateStyle: 'short', timeStyle: 'short', hour12: true });
                 } else if (typeof dRaw === 'string') {
                     const dObj = new Date(dRaw);
-                    dText = Number.isNaN(dObj.getTime()) ? dRaw : dObj.toLocaleDateString();
+                    dText = Number.isNaN(dObj.getTime()) ? dRaw : dObj.toLocaleString('en-LK', { dateStyle: 'short', timeStyle: 'short', hour12: true });
                 } else if (dRaw instanceof Date) {
-                    dText = dRaw.toLocaleDateString();
+                    dText = dRaw.toLocaleString('en-LK', { dateStyle: 'short', timeStyle: 'short', hour12: true });
                 }
                 const itemCount = order.items?.reduce((sum, i) => sum + (i.orderedQty || 0) + (i.freeQty || 0), 0) || 0;
                 const mwLine = isMwTradingBusiness()
@@ -2540,8 +2606,8 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                     <tr>
                         <td><strong>${order.orderNumber || order.id.slice(-8)}</strong></td>
                         <td>${dText}</td>
-                        <td>${order.repName}</td>
-                        <td>${order.shopName}</td>
+                        <td>${escapeBillHtml(order.repName || order.salesRepName || order.repId || 'Chirath Kavinda')}</td>
+                        <td>${escapeBillHtml(order.shopName || order.customerName || order.shopId || 'Shop')}</td>
                         <td>${order.branchName || '-'}</td>
                         <td>${getLorryLabel(order)}</td>
                         <td style="max-width:180px;font-size:12px;color:#475569;">${brands}</td>
@@ -2558,38 +2624,69 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
             return `<button type="button" class="btn btn-print" onclick="printDistributorThermalBill('${orderId}')">🖨 80mm</button>`;
         }
 
+        async function deleteApprovedOrder(orderId) {
+            if (!confirm('මෙම ඇණවුම මකාදැමීමට ස්ථිරද? (Delete order and restore stock back to inventory?)')) return;
+            try {
+                let order = allOrders.find(o => o.id === orderId);
+                if (!order) {
+                    const snap = await db.collection('orders').doc(orderId).get();
+                    if (snap.exists) order = { id: snap.id, ...snap.data() };
+                }
+                if (!order) {
+                    alert('Order not found.');
+                    return;
+                }
+
+                // Restore Stock
+                const items = Array.isArray(order.items) ? order.items : [];
+                if (items.length > 0) {
+                    const productsSnap = await db.collection('products').where('businessId', '==', currentBusinessId).get();
+                    const byId = {};
+                    const byName = {};
+                    productsSnap.docs.forEach((doc) => {
+                        byId[doc.id] = doc;
+                        byName[String(doc.data().name || '').toLowerCase()] = doc;
+                    });
+
+                    const batch = db.batch();
+                    items.forEach((item) => {
+                        const productDoc = item.productId ? byId[item.productId] : byName[String(item.productName || '').toLowerCase()];
+                        if (!productDoc) return;
+                        const restoreQty = Math.max(0, (Number(item.orderedQty) || 0) + (Number(item.freeQty) || 0) - (Number(item.returnQty) || 0));
+                        if (restoreQty > 0) {
+                            batch.update(productDoc.ref, {
+                                stock: firebase.firestore.FieldValue.increment(restoreQty),
+                                currentStock: firebase.firestore.FieldValue.increment(restoreQty),
+                                updatedAt: new Date()
+                            });
+                        }
+                    });
+                    await batch.commit();
+                }
+
+                // Delete order documents
+                await db.collection('orders').doc(orderId).delete().catch(() => {});
+                await db.collection('pendingOrders').doc(orderId).delete().catch(() => {});
+
+                alert('Order deleted successfully and stock restored to inventory!');
+                await loadStats();
+                await loadOrders();
+            } catch (err) {
+                console.error("Error deleting order:", err);
+                alert("Failed to delete order: " + (err.message || String(err)));
+            }
+        }
+
         function getActionButtons(order) {
             const editBtn = showOrderEditButton(order)
                 ? `<button class="btn btn-view" onclick="openAdminOrderEditFromView('${order.id}')">✏️ Edit</button>` : '';
-            if (order.status === 'pending') {
-                const canApprove = canApproveInvoices();
-                const canReject = canRejectInvoices();
-                return `
-                    ${canApprove ? `<button class="btn btn-approve" onclick="approveOrder('${order.id}')">✓ Approve</button>` : ''}
-                    ${canReject ? `<button class="btn btn-reject" onclick="rejectOrder('${order.id}')">✕ Reject</button>` : ''}
-                    <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
-                    ${editBtn}
-                `;
-            } else if (order.status === 'approved') {
-                const canApprove = canApproveInvoices();
-                return `
-                    ${canApprove ? `<button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}')">🚚 Dispatch</button>` : ''}
-                    <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
-                    ${editBtn}
-                `;
-            } else if (order.status === 'dispatched') {
-                const canApprove = canApproveInvoices();
-                return `
-                    ${canApprove ? `<button class="btn btn-approve" onclick="markDelivered('${order.id}')">📬 Delivered</button>` : ''}
-                    <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
-                    ${editBtn}
-                `;
-            } else {
-                return `
-                    <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
-                    ${editBtn}
-                `;
-            }
+            const deleteBtn = `<button class="btn btn-reject" style="background:#dc2626; color:#fff;" onclick="deleteApprovedOrder('${order.id}')">🗑️ Delete</button>`;
+
+            return `
+                <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
+                ${editBtn}
+                ${deleteBtn}
+            `;
         }
 
         function toMillis(v) {
@@ -3023,10 +3120,7 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                 actions += `<button type="button" class="btn btn-print" style="background:#0891b2;" onclick="printOrderCollectionReceipt('${order.id}')">🖨 Collection Receipt</button>`;
             }
 
-            if (order.status === 'pending') {
-                actions += (canApprove ? `<button class="btn btn-approve" onclick="approveOrder('${order.id}'); closeModal();">✓ Approve</button>` : '') +
-                           (canReject ? `<button class="btn btn-reject" onclick="rejectOrder('${order.id}'); closeModal();">✕ Reject</button>` : '');
-            } else if (order.status === 'approved' && canApprove) {
+            if ((order.status === 'approved' || order.status === 'pending' || order.status === 'submitted') && canApprove) {
                 actions += `<button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}'); closeModal();">🚚 Dispatch</button>`;
             } else if (order.status === 'dispatched' && canApprove) {
                 actions += `<button class="btn btn-approve" onclick="markDelivered('${order.id}'); closeModal();">📬 Delivered</button>`;
@@ -3353,6 +3447,178 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
             Promise.resolve(window.loadAccountingSummaryWidget && window.loadAccountingSummaryWidget()).catch(() => {});
         });
 
+        // --- REP ORDER WORKFLOW FUNCTIONS ---
+        let repOrderWorkflowMode = 'DIRECT_AUTO';
+
+        async function loadRepWorkflowSetting() {
+            try {
+                if (!currentBusinessId) return;
+                const doc = await db.collection('businesses').doc(currentBusinessId).get();
+                if (doc.exists) {
+                    repOrderWorkflowMode = doc.data().repOrderWorkflowMode || 'DIRECT_AUTO';
+                    const radioDirect = document.querySelector('input[name="repOrderMode"][value="DIRECT_AUTO"]');
+                    const radioApproval = document.querySelector('input[name="repOrderMode"][value="OWNER_APPROVAL"]');
+                    if (radioDirect && radioApproval) {
+                        if (repOrderWorkflowMode === 'OWNER_APPROVAL') {
+                            radioApproval.checked = true;
+                        } else {
+                            radioDirect.checked = true;
+                        }
+                    }
+                    updateRepOrderModeUi();
+                    adjustTabsForWorkflowMode();
+                } else {
+                    adjustTabsForWorkflowMode();
+                }
+            } catch (err) {
+                console.error("Error loading workflow setting:", err);
+                adjustTabsForWorkflowMode();
+            }
+        }
+
+        function updateRepOrderModeUi() {
+            const modeInput = document.querySelector('input[name="repOrderMode"]:checked');
+            if (!modeInput) return;
+            const mode = modeInput.value;
+            const lbl = document.getElementById('lblCurrentWorkflowStatus');
+            const lDirect = document.getElementById('labelModeDirect');
+            const lApproval = document.getElementById('labelModeApproval');
+            if (!lbl || !lDirect || !lApproval) return;
+            
+            if (mode === 'DIRECT_AUTO') {
+                lbl.innerText = 'Mode: Instant Direct Stock Deduct (Default)';
+                lbl.style.background = '#dbeafe';
+                lbl.style.color = '#1e40af';
+                lDirect.style.borderColor = '#3b82f6';
+                lDirect.style.background = '#eff6ff';
+                lApproval.style.borderColor = '#cbd5e1';
+                lApproval.style.background = '#f8fafc';
+            } else {
+                lbl.innerText = 'Mode: Require Owner Approval';
+                lbl.style.background = '#d1fae5';
+                lbl.style.color = '#065f46';
+                lApproval.style.borderColor = '#10b981';
+                lApproval.style.background = '#ecfdf5';
+                lDirect.style.borderColor = '#cbd5e1';
+                lDirect.style.background = '#f8fafc';
+            }
+        }
+
+        async function saveRepWorkflowSetting() {
+            try {
+                const modeInput = document.querySelector('input[name="repOrderMode"]:checked');
+                if (!modeInput) return;
+                const mode = modeInput.value;
+                if (!currentBusinessId) return;
+                await db.collection('businesses').doc(currentBusinessId).set({
+                    repOrderWorkflowMode: mode
+                }, { merge: true });
+                repOrderWorkflowMode = mode;
+                
+                const btn = document.querySelector('#btnLockSettings');
+                if (btn) btn.innerHTML = '✅ Saved Successfully!';
+                
+                setTimeout(() => {
+                    lockWorkflowSettings();
+                    adjustTabsForWorkflowMode();
+                    if (btn) btn.innerHTML = '🔒 Lock & Close';
+                    
+                    if (mode === 'DIRECT_AUTO' && ['pending', 'approved', 'rejected'].includes(currentTab)) {
+                        switchTab('all');
+                    } else {
+                        loadStats();
+                        loadOrders();
+                    }
+                }, 1000);
+            } catch (err) {
+                console.error("Error saving workflow setting:", err);
+                alert("Failed to save setting.");
+            }
+        }
+
+        function unlockWorkflowSettings() {
+            const container = document.getElementById('repWorkflowConfigCard');
+            if (!container) return;
+            let pwdContainer = document.getElementById('pwdInputContainer');
+            
+            if (pwdContainer) {
+                pwdContainer.remove();
+            }
+
+            pwdContainer = document.createElement('div');
+            pwdContainer.id = 'pwdInputContainer';
+            pwdContainer.style = 'margin-top:12px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:12px 15px; display:flex; gap:10px; align-items:center;';
+            pwdContainer.innerHTML = `
+                <input type="password" id="inlinePwdInput" placeholder="Enter Owner Password" style="flex:1; padding:8px 12px; border:1px solid #94a3b8; border-radius:6px; font-size:14px;">
+                <button type="button" id="inlinePwdVerifyBtn" style="background:#047857; color:#fff; font-weight:700; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">Unlock</button>
+                <button type="button" id="inlinePwdCancelBtn" style="background:#ef4444; color:#fff; font-weight:700; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">Cancel</button>
+            `;
+
+            container.appendChild(pwdContainer);
+            const inputEl = document.getElementById('inlinePwdInput');
+            if (inputEl) inputEl.focus();
+
+            document.getElementById('inlinePwdVerifyBtn').onclick = () => {
+                const pwd = document.getElementById('inlinePwdInput').value;
+                if (pwd === "Sirimal123") {
+                    document.getElementById('workflowSettingsBody').style.display = 'block';
+                    document.getElementById('btnUnlockSettings').style.display = 'none';
+                    document.getElementById('btnLockSettings').style.display = 'inline-flex';
+                    pwdContainer.remove();
+                } else {
+                    alert("Incorrect Password!");
+                }
+            };
+            
+            document.getElementById('inlinePwdCancelBtn').onclick = () => {
+                pwdContainer.remove();
+            };
+        }
+
+        function lockWorkflowSettings() {
+            const body = document.getElementById('workflowSettingsBody');
+            const unlockBtn = document.getElementById('btnUnlockSettings');
+            const lockBtn = document.getElementById('btnLockSettings');
+            if (body) body.style.display = 'none';
+            if (unlockBtn) unlockBtn.style.display = 'inline-flex';
+            if (lockBtn) lockBtn.style.display = 'none';
+        }
+
+        function adjustTabsForWorkflowMode() {
+            const pendingTab = document.getElementById('tabPending');
+            const approvedTab = document.getElementById('tabApproved');
+            const rejectedTab = document.getElementById('tabRejected');
+            const statPending = document.getElementById('statCardPending');
+            const statApproved = document.getElementById('statCardApproved');
+            const statRejected = document.getElementById('statCardRejected');
+            
+            if (repOrderWorkflowMode === 'DIRECT_AUTO') {
+                if (pendingTab) pendingTab.style.display = 'none';
+                if (approvedTab) approvedTab.style.display = 'none';
+                if (rejectedTab) rejectedTab.style.display = 'none';
+                if (statPending) statPending.style.display = 'none';
+                if (statApproved) statApproved.style.display = 'none';
+                if (statRejected) statRejected.style.display = 'none';
+
+                if (['pending', 'approved', 'rejected'].includes(currentStatus)) {
+                    currentStatus = 'all';
+                    document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
+                    const allTabEl = document.getElementById('tabAll');
+                    if (allTabEl) allTabEl.classList.add('active');
+                }
+            } else {
+                if (pendingTab) pendingTab.style.display = 'inline-block';
+                if (approvedTab) approvedTab.style.display = 'inline-block';
+                if (rejectedTab) rejectedTab.style.display = 'inline-block';
+                if (statPending) statPending.style.display = 'block';
+                if (statApproved) statApproved.style.display = 'block';
+                if (statRejected) statRejected.style.display = 'block';
+            }
+        }
+        // Run immediately on script execution to ensure default state
+        try { adjustTabsForWorkflowMode(); } catch (e) {}
+        // --- END REP ORDER WORKFLOW FUNCTIONS ---
+
         firebase.auth().onAuthStateChanged(async (user) => {
             try {
                 if (user) {
@@ -3366,7 +3632,7 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                     
                     if (!currentBusinessId) {
                         alert('Please select a business first');
-                        window.location.href = '/modules/core/dashboard.html';
+                        window.location.href = '/modules/distributor/web/dashboard.html';
                         return;
                     }
 
