@@ -105,7 +105,7 @@
 
         const versionTag = document.getElementById('versionTagSelect').value;
         const freezeDate = document.getElementById('freezeDateInput').value || new Date().toISOString().split('T')[0];
-        const lockStatus = document.getElementById('lockStatusSelect').value;
+        const lockStatus = 'LOCKED';
         const notes = String(document.getElementById('isolationNotesInput').value || '').trim();
 
         const flags = {
@@ -298,8 +298,16 @@
         document.getElementById('targetEmailInput').value = config.email || '';
         document.getElementById('versionTagSelect').value = config.versionTag || 'STABLE_FREEZE_2026_08_11';
         document.getElementById('freezeDateInput').value = config.freezeDate && config.freezeDate !== 'N/A' ? config.freezeDate : new Date().toISOString().split('T')[0];
-        document.getElementById('lockStatusSelect').value = config.lockStatus || (config.isLocked ? 'LOCKED' : 'UNLOCKED');
         document.getElementById('isolationNotesInput').value = config.notes || '';
+
+        const isLocked = config.lockStatus === 'LOCKED' || config.isLocked;
+        const statusBadge = document.getElementById('currentAccountStatusBadge');
+        if (statusBadge) {
+            statusBadge.style.background = isLocked ? 'rgba(220, 38, 38, 0.15)' : 'rgba(16, 185, 129, 0.15)';
+            statusBadge.style.color = isLocked ? '#dc2626' : '#059669';
+            statusBadge.style.borderColor = isLocked ? 'rgba(220, 38, 38, 0.3)' : 'rgba(16, 185, 129, 0.3)';
+            statusBadge.innerHTML = isLocked ? `🔒 Currently LOCKED (${config.versionTag})` : '🔓 Currently UNLOCKED (Normal Updates)';
+        }
 
         const flags = config.flags || {};
         document.getElementById('flagSuppressAutoUpdates').checked = flags.suppressAutoUpdates !== false;
@@ -307,7 +315,7 @@
         document.getElementById('flagLockBusinessType').checked = flags.lockBusinessType !== false;
         document.getElementById('flagBypassPwaPrompt').checked = !!flags.bypassPwaPrompt;
 
-        document.getElementById('btnReleaseLock').style.display = 'inline-block';
+        document.getElementById('btnReleaseLock').style.display = isLocked ? 'inline-block' : 'none';
         currentEditingEmail = config.email;
         window.scrollTo({ top: 300, behavior: 'smooth' });
     }
@@ -316,8 +324,16 @@
         document.getElementById('targetEmailInput').value = email || '';
         document.getElementById('versionTagSelect').value = 'STABLE_FREEZE_2026_08_11';
         document.getElementById('freezeDateInput').value = new Date().toISOString().split('T')[0];
-        document.getElementById('lockStatusSelect').value = 'LOCKED';
         document.getElementById('isolationNotesInput').value = '';
+
+        const statusBadge = document.getElementById('currentAccountStatusBadge');
+        if (statusBadge) {
+            statusBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+            statusBadge.style.color = '#059669';
+            statusBadge.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+            statusBadge.innerHTML = '🔓 Currently UNLOCKED (Normal Auto Updates)';
+        }
+
         document.getElementById('flagSuppressAutoUpdates').checked = true;
         document.getElementById('flagSuppressBetaFeatures').checked = true;
         document.getElementById('flagLockBusinessType').checked = true;
