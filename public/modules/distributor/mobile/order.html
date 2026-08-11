@@ -810,6 +810,64 @@
     }
     
     // ============ SUBMIT ORDER ============
+    async function adjustMainInventoryForOrder(orderData, businessId) {
+        if (!orderData || !Array.isArray(orderData.items) || !orderData.items.length) return;
+        const bId = businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+        if (!bId) return;
+
+        try {
+            const batch = db.batch();
+            const productsSnap = await db.collection('products').where('businessId', '==', bId).get();
+            const byId = {};
+            const byName = {};
+            productsSnap.docs.forEach(doc => {
+                byId[doc.id] = doc;
+                const d = doc.data() || {};
+                const nameKey = String(d.name || d.productName || '').toLowerCase().trim();
+                if (nameKey) byName[nameKey] = doc;
+            });
+
+            const agg = new Map();
+            orderData.items.forEach(item => {
+                const pid = item.productId || item.id;
+                const productDoc = pid ? byId[pid] : byName[String(item.productName || item.name || '').toLowerCase().trim()];
+                if (!productDoc) return;
+
+                const orderedQty = Number(item.orderedQty || item.qty || 0) || 0;
+                const freeQty = Number(item.freeQty || 0) || 0;
+                const returnQty = Number(item.returnResellQty != null ? item.returnResellQty : (item.returnQty || 0)) || 0;
+                const deductQty = Math.max(0, orderedQty + freeQty - returnQty);
+
+                if (deductQty > 0) {
+                    const key = productDoc.ref.path;
+                    if (!agg.has(key)) {
+                        agg.set(key, { ref: productDoc.ref, doc: productDoc, deductQty: 0 });
+                    }
+                    agg.get(key).deductQty += deductQty;
+                }
+            });
+
+            agg.forEach(({ ref, doc, deductQty }) => {
+                if (deductQty <= 0) return;
+                const pData = doc.data() || {};
+                const curStock = Number(pData.stock != null ? pData.stock : pData.currentStock) || 0;
+                const nextStock = Math.max(0, curStock - deductQty);
+
+                const payload = {
+                    stock: nextStock,
+                    currentStock: nextStock,
+                    updatedAt: new Date()
+                };
+                batch.update(ref, payload);
+            });
+
+            await batch.commit();
+            console.log('[Inventory] Mobile order main stock deducted successfully.');
+        } catch (err) {
+            console.error('[Inventory] Error deducting stock for mobile order:', err);
+        }
+    }
+
     async function submitOrder() {
         const searchShop = document.getElementById('shopSearch').value.trim().toLowerCase();
         const matchedShop = allShops.find((s) => s.name.toLowerCase() === searchShop);
@@ -876,8 +934,12 @@
                 clearEditQueryFromUrl();
                 editingOrderId = null;
             } else {
+                try {
+                    await adjustMainInventoryForOrder(orderData, currentBusinessId);
+                    orderData.stockDeducted = true;
+                } catch (eStock) { console.warn('[MobileOrder] Stock deduct warn:', eStock); }
                 await db.collection('pendingOrders').add(orderData);
-                alert('✅ Order submitted for approval!');
+                alert('✅ Order submitted & stock updated!');
             }
             cart = [];
             updateCart();

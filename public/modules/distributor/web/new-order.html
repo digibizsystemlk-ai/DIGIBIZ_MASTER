@@ -2529,6 +2529,67 @@
             await loadShopsForSelectedRep(myRepDocId);
         }
 
+        async function adjustMainInventoryForOrder(orderData, businessId) {
+            if (!orderData || !Array.isArray(orderData.items) || !orderData.items.length) return;
+            var bId = businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            if (!bId) return;
+
+            try {
+                var batch = db.batch();
+                var productsSnap = await db.collection('products').where('businessId', '==', bId).get();
+                var byId = {};
+                var byName = {};
+                productsSnap.docs.forEach(function (doc) {
+                    byId[doc.id] = doc;
+                    var d = doc.data() || {};
+                    var nameKey = String(d.name || d.productName || '').toLowerCase().trim();
+                    if (nameKey) byName[nameKey] = doc;
+                });
+
+                var agg = new Map();
+                orderData.items.forEach(function (item) {
+                    var pid = item.productId || item.id;
+                    var productDoc = pid ? byId[pid] : byName[String(item.productName || item.name || '').toLowerCase().trim()];
+                    if (!productDoc) return;
+
+                    var orderedQty = Number(item.orderedQty || item.qty || 0) || 0;
+                    var freeQty = Number(item.freeQty || 0) || 0;
+                    var returnQty = Number(item.returnResellQty != null ? item.returnResellQty : (item.returnQty || 0)) || 0;
+                    var deductQty = Math.max(0, orderedQty + freeQty - returnQty);
+
+                    if (deductQty > 0) {
+                        var key = productDoc.ref.path;
+                        if (!agg.has(key)) {
+                            agg.set(key, { ref: productDoc.ref, doc: productDoc, deductQty: 0 });
+                        }
+                        agg.get(key).deductQty += deductQty;
+                    }
+                });
+
+                agg.forEach(function (row) {
+                    if (row.deductQty <= 0) return;
+                    var pData = row.doc.data() || {};
+                    var curStock = Number(pData.stock != null ? pData.stock : pData.currentStock) || 0;
+                    var nextStock = Math.max(0, curStock - row.deductQty);
+
+                    var payload = {
+                        stock: nextStock,
+                        currentStock: nextStock,
+                        updatedAt: new Date()
+                    };
+                    if (typeof consumeFifoBatches === 'function' && Array.isArray(pData.stockBatches)) {
+                        payload.stockBatches = consumeFifoBatches(pData.stockBatches, row.deductQty);
+                    }
+                    batch.update(row.ref, payload);
+                });
+
+                await batch.commit();
+                console.log('[Inventory] Main stock deducted for order successfully.');
+            } catch (err) {
+                console.error('[Inventory] Error deducting main stock for order:', err);
+            }
+        }
+
         async function submitWebOrder() {
             var postBar = document.getElementById('mwPostSubmitBar');
             if (postBar) postBar.style.display = 'none';
@@ -2781,6 +2842,8 @@
                             tx.set(pendingOrderRef, orderData);
                         });
                     } else {
+                        await adjustMainInventoryForOrder(orderData, currentBusinessId);
+                        orderData.stockDeducted = true;
                         await pendingOrderRef.set(orderData);
                     }
                 }
