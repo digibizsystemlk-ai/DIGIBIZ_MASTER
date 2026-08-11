@@ -453,11 +453,11 @@
             <form id="repLoginForm" action="javascript:void(0);" onsubmit="handleRepLogin(event)">
                 <div style="margin-bottom:14px;">
                     <label style="font-size:12px; font-weight:800; color:#334155;">Rep Email</label>
-                    <input type="email" id="loginEmailInput" class="form-input" value="chirathkavinda38@gmail.com" required style="margin-top:4px;">
+                    <input type="email" id="loginEmailInput" class="form-input" placeholder="e.g. rep@example.com" required style="margin-top:4px;">
                 </div>
                 <div style="margin-bottom:20px;">
                     <label style="font-size:12px; font-weight:800; color:#334155;">Password</label>
-                    <input type="password" id="loginPasswordInput" class="form-input" value="123456789" required style="margin-top:4px;">
+                    <input type="password" id="loginPasswordInput" class="form-input" placeholder="Enter password" required style="margin-top:4px;">
                 </div>
 
                 <input type="submit" class="form-submit" value="LOGIN">
@@ -471,7 +471,7 @@
         <div class="header-row">
             <div>
                 <div class="biz-title" id="hdrBizTitle">🏢 DIGIBIZ DISTRIBUTOR REP APP</div>
-                <div class="rep-subtitle" id="hdrRepEmail">Rep: Chirath Kavinda (chirathkavinda38@gmail.com)</div>
+                <div class="rep-subtitle" id="hdrRepEmail">Rep: Sales Rep</div>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
                 <button id="pwaInstallBtn" class="pwa-install-btn" type="button" onclick="triggerPwaInstall()" style="background:#047857; color:#fff; border:none; padding:8px 14px; border-radius:10px; font-weight:800; font-size:12px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.15);">
@@ -647,11 +647,10 @@
     </div>
 
     <script>
-        const TARGET_OWNER_EMAIL = 'nadundealwis@gmail.com';
-        const DEFAULT_REP_EMAIL = 'chirathkavinda38@gmail.com';
-        const DEFAULT_REP_PASS = '123456789';
-
         let currentUser = null;
+        let currentBusinessData = {};
+        let currentBusinessId = '';
+        let currentRepName = '';
         let shopsList = [];
         let productsList = [];
         let selectedShopObj = null;
@@ -670,14 +669,13 @@
             return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
-        // --- AUTH & INIT WITH PERSISTENT SESSION ---
+        // --- DYNAMIC AUTH & INIT WITH PERSISTENT SESSION ---
         async function initPortal() {
             const urlParams = new URLSearchParams(window.location.search);
             const isExplicitLogout = urlParams.get('logout') === 'true' || urlParams.get('showLogin') === 'true';
-
-            // Only show login modal if explicitly signed out
             const isLoggedOut = localStorage.getItem('digibiz_rep_logged_out') === 'true';
-            if (isExplicitLogout || isLoggedOut) {
+
+            if (isExplicitLogout || isLoggedOut || !firebase.auth().currentUser) {
                 document.getElementById('loginModal').style.display = 'flex';
                 document.getElementById('stickyCartBar').style.display = 'none';
                 return;
@@ -686,31 +684,10 @@
             document.getElementById('loginModal').style.display = 'none';
             document.getElementById('stickyCartBar').style.display = 'flex';
 
-            // Ensure Firebase Auth session without asking for login on page refresh
-            try {
-                if (!firebase.auth().currentUser) {
-                    const savedEmail = localStorage.getItem('digibiz_rep_email') || DEFAULT_REP_EMAIL;
-                    try {
-                        const cred = await firebase.auth().signInWithEmailAndPassword(savedEmail, DEFAULT_REP_PASS);
-                        currentUser = cred.user;
-                    } catch(e) {
-                        const anon = await firebase.auth().signInAnonymously();
-                        currentUser = anon.user;
-                    }
-                } else {
-                    currentUser = firebase.auth().currentUser;
-                }
-            } catch(authErr) {
-                console.warn('[Portal] Auth init warning:', authErr);
-            }
-
+            currentUser = firebase.auth().currentUser;
             localStorage.removeItem('digibiz_rep_logged_out');
-            
-            // Resolve Rep Name
-            const hdrEmail = document.getElementById('hdrRepEmail');
-            if (hdrEmail) hdrEmail.textContent = 'Rep: Chirath Kavinda (' + DEFAULT_REP_EMAIL + ')';
 
-            loadSPIHoldingsData();
+            await loadBusinessPortalData();
             loadSubmittedOrders();
         }
 
@@ -730,11 +707,8 @@
                 document.getElementById('loginModal').style.display = 'none';
                 document.getElementById('stickyCartBar').style.display = 'flex';
                 errEl.textContent = '';
-                
-                const hdrEmail = document.getElementById('hdrRepEmail');
-                if (hdrEmail) hdrEmail.textContent = 'Rep: Chirath Kavinda (' + em + ')';
 
-                loadSPIHoldingsData();
+                await loadBusinessPortalData();
                 loadSubmittedOrders();
             } catch(err) {
                 errEl.textContent = 'Login Error: ' + err.message;
@@ -766,187 +740,159 @@
             }
         }
 
-        // --- LOAD SHOPS & PRODUCTS STRICTLY FOR nadundealwis@gmail.com & chirathkavinda38@gmail.com ---
-        async function loadSPIHoldingsData() {
+        // --- LOAD SHOPS & PRODUCTS DYNAMICALLY FOR THE LOGGED-IN REP/BUSINESS ---
+        async function loadBusinessPortalData() {
             const db = firebase.firestore();
-            const ownerEmail = 'nadundealwis@gmail.com';
-            const repEmail = 'chirathkavinda38@gmail.com';
+            const user = firebase.auth().currentUser || currentUser;
+            if (!user) return;
 
-            const nadunKeys = new Set([
-                ownerEmail.toLowerCase(),
-                repEmail.toLowerCase(),
-                '13gu7xibcbzjfs61ub42suv7ger1'
-            ]);
+            const userEmail = String(user.email || '').toLowerCase().trim();
+            currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '';
 
-            // 1. Resolve all Business IDs & Owner IDs for nadundealwis@gmail.com
+            // 1. Resolve user & business documents
+            let userData = {};
             try {
-                const [bSnap1, bSnap2, uSnap, rSnap] = await Promise.all([
-                    db.collection('businesses').where('ownerEmail', '==', ownerEmail).get().catch(() => null),
-                    db.collection('businesses').where('email', '==', ownerEmail).get().catch(() => null),
-                    db.collection('users').where('email', '==', ownerEmail).get().catch(() => null),
-                    db.collection('reps').where('email', '==', repEmail).get().catch(() => null)
-                ]);
+                const uDoc = await db.collection('users').doc(user.uid).get();
+                if (uDoc.exists) userData = uDoc.data() || {};
+                if (userData.businessId) currentBusinessId = userData.businessId;
+            } catch (e) {}
 
-                [bSnap1, bSnap2, uSnap, rSnap].forEach(snap => {
-                    if (snap && snap.docs) {
-                        snap.docs.forEach(d => {
-                            nadunKeys.add(d.id.toLowerCase());
-                            const data = d.data() || {};
-                            if (data.ownerId) nadunKeys.add(String(data.ownerId).toLowerCase());
-                            if (data.businessId) nadunKeys.add(String(data.businessId).toLowerCase());
-                            if (data.repId) nadunKeys.add(String(data.repId).toLowerCase());
-                            if (data.assignedRepId) nadunKeys.add(String(data.assignedRepId).toLowerCase());
-                        });
-                    }
-                });
-            } catch(e) {
-                console.warn('[Portal] Business keys resolve warning:', e);
+            currentRepName = userData.name || userData.ownerName || userEmail;
+            try {
+                const rSnap = await db.collection('reps').where('email', '==', userEmail).get();
+                if (!rSnap.empty) {
+                    const rData = rSnap.docs[0].data() || {};
+                    if (rData.businessId) currentBusinessId = rData.businessId;
+                    if (rData.name || rData.fullName) currentRepName = rData.name || rData.fullName;
+                }
+            } catch (e) {}
+
+            if (currentBusinessId) {
+                localStorage.setItem('currentBusinessId', currentBusinessId);
+                sessionStorage.setItem('currentBusinessId', currentBusinessId);
             }
 
-            const validKeys = Array.from(nadunKeys).filter(Boolean);
+            if (currentBusinessId) {
+                try {
+                    const bDoc = await db.collection('businesses').doc(currentBusinessId).get();
+                    if (bDoc.exists) currentBusinessData = bDoc.data() || {};
+                } catch (e) {}
+            }
+
+            const bizName = currentBusinessData.name || currentBusinessData.businessName || 'DISTRIBUTOR SALES PORTAL';
+            const hdrTitle = document.getElementById('hdrBizTitle');
+            if (hdrTitle) hdrTitle.textContent = '🏢 ' + bizName;
+            const hdrEmail = document.getElementById('hdrRepEmail');
+            if (hdrEmail) hdrEmail.textContent = 'Rep: ' + currentRepName + ' (' + userEmail + ')';
+
+            const validKeys = new Set([
+                currentBusinessId.toLowerCase(),
+                user.uid.toLowerCase(),
+                userEmail
+            ]);
+            if (currentBusinessData.ownerEmail) validKeys.add(String(currentBusinessData.ownerEmail).toLowerCase());
+            if (currentBusinessData.ownerId) validKeys.add(String(currentBusinessData.ownerId).toLowerCase());
+
+            const keyArr = Array.from(validKeys).filter(Boolean);
 
             // 2. FETCH PRODUCTS
             productsList = [];
             try {
-                const prodPromises = [
-                    db.collection('products').get().catch(() => null)
-                ];
-
-                validKeys.forEach(k => {
-                    prodPromises.push(db.collection('businesses').doc(k).collection('products').get().catch(() => null));
-                    prodPromises.push(db.collection('businesses').doc(k).collection('items').get().catch(() => null));
-                });
-
-                const pSnaps = await Promise.all(prodPromises);
                 const pMap = {};
+                let pDocs = [];
 
-                pSnaps.forEach(snap => {
-                    if (snap && snap.docs) {
-                        snap.docs.forEach(d => {
+                if (currentBusinessId) {
+                    const [pSnap1, pSnap2] = await Promise.all([
+                        db.collection('products').where('businessId', '==', currentBusinessId).get().catch(() => null),
+                        db.collection('businesses').doc(currentBusinessId).collection('products').get().catch(() => null)
+                    ]);
+                    if (pSnap1) pDocs.push(...pSnap1.docs);
+                    if (pSnap2) pDocs.push(...pSnap2.docs);
+                }
+
+                if (pDocs.length === 0) {
+                    const topSnap = await db.collection('products').get().catch(() => null);
+                    if (topSnap) {
+                        topSnap.docs.forEach(d => {
                             const p = d.data() || {};
-                            if (p.isActive !== false && p.archived !== true) {
-                                const pOwner = String(p.ownerEmail || p.email || p.createdBy || p.ownerId || '').toLowerCase().trim();
-                                const pBiz = String(p.businessId || '').toLowerCase().trim();
-                                const pRep = String(p.createdByRep || p.repEmail || p.assignedRepEmail || '').toLowerCase().trim();
-                                const pName = String(p.name || p.productName || p.title || '').trim();
-
-                                const isMatch = validKeys.some(k => k === pOwner || k === pBiz || k === pRep);
-                                if (pName && isMatch) {
-                                    const code = String(p.productCode || p.code || p.sku || '').trim().toLowerCase();
-                                    const key = code ? (pName.toLowerCase() + '::' + code) : pName.toLowerCase();
-                                    if (!pMap[key]) pMap[key] = { id: d.id, ...p };
-                                }
-                            }
+                            const pOwner = String(p.ownerEmail || p.email || p.createdBy || p.ownerId || '').toLowerCase().trim();
+                            const pBiz = String(p.businessId || '').toLowerCase().trim();
+                            if (keyArr.some(k => k === pOwner || k === pBiz)) pDocs.push(d);
                         });
+                    }
+                }
+
+                pDocs.forEach(d => {
+                    const p = d.data() || {};
+                    if (p.isActive !== false && p.archived !== true) {
+                        const pName = String(p.name || p.productName || p.title || '').trim();
+                        if (pName) {
+                            const code = String(p.productCode || p.code || p.sku || '').trim().toLowerCase();
+                            const key = code ? (pName.toLowerCase() + '::' + code) : pName.toLowerCase();
+                            if (!pMap[key]) pMap[key] = { id: d.id, ...p };
+                        }
                     }
                 });
 
                 productsList = Object.values(pMap);
-
-                // Fallback top-level check excluding other businesses
-                if (productsList.length === 0) {
-                    const topSnap = await db.collection('products').get().catch(() => null);
-                    if (topSnap && topSnap.docs) {
-                        topSnap.docs.forEach(d => {
-                            const p = d.data() || {};
-                            if (p.isActive !== false && p.archived !== true) {
-                                const pName = String(p.name || p.productName || p.title || '').trim();
-                                const pOwner = String(p.ownerEmail || p.email || p.createdBy || '').toLowerCase().trim();
-                                if (pName && !pOwner.includes('mwtrading') && !pOwner.includes('spranza')) {
-                                    const code = String(p.productCode || p.code || p.sku || '').trim().toLowerCase();
-                                    const key = code ? (pName.toLowerCase() + '::' + code) : pName.toLowerCase();
-                                    if (!pMap[key]) pMap[key] = { id: d.id, ...p };
-                                }
-                            }
-                        });
-                        productsList = Object.values(pMap);
-                    }
-                }
-
                 productsList.sort((a,b) => (a.name||a.productName||'').localeCompare(b.name||b.productName||''));
-            } catch(e) {
+            } catch (e) {
                 console.error('[Portal] Products fetch error:', e);
             }
-
             document.getElementById('lblCatalogCount').textContent = `${productsList.length} Items`;
 
-            // 3. FETCH SHOPS & CUSTOMERS (EXCLUDING DEMO KAMAL STORES ONLY)
+            // 3. FETCH SHOPS & CUSTOMERS
             shopsList = [];
             try {
-                const shopPromises = [
-                    db.collection('shops').get().catch(() => null),
-                    db.collection('customers').get().catch(() => null)
-                ];
+                const sMap = {};
+                let sDocs = [];
 
-                validKeys.forEach(k => {
-                    shopPromises.push(db.collection('businesses').doc(k).collection('shops').get().catch(() => null));
-                    shopPromises.push(db.collection('businesses').doc(k).collection('customers').get().catch(() => null));
-                });
+                if (currentBusinessId) {
+                    const [sSnap1, sSnap2, cSnap1, cSnap2] = await Promise.all([
+                        db.collection('shops').where('businessId', '==', currentBusinessId).get().catch(() => null),
+                        db.collection('businesses').doc(currentBusinessId).collection('shops').get().catch(() => null),
+                        db.collection('customers').where('businessId', '==', currentBusinessId).get().catch(() => null),
+                        db.collection('businesses').doc(currentBusinessId).collection('customers').get().catch(() => null)
+                    ]);
+                    if (sSnap1) sDocs.push(...sSnap1.docs);
+                    if (sSnap2) sDocs.push(...sSnap2.docs);
+                    if (cSnap1) sDocs.push(...cSnap1.docs);
+                    if (cSnap2) sDocs.push(...cSnap2.docs);
+                }
 
-                const sSnaps = await Promise.all(shopPromises);
-                const shopMap = {};
-
-                sSnaps.forEach(snap => {
-                    if (snap && snap.docs) {
-                        snap.docs.forEach(d => {
-                            const s = d.data() || {};
-                            if (s.isActive !== false && s.archived !== true) {
-                                const sOwner = String(s.ownerEmail || s.email || s.createdBy || s.ownerId || '').toLowerCase().trim();
-                                const sBiz = String(s.businessId || '').toLowerCase().trim();
-                                const sRep = String(s.createdByRep || s.repEmail || s.assignedRepEmail || s.assignedRepId || '').toLowerCase().trim();
-                                const name = String(s.name || s.shopName || s.customerName || s.fullName || '').trim();
-                                const nameLower = name.toLowerCase();
-
-                                // Exclude demo stores containing kamal unless owned by nadun
-                                if (nameLower.includes('kamal')) {
-                                    if (!sOwner.includes('nadun')) return;
-                                }
-
-                                const isMatch = validKeys.some(k => k === sOwner || k === sBiz || k === sRep);
-                                if (name && isMatch) {
-                                    const phone = String(s.phone || s.shopPhone || s.mobile || '').trim();
-                                    const key = phone ? (name.toLowerCase() + '::' + phone) : name.toLowerCase();
-                                    if (!shopMap[key]) shopMap[key] = { id: d.id, ...s };
-                                }
-                            }
-                        });
-                    }
-                });
-
-                shopsList = Object.values(shopMap);
-
-                // Fallback top-level check excluding other businesses & demo stores
-                if (shopsList.length === 0) {
+                if (sDocs.length === 0) {
                     const [topShops, topCusts] = await Promise.all([
                         db.collection('shops').get().catch(() => null),
                         db.collection('customers').get().catch(() => null)
                     ]);
                     [topShops, topCusts].forEach(snap => {
-                        if (snap && snap.docs) {
+                        if (snap) {
                             snap.docs.forEach(d => {
                                 const s = d.data() || {};
-                                if (s.isActive !== false && s.archived !== true) {
-                                    const sOwner = String(s.ownerEmail || s.email || s.createdBy || '').toLowerCase().trim();
-                                    const name = String(s.name || s.shopName || s.customerName || s.fullName || '').trim();
-                                    const nameLower = name.toLowerCase();
-
-                                    // Exclude demo stores containing kamal
-                                    if (nameLower.includes('kamal')) return;
-
-                                    if (name && !sOwner.includes('mwtrading') && !sOwner.includes('spranza')) {
-                                        const phone = String(s.phone || s.shopPhone || s.mobile || '').trim();
-                                        const key = phone ? (name.toLowerCase() + '::' + phone) : name.toLowerCase();
-                                        if (!shopMap[key]) shopMap[key] = { id: d.id, ...s };
-                                    }
-                                }
+                                const sOwner = String(s.ownerEmail || s.email || s.createdBy || s.ownerId || '').toLowerCase().trim();
+                                const sBiz = String(s.businessId || '').toLowerCase().trim();
+                                const sRep = String(s.createdByRep || s.repEmail || s.assignedRepEmail || s.assignedRepId || '').toLowerCase().trim();
+                                if (keyArr.some(k => k === sOwner || k === sBiz || k === sRep)) sDocs.push(d);
                             });
                         }
                     });
-                    shopsList = Object.values(shopMap);
                 }
 
+                sDocs.forEach(d => {
+                    const s = d.data() || {};
+                    if (s.isActive !== false && s.archived !== true) {
+                        const name = String(s.name || s.shopName || s.customerName || s.fullName || '').trim();
+                        if (name) {
+                            const phone = String(s.phone || s.shopPhone || s.mobile || '').trim();
+                            const key = phone ? (name.toLowerCase() + '::' + phone) : name.toLowerCase();
+                            if (!sMap[key]) sMap[key] = { id: d.id, ...s };
+                        }
+                    }
+                });
+
+                shopsList = Object.values(sMap);
                 shopsList.sort((a,b) => (a.name||a.shopName||a.customerName||'').localeCompare(b.name||b.shopName||b.customerName||''));
-            } catch(e) {
+            } catch (e) {
                 console.error('[Portal] Shops fetch error:', e);
             }
 
@@ -1042,13 +988,15 @@
 
             if (!name) { alert('Please enter shop name'); return; }
 
+            const user = firebase.auth().currentUser || currentUser;
             const db = firebase.firestore();
             const newDoc = {
                 name: name,
                 address: address,
                 phone: phone,
-                ownerEmail: TARGET_OWNER_EMAIL,
-                businessId: 'YRMbB6aq4CMevSrLWkQvoVMtc8b2',
+                businessId: currentBusinessId,
+                ownerEmail: (currentBusinessData && currentBusinessData.ownerEmail) || (user && user.email) || '',
+                createdByRep: (user && user.email) || '',
                 createdAt: new Date().toISOString()
             };
 
@@ -1551,23 +1499,26 @@
 
         function buildEscPosReceipt(order) {
             let txt = "\x1B\x40"; // Init printer
+            const bName = (currentBusinessData && (currentBusinessData.name || currentBusinessData.businessName)) || 'DISTRIBUTOR SALES';
+            const bAddr = (currentBusinessData && currentBusinessData.address) || '';
+            const bPhone = (currentBusinessData && currentBusinessData.phone) || '';
             
             // Header (Centered, Bold, Double Height)
             txt += "\x1B\x61\x01\x1B\x45\x01\x1D\x21\x11";
-            txt += "SPI HOLDINGS\r\n";
+            txt += (bName.toUpperCase() + "\r\n");
             txt += "\x1D\x21\x00\x1B\x45\x00"; // Normal font
-            txt += "Polgahathota Bope Padukka\r\n";
-            txt += "Tel: 076 754 9040 / 074 097 0655\r\n";
+            if (bAddr) txt += (bAddr + "\r\n");
+            if (bPhone) txt += ("Tel: " + bPhone + "\r\n");
             txt += "SALES ORDER RECEIPT\r\n";
             
-            // 44-char Double line divider (Fits 80mm thermal printers with zero wrapping)
+            // 44-char Double line divider
             txt += "============================================\r\n";
-            txt += "\x1B\x61\x00"; // Left align for metadata & table
+            txt += "\x1B\x61\x00";
 
             const rawOrdId = String(order.orderId || order.id || '').replace(/^ORD-/, '');
             const orderIdStr = rawOrdId.length > 12 ? (rawOrdId.substring(0, 6) + '-' + rawOrdId.substring(rawOrdId.length - 3)) : rawOrdId;
             const dateStr = formatReceiptDate(order.createdAt || order.timestamp);
-            const repStr = (order.repName || 'CHIRATHKAVINDA38').toUpperCase().replace(/\s+/g, '');
+            const repStr = String(order.repName || currentRepName || 'Sales Rep').toUpperCase().replace(/\s+/g, '');
             const shopStr = String(order.shopName || order.customerName || '');
 
             txt += `Order ID:${orderIdStr.padStart(35, ' ')}\r\n`;
@@ -1575,7 +1526,6 @@
             txt += `Rep Name:${repStr.padStart(35, ' ')}\r\n`;
             txt += `Shop:${shopStr.substring(0, 39).padStart(39, ' ')}\r\n`;
 
-            // 44-char Single line divider
             txt += "--------------------------------------------\r\n";
             txt += "Item Name                Qty    Price   Amount\r\n";
             txt += "--------------------------------------------\r\n";
@@ -1599,7 +1549,6 @@
                     txt += `${nameCol} ${qtyStr} ${prStr} ${amtStr}\r\n`;
                 }
 
-                // FREE ITEM PRINTED INDENTED RIGHT UNDER ITEM WITH NO PRICE/AMOUNT
                 if (freeVal > 0) {
                     txt += `  * Free Issue: +${freeVal} Free\r\n`;
                 }
@@ -1608,7 +1557,6 @@
             txt += "--------------------------------------------\r\n";
             const tot = Number(order.totalAmount || order.grandTotal || order.totalPayable || 0);
 
-            // Centered Large Bold Total
             txt += "\x1B\x61\x01\x1D\x21\x11\x1B\x45\x01";
             txt += `TOTAL: LKR ${tot.toFixed(2)}\r\n`;
             txt += "\x1D\x21\x00\x1B\x45\x00";
@@ -1655,19 +1603,23 @@
             const rawOrdId = String(ord.orderId || ord.id || '').replace(/^ORD-/, '');
             const orderIdStr = rawOrdId.length > 12 ? (rawOrdId.substring(0, 6) + '-' + rawOrdId.substring(rawOrdId.length - 3)) : rawOrdId;
             const dateStr = formatReceiptDate(ord.createdAt || ord.timestamp);
+            const bName = (currentBusinessData && (currentBusinessData.name || currentBusinessData.businessName)) || 'DISTRIBUTOR SALES';
+            const bAddr = (currentBusinessData && currentBusinessData.address) || '';
+            const bPhone = (currentBusinessData && currentBusinessData.phone) || '';
+            const rName = ord.repName || currentRepName || 'Sales Rep';
 
             paper.innerHTML = `
                 <div style="text-align:center; margin-bottom:10px; font-family:monospace;">
-                    <div style="font-size:18px; font-weight:bold; color:#064e3b;">SPI HOLDINGS</div>
-                    <div style="font-size:11px; color:#334155;">Polgahathota Bope Padukka</div>
-                    <div style="font-size:11px; color:#334155;">Tel: 076 754 9040 / 074 097 0655</div>
+                    <div style="font-size:18px; font-weight:bold; color:#064e3b;">${escapeHtml(bName)}</div>
+                    ${bAddr ? `<div style="font-size:11px; color:#334155;">${escapeHtml(bAddr)}</div>` : ''}
+                    ${bPhone ? `<div style="font-size:11px; color:#334155;">Tel: ${escapeHtml(bPhone)}</div>` : ''}
                     <div style="font-size:12px; font-weight:bold; margin-top:4px; text-transform:uppercase;">SALES ORDER RECEIPT</div>
                 </div>
 
                 <div style="border-top:2px dashed #000; border-bottom:1px dashed #000; padding:6px 0; margin-bottom:6px; font-family:monospace; font-size:11px;">
                     <div style="display:flex; justify-content:space-between;"><span>Order ID:</span><strong>${orderIdStr}</strong></div>
                     <div style="display:flex; justify-content:space-between;"><span>Date:</span><strong>${dateStr}</strong></div>
-                    <div style="display:flex; justify-content:space-between;"><span>Rep Name:</span><strong>CHIRATHKAVINDA38</strong></div>
+                    <div style="display:flex; justify-content:space-between;"><span>Rep Name:</span><strong>${escapeHtml(rName)}</strong></div>
                     <div style="display:flex; justify-content:space-between;"><span>Shop:</span><strong>${escapeHtml(ord.shopName)}</strong></div>
                 </div>
 
@@ -1703,17 +1655,54 @@
             const container = document.getElementById('submittedOrdersList');
             if (!container) return;
 
+            const user = firebase.auth().currentUser || currentUser;
+            if (!user) return;
+
             try {
-                // Query without orderBy to avoid requiring Firestore composite indexes
-                let snap = await db.collection('orders')
-                    .where('ownerEmail', '==', TARGET_OWNER_EMAIL)
-                    .get().catch(() => null);
+                let snap = null;
+                if (currentBusinessId) {
+                    snap = await db.collection('orders').where('businessId', '==', currentBusinessId).get().catch(() => null);
+                }
+                if (!snap || snap.docs.length === 0) {
+                    snap = await db.collection('orders').where('repEmail', '==', user.email.toLowerCase()).get().catch(() => null);
+                }
 
                 if (!snap || snap.docs.length === 0) {
-                    snap = await db.collection('orders')
-                        .where('repEmail', '==', DEFAULT_REP_EMAIL)
-                        .get().catch(() => null);
+                    container.innerHTML = '<div style="text-align:center; padding:12px; color:#94a3b8;">No orders submitted today.</div>';
+                    return;
                 }
+
+                submittedOrdersCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                submittedOrdersCache.sort((a, b) => {
+                    const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                    const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                    return tB - tA;
+                });
+                submittedOrdersCache = submittedOrdersCache.slice(0, 15);
+
+                container.innerHTML = submittedOrdersCache.map((o, idx) => {
+                    const shopN = o.shopName || 'Shop';
+                    const amt = Number(o.totalAmount || 0).toFixed(2);
+                    const dt = o.createdAt ? new Date(o.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+
+                    return `
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #f1f5f9;">
+                            <div>
+                                <div style="font-weight:800; font-size:13px; color:#064e3b;">🏪 ${escapeHtml(shopN)}</div>
+                                <div style="font-size:11px; color:#64748b;">${dt} • ${o.paymentMethod || 'CASH'}</div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <div style="font-weight:900; font-size:14px; color:#047857;">LKR ${amt}</div>
+                                <button type="button" onclick="viewSubmittedOrderDetailsByIndex(${idx})" style="background:#0284c7; color:#fff; border:none; padding:6px 12px; border-radius:8px; font-size:11px; font-weight:800; cursor:pointer;">👁️ View</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch(e) {
+                container.innerHTML = '<div style="text-align:center; padding:12px; color:#94a3b8;">Orders history unavailable.</div>';
+            }
+        }
 
                 if (!snap || snap.docs.length === 0) {
                     container.innerHTML = '<div style="text-align:center; padding:12px; color:#94a3b8;">No orders submitted today.</div>';
