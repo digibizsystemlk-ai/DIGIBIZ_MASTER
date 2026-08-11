@@ -63,4 +63,25 @@
             });
         });
     }
+
+    // Global Client Version Lock Helper Guards
+    window.isClientVersionLocked = function() {
+        try {
+            const raw = sessionStorage.getItem('digibiz_client_version_lock') || localStorage.getItem('digibiz_client_version_lock');
+            if (!raw) return false;
+            const config = JSON.parse(raw);
+            return !!(config.isLocked || config.lockStatus === 'LOCKED');
+        } catch (e) {
+            return false;
+        }
+    };
+
+    window.getClientVersionLockConfig = function() {
+        try {
+            const raw = sessionStorage.getItem('digibiz_client_version_lock') || localStorage.getItem('digibiz_client_version_lock');
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    };
 })();

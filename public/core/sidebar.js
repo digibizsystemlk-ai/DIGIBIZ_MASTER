@@ -1159,6 +1159,10 @@ class Sidebar {
     }
 
     async maybeShowUpdateAnnouncement(user) {
+        if (window.isClientVersionLocked && window.isClientVersionLocked()) {
+            console.log('[VersionControl] 🔒 Announcement suppressed for version-locked client.');
+            return;
+        }
         return; // Disabled update announcement popup as requested
         if (!user) return;
         const lsKey = `digibiz_last_seen_update_${user.uid}`;
