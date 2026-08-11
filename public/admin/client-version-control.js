@@ -45,6 +45,9 @@
         const btnLookup = document.getElementById('btnLookupClient');
         if (btnLookup) btnLookup.addEventListener('click', handleLookupClient);
 
+        const btnRelease = document.getElementById('btnReleaseVersionConfig');
+        if (btnRelease) btnRelease.addEventListener('click', () => performUnlockForEmail());
+
         const filterInput = document.getElementById('filterLockedInput');
         if (filterInput) {
             filterInput.addEventListener('input', (e) => {
@@ -156,16 +159,19 @@
         }
     }
 
-    async function handleReleaseLock() {
-        const emailInput = document.getElementById('targetEmailInput');
-        const email = String(emailInput.value || '').trim().toLowerCase();
-        if (!email) return;
+    async function performUnlockForEmail(targetEmail) {
+        const email = String(targetEmail || document.getElementById('targetEmailInput').value || '').trim().toLowerCase();
+        if (!email) {
+            alert('Please enter or select a target client email address.');
+            return;
+        }
 
-        if (!confirm(`Are you sure you want to RELEASE the version lock for "${email}"?\nThis account will resume standard development updates.`)) return;
+        if (!confirm(`Are you sure you want to UNLOCK / RELEASE the version lock for "${email}"?\nThis account will resume standard development updates.`)) return;
 
         const docId = sanitizeEmailForDocId(email);
         try {
             await window.db.collection('client_version_control').doc(docId).set({
+                email: email,
                 lockStatus: 'UNLOCKED',
                 isLocked: false,
                 versionTag: 'LATEST_DEV',
@@ -173,20 +179,23 @@
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
 
-            // Remove mirror lock
+            // Remove mirror lock flags from matching users and businesses documents
             try {
                 const uSnap = await window.db.collection('users').where('email', '==', email).get();
                 uSnap.forEach(d => d.ref.set({ versionLock: false, lockedVersionTag: 'LATEST_DEV' }, { merge: true }));
+
                 const bSnap = await window.db.collection('businesses').where('ownerEmail', '==', email).get();
                 bSnap.forEach(d => d.ref.set({ versionLock: false, lockedVersionTag: 'LATEST_DEV' }, { merge: true }));
-            } catch (e) {}
+            } catch (eMirror) {
+                console.warn('Mirror unlock warn:', eMirror);
+            }
 
-            alert(`🔓 Version lock released for ${email}.`);
+            alert(`🔓 Version lock successfully released for ${email}. Account is now UNLOCKED.`);
             loadAllVersionConfigs();
-            resetFormFieldsExceptEmail('');
+            resetFormFieldsExceptEmail(email);
         } catch (e) {
-            console.error('Release failed:', e);
-            alert('Release failed: ' + e.message);
+            console.error('Unlock failed:', e);
+            alert('Unlock failed: ' + e.message);
         }
     }
 
@@ -264,12 +273,39 @@
                     <td><span style="font-size:12px; color:#64748b;">${escapeHtml(item.notes || '-')}</span></td>
                     <td><span style="font-size:11.5px; color:#94a3b8;">${escapeHtml(item.updatedAt)}</span></td>
                     <td style="text-align:right; white-space:nowrap;">
-                        <button class="btn-edit-vc" data-email="${escapeHtml(item.email)}" style="background:#0284c7; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer;" type="button">✏️ Edit</button>
+                        ${isLocked ? 
+                            `<button class="btn-unlock-vc" data-email="${escapeHtml(item.email)}" style="background:#059669; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer; margin-right:4px;" type="button">🔓 Unlock</button>` :
+                            `<button class="btn-lock-vc" data-email="${escapeHtml(item.email)}" style="background:#dc2626; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer; margin-right:4px;" type="button">🔒 Lock</button>`
+                        }
+                        <button class="btn-edit-vc" data-email="${escapeHtml(item.email)}" style="background:#0284c7; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer; margin-right:4px;" type="button">✏️ Edit</button>
                         <button class="btn-impersonate-vc" data-email="${escapeHtml(item.email)}" style="background:#d97706; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer;" type="button">🔑 Inspect</button>
                     </td>
                 </tr>
             `;
         }).join('');
+
+        tbody.querySelectorAll('.btn-unlock-vc').forEach(btn => {
+            btn.onclick = async () => {
+                const email = btn.dataset.email;
+                if (email) {
+                    await performUnlockForEmail(email);
+                }
+            };
+        });
+
+        tbody.querySelectorAll('.btn-lock-vc').forEach(btn => {
+            btn.onclick = () => {
+                const email = btn.dataset.email;
+                const match = configs.find(c => c.email === email);
+                if (match) {
+                    populateFormWithConfig(match);
+                } else {
+                    document.getElementById('targetEmailInput').value = email;
+                    document.getElementById('versionTagSelect').value = 'STABLE_FREEZE_2026_08_11';
+                }
+                window.scrollTo({ top: 300, behavior: 'smooth' });
+            };
+        });
 
         tbody.querySelectorAll('.btn-edit-vc').forEach(btn => {
             btn.onclick = () => {
