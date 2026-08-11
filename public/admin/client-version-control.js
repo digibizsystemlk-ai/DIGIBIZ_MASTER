@@ -45,9 +45,6 @@
         const btnLookup = document.getElementById('btnLookupClient');
         if (btnLookup) btnLookup.addEventListener('click', handleLookupClient);
 
-        const btnRelease = document.getElementById('btnReleaseLock');
-        if (btnRelease) btnRelease.addEventListener('click', handleReleaseLock);
-
         const filterInput = document.getElementById('filterLockedInput');
         if (filterInput) {
             filterInput.addEventListener('input', (e) => {
@@ -315,7 +312,6 @@
         document.getElementById('flagLockBusinessType').checked = flags.lockBusinessType !== false;
         document.getElementById('flagBypassPwaPrompt').checked = !!flags.bypassPwaPrompt;
 
-        document.getElementById('btnReleaseLock').style.display = isLocked ? 'inline-block' : 'none';
         currentEditingEmail = config.email;
         window.scrollTo({ top: 300, behavior: 'smooth' });
     }
@@ -338,7 +334,6 @@
         document.getElementById('flagSuppressBetaFeatures').checked = true;
         document.getElementById('flagLockBusinessType').checked = true;
         document.getElementById('flagBypassPwaPrompt').checked = false;
-        document.getElementById('btnReleaseLock').style.display = 'none';
         currentEditingEmail = null;
     }
 
