@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manufacturer Inbound - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=70"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="/core/sms-wallet-core.js?v=4"></script>
+    <script src="/core/ui-helpers.js?v=1"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=10"></script>
+    <style id="mfgStyle"></style>
+</head>
+<body>
+<div class="mfg-wrap">
+    <div class="mfg-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+            <h2>Inbound Purchases (අමුද්‍රව්‍ය මිලදී ගැනීම්)</h2>
+            <p id="mfgBusinessCtx"></p>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="button" onclick="openWastedRmModal()" style="padding:10px 16px; background:#dc2626; color:#fff; border:none; border-radius:8px; font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(220,38,38,0.25); cursor:pointer;">
+                🗑️ Record Wasted Materials (අපතේ ගිය අමුද්‍රව්‍ය)
+            </button>
+            <a href="/modules/manufacturer/wastage.html" style="padding:10px 16px; background:#b91c1c; color:#fff; text-decoration:none; border-radius:8px; font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(185,28,28,0.25);">
+                📊 Loss Analytics (wastage.html 🔗)
+            </a>
+            <a href="/modules/manufacturer/outbound.html" style="padding:10px 16px; background:#059669; color:#fff; text-decoration:none; border-radius:8px; font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(5,150,105,0.25);">
+                🏭 Production (outbound.html ➡️)
+            </a>
+            <a href="/modules/manufacturer/stock.html" style="padding:10px 16px; background:#7c3aed; color:#fff; text-decoration:none; border-radius:8px; font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(124,58,237,0.25);">
+                📦 Stock Directory (stock.html 🔗)
+            </a>
+        </div>
+    </div>
+    <div id="rawMaterialAssetCard" style="background:linear-gradient(135deg, #1e293b, #0f172a); color:#fff; padding:14px 18px; border-radius:12px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+        <div>
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#94a3b8; font-weight:700;">📦 Raw Material Asset Balance (අමුද්‍රව්‍ය වත්කම් ශේෂය)</div>
+            <div id="rmAssetValue" style="font-size:22px; font-weight:800; color:#38bdf8; margin-top:2px;">Rs. 0.00</div>
+        </div>
+        <div style="font-size:12px; color:#cbd5e1; font-weight:600;">
+            Total Raw Materials In Stock: <span id="rmTotalQty" style="color:#facc15; font-weight:800;">0 Units</span>
+        </div>
+    </div>
+    <div class="mfg-grid">
+        <div class="mfg-card">
+            <h3>Raw Material Purchase</h3>
+            <div class="mfg-row">
+                <div>
+                    <label>Material Name</label>
+                    <input id="materialName" list="materialNameList" placeholder="Type or select material">
+                    <datalist id="materialNameList"></datalist>
+                </div>
+                <div>
+                    <label>Supplier (from Suppliers list)</label>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <select id="supplierCustomerId" class="mfg-select-customer" style="flex:1;">
+                            <option value="">Select Supplier…</option>
+                        </select>
+                        <button type="button" id="quickAddSupplierBtn" title="Add New Supplier" style="padding:7px 10px; background:#10b981; color:#fff; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:12px; white-space:nowrap;">+ Add</button>
+                    </div>
+                    <div id="supplierCustomerBanner" class="mfg-customer-banner" role="status"></div>
+                </div>
+            </div>
+            <div class="mfg-row" style="margin-top:8px;">
+                <div>
+                    <label>Purchase Category (learn-as-you-go)</label>
+                    <input id="purchaseCategory" list="purchaseCategoryList" placeholder="Type category or select">
+                    <datalist id="purchaseCategoryList"></datalist>
+                </div>
+                <div>
+                    <label>Unit of Measure (ඒකකය)</label>
+                    <select id="unitType" style="font-weight:600;">
+                        <option value="Kg" selected>Kg (කිලෝ)</option>
+                        <option value="Unit">Unit (ඒකක)</option>
+                        <option value="L">Liters (L - ලීටර්)</option>
+                        <option value="g">Grams (g - ග්‍රෑම්)</option>
+                        <option value="Pcs">Pcs (කෑලි)</option>
+                        <option value="Bags">Bags (මලු / බෑග්)</option>
+                        <option value="Meters">Meters (මීටර්)</option>
+                        <option value="Boxes">Boxes (පෙට්ටි)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Qty (ප්‍රමාණය)</label><input type="number" id="qty" min="0" step="0.01"></div>
+                <div><label>Unit Price</label><input type="number" id="unitPrice" min="0" step="0.01"></div>
+                <div><label>Total Amount</label><input type="number" id="amount" min="0" step="0.01"></div>
+            </div>
+            <div class="mfg-row3" style="margin-top:8px;">
+                <div><label>Low Stock Alert Level (අඩුම තොග සීමාව)</label><input type="number" id="minStockLevel" min="0" step="0.01" placeholder="e.g. 10 (Default: 5)"></div>
+                <div><label>Payment Mode</label>
+                    <select id="paymentMode">
+                        <option value="CASH" selected>Cash</option>
+                        <option value="BANK">Bank</option>
+                        <option value="CREDIT">Credit</option>
+                        <option value="CHEQUE">Cheque</option>
+                    </select>
+                </div>
+                <div id="dueDateGroup" style="display:none;"><label>Due Date (Credit)</label><input type="date" id="dueDate"></div>
+                <div id="chequeGroup" style="display:none;"><label>Cheque Clearance Date</label><input type="date" id="chequeClearanceDate"></div>
+            </div>
+            <button id="saveBtn" style="margin-top:10px;">Save Purchase</button>
+            <div id="msg" class="mfg-msg"></div>
+        </div>
+        <!-- Remaining Raw Materials Stock Directory Card (Right side of grid) -->
+        <div class="mfg-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+                <h3 style="margin:0; border:none; padding:0; color:#0284c7;">🧪 Remaining Raw Materials Stock (ඉතිරි අමුද්‍රව්‍ය තොගය සහ ප්‍රමාණයන්)</h3>
+                <span style="font-size:12px; color:#0284c7; font-weight:700;" id="inboundRmStockTotalBadge">0 Materials</span>
+            </div>
+            <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                <thead>
+                    <tr style="background:#f1f5f9; text-align:left; color:#334155;">
+                        <th style="padding:8px;">Material Name</th>
+                        <th style="padding:8px;">Available Stock Qty</th>
+                        <th style="padding:8px;">Unit Cost</th>
+                        <th style="padding:8px;">Total Asset Value</th>
+                        <th style="padding:8px;">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="inboundRmStockRows">
+                    <tr><td colspan="5" style="text-align:center; padding:16px; color:#64748b;">Loading raw materials stock...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Latest Inbound Buying Entries History Log Card (Below Grid) -->
+    <div class="mfg-card" style="margin-top:20px; border-top:3px solid #0284c7;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+            <h3 style="margin:0; border:none; padding:0; color:#0f172a;">📜 Latest Inbound Buying Entries (අමුද්‍රව්‍ය මිලදී ගැනීමේ වාර්තා)</h3>
+            <div id="kubukaExportBar" style="display:none;gap:8px;align-items:end;flex-wrap:wrap;">
+                <div>
+                    <label for="filterFromDate" style="font-size:11px; margin:0;">From Date</label>
+                    <input type="date" id="filterFromDate" style="padding:4px 8px; font-size:12px;">
+                </div>
+                <div>
+                    <label for="filterToDate" style="font-size:11px; margin:0;">To Date</label>
+                    <input type="date" id="filterToDate" style="padding:4px 8px; font-size:12px;">
+                </div>
+                <div>
+                    <button type="button" id="applyFilterBtn" style="padding:6px 12px; font-size:12px;">Apply</button>
+                </div>
+                <div>
+                    <button type="button" id="exportInboundBtn" style="padding:6px 12px; font-size:12px;">Export</button>
+                </div>
+            </div>
+        </div>
+        <table>
+            <thead><tr><th>Material</th><th>Qty & Unit</th><th>Supplier</th><th>Amount</th><th>Payment</th><th>Date</th><th>Invoice No</th><th>Actions</th></tr></thead>
+            <tbody id="historyRows"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Record Wasted Raw Materials Modal -->
+<div id="wastedRmModal" class="mfg-modal" style="display:none;">
+    <div class="mfg-modal-box" style="max-width:520px;">
+        <h3 style="color:#dc2626; margin-top:0;">🗑️ Record Wasted Raw Materials (අපතේ ගිය අමුද්‍රව්‍ය)</h3>
+        <div style="margin-top:10px;">
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Select Raw Material from Stock (අමුද්‍රව්‍යය තෝරන්න) *</label>
+            <select id="wastedRmSelect" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px; font-weight:600;">
+                <option value="">Loading raw materials...</option>
+            </select>
+        </div>
+        <div style="margin-top:10px; display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+                <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Wasted Quantity (අපතේ ගිය ප්‍රමාණය) *</label>
+                <input type="number" id="wastedRmQty" min="0.01" step="0.01" placeholder="e.g. 5" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px;">
+            </div>
+            <div>
+                <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Reason (හේතුව)</label>
+                <select id="wastedRmReason" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px;">
+                    <option value="Damaged in Storage">Storage Damage (ගබඩාවේදී හානි විය)</option>
+                    <option value="Production Fault">Production Defect (නිෂ්පාදන දෝෂයක්)</option>
+                    <option value="Handling Issue">Handling Damage (හැසිරවීමේ/ප්‍රවාහන දෝෂයක්)</option>
+                    <option value="Expired">Expired / Spoiled (කල් ඉකුත් විය / නරක් විය)</option>
+                    <option value="Other">Other (වෙනත්)</option>
+                </select>
+            </div>
+        </div>
+        <div style="margin-top:10px;">
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Notes / Remarks (අමතර සටහන්)</label>
+            <input type="text" id="wastedRmNotes" placeholder="e.g. 5kg damaged during handling" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px;">
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:18px;">
+            <button type="button" onclick="closeWastedRmModal()" style="padding:8px 14px; background:#64748b; color:#fff; border:none; border-radius:6px; font-weight:600; cursor:pointer;">Cancel</button>
+            <button type="button" id="saveWastedRmBtn" onclick="saveWastedRmEntry()" style="padding:8px 16px; background:#dc2626; color:#fff; border:none; border-radius:6px; font-weight:700; cursor:pointer;">🗑️ Record & Deduct Stock</button>
+        </div>
+    </div>
+</div>
+
+<div id="editModal" class="mfg-modal" style="display:none;">
+    <div class="mfg-modal-box">
+        <h3>Edit Inbound Purchase</h3>
+        <div class="mfg-row">
+            <div><label>Material Name</label><input id="editMaterialName"></div>
+            <div><label>Supplier Name</label><input id="editSupplierName"></div>
+        </div>
+        <div class="mfg-row" style="margin-top:8px;">
+            <div><label>Qty</label><input type="number" id="editQty" min="0" step="0.01"></div>
+            <div>
+                <label>Unit of Measure</label>
+                <select id="editUnitType">
+                    <option value="Kg">Kg (කිලෝ)</option>
+                    <option value="Unit">Unit (ඒකක)</option>
+                    <option value="L">Liters (L)</option>
+                    <option value="g">Grams (g)</option>
+                    <option value="Pcs">Pcs</option>
+                    <option value="Bags">Bags</option>
+                    <option value="Meters">Meters</option>
+                    <option value="Boxes">Boxes</option>
+                </select>
+            </div>
+        </div>
+        <div class="mfg-row" style="margin-top:8px;">
+            <div><label>Unit Cost</label><input type="number" id="editUnitCost" min="0" step="0.01"></div>
+            <div><label>Amount</label><input type="number" id="editAmount" min="0" step="0.01"></div>
+        </div>
+        <div class="mfg-row3" style="margin-top:8px;">
+            <div><label>Payment Mode</label>
+                <select id="editPaymentMode">
+                    <option value="CASH">Cash</option>
+                    <option value="BANK">Bank</option>
+                    <option value="CREDIT">Credit</option>
+                    <option value="CHEQUE">Cheque</option>
+                </select>
+            </div>
+            <div id="editDueDateGroup" style="display:none;"><label>Due Date</label><input type="date" id="editDueDate"></div>
+            <div id="editChequeGroup" style="display:none;"><label>Cheque Clearance Date</label><input type="date" id="editChequeClearanceDate"></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+            <button id="editCancelBtn" type="button">Cancel</button>
+            <button id="editSaveBtn" type="button">Update</button>
+        </div>
+    </div>
+</div>
+<!-- Stock Transaction & Movement Audit Modal -->
+<div id="stockAuditModal" class="mfg-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.65); z-index:99999; align-items:center; justify-content:center; padding:16px;">
+    <div class="mfg-modal-box" style="background:#fff; border-radius:16px; width:100%; max-width:820px; max-height:90vh; overflow-y:auto; padding:24px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #e2e8f0; padding-bottom:12px; margin-bottom:16px;">
+            <div>
+                <h3 style="margin:0; font-size:18px; color:#0284c7;" id="auditModalTitle">🔍 Stock Transaction & Audit History Log</h3>
+                <p style="margin:4px 0 0 0; font-size:12px; color:#64748b;" id="auditModalSubTitle"></p>
+            </div>
+            <button type="button" onclick="closeStockAuditModal()" style="background:#f1f5f9; border:none; padding:6px 12px; border-radius:8px; font-weight:700; cursor:pointer; font-size:16px;">✕</button>
+        </div>
+
+        <div id="auditSummaryBar" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:14px; margin-bottom:16px; display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:10px; text-align:center;">
+            <div>
+                <div style="font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase;">Total Purchased (+)</div>
+                <div id="auditTotalPurchased" style="font-size:16px; font-weight:800; color:#0284c7; margin-top:2px;">0</div>
+            </div>
+            <div>
+                <div style="font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase;">Consumed in Prod (-)</div>
+                <div id="auditTotalConsumed" style="font-size:16px; font-weight:800; color:#d97706; margin-top:2px;">0</div>
+            </div>
+            <div>
+                <div style="font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase;">Spoiled/Wasted (-)</div>
+                <div id="auditTotalWasted" style="font-size:16px; font-weight:800; color:#dc2626; margin-top:2px;">0</div>
+            </div>
+            <div>
+                <div style="font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase;">Calculated Net Stock</div>
+                <div id="auditCalculatedNet" style="font-size:16px; font-weight:800; color:#059669; margin-top:2px;">0</div>
+            </div>
+        </div>
+
+        <div id="auditOffsetAlert" style="display:none; background:#fef2f2; border:1px solid #fca5a5; color:#991b1b; padding:12px 14px; border-radius:8px; margin-bottom:16px; font-size:13px;">
+            <strong>⚠️ Legacy Sample / Unmatched Offset Detected!</strong><br>
+            Stored Stock Qty: <span id="auditStoredQty">0</span> | Actual Audit Log Net: <span id="auditNetQty">0</span><br>
+            <button type="button" onclick="fixStockBalanceToAuditNet()" style="margin-top:8px; padding:6px 14px; background:#dc2626; color:#fff; border:none; border-radius:6px; font-weight:700; font-size:12px; cursor:pointer;">⚡ Fix & Force Set Real Stock Qty</button>
+        </div>
+
+        <h4 style="margin:14px 0 8px 0; font-size:14px; color:#1e293b;">📜 Detailed Ledger History (චලන ලැයිස්තුව)</h4>
+        <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                <thead>
+                    <tr style="background:#f1f5f9; text-align:left;">
+                        <th style="padding:8px;">Date & Time</th>
+                        <th style="padding:8px;">Transaction Type</th>
+                        <th style="padding:8px;">Details / Source</th>
+                        <th style="padding:8px;">Quantity Change</th>
+                        <th style="padding:8px;">Unit Cost</th>
+                    </tr>
+                </thead>
+                <tbody id="auditLedgerRows">
+                    <tr><td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">Loading audit ledger...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:16px;">
+            <button type="button" onclick="setStockQtyToZero()" style="padding:8px 14px; background:#dc2626; color:#fff; border:none; border-radius:8px; font-weight:700; cursor:pointer; font-size:12px;" title="Reset stock balance to 0 Kg if all materials were physically used outside production batches">🗑️ Set Stock to 0 Kg (සියල්ල භාවිතා කලා නම් 0 කරන්න)</button>
+            <button type="button" onclick="closeStockAuditModal()" style="padding:8px 16px; background:#64748b; color:#fff; border:none; border-radius:8px; font-weight:700; cursor:pointer;">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Add Supplier Modal -->
+<div id="quickSupplierModal" class="mfg-modal" style="display:none;">
+    <div class="mfg-modal-box" style="max-width:440px;">
+        <h3>➕ Add New Supplier</h3>
+        <div style="margin-top:10px;">
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Supplier / Full Name *</label>
+            <input type="text" id="newSupplierName" placeholder="e.g. Kamal Perera / Perera Traders" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px; font-family:inherit;">
+        </div>
+        <div style="margin-top:10px;">
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Mobile Number (for SMS) *</label>
+            <input type="tel" id="newSupplierMobile" placeholder="e.g. 0771234567" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px; font-family:inherit;">
+        </div>
+        <div style="margin-top:10px;">
+            <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Address / City</label>
+            <input type="text" id="newSupplierAddress" placeholder="e.g. Colombo" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:6px; font-family:inherit;">
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
+            <button id="closeSupplierModalBtn" type="button" style="padding:8px 14px; background:#64748b; color:#fff; border:none; border-radius:6px; font-weight:600; cursor:pointer;">Cancel</button>
+            <button id="saveNewSupplierBtn" type="button" style="padding:8px 14px; background:#10b981; color:#fff; border:none; border-radius:6px; font-weight:700; cursor:pointer;">Save Supplier</button>
+        </div>
+    </div>
+</div>
+<script>
+document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
+const modalStyle = document.createElement('style');
+modalStyle.textContent = `.mfg-modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:12000;padding:14px}.mfg-modal-box{max-width:760px;width:100%;background:#fff;border-radius:12px;padding:14px}`;
+document.head.appendChild(modalStyle);
+const supplierCustomerById = {};
+let editingRowId = '';
+const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+const KDKUMBUKA_EMAIL = 'kdkumbukaagro@gmail.com';
+let inboundAccessRole = 'VIEWER';
+let inboundRowsCache = [];
+function v(id){ return document.getElementById(id).value; }
+function n(id){ return Number(v(id)) || 0; }
+function payStatus(mode){ return mode === 'CREDIT' ? 'PENDING' : (mode === 'CHEQUE' ? 'PENDING_CLEARANCE' : 'PAID'); }
+function isKubuka(){ return ManufacturerModule.businessId === KUBUKA_BID; }
+function normRole(raw){
+    return String(raw || '').trim().toUpperCase().replace(/\s+/g, '_');
+}
+function isKdkumbukaTenantUser(){
+    const user = (window.auth && window.auth.currentUser) || firebase.auth().currentUser;
+    const email = String((user && user.email) || '').trim().toLowerCase();
+    return email === KDKUMBUKA_EMAIL && ManufacturerModule.businessId === KUBUKA_BID;
+}
+async function resolveInboundRole(){
+    const user = (window.auth && window.auth.currentUser) || firebase.auth().currentUser;
+    if (!user) return 'VIEWER';
+    const emailNorm = String(user.email || '').trim().toLowerCase();
+    const isKdkumbuka = emailNorm === KDKUMBUKA_EMAIL && ManufacturerModule.businessId === KUBUKA_BID;
+    if (emailNorm === KDKUMBUKA_EMAIL) return 'BUSINESS_OWNER';
+    if (!isKdkumbuka) return 'BUSINESS_OWNER';
+    try {
+        const roleInfo = window.getUserRole ? await window.getUserRole(user.uid, ManufacturerModule.businessId) : null;
+        const roleNorm = normRole(roleInfo && roleInfo.role);
+        if (roleNorm && roleNorm !== 'VIEWER') return roleNorm;
+    } catch (e) {
+        console.warn('[Inbound] getUserRole failed:', e?.message || e);
+    }
+    try {
+        const bizUser = await db.collection('businesses').doc(ManufacturerModule.businessId).collection('users').doc(user.uid).get();
+        if (bizUser.exists) {
+            const roleNorm = normRole((bizUser.data() || {}).role);
+            if (roleNorm) return roleNorm;
+        }
+    } catch (e) {
+        console.warn('[Inbound] business role fallback failed:', e?.message || e);
+    }
+    try {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        if (userDoc.exists) {
+            const roleNorm = normRole((userDoc.data() || {}).role);
+            if (roleNorm) return roleNorm;
+        }
+    } catch (e) {
+        console.warn('[Inbound] users role fallback failed:', e?.message || e);
+    }
+    return 'BUSINESS_OWNER';
+}
+function canOperateInbound(roleNorm){
+    if (!isKdkumbukaTenantUser()) return true;
+    const allowed = new Set(['BUSINESS_OWNER', 'SUPER_ADMIN', 'ADMIN', 'TEA_LEAFER']);
+    return allowed.has(roleNorm);
+}
+function enforceInboundAccess(roleNorm){
+    const ok = canOperateInbound(roleNorm);
+    const saveBtn = document.getElementById('saveBtn');
+    if (saveBtn) saveBtn.disabled = !ok;
+    if (!ok) {
+        const msgEl = document.getElementById('msg');
+        msgEl.className = 'mfg-msg err';
+        msgEl.textContent = 'You do not have access to Raw Material Buying.';
+    }
+    return ok;
+}
+function guardInboundActionOrWarn(){
+    const ok = canOperateInbound(inboundAccessRole);
+    if (!ok) {
+        const msgEl = document.getElementById('msg');
+        msgEl.className = 'mfg-msg err';
+        msgEl.textContent = 'You do not have access to Raw Material Buying actions.';
+        return false;
+    }
+    return true;
+}
+function escPrint(v){
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+async function saveInvoiceDoc(invoice){
+    if (!isKubuka()) return null;
+    const id = invoice.invoiceNo || (`INV-${Date.now()}`);
+    await db.collection('invoices').doc(id).set({
+        ...invoice,
+        businessId: ManufacturerModule.businessId,
+        printHistory: [{ printedAt: new Date(), channel: 'browser-print' }],
+        createdAt: new Date(),
+        isActive: true
+    }, { merge: true });
+    return id;
+}
+async function printThermalPurchaseInvoice(invoice) {
+    try {
+        const bid = ManufacturerModule.businessId;
+        const bizSnap = await db.collection('businesses').doc(bid).get();
+        const bizData = bizSnap.exists ? bizSnap.data() : {};
+        const docSettings = bizData.documentSettings || {};
+        const s = docSettings.grn || docSettings.invoice || {};
+
+        const header = s.header || bizData.name || 'GOODS RECEIVED NOTE';
+        const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+        const footer = s.footer || 'Thank you for your supply!';
+        const showLogo = s.showLogo !== false;
+
+        const w = window.open('', '_blank', 'width=420,height=600');
+        if (!w) return alert('Popup blocked. Please allow popups.');
+
+        const totalAmount = Number(invoice.totalAmount || 0);
+        const paidAmount = Number(invoice.paidAmount || 0);
+        const balanceDue = Number(invoice.balanceDue || Math.max(0, totalAmount - paidAmount));
+        const previousBalance = Number(invoice.previousBalance || 0);
+        const totalDue = Number(invoice.totalDue || (balanceDue + previousBalance));
+
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>GRN ${invoice.invoiceNo}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 4mm; }
+            body { width: 72mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; line-height: 1.4; color: #000; padding: 10px; width: 72mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 15px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 9px; margin: 4px 0 0; }
+        .receipt-title { font-size: 12px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; border-bottom: 1px dashed #000; padding-bottom: 4px; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 10px; }
+        .meta-label { font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
+        th, td { border: 1px solid #000; padding: 4px; text-align: left; }
+        th { background: #f0f0f0; font-size: 9px; }
+        .tr { text-align: right; }
+        .total-section { margin-top: 10px; border-top: 2px solid #000; padding-top: 6px; }
+        .total-row { display: flex; justify-content: space-between; font-weight: 800; font-size: 13px; }
+        .footer { text-align: center; font-size: 9px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; font-weight: 600; }
+        .softby { text-align: center; font-size: 8px; color: #666; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:40px; margin-bottom:5px;"><br>` : ''}
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Goods Received Note (GRN)</div>
+    
+    <div class="meta-row"><span class="meta-label">GRN No:</span><span>${invoice.invoiceNo}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${invoice.date}</span></div>
+    <div class="meta-row"><span class="meta-label">Supplier:</span><span>${escPrint(invoice.supplierName || '-')}</span></div>
+    <div class="meta-row"><span class="meta-label">Created By:</span><span>${escPrint(invoice.salePerson || '-')}</span></div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th class="tr">Qty</th>
+                <th class="tr">Price</th>
+                <th class="tr">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>${escPrint(invoice.materialName || '-')}</td>
+                <td class="tr">${Number(invoice.qty || 0)}</td>
+                <td class="tr">${(invoice.unitPrice || 0).toFixed(2)}</td>
+                <td class="tr">${(totalAmount).toFixed(2)}</td>
+            </tr>
+        </tbody>
+    </table>
+    
+    <div class="total-section">
+        <div class="total-row"><span>Total:</span><span>Rs. ${totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+        <div class="total-row"><span>Paid:</span><span>Rs. ${paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+        <div class="total-row"><span>Balance Due:</span><span>Rs. ${balanceDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+        ${previousBalance > 0 ? `<div class="total-row"><span>Prev. Balance:</span><span>Rs. ${previousBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>` : ''}
+        <div class="total-row" style="border-top:1px solid #000;margin-top:2px;"><span>TOTAL DUE:</span><span>Rs. ${totalDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+    </div>
+    
+    <div class="footer">
+        ${footer}
+    </div>
+    <div class="softby">Software by DIGIBIZ - 0713446500</div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    <\/script>
+<\/body>
+<\/html>`;
+
+        w.document.write(html);
+        w.document.close();
+    } catch (e) {
+        console.error(e);
+        alert('Printing failed: ' + e.message);
+    }
+}
+function recalcAmount(){
+    const qty = Number(document.getElementById('qty').value || 0);
+    const unitPrice = Number(document.getElementById('unitPrice').value || 0);
+    const total = Number.isFinite(qty * unitPrice) ? (qty * unitPrice) : 0;
+    document.getElementById('amount').value = total.toFixed(2);
+}
+async function refresh(){
+    const bid = ManufacturerModule.businessId;
+    const snap = await db.collection('manufacturer_raw_material_history')
+        .where('businessId','==',bid).limit(100).get().catch(()=>({docs:[]}));
+    const rows = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+        .filter((x) => x.isActive !== false)
+        .sort((a, b) => {
+            const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+            const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+            return tb - ta;
+        });
+    inboundRowsCache = rows.slice();
+    const from = v('filterFromDate');
+    const to = v('filterToDate');
+    const fromMs = from ? new Date(from + 'T00:00:00').getTime() : null;
+    const toMs = to ? new Date(to + 'T23:59:59').getTime() : null;
+    const filtered = rows.filter((x) => {
+        const t = x.createdAt?.toDate ? x.createdAt.toDate().getTime() : new Date(x.createdAt || 0).getTime();
+        if (isNaN(t)) return false;
+        if (fromMs != null && t < fromMs) return false;
+        if (toMs != null && t > toMs) return false;
+        return true;
+    }).slice(0, 100);
+    document.getElementById('historyRows').innerHTML = filtered.map((x)=>{
+        return `<tr>
+            <td class="wrap-name">${x.materialName||'-'}</td>
+            <td style="font-weight:600; color:#0369a1;">${Number(x.qty || 0).toLocaleString()} ${x.unit || 'Kg'}</td>
+            <td>${x.supplierName||'-'}</td>
+            <td>Rs ${ManufacturerModule.money(x.amount)}</td>
+            <td>${x.paymentMode||'-'} / ${x.paymentStatus||'-'}</td>
+            <td>${ManufacturerModule.formatDate(x.createdAt)}</td>
+            <td>${x.invoiceNo || '-'}</td>
+            <td>
+                <button type="button" onclick="openEditInbound('${x.id}')">✏️</button>
+                <button type="button" onclick="deleteInbound('${x.id}')">🗑️</button>
+            </td>
+        </tr>`;
+    }).join('');
+    updateRawMaterialAssetSummary();
+    await refreshRemainingRawMaterialsStockTableInbound();
+}
+async function updateRawMaterialAssetSummary() {
+    const bid = ManufacturerModule.businessId;
+    if (!bid) return;
+    try {
+        const snap = await db.collection('manufacturer_raw_materials').where('businessId', '==', bid).get().catch(()=>({docs:[]}));
+        let totalVal = 0;
+        let totalQty = 0;
+        snap.docs.forEach(doc => {
+            const d = doc.data() || {};
+            const q = Number(d.stockQty || 0);
+            const c = Number(d.lastUnitCost || 0);
+            if (q > 0) {
+                totalQty += q;
+                totalVal += (q * c);
+            }
+        });
+        const valEl = document.getElementById('rmAssetValue');
+        const qtyEl = document.getElementById('rmTotalQty');
+        if (valEl) valEl.textContent = `Rs. ${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        if (qtyEl) qtyEl.textContent = `${totalQty.toLocaleString()} Items/Units`;
+    } catch (e) {
+        console.warn('[Inbound] Asset summary error:', e);
+    }
+}
+
+let currentAuditMaterialName = '';
+let currentAuditCalculatedNet = 0;
+
+async function refreshRemainingRawMaterialsStockTableInbound() {
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    const tbody = document.getElementById('inboundRmStockRows');
+    const badge = document.getElementById('inboundRmStockTotalBadge');
+    if (!tbody || !bid) return;
+    try {
+        const snap = await db.collection('manufacturer_raw_materials')
+            .where('businessId', '==', bid)
+            .get()
+            .catch(() => ({ docs: [] }));
+
+        const items = snap.docs
+            .map(d => ({ id: d.id, ...(d.data() || {}) }))
+            .filter(x => x.isActive !== false);
+
+        if (!items.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">No raw materials found in stock. Use the form on the left to buy raw materials.</td></tr>';
+            if (badge) badge.textContent = '0 Materials';
+            return;
+        }
+
+        let totalQty = 0;
+        const escFn = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        tbody.innerHTML = items.map(x => {
+            const qty = Number(x.stockQty || 0);
+            const uCost = Number(x.lastUnitCost || x.unitCost || 0);
+            const totalVal = qty * uCost;
+            const unit = x.unit || 'Kg';
+            if (qty > 0) totalQty += qty;
+
+            let statusBadge = '<span style="background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">IN STOCK</span>';
+            if (qty <= 0) statusBadge = '<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">OUT OF STOCK</span>';
+            else if (qty < 5) statusBadge = '<span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">LOW STOCK</span>';
+
+            const qtyBtn = `<button type="button" onclick="showStockAuditModal('${escFn(x.name)}')" style="background:#e0f2fe; color:#0369a1; border:1px solid #7dd3fc; border-radius:6px; padding:4px 10px; font-weight:800; cursor:pointer; font-size:13px; font-family:inherit;" title="Click to view full transaction & stock movement history for ${escFn(x.name)}">${qty.toLocaleString()} ${escFn(unit)} 🔍 Audit</button>`;
+
+            return `
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:8px 10px; font-weight:700; color:#0f172a;">${escFn(x.name || '-')}</td>
+                    <td style="padding:8px 10px;">${qtyBtn}</td>
+                    <td style="padding:8px 10px;">Rs. ${uCost.toFixed(2)}</td>
+                    <td style="padding:8px 10px; font-weight:700; color:#059669;">Rs. ${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td style="padding:8px 10px;">${statusBadge}</td>
+                </tr>
+            `;
+        }).join('');
+
+        if (badge) badge.textContent = `${items.length} Material Types`;
+    } catch (e) {
+        console.warn('[Inbound] RM Stock refresh error:', e);
+    }
+}
+
+async function showStockAuditModal(materialName) {
+    currentAuditMaterialName = materialName;
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    if (!bid || !materialName) return;
+
+    document.getElementById('auditModalTitle').textContent = `🔍 Stock Audit Log: ${materialName}`;
+    document.getElementById('auditModalSubTitle').textContent = `Business ID: ${bid} | Verified Transaction History`;
+    document.getElementById('auditLedgerRows').innerHTML = '<tr><td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">Loading transaction history...</td></tr>';
+    document.getElementById('stockAuditModal').style.display = 'flex';
+
+    try {
+        const normKey = materialName.trim().toUpperCase().replace(/\s+/g, '_');
+        const normNameClean = materialName.trim().toLowerCase();
+
+        // 1. Fetch Purchases
+        const purchasesSnap = await db.collection('manufacturer_raw_material_history')
+            .where('businessId', '==', bid)
+            .get().catch(() => ({ docs: [] }));
+
+        // 2. Fetch Production Batches
+        const prodBatchesSnap = await db.collection('manufacturer_production_batches')
+            .where('businessId', '==', bid)
+            .get().catch(() => ({ docs: [] }));
+
+        // 3. Fetch Wastage
+        const wastageSnap = await db.collection('manufacturer_wastage_history')
+            .where('businessId', '==', bid)
+            .get().catch(() => ({ docs: [] }));
+
+        // 4. Fetch Stored Stock Doc
+        const stockDocSnap = await db.collection('manufacturer_raw_materials')
+            .doc(`${bid}_${normKey}`).get().catch(() => null);
+        const storedDocData = stockDocSnap && stockDocSnap.exists ? stockDocSnap.data() || {} : {};
+        const storedQty = Number(storedDocData.stockQty || 0);
+        const unit = storedDocData.unit || 'Kg';
+
+        const ledger = [];
+        let totalBought = 0;
+        let totalConsumed = 0;
+        let totalWasted = 0;
+
+        // Process Purchases
+        purchasesSnap.docs.forEach(d => {
+            const data = d.data() || {};
+            if (data.isActive === false) return;
+            const mat = String(data.materialName || '').trim().toLowerCase();
+            if (mat === normNameClean || mat.replace(/\s+/g,'') === normNameClean.replace(/\s+/g,'')) {
+                const q = Number(data.qty || 0);
+                totalBought += q;
+                ledger.push({
+                    date: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt)) : new Date(0),
+                    type: '➕ Inbound Purchase',
+                    badge: '<span style="background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:12px; font-weight:700;">INBOUND</span>',
+                    details: `Supplier: ${data.supplierName || '-'} (Inv: ${data.invoiceNo || '-'})`,
+                    qtyChange: `+${q.toLocaleString()} ${unit}`,
+                    unitCost: `Rs. ${Number(data.unitCost || 0).toFixed(2)}`
+                });
+            }
+        });
+
+        // Process Production Batches
+        prodBatchesSnap.docs.forEach(d => {
+            const data = d.data() || {};
+            if (data.isActive === false) return;
+            const ingredients = data.ingredients || [];
+            ingredients.forEach(ing => {
+                const mat = String(ing.name || ing.consumedMaterialName || '').trim().toLowerCase();
+                if (mat === normNameClean || mat.replace(/\s+/g,'') === normNameClean.replace(/\s+/g,'')) {
+                    const q = Number(ing.qty || ing.consumedMaterialQty || 0);
+                    totalConsumed += q;
+                    ledger.push({
+                        date: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt)) : new Date(0),
+                        type: '➖ Production Consumption',
+                        badge: '<span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:12px; font-weight:700;">PRODUCTION</span>',
+                        details: `Produced Batch: ${data.productName || '-'} (Qty: ${data.producedQty || 0})`,
+                        qtyChange: `-${q.toLocaleString()} ${unit}`,
+                        unitCost: `Rs. ${Number(ing.unitCost || 0).toFixed(2)}`
+                    });
+                }
+            });
+        });
+
+        // Process Wastage
+        wastageSnap.docs.forEach(d => {
+            const data = d.data() || {};
+            if (data.isActive === false) return;
+            if (data.itemType === 'RAW_MATERIAL') {
+                const mat = String(data.itemName || '').trim().toLowerCase();
+                if (mat === normNameClean || mat.replace(/\s+/g,'') === normNameClean.replace(/\s+/g,'')) {
+                    const q = Number(data.qty || 0);
+                    totalWasted += q;
+                    ledger.push({
+                        date: data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt)) : new Date(0),
+                        type: '➖ Spoiled / Wastage',
+                        badge: '<span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:12px; font-weight:700;">WASTAGE</span>',
+                        details: `Reason: ${data.reason || 'Damaged'}`,
+                        qtyChange: `-${q.toLocaleString()} ${unit}`,
+                        unitCost: `Rs. ${Number(data.unitCost || 0).toFixed(2)}`
+                    });
+                }
+            }
+        });
+
+        currentAuditCalculatedNet = Math.max(0, Number((totalBought - totalConsumed - totalWasted).toFixed(4)));
+
+        // Update Summary Bar
+        document.getElementById('auditTotalPurchased').textContent = `+${totalBought.toLocaleString()} ${unit}`;
+        document.getElementById('auditTotalConsumed').textContent = `-${totalConsumed.toLocaleString()} ${unit}`;
+        document.getElementById('auditTotalWasted').textContent = `-${totalWasted.toLocaleString()} ${unit}`;
+        document.getElementById('auditCalculatedNet').textContent = `${currentAuditCalculatedNet.toLocaleString()} ${unit}`;
+
+        const alertBox = document.getElementById('auditOffsetAlert');
+        if (Math.abs(storedQty - currentAuditCalculatedNet) > 0.001) {
+            document.getElementById('auditStoredQty').textContent = `${storedQty.toLocaleString()} ${unit}`;
+            document.getElementById('auditNetQty').textContent = `${currentAuditCalculatedNet.toLocaleString()} ${unit}`;
+            alertBox.style.display = 'block';
+        } else {
+            alertBox.style.display = 'none';
+        }
+
+        if (!ledger.length) {
+            document.getElementById('auditLedgerRows').innerHTML = '<tr><td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">No transaction logs found for this material.</td></tr>';
+            return;
+        }
+
+        // Sort chronological
+        ledger.sort((a,b) => b.date.getTime() - a.date.getTime());
+
+        document.getElementById('auditLedgerRows').innerHTML = ledger.map(x => `
+            <tr style="border-bottom:1px solid #f1f5f9;">
+                <td style="padding:8px 10px; color:#475569; font-size:11px;">${x.date.toLocaleString()}</td>
+                <td style="padding:8px 10px;">${x.badge}</td>
+                <td style="padding:8px 10px; color:#1e293b; font-weight:600;">${escPrint(x.details)}</td>
+                <td style="padding:8px 10px; font-weight:800; font-size:13px; color:${x.qtyChange.startsWith('+') ? '#0284c7' : '#dc2626'};">${x.qtyChange}</td>
+                <td style="padding:8px 10px; color:#475569;">${x.unitCost}</td>
+            </tr>
+        `).join('');
+
+    } catch (e) {
+        document.getElementById('auditLedgerRows').innerHTML = `<tr><td colspan="5" style="text-align:center; padding:16px; color:#dc2626;">Error loading audit log: ${e.message}</td></tr>`;
+    }
+}
+
+async function fixStockBalanceToAuditNet() {
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    if (!bid || !currentAuditMaterialName) return;
+    const normKey = currentAuditMaterialName.trim().toUpperCase().replace(/\s+/g, '_');
+    try {
+        await db.collection('manufacturer_raw_materials').doc(`${bid}_${normKey}`).set({
+            stockQty: currentAuditCalculatedNet,
+            updatedAt: new Date()
+        }, { merge: true });
+        alert(`✅ Stock balance for "${currentAuditMaterialName}" permanently updated to exact audit net (${currentAuditCalculatedNet})!`);
+        closeStockAuditModal();
+        if (typeof refresh === 'function') await refresh();
+        if (typeof refreshRemainingRawMaterialsStockTableInbound === 'function') await refreshRemainingRawMaterialsStockTableInbound();
+    } catch (e) {
+        alert('Error updating stock: ' + e.message);
+    }
+}
+
+async function setStockQtyToZero() {
+    if (!currentAuditMaterialName) return;
+    if (!confirm(`Are you sure you want to set available stock of "${currentAuditMaterialName}" to 0 Kg? Use this if all remaining quantity was physically used or cleared.`)) return;
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    if (!bid) return;
+    const normKey = currentAuditMaterialName.trim().toUpperCase().replace(/\s+/g, '_');
+    try {
+        await db.collection('manufacturer_raw_materials').doc(`${bid}_${normKey}`).set({
+            stockQty: 0,
+            updatedAt: new Date()
+        }, { merge: true });
+        alert(`✅ Available stock for "${currentAuditMaterialName}" successfully set to 0 Kg (OUT OF STOCK)!`);
+        closeStockAuditModal();
+        if (typeof refresh === 'function') await refresh();
+        if (typeof refreshRemainingRawMaterialsStockTableInbound === 'function') await refreshRemainingRawMaterialsStockTableInbound();
+    } catch (e) {
+        alert('Error setting stock to 0: ' + e.message);
+    }
+}
+
+function closeStockAuditModal() {
+    document.getElementById('stockAuditModal').style.display = 'none';
+}
+window.showStockAuditModal = showStockAuditModal;
+window.closeStockAuditModal = closeStockAuditModal;
+window.fixStockBalanceToAuditNet = fixStockBalanceToAuditNet;
+window.setStockQtyToZero = setStockQtyToZero;
+function exportInboundRowsCsv(){
+    if (!isKubuka()) return;
+    const from = v('filterFromDate');
+    const to = v('filterToDate');
+    const fromMs = from ? new Date(from + 'T00:00:00').getTime() : null;
+    const toMs = to ? new Date(to + 'T23:59:59').getTime() : null;
+    const rows = inboundRowsCache.filter((x) => {
+        const t = x.createdAt?.toDate ? x.createdAt.toDate().getTime() : new Date(x.createdAt || 0).getTime();
+        if (isNaN(t)) return false;
+        if (fromMs != null && t < fromMs) return false;
+        if (toMs != null && t > toMs) return false;
+        return true;
+    });
+    const esc = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+    const header = ['Date','Supplier','Product','Quantity','Unit Price','Total','Invoice Number'];
+    const lines = [header.map(esc).join(',')];
+    rows.forEach((x) => {
+        const dt = x.createdAt?.toDate ? x.createdAt.toDate().toISOString().slice(0, 10) : '';
+        lines.push([
+            dt,
+            x.supplierName || '',
+            x.materialName || '',
+            Number(x.qty || 0),
+            Number(x.unitCost || 0).toFixed(2),
+            Number(x.amount || 0).toFixed(2),
+            x.invoiceNo || ''
+        ].map(esc).join(','));
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'kubuka_raw_materials_export.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+}
+function openEditInbound(id){
+    if (!guardInboundActionOrWarn()) return;
+    editingRowId = id;
+    db.collection('manufacturer_raw_material_history').doc(id).get().then((doc) => {
+        const x = doc.exists ? (doc.data() || {}) : {};
+        document.getElementById('editMaterialName').value = x.materialName || '';
+        document.getElementById('editSupplierName').value = x.supplierName || '';
+        document.getElementById('editQty').value = Number(x.qty || 0);
+        if (document.getElementById('editUnitType')) document.getElementById('editUnitType').value = x.unit || 'Kg';
+        document.getElementById('editUnitCost').value = Number(x.unitCost || 0);
+        document.getElementById('editAmount').value = Number(x.amount || 0);
+        document.getElementById('editPaymentMode').value = x.paymentMode || 'CASH';
+        document.getElementById('editDueDate').value = x.dueDate || '';
+        document.getElementById('editChequeClearanceDate').value = x.chequeClearanceDate || '';
+        if (typeof updateEditPaymentFieldVisibility === 'function') updateEditPaymentFieldVisibility();
+        document.getElementById('editModal').style.display = 'flex';
+    }).catch((e) => {
+        alert('Unable to open edit: ' + (e.message || e));
+    });
+}
+function closeEditInbound(){
+    editingRowId = '';
+    document.getElementById('editModal').style.display = 'none';
+}
+async function saveEditInbound(){
+    if (!guardInboundActionOrWarn()) return;
+    if (!editingRowId) return;
+    const updatePayload = {
+        materialName: v('editMaterialName').trim(),
+        supplierName: v('editSupplierName').trim(),
+        qty: Number(v('editQty')) || 0,
+        unit: v('editUnitType') || 'Kg',
+        unitCost: Number(v('editUnitCost')) || 0,
+        amount: Number(v('editAmount')) || 0,
+        paymentMode: v('editPaymentMode'),
+        paymentStatus: payStatus(v('editPaymentMode')),
+        dueDate: v('editDueDate') || null,
+        chequeClearanceDate: v('editChequeClearanceDate') || null,
+        updatedAt: new Date()
+    };
+    await db.collection('manufacturer_raw_material_history').doc(editingRowId).update(updatePayload);
+    closeEditInbound();
+    await refresh();
+}
+async function deleteInbound(id){
+    if (!guardInboundActionOrWarn()) return;
+    if (!confirm('Are you sure you want to delete this purchase record? Raw material stock will be reduced back.')) return;
+    try {
+        const bid = ManufacturerModule.businessId;
+        const docRef = db.collection('manufacturer_raw_material_history').doc(id);
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+            const data = docSnap.data() || {};
+            const materialName = String(data.materialName || '').trim();
+            const qty = Number(data.qty || 0);
+
+            // STOCK REVERSAL: Deduct purchased raw material quantity back from stock balance!
+            if (materialName && qty > 0) {
+                const rmKey = materialName.toUpperCase();
+                await db.collection('manufacturer_raw_materials').doc(`${bid}_${rmKey}`).set({
+                    stockQty: firebase.firestore.FieldValue.increment(-Math.abs(qty)),
+                    updatedAt: new Date()
+                }, { merge: true }).catch(eStock => console.warn('[Inbound] Stock reversal error:', eStock));
+            }
+
+            await docRef.update({
+                isActive: false,
+                deletedAt: new Date()
+            });
+        }
+    } catch (e) {
+        alert('Error deleting record: ' + e.message);
+    }
+    await refresh();
+}
+window.openEditInbound = openEditInbound;
+window.deleteInbound = deleteInbound;
+async function loadCategoryOptions(){
+    const cats = await ManufacturerModule.loadCategories('INBOUND_PURCHASE');
+    document.getElementById('purchaseCategoryList').innerHTML = cats.map((c)=>`<option value="${c}"></option>`).join('');
+}
+function supplierDigitsOk(mob){
+    const d = String(mob || '').replace(/\D/g, '');
+    return d.length >= 9;
+}
+function renderSupplierCustomerBanner(){
+    const el = document.getElementById('supplierCustomerBanner');
+    const cid = v('supplierCustomerId');
+    if (!cid) {
+        el.className = 'mfg-customer-banner';
+        el.textContent = '';
+        return;
+    }
+    const c = supplierCustomerById[cid] || {};
+    const mob = String(c.mobile || '').trim();
+    const disp = mob || '(no mobile saved)';
+    if (supplierDigitsOk(mob)) {
+        el.textContent = `SMS will go to ${disp}`;
+        el.className = 'mfg-customer-banner show ok';
+    } else {
+        el.textContent = `Mobile on file: ${disp} — SMS will not queue until a valid number is saved on this customer.`;
+        el.className = 'mfg-customer-banner show warn';
+    }
+}
+async function loadSupplierOptions(){
+    const bid = ManufacturerModule.businessId;
+    if (!bid) return;
+
+    const fetchSuppliers = async () => {
+        console.log('[Inbound] Fetching suppliers from Firestore...');
+        let query = db.collection('customers').where('businessId','==',bid);
+        if (bid !== KUBUKA_BID) {
+            query = query.where('type','==','supplier');
+        }
+        const snap = await query.limit(300).get().catch(()=>({docs:[]}));
+        return snap.docs.map((d) => ({ id: d.id, data: d.data() || {} }));
+    };
+
+    // Use cache if available (TTL 5 mins)
+    const rows = window.DigiBizUI 
+        ? await window.DigiBizUI.withCache(`suppliers_${bid}`, fetchSuppliers, 300000)
+        : await fetchSuppliers();
+
+    Object.keys(supplierCustomerById).forEach((k) => delete supplierCustomerById[k]);
+    const sel = document.getElementById('supplierCustomerId');
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const opt0 = document.createElement('option');
+    opt0.value = '';
+    opt0.textContent = 'Select supplier…';
+    sel.appendChild(opt0);
+    
+    const filteredRows = rows
+        .sort((a, b) => String(a.data.fullName || '').localeCompare(String(b.data.fullName || ''), undefined, { sensitivity: 'base' }));
+    
+    filteredRows.forEach(({ id, data: x }) => {
+        supplierCustomerById[id] = x;
+        const o = document.createElement('option');
+        o.value = id;
+        const name = String(x.fullName || x.mobile || id).trim();
+        const mob = String(x.mobile || '').trim();
+        o.textContent = mob ? `${name} — ${mob}` : `${name} (no mobile)`;
+        sel.appendChild(o);
+    });
+    if (prev && supplierCustomerById[prev]) sel.value = prev;
+    renderSupplierCustomerBanner();
+}
+function smsEnqueueNote(res){
+    if (!res) return '';
+    if (res.ok) {
+        if (res.fallback) return ' (sent via fallback gateway)';
+        return '';
+    }
+    if (res.skipped === 'no_mobile') return ' SMS was not queued: customer mobile missing or too short.';
+    if (res.skipped === 'sms_event_disabled') return ' SMS was not queued: Payment SMS is turned off in SMS settings.';
+    if (res.skipped === 'no_credits') return ' SMS not sent: credits finished (7-day trial ended or no paid credits). Add credits under Billing or ask Super Admin.';
+    if (res.skipped === 'permission') return ' SMS not queued: this user role is not allowed to create pending SMS in Firestore. Owner / staff (non-rep) can queue after rules deploy, or ask Business Owner.';
+    if (res.error) return ` SMS queue failed: ${res.error}`;
+    return '';
+}
+async function save(){
+    if (!enforceInboundAccess(inboundAccessRole)) return;
+    const bid = ManufacturerModule.businessId;
+    const mode = v('paymentMode');
+    const cid = v('supplierCustomerId');
+    const msgEl = document.getElementById('msg');
+    msgEl.className = 'mfg-msg';
+    if (!cid) {
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Please choose a supplier / customer from the list so the name and mobile match your directory.';
+        return;
+    }
+
+    let customer = supplierCustomerById[cid] || {};
+    if (!customer || !Object.keys(customer).length) {
+        const doc = await db.collection('customers').doc(cid).get().catch(() => null);
+        customer = doc && doc.exists ? (doc.data() || {}) : {};
+        supplierCustomerById[cid] = customer;
+    }
+
+    const supplierName = String(customer.fullName || '').trim();
+    if (!supplierName) {
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Selected customer has no full name in Firestore; update the customer record first.';
+        return;
+    }
+
+    const materialName = v('materialName').trim();
+    const purchaseCategory = v('purchaseCategory').trim();
+    const amountVal = n('amount');
+    const confirmMsg = `Are you sure you want to save this purchase?\n\nMaterial: ${materialName}\nSupplier: ${supplierName}\nAmount: Rs. ${ManufacturerModule.money(amountVal)}\nPayment: ${mode}`;
+    
+    if (!confirm(confirmMsg)) return;
+
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const id = ManufacturerModule.uuid('RMP');
+    const data = {
+        businessId: bid,
+        purchaseId: id,
+        materialName,
+        supplierName,
+        category: purchaseCategory,
+        qty: n('qty'),
+        unit: v('unitType') || 'Kg',
+        unitCost: n('unitPrice'),
+        amount: amountVal,
+        paymentMode: mode,
+        paymentStatus: payStatus(mode),
+        dueDate: v('dueDate') || null,
+        chequeClearanceDate: v('chequeClearanceDate') || null,
+        createdAt: new Date(),
+        flatAccountingSyncedV1: false
+    };
+    data.customerId = cid;
+    data.customerMobile = customer.mobile || '';
+    data.customerAddress = customer.address || '';
+    data.customerFirstName = customer.firstName || ManufacturerModule.firstName(customer.fullName || supplierName);
+    
+    try {
+        await db.collection('manufacturer_raw_material_history').doc(id).set(data);
+        if (isKubuka()) {
+            await db.collection('procurement_kdkumbuka').doc(id).set({
+                ...data,
+                procurementId: id,
+                processingStatus: 'PENDING_SHIFTING',
+                shiftingAcceptedAt: null,
+                ratioUsed: null,
+                madeTeaQty: null,
+                madeTeaUnitCost: null,
+                madeTeaTotalValue: null,
+                readyForProductionId: null,
+                updatedAt: new Date()
+            }, { merge: true });
+        }
+        
+        // Save suggestions
+        if (typeof window.saveMaterialSuggestion === 'function') await window.saveMaterialSuggestion();
+        if (typeof window.saveCategorySuggestion === 'function') await window.saveCategorySuggestion();
+
+        const rmKey = (data.materialName || 'MATERIAL').toUpperCase();
+        const minStockVal = n('minStockLevel') || 5;
+        await db.collection('manufacturer_raw_materials').doc(`${bid}_${rmKey}`).set({
+            businessId: bid,
+            name: data.materialName,
+            category: data.category || '',
+            unit: data.unit || 'Kg',
+            stockQty: firebase.firestore.FieldValue.increment(data.qty),
+            lastUnitCost: data.unitCost,
+            unitCost: data.unitCost,
+            unitPrice: data.unitCost,
+            minStockLevel: minStockVal,
+            reorderLevel: minStockVal,
+            lastSupplier: data.supplierName,
+            updatedAt: new Date()
+        }, { merge: true });
+        
+        if (data.materialName && data.category) {
+            materialCategoryMap[data.materialName.toLowerCase()] = data.category;
+        }
+        loadMaterialDatalist();
+        
+        ManufacturerModule.publishEvent('MANUFACTURING_RAW_MATERIAL_PURCHASED', data);
+        try {
+            await ManufacturerModule.syncFlatAccountingRawMaterialPurchase(data);
+            await db.collection('manufacturer_raw_material_history').doc(id).update({ flatAccountingSyncedV1: true });
+        } catch (eFlat) {
+            console.warn('[Inbound] Flat accounting mirror failed', eFlat);
+        }
+
+        const smsRes = await ManufacturerModule.enqueueSms('INBOUND_PURCHASE', null, {
+            name: data.customerFirstName || data.supplierName,
+            mobile: data.customerMobile,
+            materialName: data.materialName,
+            qty: data.qty,
+            amount: data.amount,
+            paymentStatus: data.paymentStatus,
+            dueDate: data.dueDate
+        });
+        
+        msgEl.textContent = 'Purchase saved and stock updated.' + (smsRes && smsRes.ok ? ' SMS queued.' : '') + smsEnqueueNote(smsRes);
+        if (smsRes && !smsRes.ok) msgEl.classList.add(smsRes.skipped ? 'warn' : 'err');
+        if (isKubuka()) {
+            const paidAmount = data.paymentMode === 'CASH' || data.paymentMode === 'BANK' ? Number(data.amount || 0) : 0;
+            const balanceDue = Math.max(0, Number(data.amount || 0) - paidAmount);
+            const user = (window.auth && window.auth.currentUser) || null;
+            const invoiceNo = `PINV-${Date.now()}`;
+            const invoice = {
+                invoiceNo,
+                invoiceType: 'PURCHASE_INVOICE',
+                referenceId: data.purchaseId,
+                supplierName: data.supplierName,
+                materialName: data.materialName,
+                qty: data.qty,
+                unitPrice: data.unitCost,
+                totalAmount: data.amount,
+                paymentMethod: data.paymentMode,
+                dueDate: data.dueDate || null,
+                date: new Date().toISOString().slice(0, 10),
+                salePerson: (user && (user.displayName || user.email)) || 'System',
+                paidAmount,
+                balanceDue,
+                previousBalance: 0,
+                totalDue: balanceDue,
+                remarks: `Payment Method: ${data.paymentMode || '-'}`
+            };
+            await saveInvoiceDoc(invoice);
+            await db.collection('manufacturer_raw_material_history').doc(id).set({ invoiceNo }, { merge: true });
+            printThermalPurchaseInvoice(invoice);
+        }
+        
+        // Reset fields
+        document.getElementById('materialName').value = '';
+        document.getElementById('qty').value = '';
+        document.getElementById('unitPrice').value = '';
+        document.getElementById('amount').value = '';
+        
+        // Removed redundant loadSupplierOptions() to save quota
+        refresh();
+    } catch (err) {
+        console.error(err);
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Error saving purchase: ' + err.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Purchase';
+    }
+}
+const materialCategoryMap = {};
+
+function updatePaymentFieldVisibility() {
+    const mode = v('paymentMode');
+    const dueGrp = document.getElementById('dueDateGroup');
+    const chqGrp = document.getElementById('chequeGroup');
+    if (dueGrp) dueGrp.style.display = mode === 'CREDIT' ? 'block' : 'none';
+    if (chqGrp) chqGrp.style.display = mode === 'CHEQUE' ? 'block' : 'none';
+}
+
+function updateEditPaymentFieldVisibility() {
+    const mode = v('editPaymentMode');
+    const dueGrp = document.getElementById('editDueDateGroup');
+    const chqGrp = document.getElementById('editChequeGroup');
+    if (dueGrp) dueGrp.style.display = mode === 'CREDIT' ? 'block' : 'none';
+    if (chqGrp) chqGrp.style.display = mode === 'CHEQUE' ? 'block' : 'none';
+}
+
+async function loadMaterialDatalist() {
+    const bid = ManufacturerModule.businessId;
+    if (!bid) return;
+    try {
+        const snap = await db.collection('manufacturer_raw_materials').where('businessId', '==', bid).get().catch(() => ({ docs: [] }));
+        const matListEl = document.getElementById('materialNameList');
+        if (!matListEl) return;
+        const set = new Set();
+        let html = '';
+        snap.docs.forEach(doc => {
+            const data = doc.data() || {};
+            const name = String(data.name || '').trim();
+            if (name && !set.has(name.toLowerCase())) {
+                set.add(name.toLowerCase());
+                html += `<option value="${escPrint(name)}"></option>`;
+                if (data.category) {
+                    materialCategoryMap[name.toLowerCase()] = data.category;
+                }
+            }
+        });
+        
+        const histSnap = await db.collection('manufacturer_raw_material_history').where('businessId', '==', bid).limit(100).get().catch(() => ({ docs: [] }));
+        histSnap.docs.forEach(doc => {
+            const data = doc.data() || {};
+            const name = String(data.materialName || '').trim();
+            if (name && !set.has(name.toLowerCase())) {
+                set.add(name.toLowerCase());
+                html += `<option value="${escPrint(name)}"></option>`;
+                if (data.category && !materialCategoryMap[name.toLowerCase()]) {
+                    materialCategoryMap[name.toLowerCase()] = data.category;
+                }
+            }
+        });
+        
+        matListEl.innerHTML = html;
+    } catch (e) {
+        console.warn('[Inbound] loadMaterialDatalist error:', e);
+    }
+}
+
+function onMaterialNameInput() {
+    const mat = v('materialName').trim().toLowerCase();
+    if (mat && materialCategoryMap[mat]) {
+        const catInput = document.getElementById('purchaseCategory');
+        if (catInput) {
+            catInput.value = materialCategoryMap[mat];
+        }
+    }
+}
+
+function openQuickSupplierModal() {
+    document.getElementById('newSupplierName').value = '';
+    document.getElementById('newSupplierMobile').value = '';
+    document.getElementById('newSupplierAddress').value = '';
+    document.getElementById('quickSupplierModal').style.display = 'flex';
+}
+
+function closeQuickSupplierModal() {
+    document.getElementById('quickSupplierModal').style.display = 'none';
+}
+
+async function saveNewSupplier() {
+    const name = v('newSupplierName').trim();
+    const mobile = v('newSupplierMobile').trim();
+    const address = v('newSupplierAddress').trim();
+    const bid = ManufacturerModule.businessId;
+
+    if (!name) {
+        alert('Please enter supplier name.');
+        return;
+    }
+    if (!bid) {
+        alert('Business session missing.');
+        return;
+    }
+
+    const btn = document.getElementById('saveNewSupplierBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    try {
+        const id = 'SUP-' + Date.now();
+        const newSup = {
+            fullName: name,
+            mobile: mobile,
+            address: address,
+            type: 'supplier',
+            businessId: bid,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+        await db.collection('customers').doc(id).set(newSup);
+        
+        if (window.DigiBizUI && window.DigiBizUI.clearCache) {
+            window.DigiBizUI.clearCache(`suppliers_${bid}`);
+        }
+
+        closeQuickSupplierModal();
+        await loadSupplierOptions();
+        
+        const sel = document.getElementById('supplierCustomerId');
+        if (sel) sel.value = id;
+        renderSupplierCustomerBanner();
+    } catch (err) {
+        console.error('Error saving supplier:', err);
+        alert('Failed to save supplier: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Supplier';
+    }
+}
+
+let rawMaterialsCacheInbound = [];
+
+async function openWastedRmModal() {
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    if (!bid) return alert('Business ID not ready.');
+    
+    document.getElementById('wastedRmQty').value = '';
+    document.getElementById('wastedRmNotes').value = '';
+    const sel = document.getElementById('wastedRmSelect');
+    sel.innerHTML = '<option value="">Loading raw materials...</option>';
+    document.getElementById('wastedRmModal').style.display = 'flex';
+
+    try {
+        const snap = await db.collection('manufacturer_raw_materials')
+            .where('businessId', '==', bid)
+            .get()
+            .catch(() => ({ docs: [] }));
+
+        rawMaterialsCacheInbound = snap.docs
+            .map(d => ({ id: d.id, ...(d.data() || {}) }))
+            .filter(x => x.isActive !== false && x.name);
+
+        if (!rawMaterialsCacheInbound.length) {
+            sel.innerHTML = '<option value="">No raw materials in stock.</option>';
+            return;
+        }
+
+        sel.innerHTML = '<option value="">Select raw material...</option>' + 
+            rawMaterialsCacheInbound.map(m => `<option value="${m.id}">${escPrint(m.name)} (Available: ${Number(m.stockQty || 0)} ${escPrint(m.unit || 'Kg')} @ Cost: Rs. ${Number(m.lastUnitCost || m.unitCost || 0).toFixed(2)})</option>`).join('');
+    } catch (e) {
+        console.warn('Error loading RM stock for wasted modal:', e);
+        sel.innerHTML = '<option value="">Error loading stock.</option>';
+    }
+}
+
+function closeWastedRmModal() {
+    document.getElementById('wastedRmModal').style.display = 'none';
+}
+
+async function saveWastedRmEntry() {
+    const itemId = document.getElementById('wastedRmSelect').value;
+    const qty = Number(document.getElementById('wastedRmQty').value) || 0;
+    const reason = document.getElementById('wastedRmReason').value;
+    const notes = document.getElementById('wastedRmNotes').value.trim();
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+
+    if (!bid) return alert('Business ID not ready.');
+    if (!itemId) return alert('Please select a raw material.');
+    if (qty <= 0) return alert('Please enter a valid quantity (> 0).');
+
+    const matObj = rawMaterialsCacheInbound.find(x => x.id === itemId);
+    if (!matObj) return alert('Selected material not found.');
+
+    const name = matObj.name;
+    const unit = matObj.unit || 'Kg';
+    const unitCost = Number(matObj.lastUnitCost || matObj.unitCost || matObj.unitPrice || 0);
+    const totalLoss = qty * unitCost;
+
+    const btn = document.getElementById('saveWastedRmBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    try {
+        await db.collection('manufacturer_wastage_history').add({
+            businessId: bid,
+            itemType: 'RAW_MATERIAL',
+            itemId: itemId,
+            itemName: name,
+            qty: qty,
+            unit: unit,
+            unitCost: unitCost,
+            totalLossValue: totalLoss,
+            reason: reason,
+            notes: notes,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        await db.collection('manufacturer_raw_materials').doc(itemId).set({
+            stockQty: firebase.firestore.FieldValue.increment(-qty),
+            updatedAt: new Date()
+        }, { merge: true });
+
+        closeWastedRmModal();
+        alert(`Recorded ${qty} ${unit} of "${name}" as wasted/damaged raw material.`);
+        if (typeof refresh === 'function') refresh();
+    } catch (e) {
+        console.error('Wasted RM save error:', e);
+        alert('Error saving wasted raw material: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🗑️ Record & Deduct Stock';
+    }
+}
+
+(async function(){
+    await ManufacturerModule.init('inbound');
+    inboundAccessRole = await resolveInboundRole();
+    enforceInboundAccess(inboundAccessRole);
+    document.getElementById('saveBtn').onclick = save;
+    document.getElementById('editSaveBtn').onclick = saveEditInbound;
+    document.getElementById('editCancelBtn').onclick = closeEditInbound;
+    document.getElementById('supplierCustomerId').addEventListener('change', renderSupplierCustomerBanner);
+    document.getElementById('qty').addEventListener('input', recalcAmount);
+    document.getElementById('unitPrice').addEventListener('input', recalcAmount);
+    
+    // Quick supplier modal events
+    document.getElementById('quickAddSupplierBtn').onclick = openQuickSupplierModal;
+    document.getElementById('closeSupplierModalBtn').onclick = closeQuickSupplierModal;
+    document.getElementById('saveNewSupplierBtn').onclick = saveNewSupplier;
+
+    window.openWastedRmModal = openWastedRmModal;
+    window.closeWastedRmModal = closeWastedRmModal;
+    window.saveWastedRmEntry = saveWastedRmEntry;
+    
+    // Payment mode conditional visibility listeners
+    document.getElementById('paymentMode').addEventListener('change', updatePaymentFieldVisibility);
+    document.getElementById('editPaymentMode').addEventListener('change', updateEditPaymentFieldVisibility);
+    updatePaymentFieldVisibility();
+    
+    // Material name datalist and category linking
+    document.getElementById('materialName').addEventListener('input', onMaterialNameInput);
+    document.getElementById('materialName').addEventListener('change', onMaterialNameInput);
+    
+    window.saveMaterialSuggestion = await ManufacturerModule.bindAutocomplete('materialName', 'RAW_MATERIAL_NAME');
+    window.saveCategorySuggestion = await ManufacturerModule.bindAutocomplete('purchaseCategory', 'INBOUND_PURCHASE_CATEGORY');
+    if (isKubuka()) {
+        const bar = document.getElementById('kubukaExportBar');
+        if (bar) bar.style.display = 'flex';
+        document.getElementById('applyFilterBtn').addEventListener('click', refresh);
+        document.getElementById('exportInboundBtn').addEventListener('click', exportInboundRowsCsv);
+    }
+
+    await loadSupplierOptions();
+    await loadMaterialDatalist();
+    recalcAmount();
+    refresh();
+})();
+</script>
+</body>
+</html>

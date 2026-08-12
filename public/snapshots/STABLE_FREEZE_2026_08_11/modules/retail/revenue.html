@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Revenue & Profit Analysis — Retail Terminal</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; line-height: 1.5; }
+        .page { padding: 30px; max-width: 1200px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px; }
+        .header-text h1 { font-family: 'Outfit', sans-serif; font-size: 26px; font-weight: 800; color: #1e293b; margin: 0; letter-spacing: -0.5px; }
+        .header-text p { font-size: 14px; color: #64748b; margin: 5px 0 0; }
+        
+        .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; transition: transform 0.2s; }
+        .kpi:hover { transform: translateY(-2px); border-color: #cbd5e1; }
+        .kpi .l { font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+        .kpi .v { font-size: 24px; font-weight: 800; color: #0f172a; margin-top: 8px; }
+        .kpi.highlight { background: #f0fdf4; border-color: #bbf7d0; }
+        .kpi.highlight .v { color: #166534; }
+        .kpi.danger { background: #fef2f2; border-color: #fecaca; }
+        .kpi.danger .v { color: #991b1b; }
+ 
+        table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+        th { background: #f8fafc; color: #475569; font-weight: 700; padding: 12px 16px; text-align: left; border-bottom: 2px solid #e2e8f0; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+        td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f8fafc; }
+        .num { text-align: right; font-family: monospace; font-weight: 600; font-size: 13.5px; }
+        
+        .btn { background: #0f172a; color: #fff; border: none; padding: 12px 24px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 14px; transition: background 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+        .btn:hover { background: #334155; }
+        
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #475569; }
+        .section-title { font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 800; color: #1e293b; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+ 
+        /* Modal Styles */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+        .modal-card { background: #fff; border-radius: 20px; width: 100%; max-width: 600px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); animation: modalIn 0.3s ease-out; overflow: hidden; }
+        @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; }
+        .modal-header h2 { margin: 0; font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 800; color: #0f172a; }
+        .modal-close { background: #f1f5f9; border: none; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; transition: all 0.2s; }
+        .modal-close:hover { background: #e2e8f0; color: #0f172a; }
+        .modal-body { padding: 24px; max-height: 70vh; overflow-y: auto; }
+        .detail-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-info { display: flex; flex-direction: column; gap: 2px; }
+        .detail-name { font-weight: 700; color: #0f172a; font-size: 15px; }
+        .detail-meta { font-size: 12px; color: #64748b; font-family: monospace; }
+        .detail-profit { font-weight: 800; color: #16a34a; font-family: monospace; text-align: right; }
+        .customer-link { color: #2563eb; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; transition: color 0.2s; }
+        .customer-link:hover { color: #1d4ed8; background: #eff6ff; border-radius: 4px; }
+        
+        .filter-btn { background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 8px 14px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+        .filter-btn:hover { background: #e2e8f0; color: #0f172a; }
+        .filter-btn.active { background: #0f172a; color: #fff; border-color: #0f172a; }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="header">
+        <div class="header-text">
+            <h1>Revenue & Profit Analysis</h1>
+            <p>Real-time actual profitability tracking based on cost prices and billing revenue.</p>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <button type="button" id="refreshBtn" class="btn">
+                <span>🔄</span> Refresh Data
+            </button>
+        </div>
+    </div>
+
+    <!-- Date Range Filter Bar -->
+    <div class="card" style="padding:16px 20px; margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
+            <div style="display:flex; gap:8px; flex-wrap:wrap;" id="filterPills">
+                <button type="button" class="filter-btn active" data-period="today" onclick="setFilterPeriod('today')">📅 Today (අද)</button>
+                <button type="button" class="filter-btn" data-period="week" onclick="setFilterPeriod('week')">📅 This Week (මේ සතියේ)</button>
+                <button type="button" class="filter-btn" data-period="month" onclick="setFilterPeriod('month')">📅 This Month (මේ මාසයේ)</button>
+                <button type="button" class="filter-btn" data-period="custom" onclick="setFilterPeriod('custom')">📅 Custom Date Range</button>
+            </div>
+            <div id="customDateWrap" style="display:none; align-items:center; gap:10px;">
+                <label style="font-size:12px; font-weight:700; color:#64748b;">From:</label>
+                <input type="date" id="startDate" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                <label style="font-size:12px; font-weight:700; color:#64748b;">To:</label>
+                <input type="date" id="endDate" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;">
+                <button type="button" class="btn" onclick="applyCustomFilter()" style="padding:6px 14px; font-size:12px;">Apply Filter</button>
+            </div>
+        </div>
+    </div>
+ 
+    <div class="kpis" id="kpis">
+        <div class="kpi">
+            <div class="l" id="lblSales">Total Sales</div>
+            <div class="v" id="kSales">LKR 0.00</div>
+        </div>
+        <div class="kpi highlight">
+            <div class="l" id="lblMargin">Actual Profit (Margin)</div>
+            <div class="v" id="kMargin">LKR 0.00</div>
+        </div>
+        <div class="kpi danger">
+            <div class="l" id="lblExp">Expenses</div>
+            <div class="v" id="kExp">LKR 0.00</div>
+        </div>
+        <div class="kpi highlight" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none;">
+            <div class="l" style="color: rgba(255,255,255,0.8);" id="lblNet">Net Profit</div>
+            <div class="v" id="kNet" style="color: #fff;">LKR 0.00</div>
+        </div>
+    </div>
+
+    <!-- Item-wise Sales & Profit Breakdown -->
+    <div class="card">
+        <div class="section-title"><i class="fa-solid fa-boxes-stacked" style="color:#3b82f6;"></i> Item-wise Sales & Profit Breakdown (අයිතම මට්ටමේ විකුණුම් හා ලාභ විශ්ලේෂණය)</div>
+        <div style="overflow:auto; max-height:400px;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Item Name</th>
+                        <th class="num">Units Sold</th>
+                        <th class="num">Total Revenue</th>
+                        <th class="num">Total Cost</th>
+                        <th class="num">Total Profit</th>
+                        <th class="num">Profit Margin</th>
+                    </tr>
+                </thead>
+                <tbody id="itemBreakdownBody">
+                    <tr><td colspan="6" style="text-align:center; padding:30px; color:#64748b;">Select a date range to view item-wise breakdown.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+ 
+    <div class="card">
+        <div class="section-title" id="salesSectionTitle"><i class="fa-solid fa-shopping-cart" style="color:#10b981;"></i> Today's Sales Sessions & Profits (අද දින විකුණුම් හා ලාභ)</div>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Customer</th>
+                        <th>Invoice No</th>
+                        <th class="num">Bill Total</th>
+                        <th class="num">Actual Profit</th>
+                    </tr>
+                </thead>
+                <tbody id="salesBody">
+                    <tr><td colspan="5" style="text-align:center; padding:40px; color:#64748b;">Initializing financial data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+ 
+    <div class="card">
+        <div class="section-title"><i class="fa-solid fa-wallet" style="color:#ef4444;"></i> Expenses Breakdown</div>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Category</th>
+                        <th class="num">Amount</th>
+                        <th>Note</th>
+                    </tr>
+                </thead>
+                <tbody id="expBody">
+                    <tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">No expenses recorded in this period.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+ 
+    <div class="card">
+        <div class="section-title"><i class="fa-solid fa-chart-line" style="color:#10b981;"></i> Daily Profit History (365 Days)</div>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th class="num">Daily Sales</th>
+                        <th class="num">Daily Profit</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody">
+                    <tr><td colspan="3" style="text-align:center; padding:40px; color:#64748b;">Calculating history...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+ 
+<!-- Details Modal -->
+<div id="detailsModal" class="modal-overlay" onclick="if(event.target===this) closeModal()">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h2 id="modalTitle">Invoice Details</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body" id="modalBody">
+            <!-- Details injected here -->
+        </div>
+    </div>
+</div>
+ 
+<script>
+let RETAIL_BUSINESS_ID = '';
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtInt = (v) => `Rs ${(Math.round(Number(v)) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+ 
+function localDateKey(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+ 
+function rowLocalDateKey(row) {
+    const raw = row.date || row.createdAt || row.expenseDate;
+    let dt = null;
+    if (raw && typeof raw.toDate === 'function') dt = raw.toDate();
+    else if (typeof raw === 'string' || raw instanceof Date) dt = new Date(raw);
+    if (!dt || Number.isNaN(dt.getTime())) return '';
+    return localDateKey(dt);
+}
+
+let currentPeriod = 'today';
+
+function setFilterPeriod(period) {
+    currentPeriod = period;
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.period === period);
+    });
+    const wrap = document.getElementById('customDateWrap');
+    if (wrap) wrap.style.display = period === 'custom' ? 'flex' : 'none';
+    
+    // Update KPI labels
+    const periodLabels = {
+        'today': 'Today',
+        'week': 'This Week',
+        'month': 'This Month',
+        'custom': 'Custom Range'
+    };
+    const lbl = periodLabels[period] || '';
+    document.getElementById('lblSales').textContent = `Total Sales (${lbl})`;
+    document.getElementById('lblMargin').textContent = `Actual Profit (${lbl})`;
+    document.getElementById('lblExp').textContent = `Expenses (${lbl})`;
+    document.getElementById('lblNet').textContent = `Net Profit (${lbl})`;
+
+    const salesSectionTitles = {
+        'today': `<i class="fa-solid fa-shopping-cart" style="color:#10b981;"></i> Today's Sales Sessions & Profits (අද දින විකුණුම් හා ලාභ)`,
+        'week': `<i class="fa-solid fa-shopping-cart" style="color:#10b981;"></i> This Week's Sales Sessions & Profits`,
+        'month': `<i class="fa-solid fa-shopping-cart" style="color:#10b981;"></i> This Month's Sales Sessions & Profits`,
+        'custom': `<i class="fa-solid fa-shopping-cart" style="color:#10b981;"></i> Sales Sessions & Profits (Selected Period)`
+    };
+    const sTitleEl = document.getElementById('salesSectionTitle');
+    if (sTitleEl) sTitleEl.innerHTML = salesSectionTitles[period] || salesSectionTitles['today'];
+
+    if (period !== 'custom') refresh();
+}
+
+function applyCustomFilter() {
+    refresh();
+}
+
+function isRowInSelectedPeriod(rawDate) {
+    if (!rawDate) return false;
+    let dt = null;
+    if (rawDate && typeof rawDate.toDate === 'function') dt = rawDate.toDate();
+    else if (typeof rawDate === 'string' || rawDate instanceof Date) dt = new Date(rawDate);
+    if (!dt || Number.isNaN(dt.getTime())) return false;
+    
+    const now = new Date();
+    if (currentPeriod === 'today') {
+        return dt.toDateString() === now.toDateString();
+    } else if (currentPeriod === 'week') {
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - 7);
+        return dt >= weekStart && dt <= now;
+    } else if (currentPeriod === 'month') {
+        return dt.getMonth() === now.getMonth() && dt.getFullYear() === now.getFullYear();
+    } else if (currentPeriod === 'custom') {
+        const sVal = document.getElementById('startDate').value;
+        const eVal = document.getElementById('endDate').value;
+        if (!sVal || !eVal) return true;
+        const sDt = new Date(sVal + 'T00:00:00');
+        const eDt = new Date(eVal + 'T23:59:59');
+        return dt >= sDt && dt <= eDt;
+    }
+    return true;
+}
+
+async function refresh() {
+    try {
+        if (!RETAIL_BUSINESS_ID) return;
+        const opt = navigator.onLine ? {} : { source: 'cache' };
+ 
+        const [salesSnap, expSnap] = await Promise.all([
+            db.collection('orders').doc(RETAIL_BUSINESS_ID).collection('list').orderBy('createdAt', 'desc').limit(2000).get(opt).catch(() => ({ docs: [] })),
+            db.collection('expenses').doc(RETAIL_BUSINESS_ID).collection('list').orderBy('expenseDate', 'desc').limit(2000).get(opt).catch(() => ({ docs: [] }))
+        ]);
+ 
+        let salesTotal = 0;
+        let marginTotal = 0;
+        const salesRows = [];
+        const itemSummaryMap = {};
+
+        salesSnap.docs.forEach((d) => {
+            const b = d.data() || {};
+            const rawBt = b.createdAt;
+            const inPeriod = isRowInSelectedPeriod(rawBt || b.date);
+            
+            let orderCogs = 0;
+            const items = Array.isArray(b.items) ? b.items : [];
+            items.forEach((line) => {
+                const qty = Number(line.quantity || 0);
+                const cost = Number(line.cost || 0);
+                orderCogs += qty * cost;
+            });
+            const total = Number(b.total || 0);
+            const margin = Math.max(0, total - orderCogs);
+
+            if (inPeriod) {
+                salesTotal += total;
+                marginTotal += margin;
+
+                const btDt = rawBt && rawBt.toDate ? rawBt.toDate() : (rawBt ? new Date(rawBt) : null);
+                const tlabel = btDt && !Number.isNaN(btDt.getTime()) ? btDt.toLocaleString([], {month:'short', day:'2-digit', hour: '2-digit', minute:'2-digit'}) : (rowLocalDateKey(b) || '-');
+
+                const breakdown = items.map(line => {
+                    const qty = Number(line.quantity || 0);
+                    const cost = Number(line.cost || 0);
+                    const price = Number(line.price || 0);
+                    const name = line.name || 'Unknown Item';
+                    const rev = qty * price;
+                    const cogs = qty * cost;
+                    const profit = rev - cogs;
+
+                    // Aggregate for Item Breakdown Table
+                    if (!itemSummaryMap[name]) {
+                        itemSummaryMap[name] = { qty: 0, revenue: 0, cost: 0, profit: 0 };
+                    }
+                    itemSummaryMap[name].qty += qty;
+                    itemSummaryMap[name].revenue += rev;
+                    itemSummaryMap[name].cost += cogs;
+                    itemSummaryMap[name].profit += profit;
+
+                    return {
+                        name: name,
+                        qty: qty,
+                        cost: cost,
+                        price: price,
+                        profit: profit
+                    };
+                });
+
+                salesRows.push({
+                    t: tlabel,
+                    customer: b.customer ? (b.customer.name || b.customer.fullName || 'Guest') : 'Guest',
+                    invoiceNo: b.invoiceNo || 'N/A',
+                    total: total,
+                    margin: margin,
+                    items: breakdown,
+                    rawDate: btDt
+                });
+            }
+        });
+
+        document.getElementById('kSales').textContent = fmt(salesTotal);
+        document.getElementById('kMargin').textContent = fmt(marginTotal);
+
+        // Render Item-wise Breakdown Table
+        const itemRows = Object.keys(itemSummaryMap).map(k => ({
+            name: k,
+            ...itemSummaryMap[k]
+        })).sort((a, b) => b.profit - a.profit);
+
+        const itemTbody = document.getElementById('itemBreakdownBody');
+        if (itemRows.length === 0) {
+            itemTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:30px; color:#64748b;">No items sold in the selected period.</td></tr>';
+        } else {
+            itemTbody.innerHTML = itemRows.map(it => {
+                const marginPct = it.revenue > 0 ? ((it.profit / it.revenue) * 100).toFixed(1) : '0.0';
+                return `
+                    <tr>
+                        <td style="font-weight:700; color:#0f172a;">${it.name}</td>
+                        <td class="num">${it.qty.toLocaleString()}</td>
+                        <td class="num">${fmt(it.revenue)}</td>
+                        <td class="num">${fmt(it.cost)}</td>
+                        <td class="num" style="color:#16a34a; font-weight:800;">+ ${fmt(it.profit)}</td>
+                        <td class="num"><span class="badge" style="background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;">${marginPct}%</span></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        let expTotal = 0;
+        const expRows = [];
+        expSnap.docs.forEach((d) => {
+            const r = d.data() || {};
+            const expDt = r.expenseDate || r.createdAt;
+            if (isRowInSelectedPeriod(expDt)) {
+                const a = Number(r.amount) || 0;
+                expTotal += a;
+                expRows.push({ 
+                    t: r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-', 
+                    cat: r.category || '-', 
+                    a, 
+                    note: r.note || '' 
+                });
+            }
+        });
+ 
+        document.getElementById('kExp').textContent = fmt(expTotal);
+        document.getElementById('kNet').textContent = fmt(marginTotal - expTotal);
+ 
+        document.getElementById('salesBody').innerHTML = salesRows.length
+            ? salesRows.map((r, idx) => `<tr>
+                <td><span class="badge">${r.t}</span></td>
+                <td><span class="customer-link" onclick="showDetails(${idx})">${String(r.customer).replace(/</g,'&lt;')}</span></td>
+                <td><span style="font-family:monospace; font-weight:700;">${r.invoiceNo}</span></td>
+                <td class="num">${fmt(r.total)}</td>
+                <td class="num" style="color:#166534;">+ ${fmt(r.margin)}</td>
+            </tr>`).join('')
+            : '<tr><td colspan="5" style="text-align:center; padding:40px; color:#64748b;">No sales recorded today.</td></tr>';
+ 
+        document.getElementById('expBody').innerHTML = expRows.length
+            ? expRows.map((r) => `<tr><td><span class="badge">${r.t}</span></td><td>${String(r.cat).replace(/</g,'&lt;')}</td><td class="num" style="color:#991b1b;">- ${fmt(r.a)}</td><td>${String(r.note).replace(/</g,'&lt;')}</td></tr>`).join('')
+            : '<tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">No expenses recorded today.</td></tr>';
+ 
+        // HISTORY LOGIC: Aggregate profit per day (365 days)
+        const historySalesMap = {};
+        const historyMarginMap = {};
+        salesSnap.docs.forEach((d) => {
+            const b = d.data() || {};
+            const dateKey = rowLocalDateKey(b);
+            if (!dateKey) return;
+            
+            let orderCogs = 0;
+            const items = Array.isArray(b.items) ? b.items : [];
+            items.forEach((line) => {
+                orderCogs += Number(line.quantity || 0) * Number(line.cost || 0);
+            });
+            const total = Number(b.total || 0);
+            const margin = Math.max(0, total - orderCogs);
+            
+            historySalesMap[dateKey] = (historySalesMap[dateKey] || 0) + total;
+            historyMarginMap[dateKey] = (historyMarginMap[dateKey] || 0) + margin;
+        });
+ 
+        const historyRows = Object.keys(historyMarginMap).sort((a, b) => b.localeCompare(a)).slice(0, 365);
+        document.getElementById('historyBody').innerHTML = historyRows.length
+            ? historyRows.map(k => `<tr>
+                <td style="font-weight:600; color:#1e293b;">${k}</td>
+                <td class="num">${fmtInt(historySalesMap[k])}</td>
+                <td class="num" style="color:#166534;">+ ${fmtInt(historyMarginMap[k])}</td>
+            </tr>`).join('')
+            : '<tr><td colspan="3" style="text-align:center; padding:40px; color:#64748b;">No history available.</td></tr>';
+ 
+        window.lastSalesRows = salesRows; // Cache for modal details
+    } catch (err) {
+        console.error("[RefreshError]", err);
+        document.getElementById('salesBody').innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px; color:red;">Error loading data: ${err.message}</td></tr>`;
+    }
+}
+ 
+document.getElementById('refreshBtn').addEventListener('click', () => {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+    refresh().catch((e) => alert(String(e && e.message || e))).finally(() => {
+        btn.disabled = false;
+        btn.textContent = 'Refresh Data';
+    });
+});
+ 
+function showDetails(idx) {
+    const session = window.lastSalesRows && window.lastSalesRows[idx];
+    if (!session) return;
+ 
+    document.getElementById('modalTitle').textContent = `Profit Breakdown: ${session.invoiceNo} (${session.customer})`;
+    const body = document.getElementById('modalBody');
+    
+    if (!session.items || session.items.length === 0) {
+        body.innerHTML = '<p style="text-align:center; color:#64748b;">No items found for this invoice.</p>';
+    } else {
+        body.innerHTML = session.items.map(it => `
+            <div class="detail-row">
+                <div class="detail-info">
+                    <span class="detail-name">${it.name}</span>
+                    <span class="detail-meta">${it.qty} unit(s) × (Rs ${it.price.toFixed(2)} - Rs ${it.cost.toFixed(2)})</span>
+                </div>
+                <div class="detail-profit">+ ${fmt(it.profit)}</div>
+            </div>
+        `).join('');
+    }
+    
+    document.getElementById('detailsModal').style.display = 'flex';
+}
+ 
+function closeModal() {
+    document.getElementById('detailsModal').style.display = 'none';
+}
+ 
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '/'; return; }
+    let businessId = user.uid;
+    try {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(userDoc, user.uid) : (userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid);
+    } catch(e) {
+        businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(null, user.uid) : user.uid;
+    }
+    RETAIL_BUSINESS_ID = businessId;
+    
+    await refresh();
+});
+</script>
+</body>
+</html>

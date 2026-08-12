@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Pharmacy Inventory</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/dashboard-core.js?v=4"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #f4f7f6; color: #1e293b; min-height: 100vh; }
+        .main-content { padding: 24px; max-width: 1400px; margin: 0 auto; }
+        
+        .header-card {
+            background: linear-gradient(135deg, #0f3b2c 0%, #165b44 100%);
+            border-radius: 16px; padding: 20px 24px; color: #ffffff; margin-bottom: 20px;
+            box-shadow: 0 10px 25px -5px rgba(15, 59, 44, 0.25);
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+        }
+        .header-card h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+        .header-card p { color: #a7f3d0; font-size: 13px; font-weight: 500; }
+
+        .grid { display: grid; grid-template-columns: 1.1fr 1.9fr; gap: 18px; }
+        .card { background: #ffffff; border-radius: 16px; padding: 20px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03); }
+        .card h3 { font-size: 15px; font-weight: 800; color: #0f3b2c; margin-bottom: 14px; }
+        
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+        .form-row.full { grid-template-columns: 1fr; }
+        label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; margin-bottom: 4px; display: block; }
+        input, select { width: 100%; padding: 10px 12px; border: 1.5px solid #cbd5e1; border-radius: 10px; font-size: 13px; font-weight: 500; outline: none; transition: border-color 0.2s; }
+        input:focus, select:focus { border-color: #10b981; }
+
+        button { padding: 10px 16px; border: none; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #0f3b2c; color: #ffffff; }
+        .btn-primary:hover { background: #165b44; }
+        .btn-danger { background: #fee2e2; color: #dc2626; padding: 6px 10px; font-size: 12px; }
+        .btn-danger:hover { background: #fca5a5; }
+
+        .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+        .summary-card { background: #f8fafc; border-radius: 12px; padding: 14px; border: 1px solid #e2e8f0; text-align: center; }
+        .summary-card .k { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; }
+        .summary-card .v { font-size: 22px; font-weight: 800; color: #0f3b2c; margin-top: 2px; }
+
+        .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid #f1f5f9; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+        th { background: #f8fafc; color: #475569; font-weight: 700; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-transform: uppercase; }
+        td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+        tr:hover td { background: #f8fafc; }
+
+        .badge { padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-block; }
+        .badge.expired { background: #fee2e2; color: #dc2626; }
+        .badge.soon { background: #ffedd5; color: #c2410c; }
+        .badge.valid { background: #d1fae5; color: #059669; }
+
+        .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 10px; flex-wrap: wrap; }
+        .muted { font-size: 12px; color: #64748b; margin-top: 4px; }
+
+        @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } .form-row { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="header-card">
+            <div>
+                <h1>📦 Pharmacy Medicine Inventory</h1>
+                <p>තොග පාලනය සහ ඖෂධ නිරීක්ෂණය (Stock & Prescription Management)</p>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Left: Form -->
+            <div class="card">
+                <h3>💊 Add / Update Medicine Batch</h3>
+                <div class="form-row">
+                    <div>
+                        <label>Medicine Name</label>
+                        <input id="productName" placeholder="e.g. Amoxicillin 500mg">
+                    </div>
+                    <div>
+                        <label>SKU / Barcode</label>
+                        <input id="sku" placeholder="Optional SKU">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div>
+                        <label>Drug Category</label>
+                        <select id="drugCategory">
+                            <option value="">Select category</option>
+                            <option value="Tablets">Tablets</option>
+                            <option value="Syrup">Syrup</option>
+                            <option value="Capsules">Capsules</option>
+                            <option value="Injections">Injections</option>
+                            <option value="Antibiotic">Antibiotic</option>
+                            <option value="Pain Relief">Pain Relief</option>
+                            <option value="Dermatology">Dermatology</option>
+                            <option value="Pediatric">Pediatric</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Batch Number</label>
+                        <input id="batchNumber" placeholder="e.g. BATCH-102">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div>
+                        <label>Expiry Date</label>
+                        <input id="expiryDate" type="date">
+                    </div>
+                    <div>
+                        <label>Stock Qty</label>
+                        <input id="stock" type="number" min="0" placeholder="0">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div>
+                        <label>Buy Price (Rs.)</label>
+                        <input id="buyPrice" type="number" min="0" step="0.01" placeholder="0.00">
+                    </div>
+                    <div>
+                        <label>Sell Price (Rs.)</label>
+                        <input id="sellPrice" type="number" min="0" step="0.01" placeholder="0.00">
+                    </div>
+                </div>
+
+                <div class="form-row full" style="margin-top: 6px;">
+                    <div>
+                        <label>Prescription Upload (Optional)</label>
+                        <input id="prescriptionFile" type="file" accept=".pdf,image/*">
+                        <div id="uploadStatus" class="muted">No file chosen</div>
+                        <input id="prescriptionUrl" type="hidden">
+                    </div>
+                </div>
+
+                <button class="btn-primary" id="saveBtn" style="width: 100%; margin-top: 12px;">💾 Save Medicine Item</button>
+            </div>
+
+            <!-- Right: Stock Table -->
+            <div class="card">
+                <div class="toolbar">
+                    <h3>📋 Stock Registry</h3>
+                    <input id="searchInput" placeholder="Search medicine, batch, category..." style="max-width: 260px;">
+                </div>
+
+                <div class="summary">
+                    <div class="summary-card">
+                        <div class="k">Total Medicines</div>
+                        <div class="v" id="totalItems">0</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="k">Expiring (30d)</div>
+                        <div class="v" id="expiringSoon">0</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="k">Expired</div>
+                        <div class="v" id="expiredItems">0</div>
+                    </div>
+                </div>
+
+                <div class="table-wrap" style="max-height: 460px; overflow-y: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Medicine</th>
+                                <th>Category</th>
+                                <th>Batch</th>
+                                <th>Expiry</th>
+                                <th>Stock</th>
+                                <th>Rx</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventoryBody">
+                            <tr><td colspan="7" style="text-align:center; padding: 20px; color:#94a3b8;">Loading inventory data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let appState = {
+            context: null,
+            products: [],
+            currentUser: null
+        };
+
+        function toDateSafe(input) {
+            if (!input) return null;
+            if (input.toDate) return input.toDate();
+            const dt = new Date(input);
+            return Number.isNaN(dt.getTime()) ? null : dt;
+        }
+
+        function getExpiryState(expiryDate) {
+            const d = toDateSafe(expiryDate);
+            if (!d) return { text: 'Valid', cls: 'valid' };
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const in30 = new Date(today); in30.setDate(in30.getDate() + 30);
+            if (d < today) return { text: 'Expired', cls: 'expired' };
+            if (d <= in30) return { text: 'Soon', cls: 'soon' };
+            return { text: 'Valid', cls: 'valid' };
+        }
+
+        function renderTable() {
+            const q = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+            const rows = appState.products.filter((p) => {
+                if (!q) return true;
+                return [p.name, p.batchNumber, p.drugCategory].join(' ').toLowerCase().includes(q);
+            });
+
+            if (!rows.length) {
+                document.getElementById('inventoryBody').innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">No medicines found in stock.</td></tr>';
+                document.getElementById('totalItems').textContent = '0';
+                document.getElementById('expiringSoon').textContent = '0';
+                document.getElementById('expiredItems').textContent = '0';
+                return;
+            }
+
+            document.getElementById('inventoryBody').innerHTML = rows.map((p) => {
+                const expiry = toDateSafe(p.expiryDate);
+                const exp = getExpiryState(p.expiryDate);
+                return `
+                    <tr>
+                        <td><strong>${p.name || '-'}</strong></td>
+                        <td>${p.drugCategory || '-'}</td>
+                        <td><code>${p.batchNumber || '-'}</code></td>
+                        <td>${expiry ? expiry.toLocaleDateString() : '-' } <span class="badge ${exp.cls}">${exp.text}</span></td>
+                        <td>${Number(p.stock) || 0}</td>
+                        <td>${p.prescriptionUrl ? `<button class="btn-primary" style="padding:4px 8px; font-size:11px;" onclick="viewPrescription('${p.prescriptionUrl}')">Rx File</button>` : '-'}</td>
+                        <td><button class="btn-danger" onclick="deleteProduct('${p.id}')">Delete</button></td>
+                    </tr>
+                `;
+            }).join('');
+
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const in30 = new Date(today); in30.setDate(in30.getDate() + 30);
+            let expired = 0;
+            let expiringSoon = 0;
+            appState.products.forEach((p) => {
+                const expiry = toDateSafe(p.expiryDate);
+                if (!expiry) return;
+                if (expiry < today) expired++;
+                else if (expiry <= in30) expiringSoon++;
+            });
+            document.getElementById('totalItems').textContent = appState.products.length;
+            document.getElementById('expiringSoon').textContent = expiringSoon;
+            document.getElementById('expiredItems').textContent = expired;
+        }
+
+        async function uploadPrescriptionFileIfAny() {
+            const fileInput = document.getElementById('prescriptionFile');
+            const statusEl = document.getElementById('uploadStatus');
+            const file = fileInput.files && fileInput.files[0];
+            if (!file) return document.getElementById('prescriptionUrl').value.trim();
+            if (!window.firebase || !firebase.storage) {
+                return '';
+            }
+
+            statusEl.textContent = 'Uploading prescription...';
+            const safeName = (file.name || 'prescription').replace(/[^a-zA-Z0-9._-]/g, '_');
+            const path = `prescriptions/${appState.context.businessId}/${Date.now()}_${safeName}`;
+            const ref = firebase.storage().ref().child(path);
+            await ref.put(file, {
+                contentType: file.type || 'application/octet-stream',
+                customMetadata: {
+                    businessId: appState.context.businessId,
+                    uploadedBy: appState.currentUser ? appState.currentUser.uid : 'unknown'
+                }
+            });
+            const url = await ref.getDownloadURL();
+            statusEl.textContent = 'Uploaded successfully';
+            return url;
+        }
+
+        async function loadProducts() {
+            const snap = await window.db.collection('products').doc(appState.context.businessId).collection('list').orderBy('name').get();
+            appState.products = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+            renderTable();
+        }
+
+        async function saveProduct() {
+            const name = document.getElementById('productName').value.trim();
+            const batchNumber = document.getElementById('batchNumber').value.trim();
+            const drugCategory = document.getElementById('drugCategory').value.trim();
+            if (!name || !drugCategory || !batchNumber) {
+                alert('Please enter medicine name, drug category, and batch number.');
+                return;
+            }
+
+            const prescriptionUrl = await uploadPrescriptionFileIfAny();
+            const payload = {
+                name,
+                sku: document.getElementById('sku').value.trim(),
+                drugCategory,
+                batchNumber,
+                expiryDate: document.getElementById('expiryDate').value || null,
+                stock: Number(document.getElementById('stock').value) || 0,
+                buyPrice: Number(document.getElementById('buyPrice').value) || 0,
+                sellPrice: Number(document.getElementById('sellPrice').value) || 0,
+                prescriptionUrl,
+                businessId: appState.context.businessId,
+                businessType: 'pharmacy',
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            const existingBatch = await window.db.collection('products')
+                .doc(appState.context.businessId)
+                .collection('list')
+                .where('name', '==', name)
+                .where('batchNumber', '==', batchNumber)
+                .limit(1)
+                .get();
+
+            if (!existingBatch.empty) {
+                const docRef = existingBatch.docs[0].ref;
+                await docRef.update({
+                    ...payload,
+                    stock: firebase.firestore.FieldValue.increment(payload.stock),
+                    createdAt: existingBatch.docs[0].data().createdAt || firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } else {
+                await window.db.collection('products').doc(appState.context.businessId).collection('list').add(payload);
+            }
+            document.querySelectorAll('input,select').forEach((el) => { if (el.id !== 'searchInput') el.value = ''; });
+            document.getElementById('uploadStatus').textContent = 'No file chosen';
+            await loadProducts();
+        }
+
+        async function deleteProduct(id) {
+            if (!confirm('Delete this medicine item?')) return;
+            await window.db.collection('products').doc(appState.context.businessId).collection('list').doc(id).delete();
+            await loadProducts();
+        }
+
+        window.deleteProduct = deleteProduct;
+        window.viewPrescription = function(url) {
+            if (!url) return;
+            window.open(url, '_blank', 'noopener,noreferrer');
+        };
+        document.getElementById('saveBtn').addEventListener('click', saveProduct);
+        document.getElementById('searchInput').addEventListener('input', renderTable);
+        document.getElementById('prescriptionFile').addEventListener('change', (evt) => {
+            const file = evt.target.files && evt.target.files[0];
+            document.getElementById('uploadStatus').textContent = file ? `Selected: ${file.name}` : 'No file chosen';
+        });
+
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = '/';
+                return;
+            }
+            appState.context = await window.dashboardCore.getContext(user);
+            appState.currentUser = user;
+            if (!appState.context || appState.context.businessType !== 'pharmacy') {
+                alert('This page is available for Pharmacy business type only.');
+                window.location.href = '/core/dashboard.html';
+                return;
+            }
+            await loadProducts();
+        });
+    </script>
+</body>
+</html>

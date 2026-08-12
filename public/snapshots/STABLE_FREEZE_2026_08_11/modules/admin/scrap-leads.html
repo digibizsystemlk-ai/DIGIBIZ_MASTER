@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="si">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Public Leads - Scrap Logistics Pro</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <script
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD3TnJnaGEa2UtenkMnJKWvgSETH3YfcMc&libraries=places"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-glow: rgba(37, 99, 235, 0.2);
+            --bg-body: #f1f5f9;
+            --panel-bg: #ffffff;
+            --text-dark: #0f172a;
+            --text-gray: #64748b;
+            --border: #e2e8f0;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --radius-lg: 20px;
+            --radius-md: 12px;
+            --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+        }
+
+        body {
+            font-family: 'Inter', 'Sinhala', sans-serif;
+            margin: 0;
+            background: var(--bg-body);
+            color: var(--text-dark);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+        }
+
+        #sidebar-container {
+            width: 260px;
+            flex-shrink: 0;
+        }
+
+        .dashboard-wrapper {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* Top Navigation */
+        .top-nav {
+            height: 70px;
+            background: #fff;
+            padding: 0 30px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+        }
+
+        .brand-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .brand-section h1 {
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin: 0;
+        }
+
+        .badge-live {
+            background: #fef2f2;
+            color: #ef4444;
+            font-size: 10px;
+            font-weight: 800;
+            padding: 4px 10px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            text-transform: uppercase;
+        }
+
+        .pulse {
+            width: 6px;
+            height: 6px;
+            background: #ef4444;
+            border-radius: 50%;
+            animation: pulse-red 1.5s infinite;
+        }
+
+        @keyframes pulse-red {
+            0% {
+                transform: scale(0.9);
+                opacity: 0.7;
+            }
+
+            50% {
+                transform: scale(1.2);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(0.9);
+                opacity: 0.7;
+            }
+        }
+
+        .stats-summary {
+            display: flex;
+            gap: 20px;
+        }
+
+        .stat-item {
+            text-align: right;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-gray);
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: 800;
+            display: block;
+        }
+
+        /* Main Layout */
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            height: calc(100vh - 70px);
+            position: relative;
+        }
+
+        #map {
+            flex-grow: 1;
+            height: 100%;
+            background: #e5e7eb;
+        }
+
+        /* Left Leads Panel */
+        .leads-panel {
+            width: 380px;
+            background: #fff;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.02);
+            z-index: 10;
+        }
+
+        .panel-header {
+            padding: 25px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .filter-tabs {
+            display: flex;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 12px;
+            margin-top: 15px;
+        }
+
+        .filter-tab {
+            flex: 1;
+            padding: 10px;
+            font-size: 12px;
+            font-weight: 700;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-gray);
+        }
+
+        .filter-tab.active {
+            background: #fff;
+            color: var(--primary);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        }
+
+        .leads-scroll {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+
+        .lead-card {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .lead-card:hover {
+            transform: translateY(-3px);
+            border-color: var(--primary);
+            box-shadow: var(--shadow);
+        }
+
+        .lead-card.active {
+            border-color: var(--primary);
+            background: #f8fbff;
+        }
+
+        .lead-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .tag {
+            font-size: 10px;
+            font-weight: 800;
+            padding: 4px 10px;
+            border-radius: 6px;
+            text-transform: uppercase;
+        }
+
+        .tag-cat {
+            background: #eff6ff;
+            color: var(--primary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .cust-name {
+            font-size: 16px;
+            font-weight: 700;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .cust-meta {
+            font-size: 12px;
+            color: var(--text-gray);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* Right Detail Drawer */
+        .detail-drawer {
+            position: absolute;
+            right: -450px;
+            top: 0;
+            bottom: 0;
+            width: 420px;
+            background: #fff;
+            border-left: 1px solid var(--border);
+            z-index: 200;
+            box-shadow: -20px 0 40px rgba(0, 0, 0, 0.1);
+            transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-drawer.open {
+            right: 0;
+        }
+
+        .drawer-header {
+            padding: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .drawer-content {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 30px;
+        }
+
+        .photo-frame {
+            width: 100%;
+            height: 220px;
+            border-radius: var(--radius-md);
+            object-fit: cover;
+            background: #f1f5f9;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .detail-section {
+            margin-bottom: 30px;
+        }
+
+        .section-label {
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--text-gray);
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .info-card {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .info-icon {
+            width: 36px;
+            height: 36px;
+            background: #fff;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+        }
+
+        .assign-box {
+            background: #f0f9ff;
+            border: 1px dashed var(--primary);
+            padding: 20px;
+            border-radius: var(--radius-md);
+        }
+
+        .agent-select {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            font-family: inherit;
+            font-weight: 600;
+            margin-top: 10px;
+            background: #fff;
+        }
+
+        .btn-confirm {
+            width: 100%;
+            padding: 15px;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            font-weight: 800;
+            cursor: pointer;
+            margin-top: 15px;
+            box-shadow: 0 4px 12px var(--primary-glow);
+            transition: all 0.2s;
+        }
+
+        .btn-confirm:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px var(--primary-glow);
+        }
+
+        /* Notification Banner */
+        #notifBanner {
+            position: fixed;
+            top: -100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 400px;
+            background: var(--text-dark);
+            color: #fff;
+            padding: 15px 20px;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            z-index: 5000;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            transition: top 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        #notifBanner.active { top: 20px; }
+        .notif-icon { width: 40px; height: 40px; background: var(--primary); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+
+        /* Mobile Adjustments */
+        @media (max-width: 768px) {
+            body { flex-direction: column; overflow: auto; }
+            #sidebar-container { display: none; }
+            .top-nav { padding: 0 15px; height: auto; padding-top: 15px; flex-direction: column; align-items: flex-start; gap: 10px; padding-bottom: 15px; }
+            .stats-summary { width: 100%; overflow-x: auto; padding-bottom: 5px; justify-content: flex-start; }
+            .main-content { flex-direction: column; height: calc(100vh - 120px); }
+            .leads-panel { width: 100%; border-right: none; height: 100%; }
+            #map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5; visibility: hidden; }
+            #map.active { visibility: visible; z-index: 15; }
+            .detail-drawer { width: 100%; right: -100%; }
+            
+            /* Mobile View Switcher */
+            .mobile-tabs {
+                display: flex;
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #1e293b;
+                padding: 5px;
+                border-radius: 50px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                z-index: 1000;
+                border: 1px solid rgba(255,255,255,0.1);
+            }
+            .m-tab {
+                padding: 10px 25px;
+                color: rgba(255,255,255,0.5);
+                font-size: 13px;
+                font-weight: 800;
+                cursor: pointer;
+                border-radius: 40px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .m-tab.active { background: var(--primary); color: #fff; }
+        }
+
+        @media (min-width: 769px) {
+            .mobile-tabs { display: none; }
+        }
+    </style>
+</head>
+
+<body class="digibiz-sidebar-reserved">
+    <div id="sidebar-container"></div>
+
+    <div id="notifBanner">
+        <div class="notif-icon"><i data-lucide="bell" style="color:#fff; width:20px;"></i></div>
+        <div style="flex:1;">
+            <div style="font-size:10px; font-weight:800; opacity:0.6; text-transform:uppercase;">New Order Received</div>
+            <div style="font-weight:700; font-size:14px;" id="notifTitle">පාරිභෝගිකයෙකුගෙන් නව ඇණවුමක්!</div>
+        </div>
+    </div>
+
+    <!-- Notification Sound -->
+    <audio id="notifSound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto"></audio>
+
+    <div class="mobile-tabs">
+        <div class="m-tab active" id="tabList" onclick="switchMobileView('LIST')">
+            <i data-lucide="list" style="width:18px;"></i> List
+        </div>
+        <div class="m-tab" id="tabMap" onclick="switchMobileView('MAP')">
+            <i data-lucide="map" style="width:18px;"></i> Map
+        </div>
+    </div>
+
+    <div class="dashboard-wrapper">
+        <nav class="top-nav">
+            <div class="brand-section">
+                <h1>DUST TO CASH - Admin</h1>
+                <div class="badge-live">
+                    <div class="pulse"></div> Live Tracking
+                </div>
+            </div>
+
+            <div class="stats-summary">
+                <div class="stat-item">
+                    <button id="setHqBtn" onclick="updateHqManual()"
+                        style="background:#1e293b; color:#fff; border:none; padding:8px 15px; border-radius:10px; font-weight:800; cursor:pointer; display:flex; align-items:center; gap:8px;">
+                        <i data-lucide="home"></i> Set HQ
+                    </button>
+                </div>
+                <div class="stat-item">
+                    <button id="routeBtn" onclick="toggleRouteMode()"
+                        style="background:var(--primary); color:#fff; border:none; padding:8px 15px; border-radius:10px; font-weight:800; cursor:pointer; display:flex; align-items:center; gap:8px;">
+                        <i data-lucide="map"></i> Route Mode
+                    </button>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">අලුත් ඉල්ලීම්</span>
+                    <span class="stat-value" id="countPending" style="color: var(--warning);">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">පවරා ඇති</span>
+                    <span class="stat-value" id="countAssigned" style="color: var(--primary);">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">මුළු එකතුව</span>
+                    <span class="stat-value" id="countTotal">0</span>
+                </div>
+                <div class="stat-item" style="border-left: 1px solid var(--border); padding-left: 20px; margin-left: 10px; display: flex; align-items: center; gap: 10px;">
+                    <div style="width:36px; height:36px; background:#f0fdf4; color:var(--success); border-radius:10px; display:flex; align-items:center; justify-content:center;">
+                        <i data-lucide="smartphone" style="width:20px;"></i>
+                    </div>
+                    <div>
+                        <span class="stat-label">ඇප් පරිශීලකයින්</span>
+                        <span class="stat-value" id="countApp" style="color:var(--success);">0</span>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="main-content">
+            <!-- Left Sidebar -->
+            <div class="leads-panel">
+                <div class="panel-header">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h2 style="font-size:18px; font-weight:800; margin:0;">Inquiry List</h2>
+                        <button onclick="loadLeads()"
+                            style="background:none; border:none; cursor:pointer; color:var(--primary);"><i
+                                data-lucide="refresh-cw" style="width:18px;"></i></button>
+                    </div>
+                    <div class="filter-tabs">
+                        <div class="filter-tab active" onclick="setFilter('ALL', this)">සියල්ල</div>
+                        <div class="filter-tab" onclick="setFilter('PENDING', this)">අලුත්</div>
+                        <div class="filter-tab" onclick="setFilter('ASSIGNED', this)">ක්‍රියාත්මක</div>
+                    </div>
+                </div>
+                <div class="leads-scroll" id="leadsList">
+                    <!-- Cards -->
+                </div>
+            </div>
+
+            <!-- Map View -->
+            <div id="map"></div>
+
+            <!-- Detail Drawer -->
+            <div id="detailDrawer" class="detail-drawer">
+                <div class="drawer-header">
+                    <h2 style="font-size:18px; font-weight:800; margin:0;">Lead Details</h2>
+                    <button onclick="closeDrawer()"
+                        style="background:#f1f5f9; border:none; width:36px; height:36px; border-radius:10px; cursor:pointer;"><i
+                            data-lucide="x" style="width:18px;"></i></button>
+                </div>
+                <div class="drawer-content">
+                    <div style="position:relative;">
+                        <img id="dPhoto" src="" class="photo-frame" alt="Scrap Photo" style="cursor:pointer;" onclick="openGallery()">
+                        <button id="viewAllBtn" onclick="openGallery()" style="position:absolute; bottom:15px; right:15px; background:rgba(0,0,0,0.7); color:#fff; border:none; padding:8px 15px; border-radius:10px; font-size:11px; font-weight:800; cursor:pointer; display:none;">
+                            <i data-lucide="layers" style="width:12px; margin-right:5px;"></i> සියලු පින්තූර (View All)
+                        </button>
+                    </div>
+
+                    <div class="detail-section">
+                        <span class="section-label">පාරිභෝගික තොරතුරු</span>
+                        <h3 id="dName" style="font-size:24px; font-weight:800; margin:0 0 10px;">Customer Name</h3>
+                        <div class="info-card">
+                            <div class="info-icon"><i data-lucide="phone" style="width:18px;"></i></div>
+                            <div style="font-weight:700;" id="dPhone">07x xxxxxxx</div>
+                        </div>
+                        <div class="info-card" style="background:#f0f9ff; border-color:#bae6fd;">
+                            <div class="info-icon" style="color:var(--primary);"><i data-lucide="map-pin" style="width:18px;"></i></div>
+                            <div style="font-weight:700; color:var(--primary);" id="dAddr">Address Missing</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="info-icon"><i data-lucide="tag" style="width:18px;"></i></div>
+                            <div style="font-weight:700;" id="dCat">Category</div>
+                        </div>
+                    </div>
+
+                    <div class="detail-section" id="assignSection">
+                        <span class="section-label">නියෝජිතයෙකු පවරන්න</span>
+                        <div class="assign-box">
+                            <p style="font-size:12px; color:var(--text-gray); margin-bottom:10px;">මෙම ඉල්ලීම පරීක්ෂා
+                                කිරීම සඳහා සුදුසු නියෝජිතයෙකු තෝරන්න.</p>
+                            <select id="agentSelect" class="agent-select">
+                                <option value="">නියෝජිතයෙකු තෝරන්න...</option>
+                            </select>
+                            <button class="btn-confirm" onclick="assignLead()">Assign Now</button>
+                        </div>
+                    </div>
+
+                    <div class="detail-section" id="statusSection" style="display:none;">
+                        <span class="section-label">පවරා ඇති විස්තර</span>
+                        <div class="info-card" style="background:#f0fdf4; border:1px solid #bbf7d0;">
+                            <div class="info-icon" style="color:var(--success);"><i data-lucide="user-check"
+                                    style="width:18px;"></i></div>
+                            <div>
+                                <div
+                                    style="font-size:10px; font-weight:800; color:var(--success); text-transform:uppercase;">
+                                    Agent Assigned</div>
+                                <div style="font-weight:700;" id="dAgent">Agent Name</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="detail-section">
+                        <span class="section-label">යොමු කළ දිනය</span>
+                        <div style="font-size:13px; font-weight:600; color:var(--text-gray);" id="dDate">-</div>
+                    </div>
+
+                    <div style="margin-top:40px; padding-bottom:30px;">
+                        <button onclick="confirmDeleteLead()" style="width:100%; background:#fee2e2; color:#b91c1c; border:none; padding:12px; border-radius:12px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                            <i data-lucide="trash-2" style="width:18px;"></i> මෙම ඇණවුම මකා දමන්න
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gallery Modal -->
+    <div id="galleryModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.95); z-index:2000; flex-direction:column; align-items:center; justify-content:center; padding:20px;">
+        <button onclick="closeGallery()" style="position:absolute; top:20px; right:20px; background:rgba(255,255,255,0.1); border:none; color:#fff; width:50px; height:50px; border-radius:50%; font-size:30px; cursor:pointer; display:flex; align-items:center; justify-content:center;">&times;</button>
+        <div id="modalGalleryContent" style="display:flex; overflow-x:auto; gap:20px; width:100%; max-width:1200px; padding:20px; scroll-snap-type: x mandatory;">
+            <!-- Photos load here -->
+        </div>
+        <p style="color:rgba(255,255,255,0.5); margin-top:20px; font-size:12px; font-weight:600;">Swipe or scroll to see more photos</p>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        if (window.Sidebar) new Sidebar();
+
+        // db is already declared in firebase-init.js?v=100
+        const businessId = "oDhSDYHQ2dV1DP33koysmZAqaY13";
+        let map;
+        let markers = [];
+        let leads = [];
+        let currentFilter = 'ALL';
+        let selectedLeadId = null;
+        let routeMode = false;
+        let routeLine = null;
+        let businessLocation = null;
+
+        async function fetchBusinessLocation() {
+            try {
+                const doc = await db.collection('businesses').doc(businessId).get();
+                if (doc.exists && doc.data().location) {
+                    const loc = doc.data().location;
+                    const [lat, lng] = loc.split(',').map(Number);
+                    businessLocation = { lat, lng };
+                    addBusinessMarker();
+                }
+            } catch (e) { console.error("Error fetching business location", e); }
+        }
+
+        async function updateHqManual() {
+            const loc = "7.446256, 80.196392";
+            if (confirm("ඔබගේ ආයතනයේ පිහිටීම ලෙස මෙම ස්ථානය සකසන්නද? \n(Sirimal Import and Export)")) {
+                try {
+                    await db.collection('businesses').doc(businessId).update({ location: loc });
+                    alert("ආයතන පිහිටීම සාර්ථකව යාවත්කාලීන විය. පිටුව නැවත ලෝඩ් වේ.");
+                    location.reload();
+                } catch (e) { alert("දෝෂයකි: " + e.message); }
+            }
+        }
+
+        function addBusinessMarker() {
+            if (!businessLocation) return;
+            new google.maps.Marker({
+                position: businessLocation,
+                map: map,
+                title: "මගේ ආයතනය (HQ)",
+                icon: {
+                    path: "M12 2L2 12h3v8h6v-6h2v6h6v-8h3L12 2z", // Home/Office Icon
+                    fillColor: "#000000",
+                    fillOpacity: 1,
+                    strokeWeight: 2,
+                    strokeColor: "#ffffff",
+                    scale: 1.5,
+                    anchor: new google.maps.Point(12, 12)
+                }
+            });
+        }
+
+        function toggleRouteMode() {
+            routeMode = !routeMode;
+            const btn = document.getElementById('routeBtn');
+            if (routeMode) {
+                btn.style.background = 'var(--success)';
+                btn.innerHTML = '<i data-lucide="map-pin"></i> Normal Map';
+                drawRoute();
+            } else {
+                btn.style.background = 'var(--primary)';
+                btn.innerHTML = '<i data-lucide="map"></i> Route Mode';
+                if (routeLine) routeLine.setMap(null);
+                map.setZoom(8);
+                map.setCenter({ lat: 7.8731, lng: 80.7718 });
+                renderList();
+            }
+            lucide.createIcons();
+        }
+
+        function drawRoute() {
+            if (routeLine) routeLine.setMap(null);
+            const pendingLeads = leads.filter(l => l.status === 'PENDING' && l.location);
+
+            let path = [];
+            if (businessLocation) {
+                path.push(businessLocation);
+            }
+
+            pendingLeads.forEach(l => {
+                const [lat, lng] = l.location.split(',').map(Number);
+                path.push({ lat, lng });
+            });
+
+            if (path.length < 2) return alert("මාර්ගයක් ඇඳීමට අවම වශයෙන් ඇණවුම් 1ක් සහ ආයතන පිහිටීම තිබිය යුතුය.");
+
+            routeLine = new google.maps.Polyline({
+                path: path,
+                geodesic: true,
+                strokeColor: '#2563eb',
+                strokeOpacity: 0.8,
+                strokeWeight: 4,
+                icons: [{
+                    icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW },
+                    offset: '100%',
+                    repeat: '50px'
+                }]
+            });
+
+            routeLine.setMap(map);
+            const bounds = new google.maps.LatLngBounds();
+            path.forEach(p => bounds.extend(p));
+            map.fitBounds(bounds);
+        }
+
+        const mapStyles = [
+            { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#e9e9e9" }, { "lightness": 17 }] },
+            { "featureType": "landscape", "elementType": "geometry", "stylers": [{ "color": "#f5f5f5" }, { "lightness": 20 }] },
+            { "featureType": "road.highway", "elementType": "geometry.fill", "stylers": [{ "color": "#ffffff" }, { "lightness": 17 }] },
+            { "featureType": "poi", "elementType": "geometry", "stylers": [{ "color": "#f5f5f5" }, { "lightness": 21 }] },
+            { "elementType": "labels.text.stroke", "stylers": [{ "visibility": "on" }, { "color": "#ffffff" }, { "lightness": 16 }] },
+            { "elementType": "labels.text.fill", "stylers": [{ "saturation": 36 }, { "color": "#333333" }, { "lightness": 40 }] },
+            { "elementType": "labels.icon", "stylers": [{ "visibility": "off" }] }
+        ];
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById("map"), {
+                center: { lat: 7.8731, lng: 80.7718 },
+                zoom: 8,
+                styles: mapStyles,
+                disableDefaultUI: true,
+                zoomControl: true,
+                mapTypeControl: false
+            });
+        }
+
+        let lastLeadCount = -1;
+
+        async function showNotification(lead) {
+            const banner = document.getElementById('notifBanner');
+            const sound = document.getElementById('notifSound');
+            
+            document.getElementById('notifTitle').textContent = `${lead.customerName} ගෙන් නව ඇණවුමක්!`;
+            
+            banner.classList.add('active');
+            try { sound.play(); } catch(e) {}
+            
+            setTimeout(() => {
+                banner.classList.remove('active');
+            }, 5000);
+        }
+
+        function switchMobileView(view) {
+            const mapEl = document.getElementById('map');
+            const tabList = document.getElementById('tabList');
+            const tabMap = document.getElementById('tabMap');
+
+            if (view === 'MAP') {
+                mapEl.classList.add('active');
+                tabMap.classList.add('active');
+                tabList.classList.remove('active');
+            } else {
+                mapEl.classList.remove('active');
+                tabMap.classList.remove('active');
+                tabList.classList.add('active');
+            }
+        }
+
+        window.onload = () => {
+            initMap();
+            loadLeads();
+            loadAgents();
+            fetchBusinessLocation();
+        };
+
+        function loadLeads() {
+            // Lead listener
+            db.collection("scrap_public_leads")
+                .where("businessId", "==", businessId)
+                .onSnapshot(snap => {
+                    const allLeads = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    leads = allLeads.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                    
+                    if (lastLeadCount !== -1 && leads.length > lastLeadCount) {
+                        const newLead = leads[0]; 
+                        showNotification(newLead);
+                    }
+                    lastLeadCount = leads.length;
+                    updateStats();
+                    renderList();
+                });
+
+            // PWA Analytics listener
+            db.collection("pwa_analytics")
+                .where("businessId", "==", businessId)
+                .onSnapshot(snap => {
+                    const count = snap.size;
+                    const installedCount = snap.docs.filter(d => d.data().isInstalled).length;
+                    document.getElementById('countApp').textContent = `${installedCount} (${count})`;
+                });
+        }
+
+        function updateStats() {
+            document.getElementById('countTotal').textContent = leads.length;
+            document.getElementById('countPending').textContent = leads.filter(l => l.status === 'PENDING').length;
+            document.getElementById('countAssigned').textContent = leads.filter(l => l.status === 'ASSIGNED').length;
+        }
+
+        function renderList() {
+            const listEl = document.getElementById('leadsList');
+            const filtered = currentFilter === 'ALL' ? leads : leads.filter(l => l.status === currentFilter);
+
+            clearMarkers();
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = `<div style="text-align:center; padding:50px 20px;">
+                    <i data-lucide="inbox" style="width:40px; height:40px; color:var(--text-gray); opacity:0.3; margin-bottom:15px;"></i>
+                    <p style="color:var(--text-gray); font-weight:600;">දත්ත කිසිවක් නැත</p>
+                </div>`;
+                lucide.createIcons();
+                return;
+            }
+
+            let html = '';
+            filtered.forEach(lead => {
+                const isActive = lead.id === selectedLeadId;
+                const statusColor = lead.status === 'PENDING' ? 'var(--warning)' : 'var(--primary)';
+
+                html += `
+                    <div class="lead-card ${isActive ? 'active' : ''}" onclick="selectLead('${lead.id}')">
+                        <div class="lead-card-header">
+                            <span class="tag tag-cat">${lead.categoryName || lead.category}</span>
+                            <div class="status-dot" style="background:${statusColor}; box-shadow: 0 0 8px ${statusColor}66;"></div>
+                        </div>
+                        <span class="cust-name">${lead.customerName}</span>
+                        <div class="cust-meta"><i data-lucide="map-pin" style="width:12px;"></i> ${lead.location ? 'Location Shared' : 'No Location'}</div>
+                        <div class="cust-meta" style="margin-top:5px;"><i data-lucide="clock" style="width:12px;"></i> ${formatDate(lead.createdAt)}</div>
+                    </div>
+                `;
+
+                addMarker(lead);
+            });
+            listEl.innerHTML = html;
+            lucide.createIcons();
+        }
+
+        function addMarker(lead) {
+            if (!lead.location || !lead.location.includes(',')) return;
+            const [lat, lng] = lead.location.split(',').map(Number);
+            if (isNaN(lat) || isNaN(lng)) return;
+
+            const marker = new google.maps.Marker({
+                position: { lat, lng },
+                map: map,
+                title: lead.customerName,
+                icon: {
+                    path: "M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z",
+                    fillColor: lead.status === 'PENDING' ? '#f59e0b' : '#2563eb',
+                    fillOpacity: 1,
+                    strokeWeight: 2,
+                    strokeColor: "#ffffff",
+                    scale: 2,
+                    anchor: new google.maps.Point(12, 22)
+                }
+            });
+
+            marker.addListener('click', () => selectLead(lead.id));
+            markers.push({ id: lead.id, marker });
+        }
+
+        function clearMarkers() {
+            markers.forEach(m => m.marker.setMap(null));
+            markers = [];
+        }
+
+        async function selectLead(id) {
+            selectedLeadId = id;
+            const lead = leads.find(l => l.id === id);
+            if (!lead) return;
+
+            renderList();
+
+            const drawer = document.getElementById('detailDrawer');
+            drawer.classList.add('open');
+
+            // Support single photo with gallery button
+            const photoEl = document.getElementById('dPhoto');
+            if (lead.imageUrl) {
+                photoEl.src = lead.imageUrl;
+                photoEl.style.display = 'block';
+                document.getElementById('viewAllBtn').style.display = (lead.imageCount > 1) ? 'flex' : 'none';
+            } else {
+                photoEl.src = 'https://via.placeholder.com/600x300?text=No+Photo';
+                document.getElementById('viewAllBtn').style.display = 'none';
+            }
+
+            document.getElementById('dName').textContent = lead.customerName;
+            document.getElementById('dPhone').textContent = lead.customerPhone;
+            document.getElementById('dAddr').textContent = lead.address || lead.customerAddress || 'Address Not Provided';
+            document.getElementById('dCat').textContent = (lead.district ? `${lead.district}, ${lead.city}` : (lead.categoryName || lead.category));
+            document.getElementById('dDate').textContent = formatDateFull(lead.createdAt);
+
+            if (lead.status === 'PENDING') {
+                document.getElementById('assignSection').style.display = 'block';
+                document.getElementById('statusSection').style.display = 'none';
+            } else {
+                document.getElementById('assignSection').style.display = 'none';
+                document.getElementById('statusSection').style.display = 'block';
+                document.getElementById('dAgent').textContent = lead.assignedAgentName || 'Agent';
+            }
+
+            if (lead.location) {
+                const [lat, lng] = lead.location.split(',').map(Number);
+                map.panTo({ lat, lng });
+                map.setZoom(15);
+            }
+            lucide.createIcons();
+        }
+
+        async function openGallery() {
+            if (!selectedLeadId) return;
+            const modal = document.getElementById('galleryModal');
+            const content = document.getElementById('modalGalleryContent');
+            content.innerHTML = '<div style="color:#fff; padding:50px;">Loading photos...</div>';
+            modal.style.display = 'flex';
+
+            try {
+                const snap = await db.collection('scrap_public_leads').doc(selectedLeadId).collection('images').orderBy('index', 'asc').get();
+                if (!snap.empty) {
+                    content.innerHTML = snap.docs.map(doc => `
+                        <img src="${doc.data().data}" style="max-height:80vh; max-width:90vw; border-radius:12px; scroll-snap-align:center; object-fit:contain; flex-shrink:0;">
+                    `).join('');
+                } else {
+                    const lead = leads.find(l => l.id === selectedLeadId);
+                    if (lead && lead.imageUrl) {
+                        content.innerHTML = `<img src="${lead.imageUrl}" style="max-height:80vh; max-width:90vw; border-radius:12px; scroll-snap-align:center; object-fit:contain; flex-shrink:0;">`;
+                    } else {
+                        content.innerHTML = '<div style="color:#fff; padding:50px;">No photos available.</div>';
+                    }
+                }
+            } catch (e) { 
+                console.error(e);
+                content.innerHTML = '<div style="color:#fff; padding:50px;">Error loading gallery.</div>'; 
+            }
+        }
+
+        function closeGallery() {
+            document.getElementById('galleryModal').style.display = 'none';
+        }
+
+        async function confirmDeleteLead() {
+            if (!selectedLeadId) return;
+            if (!confirm("මෙම ඇණවුම පද්ධතියෙන් සම්පූර්ණයෙන්ම මකා දැමීමට ඔබට විශ්වාසද? \n\nමෙය සිදු කළ පසු පාරිභෝගිකයාගේ සහ නියෝජිතයාගේ ඇප් එකෙන්ද මෙම දත්ත මැකී යනු ඇත.")) return;
+
+            try {
+                await db.collection('scrap_public_leads').doc(selectedLeadId).delete();
+                alert("ඇණවුම සාර්ථකව මකා දමන ලදී.");
+                closeDrawer();
+            } catch (e) {
+                alert("දෝෂයකි: " + e.message);
+            }
+        }
+
+        function closeDrawer() {
+            document.getElementById('detailDrawer').classList.remove('open');
+            selectedLeadId = null;
+            renderList();
+        }
+
+        function setFilter(f, el) {
+            currentFilter = f;
+            document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+            renderList();
+        }
+
+        async function loadAgents() {
+            const snap = await db.collection("users").where("businessId", "==", businessId).get();
+            const select = document.getElementById('agentSelect');
+            snap.forEach(doc => {
+                const u = doc.data();
+                if (u.role === 'AGENT' || u.role === 'REP' || u.role === 'DRIVER' || u.role === 'DISTRIBUTOR_REP') {
+                    const opt = document.createElement('option');
+                    opt.value = doc.id;
+                    opt.textContent = u.name || u.fullName || u.email;
+                    opt.dataset.name = u.name || u.fullName || u.email;
+                    select.appendChild(opt);
+                }
+            });
+        }
+
+        async function assignLead() {
+            const agentId = document.getElementById('agentSelect').value;
+            if (!agentId) return alert("කරුණාකර නියෝජිතයෙකු තෝරන්න.");
+            const agentName = document.getElementById('agentSelect').selectedOptions[0].dataset.name;
+
+            if (confirm(`${agentName} වෙත මෙම ඉල්ලීම පැවරීමට ඔබට සහතිකද?`)) {
+                try {
+                    await db.collection('scrap_public_leads').doc(selectedLeadId).update({
+                        status: 'ASSIGNED',
+                        assignedTo: agentId,
+                        assignedToName: agentName,
+                        assignedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    closeDrawer();
+                } catch (e) { alert("දෝෂයකි: " + e.message); }
+            }
+        }
+
+        function formatDate(ts) {
+            if (!ts) return '';
+            const d = ts.toDate();
+            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function formatDateFull(ts) {
+            if (!ts) return '';
+            const d = ts.toDate();
+            return d.toLocaleString('si-LK', { dateStyle: 'full', timeStyle: 'short' });
+        }
+    </script>
+</body>
+
+</html>

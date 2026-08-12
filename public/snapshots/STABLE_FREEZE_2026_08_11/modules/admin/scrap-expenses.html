@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>වියදම් — Scrap</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/dashboard-core.js?v=117"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <script src="/core/scrap-vba-core.js?v=117"></script>
+    <style>
+        body{font-family:Inter,Segoe UI,sans-serif;background:#f8fafc;color:#0f172a;margin:0;}
+        .page{padding:15px;max-width:900px;margin:0 auto;}
+        .card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:15px;box-shadow:0 1px 3px rgba(0,0,0,0.05);}
+        h1{font-size:22px;color:#0f172a;margin:0 0 10px;}
+        label{display:block;font-size:11px;font-weight:700;color:#64748b;margin-top:12px;text-transform:uppercase;letter-spacing:0.05em;}
+        input,select,textarea{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:10px;box-sizing:border-box;font-size:14px;transition:all 0.2s;}
+        input:focus,select:focus,textarea:focus{border-color:#0f3b2c;outline:none;box-shadow:0 0 0 3px rgba(15,59,44,0.1);}
+        button{background:#0f3b2c;color:#fff;border:none;padding:14px 20px;border-radius:12px;cursor:pointer;font-weight:600;margin-top:18px;width:100%;transition:all 0.2s;}
+        button:active{transform:scale(0.98);}
+        .small{font-size:12px;color:#64748b;}
+        table{width:100%;border-collapse:collapse;font-size:14px;margin-top:15px;}
+        th,td{padding:12px 8px;border-bottom:1px solid #f1f5f9;text-align:left;}
+        th{background:#f8fafc;font-weight:700;color:#64748b;text-transform:uppercase;font-size:11px;letter-spacing:0.05em;}
+        .num{text-align:right;font-weight:700;}
+        .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f3b2c;color:#fff;padding:12px 24px;border-radius:30px;box-shadow:0 10px 25px rgba(0,0,0,0.2);display:none;z-index:10000;font-size:14px;font-weight:600;animation:slideUp 0.3s ease-out;}
+        @keyframes slideUp{from{transform:translate(-50%,100%);opacity:0;}to{transform:translate(-50%,0);opacity:1;}}
+        .btn-loading{opacity:0.7;pointer-events:none;background:#64748b !important;}
+        @media (max-width:600px) {
+            .mobile-hide { display: none !important; }
+            th, td { padding: 10px 4px; }
+        }
+    </style>
+</head>
+<body>
+<div id="toast" class="toast"></div>
+<div class="page">
+    <div class="card">
+        <h1>වියදම් සටහන් (GL)</h1>
+        <p class="small">ගිණුම් පද්ධතියට <strong>postJournalEntry</strong> මගින් එකතු වේ. දිනය <code>expenseDate</code> — <a href="/modules/admin/scrap-revenue.html">රෙවනියු</a> පිටුවේ අද වියදම් ලෙස පෙනෙයි.</p>
+        <label for="expenseDate">දිනය</label>
+        <input type="date" id="expenseDate">
+        <label for="expAmount">මුදල (Rs)</label>
+        <input type="number" id="expAmount" step="0.01" min="0" placeholder="0.00">
+        <label for="expCategory">වර්ගය</label>
+        <input id="expCategory" list="categoryList" placeholder="වර්ගය තෝරන්න හෝ ඇතුළත් කරන්න">
+        <datalist id="categoryList">
+            <option value="Fuel">Fuel / ඉන්ධන</option>
+            <option value="Wages">Wages / වැටුප්</option>
+            <option value="Transport">Transport</option>
+            <option value="Utilities">Utilities</option>
+            <option value="Rent">Rent</option>
+            <option value="Other">Other</option>
+        </datalist>
+        <select id="expAccount" style="display:none;">
+            <option value="5-5030-01|Scrap overhead">5-5030-01 Scrap overhead</option>
+            <option value="5-5040-01|Transport expense">5-5040-01 Transport</option>
+            <option value="5-5050-01|Wages expense">5-5050-01 Wages</option>
+            <option value="5-5060-01|Utilities expense">5-5060-01 Utilities</option>
+            <option value="5-5070-01|Rent expense">5-5070-01 Rent</option>
+        </select>
+
+        <label for="expPay">ගෙවීම</label>
+        <select id="expPay"><option value="CASH">Cash</option><option value="BANK">Bank</option></select>
+        <label for="expNote">සටහන</label>
+        <textarea id="expNote" rows="2" placeholder="Optional"></textarea>
+        <button type="button" id="saveExpBtnV3">සුරකින්න</button>
+    </div>
+
+    <div class="card" id="todayCard" style="display:none; border:2px solid #0f3b2c; background:#f0fdf4;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h2 style="font-size:18px; margin:0; color:#0f3b2c;">🟢 අද දින වියදම් (Today)</h2>
+            <div id="todayTotal" style="font-weight:900; font-size:16px; color:#166534; background:#dcfce7; padding:5px 12px; border-radius:10px; border:1px solid #86efac;">Total: Rs 0.00</div>
+        </div>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>දිනය</th>
+                        <th>Category</th>
+                        <th class="num">Amount</th>
+                        <th>Method</th>
+                        <th>User</th>
+                        <th class="mobile-hide">GL</th>
+                        <th class="mobile-hide">Note</th>
+                    </tr>
+                </thead>
+                <tbody id="todayExpList"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="font-size:16px; margin:0 0 10px; color:#64748b;">⏳ පසුගිය වියදම් (Recent History)</h2>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>දිනය</th>
+                        <th>Category</th>
+                        <th class="num">Amount</th>
+                        <th>Method</th>
+                        <th>User</th>
+                        <th class="mobile-hide">GL</th>
+                        <th class="mobile-hide">Note</th>
+                    </tr>
+                </thead>
+                <tbody id="historyExpList"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+window.SCRAP_BUSINESS_ID = '';
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+async function loadList() {
+    if (!window.SCRAP_BUSINESS_ID) return;
+    const user = firebase.auth().currentUser;
+    const email = String(user && user.email || '').trim().toLowerCase();
+    const isRasika = email === 'biz.himeshi@gmail.com';
+
+    let snap;
+    try {
+        if (isRasika) {
+            snap = await db.collection('scrap_expenses')
+                .where('businessId', '==', SCRAP_BUSINESS_ID)
+                .where('addedByEmail', '==', email)
+                .limit(500).get();
+        } else {
+            snap = await db.collection('scrap_expenses')
+                .where('businessId', '==', SCRAP_BUSINESS_ID)
+                .limit(1000).get();
+        }
+    } catch (e) {
+        console.error('[Expenses] List fetch failed:', e);
+        snap = { docs: [] };
+    }
+    
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    rows.sort((a, b) => {
+        const dtA = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : (a.expenseDate ? new Date(a.expenseDate).getTime() : 0);
+        const dtB = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : (b.expenseDate ? new Date(b.expenseDate).getTime() : 0);
+        return dtB - dtA;
+    });
+
+    const renderRow = (r) => {
+        const pay = String(r.paymentMethod || 'CASH').toUpperCase();
+        const payColor = pay === 'BANK' ? '#2563eb' : '#059669';
+        const addedBy = String(r.addedBy || 'Owner');
+        const userStyle = addedBy === 'Rasika' 
+            ? 'background:#fdf2f8; color:#be185d; border:1px solid #fbcfe8;' 
+            : 'background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;';
+        
+        let timeStr = '-';
+        if (r.createdAt && r.createdAt.toDate) {
+            timeStr = r.createdAt.toDate().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Colombo' });
+        }
+
+        return `<tr>
+            <td>
+                <div style="font-weight:700; color:#1e293b;">${String(r.expenseDate || '-')}</div>
+                <div style="font-size:10px; color:#64748b; margin-top:2px;">🕒 ${timeStr}</div>
+            </td>
+            <td><span style="background:#f1f5f9; padding:4px 8px; border-radius:6px; font-size:11px; font-weight:600;">${String(r.category || '-')}</span></td>
+            <td class="num">${fmt(r.amount).replace('Rs ','')}</td>
+            <td><span style="color:${payColor}; font-weight:700; font-size:11px;">${pay}</span></td>
+            <td><span style="${userStyle} padding:3px 6px; border-radius:5px; font-size:10px; font-weight:700;">${addedBy}</span></td>
+            <td class="mobile-hide" style="font-size:11px; color:#64748b;">${String(r.accountCode || '')}</td>
+            <td class="mobile-hide" style="font-size:11px; color:#64748b;">${String(r.note || '').slice(0, 30)}</td>
+        </tr>`;
+    };
+
+    const todayRows = rows.filter(r => r.expenseDate === today);
+    const olderRows = rows.filter(r => r.expenseDate !== today);
+
+    const todayCard = document.getElementById('todayCard');
+    const todayTotalEl = document.getElementById('todayTotal');
+    const todayBody = document.getElementById('todayExpList');
+    const historyBody = document.getElementById('historyExpList');
+
+    if (todayRows.length) {
+        const total = todayRows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+        if (todayTotalEl) todayTotalEl.textContent = `Total: ${fmt(total)}`;
+        if (todayBody) todayBody.innerHTML = todayRows.map(renderRow).join('');
+        if (todayCard) todayCard.style.display = 'block';
+    } else {
+        if (todayCard) todayCard.style.display = 'none';
+    }
+
+    if (historyBody) {
+        historyBody.innerHTML = olderRows.map(renderRow).join('') || '<tr><td colspan="7" class="small">No history found.</td></tr>';
+    }
+}
+
+document.getElementById('saveExpBtnV3').addEventListener('click', async () => {
+    console.log('🚀 [Expenses] Save process started...');
+    try {
+        if (!window.SCRAP_BUSINESS_ID) {
+            console.error('❌ [Expenses] Error: No Business ID');
+            alert('දෝෂය: ව්‍යාපාරික අංකය හමු නොවීය.');
+            return;
+        }
+
+        const user = firebase.auth().currentUser;
+        const email = String(user && user.email || '').trim().toLowerCase();
+        const isRasika = email === 'biz.himeshi@gmail.com';
+
+        const expenseDate = String(document.getElementById('expenseDate').value || '').trim();
+        const amount = Number(document.getElementById('expAmount').value) || 0;
+        const category = document.getElementById('expCategory').value;
+        const note = String(document.getElementById('expNote').value || '').trim();
+        const pay = String(document.getElementById('expPay').value || 'CASH').toUpperCase();
+        
+        console.log('📝 [Expenses] Data:', { expenseDate, amount, category, pay, note });
+
+        if (!expenseDate) return alert('දිනය තෝරන්න.');
+        if (amount <= 0) return alert('මුදල වලංගු විය යුතුයි.');
+        if (!category) return alert('වර්ගය තෝරන්න.');
+
+        let accCode = '5-5030-01';
+        let accName = 'Scrap overhead';
+        if (category === 'Wages') { accCode = '5-5050-01'; accName = 'Wages expense'; }
+        else if (category === 'Transport') { accCode = '5-5040-01'; accName = 'Transport expense'; }
+        else if (category === 'Utilities') { accCode = '5-5060-01'; accName = 'Utilities expense'; }
+        else if (category === 'Rent') { accCode = '5-5070-01'; accName = 'Rent expense'; }
+        else if (category === 'Fuel') { accCode = '5-5030-01'; accName = 'Fuel expense'; }
+
+        console.log('💬 [Expenses] Auto-saving (no confirm)...');
+        const btn = document.getElementById('saveExpBtnV3');
+        const originalText = btn.textContent;
+        btn.textContent = 'සුරකිමින් පවතී...';
+        btn.classList.add('btn-loading');
+
+        function showToast(m) {
+            const t = document.getElementById('toast');
+            t.textContent = m;
+            t.style.display = 'block';
+            setTimeout(() => { t.style.display = 'none'; }, 3000);
+        }
+
+        console.log('📡 [Expenses] Saving to Firestore...');
+        const cashLine = pay === 'BANK'
+            ? { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: 0, credit: amount }
+            : { accountCode: '1-1010-01', accountName: 'Cash - Main', debit: 0, credit: amount };
+
+        await db.collection('scrap_expenses').add({
+            businessId: window.SCRAP_BUSINESS_ID,
+            expenseDate,
+            amount,
+            category,
+            note,
+            accountCode: accCode,
+            accountName: accName,
+            paymentMethod: pay,
+            addedBy: isRasika ? 'Rasika' : (user.displayName || 'Owner'),
+            addedByEmail: email,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log('📖 [Expenses] Posting journal entry...');
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+            await window.scrapVbaCore.postJournalEntry(window.SCRAP_BUSINESS_ID, {
+                description: `Scrap expense — ${category}${note ? ' (' + note + ')' : ''} (by ${isRasika ? 'Rasika' : 'Owner'})`,
+                reference: expenseDate,
+                referenceType: 'SCRAP_EXPENSE',
+                date: expenseDate,
+                entries: [
+                    { accountCode: accCode, accountName: accName, debit: amount, credit: 0 },
+                    cashLine
+                ]
+            });
+        }
+
+        console.log('📈 [Expenses] Updating profit pool...');
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.updateProfitPool === 'function') {
+            await window.scrapVbaCore.updateProfitPool(window.SCRAP_BUSINESS_ID, -Math.abs(amount), 'EXPENSE', `Category: ${category}`);
+        }
+
+        console.log('✅ [Expenses] Success! Cleaning up UI...');
+        document.getElementById('expAmount').value = '';
+        document.getElementById('expNote').value = '';
+        
+        btn.textContent = originalText;
+        btn.classList.remove('btn-loading');
+
+        await loadList();
+        showToast('✅ වියදම සාර්ථකව සුරකින ලදී!');
+    } catch (err) {
+        console.error('❌ [Expenses] CRITICAL ERROR:', err);
+        const btn = document.getElementById('saveExpBtnV3');
+        btn.textContent = 'නැවත උත්සාහ කරන්න';
+        btn.classList.remove('btn-loading');
+        alert('දෝෂයක් සිදු විය: ' + err.message);
+    }
+});
+
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '/'; return; }
+    
+    const email = String(user.email || '').trim().toLowerCase();
+    const isRasika = email === 'biz.himeshi@gmail.com';
+    
+    let businessId = user.uid;
+    try {
+        if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+            const ctx = await window.dashboardCore.getContext(user);
+            businessId = String((ctx && ctx.businessId) || user.uid);
+        } else {
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+        }
+    } catch (e) {
+        console.warn('[Expenses] Context fetch failed, using UID.');
+    }
+    
+    window.SCRAP_BUSINESS_ID = businessId;
+    console.log('[Expenses] SCRAP_BUSINESS_ID set to:', window.SCRAP_BUSINESS_ID);
+    
+    const d = new Date();
+    const todayStr = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+    document.getElementById('expenseDate').value = todayStr;
+    
+    if (isRasika) {
+        const dateEl = document.getElementById('expenseDate');
+        dateEl.disabled = true;
+        dateEl.style.background = '#f1f5f9';
+        
+        const catEl = document.getElementById('expCategory');
+        catEl.value = 'ගෙදර වියදම්';
+        catEl.disabled = true;
+        catEl.style.background = '#f1f5f9';
+        
+        const payEl = document.getElementById('expPay');
+        payEl.value = 'CASH';
+        payEl.disabled = true;
+        payEl.style.background = '#f1f5f9';
+    }
+    
+    await loadList();
+});
+</script>
+</body>
+</html>

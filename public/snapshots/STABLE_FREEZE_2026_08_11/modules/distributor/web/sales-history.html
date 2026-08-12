@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Product Sales History — DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/dashboard-core.js?v=120"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; font-family: 'Inter', system-ui, sans-serif; }
+        body { background: #f8fafc; margin: 0; padding: 0; color: #0f172a; }
+        .wrap { padding: 24px; max-width: 1300px; margin: 0 auto; }
+        
+        .page-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; margin-bottom: 20px; }
+        .page-title { font-size: 24px; font-weight: 800; color: #0f172a; margin: 0; }
+        .page-sub { font-size: 13px; color: #64748b; margin-top: 4px; }
+        
+        .time-btn-group { display: flex; gap: 8px; background: #e2e8f0; padding: 4px; border-radius: 12px; }
+        .time-btn { background: transparent; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 13px; color: #475569; cursor: pointer; transition: all 0.2s; }
+        .time-btn.active { background: #0f766e; color: #ffffff; box-shadow: 0 2px 6px rgba(15,118,110,0.3); }
+
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 20px; }
+        .metric-card { background: #ffffff; border-radius: 16px; padding: 18px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.03); }
+        .metric-card .title { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
+        .metric-card .value { font-size: 24px; font-weight: 800; color: #0f172a; margin-top: 6px; }
+        .metric-card .subtext { font-size: 11px; color: #10b981; font-weight: 600; margin-top: 4px; }
+
+        .filter-box { background: #ffffff; border-radius: 16px; padding: 16px; border: 1px solid #e2e8f0; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+        .filter-input { padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 13px; background: #fff; color: #0f172a; outline: none; }
+        .filter-input:focus { border-color: #0f766e; box-shadow: 0 0 0 3px rgba(15,118,110,0.15); }
+        
+        .table-card { background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.03); overflow: hidden; }
+        .table-header { padding: 16px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+        .table-header h3 { font-size: 16px; font-weight: 800; color: #0f172a; margin: 0; }
+
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { background: #f1f5f9; padding: 12px 16px; font-size: 12px; text-transform: uppercase; color: #475569; font-weight: 700; border-bottom: 2px solid #e2e8f0; }
+        td { padding: 14px 16px; font-size: 13px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+        tr:hover { background: #f8fafc; }
+        .num { text-align: right; }
+        .center { text-align: center; }
+        
+        .badge-free { background: #dcfce7; color: #15803d; font-weight: 700; padding: 2px 8px; border-radius: 6px; font-size: 11px; }
+        .progress-bar-bg { background: #f1f5f9; height: 8px; border-radius: 4px; overflow: hidden; width: 100px; display: inline-block; vertical-align: middle; }
+        .progress-bar-fill { background: #0f766e; height: 100%; border-radius: 4px; }
+        
+        .btn-action { background: #0f766e; color: #fff; border: none; padding: 10px 18px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-action:hover { background: #115e59; }
+        .btn-outline { background: #fff; color: #0f766e; border: 1px solid #0f766e; padding: 9px 16px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; }
+        
+        @media print {
+            .time-btn-group, .filter-box, .btn-action, .btn-outline { display: none !important; }
+            html.digibiz-sidebar-reserved body { margin-left: 0 !important; }
+            .wrap { padding: 0 !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">📊 Product Sales History</h1>
+                <div class="page-sub">Product-wise sales quantities, units sold, free issues, and revenue analytics.</div>
+            </div>
+            
+            <div class="time-btn-group">
+                <button type="button" class="time-btn active" id="btnToday" onclick="setTimeFilter('today')">📅 Today</button>
+                <button type="button" class="time-btn" id="btnWeek" onclick="setTimeFilter('week')">📅 This Week</button>
+                <button type="button" class="time-btn" id="btnMonth" onclick="setTimeFilter('month')">📅 This Month</button>
+                <button type="button" class="time-btn" id="btnCustom" onclick="setTimeFilter('custom')">⚙️ Custom Range</button>
+            </div>
+        </div>
+
+        <!-- Metric Summary Cards -->
+        <div class="card-grid">
+            <div class="metric-card">
+                <div class="title">📦 Total Products Sold</div>
+                <div class="value" id="metricTotalQty">0 Units</div>
+                <div class="subtext" id="metricQtyPeriod">Today</div>
+            </div>
+            <div class="metric-card">
+                <div class="title">🎁 Total Free Issues</div>
+                <div class="value" id="metricFreeQty" style="color:#15803d;">0 Units</div>
+                <div class="subtext">Promotional / Bonus</div>
+            </div>
+            <div class="metric-card">
+                <div class="title">💰 Total Sales Revenue</div>
+                <div class="value" id="metricTotalRevenue" style="color:#0f766e;">LKR 0.00</div>
+                <div class="subtext">From Sales Orders</div>
+            </div>
+            <div class="metric-card">
+                <div class="title">📄 Orders Count</div>
+                <div class="value" id="metricOrderCount">0 Orders</div>
+                <div class="subtext">Completed / Approved</div>
+            </div>
+        </div>
+
+        <!-- Filters & Export -->
+        <div class="filter-box">
+            <input type="text" class="filter-input" id="searchProduct" placeholder="🔍 Search product by name or code..." style="flex:2; min-width:240px;" oninput="applyFilters()">
+            
+            <div id="customDateRange" style="display:none; display:flex; gap:8px; align-items:center;">
+                <input type="date" class="filter-input" id="startDate" onchange="loadProductSalesHistory()">
+                <span style="font-size:12px; color:#64748b;">to</span>
+                <input type="date" class="filter-input" id="endDate" onchange="loadProductSalesHistory()">
+            </div>
+
+            <select class="filter-input" id="repFilter" style="flex:1; min-width:160px;" onchange="applyFilters()">
+                <option value="">👨‍💼 All Sales Reps</option>
+            </select>
+
+            <div style="display:flex; gap:8px; margin-left:auto;">
+                <button type="button" class="btn-outline" onclick="exportToCSV()">📄 Export CSV</button>
+                <button type="button" class="btn-action" onclick="window.print()">🖨️ Print Report</button>
+            </div>
+        </div>
+
+        <!-- Product Sales Table -->
+        <div class="table-card">
+            <div class="table-header">
+                <h3 id="tableHeading">📦 Product-Wise Sales Breakdown (Today)</h3>
+                <span style="font-size:12px; color:#64748b;" id="resultCount">0 Products Found</span>
+            </div>
+            
+            <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="center">#</th>
+                            <th>Product Description</th>
+                            <th>Code / SKU</th>
+                            <th class="num">Units Sold (Qty)</th>
+                            <th class="num">Free Issue Qty</th>
+                            <th class="num">Avg Unit Price</th>
+                            <th class="num">Total Revenue (LKR)</th>
+                            <th class="center">% Share</th>
+                        </tr>
+                    </thead>
+                    <tbody id="salesHistoryTableBody">
+                        <tr><td colspan="8" class="center" style="padding:30px; color:#64748b;">Loading sales history data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPeriod = 'today';
+        let rawOrders = [];
+        let aggregatedProducts = [];
+        let targetBusinessId = '';
+
+        window.auth.onAuthStateChanged(async (user) => {
+            if (!user) { window.location.href = '/'; return; }
+            const context = await window.dashboardCore.getContext(user);
+            targetBusinessId = (context && context.businessId) || user.uid;
+
+            // Set default dates
+            const now = new Date();
+            document.getElementById('startDate').value = now.toISOString().split('T')[0];
+            document.getElementById('endDate').value = now.toISOString().split('T')[0];
+
+            await loadRepsDropdown();
+            await loadProductSalesHistory();
+        });
+
+        async function loadRepsDropdown() {
+            try {
+                const db = firebase.firestore();
+                const snap = await db.collection('businesses').doc(targetBusinessId).collection('users').get().catch(() => ({ docs: [] }));
+                const repSel = document.getElementById('repFilter');
+                repSel.innerHTML = '<option value="">👨‍💼 All Sales Reps</option>';
+                snap.docs.forEach(d => {
+                    const data = d.data();
+                    if (data.email) {
+                        const opt = document.createElement('option');
+                        opt.value = data.email.toLowerCase();
+                        opt.textContent = data.name || data.email;
+                        repSel.appendChild(opt);
+                    }
+                });
+            } catch (e) {
+                console.warn('[SalesHistory] Reps dropdown load note:', e);
+            }
+        }
+
+        function setTimeFilter(period) {
+            currentPeriod = period;
+            ['btnToday', 'btnWeek', 'btnMonth', 'btnCustom'].forEach(id => {
+                document.getElementById(id).classList.remove('active');
+            });
+            const activeId = 'btn' + period.charAt(0).toUpperCase() + period.slice(1);
+            if (document.getElementById(activeId)) document.getElementById(activeId).classList.add('active');
+
+            const customBox = document.getElementById('customDateRange');
+            if (period === 'custom') {
+                customBox.style.display = 'flex';
+            } else {
+                customBox.style.display = 'none';
+            }
+
+            loadProductSalesHistory();
+        }
+
+        function getDateRange() {
+            const now = new Date();
+            let start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            let end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+            if (currentPeriod === 'today') {
+                document.getElementById('metricQtyPeriod').textContent = 'Today';
+                document.getElementById('tableHeading').textContent = '📦 Product-Wise Sales Breakdown (Today)';
+            } else if (currentPeriod === 'week') {
+                const day = now.getDay();
+                const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday start
+                start = new Date(now.setDate(diff));
+                start.setHours(0, 0, 0, 0);
+                end = new Date();
+                end.setHours(23, 59, 59, 999);
+                document.getElementById('metricQtyPeriod').textContent = 'This Week';
+                document.getElementById('tableHeading').textContent = '📦 Product-Wise Sales Breakdown (This Week)';
+            } else if (currentPeriod === 'month') {
+                start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+                end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+                document.getElementById('metricQtyPeriod').textContent = 'This Month';
+                document.getElementById('tableHeading').textContent = '📦 Product-Wise Sales Breakdown (This Month)';
+            } else if (currentPeriod === 'custom') {
+                const sVal = document.getElementById('startDate').value;
+                const eVal = document.getElementById('endDate').value;
+                if (sVal) start = new Date(sVal + 'T00:00:00');
+                if (eVal) end = new Date(eVal + 'T23:59:59');
+                document.getElementById('metricQtyPeriod').textContent = 'Selected Range';
+                document.getElementById('tableHeading').textContent = `📦 Product-Wise Sales Breakdown (${sVal} to ${eVal})`;
+            }
+
+            return { start, end };
+        }
+
+        async function loadProductSalesHistory() {
+            const tbody = document.getElementById('salesHistoryTableBody');
+            tbody.innerHTML = '<tr><td colspan="8" class="center" style="padding:30px; color:#0f766e; font-weight:bold;">🔄 Calculating product sales...</td></tr>';
+
+            try {
+                const db = firebase.firestore();
+                const { start, end } = getDateRange();
+
+                const snap = await db.collection('orders')
+                    .where('businessId', '==', targetBusinessId)
+                    .limit(500)
+                    .get();
+
+                rawOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                // Filter orders by date range and non-rejected status
+                const filteredOrders = rawOrders.filter(o => {
+                    const status = String(o.status || '').toUpperCase();
+                    if (['REJECTED', 'CANCELLED'].includes(status)) return false;
+
+                    const dt = o.orderDate && o.orderDate.toDate ? o.orderDate.toDate() : (o.createdAt && o.createdAt.toDate ? o.createdAt.toDate() : null);
+                    if (!dt) return true;
+                    return dt >= start && dt <= end;
+                });
+
+                document.getElementById('metricOrderCount').textContent = `${filteredOrders.length} Orders`;
+
+                // Aggregate by Product
+                const prodMap = {};
+                let grandTotalQty = 0;
+                let grandTotalFree = 0;
+                let grandTotalRev = 0;
+
+                filteredOrders.forEach(o => {
+                    const repEmail = String(o.repEmail || '').toLowerCase();
+                    o._repEmailNorm = repEmail;
+
+                    if (Array.isArray(o.items)) {
+                        o.items.forEach(it => {
+                            const pKey = it.productId || it.productCode || it.productName || 'Unknown';
+                            const pName = it.productName || it.name || pKey;
+                            const pCode = it.productCode || '';
+                            const qty = Number(it.orderedQty != null ? it.orderedQty : it.qty) || 0;
+                            const free = Number(it.freeQty) || 0;
+                            const price = Number(it.unitPrice) || 0;
+                            const rev = Number(it.total != null ? it.total : it.lineTotal) || (qty * price);
+
+                            if (!prodMap[pKey]) {
+                                prodMap[pKey] = {
+                                    key: pKey,
+                                    name: pName,
+                                    code: pCode,
+                                    soldQty: 0,
+                                    freeQty: 0,
+                                    totalRevenue: 0,
+                                    priceSum: 0,
+                                    itemCount: 0,
+                                    repEmails: new Set()
+                                };
+                            }
+
+                            prodMap[pKey].soldQty += qty;
+                            prodMap[pKey].freeQty += free;
+                            prodMap[pKey].totalRevenue += rev;
+                            prodMap[pKey].priceSum += price;
+                            prodMap[pKey].itemCount += 1;
+                            if (repEmail) prodMap[pKey].repEmails.add(repEmail);
+
+                            grandTotalQty += qty;
+                            grandTotalFree += free;
+                            grandTotalRev += rev;
+                        });
+                    }
+                });
+
+                aggregatedProducts = Object.values(prodMap);
+                aggregatedProducts.sort((a, b) => b.soldQty - a.soldQty);
+
+                // Update Metrics
+                document.getElementById('metricTotalQty').textContent = `${grandTotalQty.toLocaleString()} Units`;
+                document.getElementById('metricFreeQty').textContent = `${grandTotalFree.toLocaleString()} Units`;
+                document.getElementById('metricTotalRevenue').textContent = `LKR ${grandTotalRev.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+                applyFilters(grandTotalRev);
+            } catch (e) {
+                console.error('[SalesHistory] Error loading data:', e);
+                tbody.innerHTML = `<tr><td colspan="8" class="center" style="color:#ef4444; padding:20px;">Error loading sales history: ${e.message}</td></tr>`;
+            }
+        }
+
+        function applyFilters(totalRevOverride) {
+            const query = document.getElementById('searchProduct').value.trim().toLowerCase();
+            const repFilter = document.getElementById('repFilter').value;
+            const tbody = document.getElementById('salesHistoryTableBody');
+
+            let filtered = aggregatedProducts.filter(p => {
+                const matchSearch = !query || p.name.toLowerCase().includes(query) || p.code.toLowerCase().includes(query);
+                const matchRep = !repFilter || p.repEmails.has(repFilter);
+                return matchSearch && matchRep;
+            });
+
+            document.getElementById('resultCount').textContent = `${filtered.length} Products Found`;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="center" style="padding:30px; color:#94a3b8;">No product sales matching filters.</td></tr>';
+                return;
+            }
+
+            const totalRev = totalRevOverride || aggregatedProducts.reduce((sum, p) => sum + p.totalRevenue, 0) || 1;
+
+            tbody.innerHTML = filtered.map((p, i) => {
+                const avgPrice = p.itemCount ? (p.priceSum / p.itemCount) : 0;
+                const sharePct = ((p.totalRevenue / totalRev) * 100).toFixed(1);
+
+                return `
+                    <tr>
+                        <td class="center" style="font-weight:bold; color:#64748b;">${i + 1}</td>
+                        <td>
+                            <strong style="color:#0f172a; font-size:14px;">${escapeHtml(p.name)}</strong>
+                        </td>
+                        <td><span style="font-family:monospace; font-weight:bold; color:#475569;">${escapeHtml(p.code || '—')}</span></td>
+                        <td class="num" style="font-weight:800; font-size:14px; color:#0f766e;">
+                            ${p.soldQty.toLocaleString()}
+                        </td>
+                        <td class="num">
+                            ${p.freeQty > 0 ? `<span class="badge-free">+ ${p.freeQty.toLocaleString()} FREE</span>` : '0'}
+                        </td>
+                        <td class="num">Rs. ${avgPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                        <td class="num" style="font-weight:800; color:#0f172a; font-size:14px;">
+                            Rs. ${p.totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                        </td>
+                        <td class="center">
+                            <div style="font-size:11px; font-weight:700; margin-bottom:2px;">${sharePct}%</div>
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" style="width: ${Math.min(100, Math.max(5, sharePct))}%;"></div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function exportToCSV() {
+            if (aggregatedProducts.length === 0) return alert('No data to export.');
+            let csv = 'Product Name,Product Code,Units Sold,Free Issue Qty,Avg Price,Total Revenue (LKR)\n';
+            aggregatedProducts.forEach(p => {
+                const name = `"${p.name.replace(/"/g, '""')}"`;
+                const code = `"${p.code.replace(/"/g, '""')}"`;
+                const avgPrice = (p.itemCount ? (p.priceSum / p.itemCount) : 0).toFixed(2);
+                csv += `${name},${code},${p.soldQty},${p.freeQty},${avgPrice},${p.totalRevenue.toFixed(2)}\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute('download', `Product_Sales_History_${currentPeriod}_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function escapeHtml(s) {
+            if (s == null) return '';
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>

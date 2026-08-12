@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finance & Money Flow - DIGIBIZ Auto Care</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="autocare-theme.css?v=3">
+    
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=3"></script>
+    <script src="/core/event-bus.js?v=3"></script>
+    <script src="/core/accounts-core.js?v=3"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/dashboard-core.js?v=3"></script>
+    <script src="/core/subscription-manager.js?v=3"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <script src="autocare-utils.js?v=2"></script>
+    
+    <style>
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: rgba(30, 41, 59, 0.85); border-radius: 18px; padding: 22px; border: 1px solid #334155; }
+        .stat-card .label { font-size: 13px; font-weight: 600; color: #94a3b8; }
+        .stat-card .val { font-size: 26px; font-weight: 800; margin-top: 8px; }
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div>
+            <h2 style="color:#38bdf8; font-size:24px; font-weight:800;"><i class="fa-solid fa-chart-pie"></i> Finance & Money Flow Management</h2>
+            <p style="color:#94a3b8; font-size:14px; margin-top:4px;">ආදායම්/වියදම් සටහන් කිරීම, පාලනය සහ මකා දැමීම (Delete)</p>
+        </div>
+        <button onclick="addExpenseModal()" class="btn btn-primary"><i class="fa-solid fa-plus"></i> Record Expense / Outflow</button>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <span class="label">Monthly Total Income</span>
+            <div class="val" style="color:#34d399;" id="lblIncome">Rs. 0</div>
+        </div>
+        <div class="stat-card">
+            <span class="label">Monthly Expenses & Parts Cost</span>
+            <div class="val" style="color:#f87171;" id="lblExpense">Rs. 0</div>
+        </div>
+        <div class="stat-card">
+            <span class="label">Net Workshop Profit</span>
+            <div class="val" style="color:#38bdf8;" id="lblProfit">Rs. 0</div>
+        </div>
+    </div>
+
+    <div class="card-dark" style="padding:24px; margin-bottom:25px;">
+        <h3 style="font-size:16px; font-weight:700; color:#38bdf8;"><i class="fa-solid fa-book"></i> Financial Cash Flow Ledger (මූල්‍ය ලෙජරය)</h3>
+        <table style="margin-top:15px;">
+            <thead>
+                <tr>
+                    <th>Date (DD/MM/YYYY)</th>
+                    <th>Reference</th>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th>Type</th>
+                    <th>Amount (LKR)</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="ledgerBody">
+                <!-- JS Rendered -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let ledgerEntries = [];
+
+        function getBizId() {
+            return window.AutoCareUtils ? window.AutoCareUtils.getBizId() : 'DEFAULT_BIZ';
+        }
+
+        function loadLedger() {
+            const bizId = getBizId();
+            const storageKey = `autocare_finance_${bizId}`;
+            const cached = localStorage.getItem(storageKey);
+
+            if (cached) {
+                try { ledgerEntries = JSON.parse(cached); } catch(e) { ledgerEntries = []; }
+            } else {
+                ledgerEntries = [];
+            }
+
+            renderLedger();
+        }
+
+        function renderLedger() {
+            const tbody = document.getElementById('ledgerBody');
+            tbody.innerHTML = '';
+
+            let totalInc = 0;
+            let totalExp = 0;
+
+            if (ledgerEntries.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:30px; color:#64748b;">තවම මූල්‍ය ගනුදෙනු කිසිවක් සටහන් කර නොමැත. (No ledger entries recorded)</td></tr>`;
+            } else {
+                ledgerEntries.forEach(item => {
+                    const isInc = item.type === 'INCOME';
+                    if (isInc) totalInc += item.amount;
+                    else totalExp += item.amount;
+
+                    const formattedDate = window.AutoCareUtils ? window.AutoCareUtils.formatDateDDMMYYYY(item.date) : item.date;
+
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><i class="fa-solid fa-calendar-days" style="color:#64748b;"></i> ${formattedDate}</td>
+                            <td><strong style="color:#38bdf8;">${item.ref}</strong></td>
+                            <td>${item.cat}</td>
+                            <td>${item.desc}</td>
+                            <td><span style="color:${isInc ? '#34d399' : '#f87171'}; font-weight:700;">${item.type}</span></td>
+                            <td><strong style="color:${isInc ? '#34d399' : '#f87171'};">${isInc ? '+' : '-'} Rs. ${item.amount.toLocaleString()}</strong></td>
+                            <td>
+                                <button class="btn-danger-icon" title="Delete Entry" onclick="deleteEntry('${item.id}')"><i class="fa-solid fa-trash-can"></i></button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            const netProfit = totalInc - totalExp;
+            document.getElementById('lblIncome').innerText = `Rs. ${totalInc.toLocaleString()}`;
+            document.getElementById('lblExpense').innerText = `Rs. ${totalExp.toLocaleString()}`;
+            document.getElementById('lblProfit').innerText = `Rs. ${netProfit.toLocaleString()}`;
+        }
+
+        function addExpenseModal() {
+            const desc = prompt("Enter expense description:");
+            if (!desc) return;
+            const amtStr = prompt("Enter expense amount (LKR):");
+            const amt = parseFloat(amtStr);
+            if (!amt || isNaN(amt)) return;
+
+            const newEntry = {
+                id: 'FIN-' + Date.now(),
+                date: new Date().toISOString().split('T')[0],
+                ref: '#EXP-' + Math.floor(1000 + Math.random() * 9000),
+                cat: 'Operational Expense',
+                desc: desc,
+                type: 'EXPENSE',
+                amount: amt
+            };
+
+            ledgerEntries.unshift(newEntry);
+            const bizId = getBizId();
+            localStorage.setItem(`autocare_finance_${bizId}`, JSON.stringify(ledgerEntries));
+            renderLedger();
+            alert(`✅ Expense recorded!`);
+        }
+
+        function deleteEntry(id) {
+            if (confirm(`ඔබට මෙම මූල්‍ය සටහන මකා දැමීමට අවශ්‍ය බව තහවුරු කරන්න? (Delete Ledger Entry?)`)) {
+                ledgerEntries = ledgerEntries.filter(x => x.id !== id);
+                const bizId = getBizId();
+                localStorage.setItem(`autocare_finance_${bizId}`, JSON.stringify(ledgerEntries));
+                renderLedger();
+                alert(`✅ Entry deleted!`);
+            }
+        }
+
+        window.onload = loadLedger;
+    </script>
+</body>
+</html>

@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cheque Management - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/dashboard-core.js?v=47"></script>
+    <script src="/core/distributor-lorry-stock.js?v=1"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <style>
+        body{font-family:Inter,system-ui,sans-serif;background:#f3f4f6;margin:0;color:#111827;}
+        .wrap{padding:22px;}
+        .card{background:#fff;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,.09);padding:16px;}
+        .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
+        .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px;}
+        input,select,button,textarea{font:inherit;}
+        input,select,textarea{width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;box-sizing:border-box;}
+        button{padding:8px 12px;border:0;border-radius:8px;cursor:pointer;}
+        .btn{background:#10b981;color:#fff;}
+        .btn.alt{background:#e5e7eb;color:#111827;}
+        .btn.warn{background:#f59e0b;color:#fff;}
+        .btn.bad{background:#ef4444;color:#fff;}
+        table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;}
+        th,td{padding:10px;border-bottom:1px solid #e5e7eb;font-size:13px;text-align:left;}
+        th{background:#f9fafb;}
+        .status{padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700;display:inline-block;}
+        .s-pending_deposit{background:#fef3c7;color:#92400e;}
+        .s-deposited{background:#dbeafe;color:#1d4ed8;}
+        .s-cleared{background:#d1fae5;color:#065f46;}
+        .s-bounced{background:#fee2e2;color:#991b1b;}
+        .muted{color:#6b7280;font-size:12px;}
+        .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px;}
+        .sbox{background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px;}
+        @media print {.no-print{display:none !important;} body{background:#fff;} .wrap{padding:0;}}
+    </style>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="wrap">
+    <div class="card" style="margin-bottom:12px;">
+        <h2 style="margin:0 0 6px;">Cheque Management</h2>
+        <p class="muted" id="gateMsg">Track pending deposits, cleared cheques, and bounced reasons.</p>
+    </div>
+
+    <div class="card" id="formCard" style="margin-bottom:12px;">
+        <h3 style="margin-top:0;">Add / Edit Cheque</h3>
+        <div class="grid">
+            <div><label>Customer / Shop</label><select id="fCustomerId"></select></div>
+            <div><label>Invoice Number</label><input id="fInvoice" placeholder="INV-..." /></div>
+            <div><label>Order ID (optional)</label><input id="fOrderId" placeholder="Order doc ID"/></div>
+            <div><label>Bank Name</label><input id="fBank" placeholder="Bank name"/></div>
+            <div><label>Cheque Number</label><input id="fChequeNo" placeholder="Cheque number"/></div>
+            <div><label>Amount</label><input id="fAmount" type="number" min="0" step="0.01"/></div>
+            <div><label>Issue Date</label><input id="fIssueDate" type="date"/></div>
+            <div><label>Deposit Due Date</label><input id="fDueDate" type="date"/></div>
+            <div>
+                <label>Status</label>
+                <select id="fStatus">
+                    <option value="pending_deposit">pending_deposit</option>
+                    <option value="deposited">deposited</option>
+                    <option value="cleared">cleared</option>
+                    <option value="bounced">bounced</option>
+                </select>
+            </div>
+            <div><label>Bounce Reason</label><input id="fBounceReason" placeholder="Required if bounced"/></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+            <button class="btn" id="btnSave">Save Cheque</button>
+            <button class="btn alt" id="btnReset">Reset</button>
+            <button class="btn alt" id="btnPrint">Print Deposit Schedule</button>
+            <button class="btn alt" id="btnCsv">Export CSV</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="filters no-print">
+            <div><label>Status</label><select id="fltStatus"><option value="ALL">All</option><option value="pending_deposit">pending_deposit</option><option value="deposited">deposited</option><option value="cleared">cleared</option><option value="bounced">bounced</option></select></div>
+            <div><label>Due from</label><input id="fltFrom" type="date"/></div>
+            <div><label>Due to</label><input id="fltTo" type="date"/></div>
+            <div><label>Horizon</label><select id="fltHorizon"><option value="0">Any</option><option value="7">Next 7 days</option><option value="14">Next 14 days</option><option value="30">Next 30 days</option></select></div>
+        </div>
+        <div class="summary" id="summaryBar"></div>
+        <div style="overflow:auto;">
+            <table>
+                <thead><tr><th>Customer</th><th>Invoice/Order</th><th>Bank</th><th>Cheque #</th><th>Amount</th><th>Issue</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody id="rows"><tr><td colspan="9" class="muted">Loading...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+(() => {
+    const MW_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+    const state = { user: null, businessId: '', isPilot: false, editId: '', rows: [], shops: [] };
+    const $ = (id) => document.getElementById(id);
+    const STATUS_FLOW = {
+        pending_deposit: ['pending_deposit', 'deposited', 'bounced'],
+        deposited: ['deposited', 'cleared'],
+        cleared: ['cleared'],
+        bounced: ['bounced', 'pending_deposit']
+    };
+    function fmtDate(v){ if(!v) return '-'; const d=v.toDate? v.toDate(): new Date(v); return isNaN(d.getTime())?'-':d.toLocaleDateString(); }
+    function dueDays(v){ if(!v) return ''; const due = v.toDate ? v.toDate() : new Date(v); const now = new Date(); now.setHours(0,0,0,0); due.setHours(0,0,0,0); return Math.ceil((due.getTime()-now.getTime())/86400000); }
+    function toTs(dateStr){ const d = new Date(dateStr + 'T00:00:00'); return firebase.firestore.Timestamp.fromDate(d); }
+    function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+    function ymd(v){ if(!v) return new Date().toISOString().slice(0,10); const d=v.toDate? v.toDate(): new Date(v); return isNaN(d.getTime())?new Date().toISOString().slice(0,10):d.toISOString().slice(0,10); }
+    function isMwBusiness(){ 
+        const bid = String(state.businessId || '');
+        return bid === MW_BUSINESS_ID || bid === 'SPRANZA_PVT_LTD'; 
+    }
+    function interestNotice(daysOverdue, amount){
+        const days = Number(daysOverdue || 0);
+        if (!(days > 0)) return '';
+        const monthlyRate = 0.015; // 1.5% per month info alert
+        const est = (Number(amount || 0) * monthlyRate * (days / 30));
+        return `Overdue ${days}d · est. penalty Rs ${est.toFixed(2)}`;
+    }
+    function resetForm(){
+        state.editId=''; ['fInvoice','fOrderId','fBank','fChequeNo','fAmount','fIssueDate','fDueDate','fBounceReason'].forEach((id)=>$(id).value='');
+        $('fStatus').value='pending_deposit';
+    }
+    function currentFormData(){
+        const customerId = $('fCustomerId').value;
+        const shop = state.shops.find((s)=>s.id===customerId);
+        const issueDate = $('fIssueDate').value;
+        const dueDate = $('fDueDate').value;
+        const status = $('fStatus').value;
+        const amount = Number($('fAmount').value || 0);
+        const bounceReason = String($('fBounceReason').value || '').trim();
+        return {
+            businessId: state.businessId,
+            customerId,
+            customerName: shop ? (shop.name || '') : '',
+            orderId: String($('fOrderId').value || '').trim(),
+            invoiceNumber: String($('fInvoice').value || '').trim(),
+            bankName: String($('fBank').value || '').trim(),
+            chequeNumber: String($('fChequeNo').value || '').trim(),
+            amount,
+            issueDate: issueDate ? toTs(issueDate) : null,
+            depositDueDate: dueDate ? toTs(dueDate) : null,
+            status,
+            bounceReason: status === 'bounced' ? bounceReason : '',
+            isActive: true,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+    }
+    function validateCheque(data, prevStatus){
+        if (!data.customerId) return 'Customer required';
+        if (!data.bankName) return 'Bank name required';
+        if (!data.chequeNumber) return 'Cheque number required';
+        if (!(data.amount > 0)) return 'Amount must be > 0';
+        if (!data.issueDate || !data.depositDueDate) return 'Issue and due dates required';
+        if (data.depositDueDate.toMillis() < data.issueDate.toMillis()) return 'Deposit due date must be >= issue date';
+        if (data.status === 'bounced' && !data.bounceReason) return 'Bounce reason required for bounced status';
+        const from = String(prevStatus || 'pending_deposit');
+        const allowed = STATUS_FLOW[from] || [from];
+        if (!allowed.includes(data.status)) return 'Invalid status transition: ' + from + ' -> ' + data.status;
+        return '';
+    }
+    async function loadShops(){
+        const s = await db.collection('shops').where('businessId','==',state.businessId).where('isActive','==',true).get();
+        state.shops = s.docs.map((d)=>({id:d.id,...(d.data()||{})})).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+        $('fCustomerId').innerHTML = '<option value="">Select customer</option>' + state.shops.map((x)=>`<option value="${x.id}">${esc(x.name||x.id)}</option>`).join('');
+    }
+    async function loadRows(){
+        const snap = await db.collection('cheques').where('businessId','==',state.businessId).where('isActive','==',true).get();
+        state.rows = snap.docs.map((d)=>({id:d.id,...(d.data()||{})}));
+        renderRows();
+    }
+    function getFilteredRows(){
+        const st = $('fltStatus').value;
+        const from = $('fltFrom').value ? new Date($('fltFrom').value + 'T00:00:00').getTime() : 0;
+        const to = $('fltTo').value ? new Date($('fltTo').value + 'T23:59:59').getTime() : Number.MAX_SAFE_INTEGER;
+        const hz = Number($('fltHorizon').value || 0);
+        const now = new Date(); now.setHours(0,0,0,0);
+        const horizonEnd = new Date(now.getTime() + hz * 86400000).getTime();
+        return state.rows
+            .filter((r)=> st==='ALL' || r.status===st)
+            .filter((r)=> {
+                const due = r.depositDueDate && r.depositDueDate.toDate ? r.depositDueDate.toDate().getTime() : 0;
+                if (due < from || due > to) return false;
+                if (hz > 0 && (due < now.getTime() || due > horizonEnd)) return false;
+                return true;
+            })
+            .sort((a,b)=> (a.depositDueDate?.toMillis?.()||0) - (b.depositDueDate?.toMillis?.()||0));
+    }
+    function renderSummaryBar(rows){
+        const pending = rows.filter((r)=>r.status==='pending_deposit').reduce((s,r)=>s+(Number(r.amount)||0),0);
+        const deposited = rows.filter((r)=>r.status==='deposited').reduce((s,r)=>s+(Number(r.amount)||0),0);
+        const cleared = rows.filter((r)=>r.status==='cleared').reduce((s,r)=>s+(Number(r.amount)||0),0);
+        $('summaryBar').innerHTML = `
+            <div class="sbox"><div class="muted">Pending deposit total</div><strong>Rs ${pending.toLocaleString()}</strong></div>
+            <div class="sbox"><div class="muted">Deposited (not cleared)</div><strong>Rs ${deposited.toLocaleString()}</strong></div>
+            <div class="sbox"><div class="muted">Cleared total</div><strong>Rs ${cleared.toLocaleString()}</strong></div>`;
+    }
+    function renderRows(){
+        const rows = getFilteredRows();
+        renderSummaryBar(rows);
+        $('rows').innerHTML = rows.length ? rows.map((r)=>`
+            <tr>
+                <td>${esc(r.customerName || r.customerId || '-')}</td>
+                <td>${esc(r.invoiceNumber || '-')}<div class="muted">${esc(r.orderId || '')}</div></td>
+                <td>${esc(r.bankName || '-')}</td>
+                <td>${esc(r.chequeNumber || '-')}</td>
+                <td>Rs ${(Number(r.amount)||0).toLocaleString()}</td>
+                <td>${fmtDate(r.issueDate)}</td>
+                <td>${fmtDate(r.depositDueDate)}<div class="muted">${(() => {
+                    const d = dueDays(r.depositDueDate);
+                    if (d === '') return 'No due date';
+                    if (d < 0) return `${Math.abs(d)} day(s) overdue`;
+                    if (d === 0) return 'Due today';
+                    return `${d} day(s) left`;
+                })()}</div></td>
+                <td><span class="status s-${esc(r.status)}">${esc(r.status)}</span>${r.status==='bounced'&&r.bounceReason?`<div class="muted">${esc(r.bounceReason)}</div>`:''}${(() => {
+                    const d = dueDays(r.depositDueDate);
+                    return d < 0 ? `<div class="muted" style="color:#b91c1c;">${esc(interestNotice(Math.abs(d), r.amount))}</div>` : '';
+                })()}</td>
+                <td>
+                    <button class="btn alt" onclick="window.__chequeEdit('${r.id}')">Edit</button>
+                    <button class="btn warn" onclick="window.__chequeSetStatus('${r.id}','deposited')">Deposited</button>
+                    <button class="btn" onclick="window.__chequeSetStatus('${r.id}','cleared')">Cleared</button>
+                    <button class="btn bad" onclick="window.__chequeSetStatus('${r.id}','bounced')">Bounced</button>
+                    <button class="btn alt" onclick="window.__chequeDelete('${r.id}')">Delete</button>
+                    <button class="btn" onclick="window.__chequePrintReceipt('${r.id}')">🖨️ Receipt</button>
+                </td>
+            </tr>`).join('') : '<tr><td colspan="10" class="muted">No cheques found</td></tr>';
+    }
+
+    window.__chequePrintReceipt = async (id) => {
+        const r = state.rows.find((x)=>x.id===id); if(!r) return;
+        try {
+            const bid = state.businessId;
+            const bizSnap = await db.collection('businesses').doc(bid).get();
+            const bizData = bizSnap.exists ? bizSnap.data() : {};
+            const docSettings = bizData.documentSettings || {};
+            const s = docSettings.collection_receipt || {};
+
+            const header = s.header || bizData.name || 'Collection Receipt';
+            const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+            const footer = s.footer || 'Thank you for your business!';
+            const agentNote = s.showAgentDetails && bizData.agentName ? `Agent: ${bizData.agentName}` : '';
+
+            const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Cheque Receipt ${r.chequeNumber}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 5mm; }
+            body { width: 70mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; line-height: 1.4; color: #000; padding: 10px; width: 70mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 10px; margin: 4px 0 0; }
+        .receipt-title { font-size: 13px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; text-decoration: underline; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .meta-label { font-weight: 600; }
+        .amount-box { border: 2px solid #000; padding: 8px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: 800; }
+        .footer { text-align: center; font-size: 10px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; }
+        .sig-space { margin-top: 40px; display: flex; justify-content: space-between; font-size: 10px; }
+        .sig-line { border-top: 1px solid #000; width: 45%; text-align: center; padding-top: 2px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Cheque Collection Receipt</div>
+    
+    <div class="meta-row"><span class="meta-label">Receipt No:</span><span>${id.slice(-8).toUpperCase()}</span></div>
+    <div class="meta-row"><span class="meta-label">Customer:</span><span>${r.customerName || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Bank:</span><span>${r.bankName || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Cheque No:</span><span>${r.chequeNumber || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Issue Date:</span><span>${fmtDate(r.issueDate)}</span></div>
+    <div class="meta-row"><span class="meta-label">Due Date:</span><span>${fmtDate(r.depositDueDate)}</span></div>
+    
+    <div class="amount-box">Rs. ${(Number(r.amount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+    
+    ${r.invoiceNumber ? `<div class="meta-row"><span class="meta-label">Invoice:</span><span>${r.invoiceNumber}</span></div>` : ''}
+    
+    <div class="sig-space">
+        <div class="sig-line">Customer</div>
+        <div class="sig-line">Authorized</div>
+    </div>
+    
+    <div class="footer">
+        <div>${footer}</div>
+        ${agentNote ? `<div style="margin-top:4px;">${agentNote}</div>` : ''}
+        <div style="font-size: 8px; color: #666; margin-top: 8px;">Software Solution by DIGIBIZ - 0713446500</div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    </script>
+</body>
+</html>`;
+
+            const win = window.open('', '_blank', 'width=400,height=600');
+            if (!win) {
+                alert('Popup blocked. Please allow popups to print the receipt.');
+                return;
+            }
+            win.document.write(html);
+            win.document.close();
+        } catch (e) {
+            console.error(e);
+            alert('Failed to generate receipt: ' + e.message);
+        }
+    };
+    async function postChequeAccountingOnTransition(prevStatus, nextStatus, chequeId, chequeRow){
+        if (!isMwBusiness()) return;
+        const row = chequeRow || {};
+        const amount = Number(row.amount || 0);
+        if (!(amount > 0)) return;
+        const orderId = String(row.orderId || '').trim();
+        const refBase = `CHEQUE/${String(row.chequeNumber || chequeId || '').trim()}`;
+        const commonMeta = {
+            chequeId: String(chequeId || ''),
+            chequeNumber: String(row.chequeNumber || ''),
+            customerId: String(row.customerId || ''),
+            customerName: String(row.customerName || ''),
+            orderId: orderId,
+            invoiceNumber: String(row.invoiceNumber || ''),
+            scope: 'MW_TRADING_ONLY'
+        };
+        if (nextStatus === 'deposited' && prevStatus !== 'deposited' && prevStatus !== 'cleared') {
+            const drId = `MW_CHEQUE_${String(chequeId).replace(/[^A-Za-z0-9_-]/g, '_')}_BANK_DR`;
+            const crId = `MW_CHEQUE_${String(chequeId).replace(/[^A-Za-z0-9_-]/g, '_')}_AR_CR`;
+            await Promise.all([
+                db.collection('journal_entries').doc(drId).set({
+                    businessId: state.businessId,
+                    account: 'Bank',
+                    amount,
+                    entryType: 'debit',
+                    reference: refBase,
+                    referenceType: 'MW_CHEQUE_DEPOSIT',
+                    date: ymd(row.depositDueDate || row.updatedAt),
+                    createdAt: new Date(),
+                    meta: commonMeta
+                }, { merge: true }),
+                db.collection('journal_entries').doc(crId).set({
+                    businessId: state.businessId,
+                    account: 'Accounts Receivable',
+                    amount,
+                    entryType: 'credit',
+                    reference: refBase,
+                    referenceType: 'MW_CHEQUE_DEPOSIT',
+                    date: ymd(row.depositDueDate || row.updatedAt),
+                    createdAt: new Date(),
+                    meta: commonMeta
+                }, { merge: true }),
+                db.collection('cheques').doc(chequeId).set({
+                    accounting: {
+                        depositDebitId: drId,
+                        depositCreditId: crId,
+                        lastAccountingStatus: 'deposited',
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }
+                }, { merge: true })
+            ]);
+        }
+        if (nextStatus === 'bounced' && (prevStatus === 'deposited' || prevStatus === 'cleared')) {
+            const drId = `MW_CHEQUE_${String(chequeId).replace(/[^A-Za-z0-9_-]/g, '_')}_AR_DR_BOUNCE`;
+            const crId = `MW_CHEQUE_${String(chequeId).replace(/[^A-Za-z0-9_-]/g, '_')}_BANK_CR_BOUNCE`;
+            await Promise.all([
+                db.collection('journal_entries').doc(drId).set({
+                    businessId: state.businessId,
+                    account: 'Accounts Receivable',
+                    amount,
+                    entryType: 'debit',
+                    reference: refBase,
+                    referenceType: 'MW_CHEQUE_BOUNCE',
+                    date: ymd(row.updatedAt || new Date()),
+                    createdAt: new Date(),
+                    meta: commonMeta
+                }, { merge: true }),
+                db.collection('journal_entries').doc(crId).set({
+                    businessId: state.businessId,
+                    account: 'Bank',
+                    amount,
+                    entryType: 'credit',
+                    reference: refBase,
+                    referenceType: 'MW_CHEQUE_BOUNCE',
+                    date: ymd(row.updatedAt || new Date()),
+                    createdAt: new Date(),
+                    meta: commonMeta
+                }, { merge: true }),
+                db.collection('cheques').doc(chequeId).set({
+                    accounting: {
+                        bounceDebitId: drId,
+                        bounceCreditId: crId,
+                        lastAccountingStatus: 'bounced',
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }
+                }, { merge: true })
+            ]);
+        }
+    }
+    window.__chequeEdit = (id) => {
+        const r = state.rows.find((x)=>x.id===id); if(!r) return;
+        state.editId = id;
+        $('fCustomerId').value = r.customerId || '';
+        $('fInvoice').value = r.invoiceNumber || '';
+        $('fOrderId').value = r.orderId || '';
+        $('fBank').value = r.bankName || '';
+        $('fChequeNo').value = r.chequeNumber || '';
+        $('fAmount').value = Number(r.amount||0);
+        const iss = r.issueDate?.toDate ? r.issueDate.toDate() : null;
+        const due = r.depositDueDate?.toDate ? r.depositDueDate.toDate() : null;
+        $('fIssueDate').value = iss ? iss.toISOString().slice(0,10) : '';
+        $('fDueDate').value = due ? due.toISOString().slice(0,10) : '';
+        $('fStatus').value = r.status || 'pending_deposit';
+        $('fBounceReason').value = r.bounceReason || '';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    window.__chequeSetStatus = async (id, nextStatus) => {
+        const r = state.rows.find((x)=>x.id===id); if(!r) return;
+        const prevStatus = String(r.status || 'pending_deposit');
+        let bounceReason = r.bounceReason || '';
+        if (nextStatus === 'bounced') {
+            bounceReason = prompt('Bounce reason:', bounceReason || '') || '';
+            if (!bounceReason.trim()) return alert('Bounce reason is required.');
+        }
+        const allowed = STATUS_FLOW[String(r.status||'pending_deposit')] || [];
+        if (!allowed.includes(nextStatus)) return alert('Invalid status transition.');
+        await db.collection('cheques').doc(id).set({
+            status: nextStatus,
+            bounceReason: nextStatus === 'bounced' ? bounceReason.trim() : '',
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        await postChequeAccountingOnTransition(prevStatus, nextStatus, id, Object.assign({}, r, {
+            status: nextStatus,
+            bounceReason: nextStatus === 'bounced' ? bounceReason.trim() : ''
+        }));
+        await loadRows();
+    };
+    window.__chequeDelete = async (id) => {
+        const r = state.rows.find((x)=>x.id===id); if(!r) return;
+        if (String(r.status || '') === 'cleared') return alert('Cannot delete a cleared cheque.');
+        if (!confirm('Soft delete this cheque?')) return;
+        await db.collection('cheques').doc(id).set({
+            isActive: false,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        await loadRows();
+    };
+    async function saveCheque(){
+        const data = currentFormData();
+        const prev = state.editId ? (state.rows.find((x)=>x.id===state.editId)?.status || 'pending_deposit') : 'pending_deposit';
+        const err = validateCheque(data, prev);
+        if (err) return alert(err);
+        if (!state.editId) data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+        const ref = state.editId ? db.collection('cheques').doc(state.editId) : db.collection('cheques').doc();
+        await ref.set(data, { merge: true });
+        await postChequeAccountingOnTransition(prev, data.status, ref.id, data);
+        resetForm();
+        await loadRows();
+    }
+    function printSchedule(){
+        const rows = getFilteredRows();
+        const html = `<!doctype html><html><head><meta charset="utf-8"><title>Cheque Schedule</title><style>body{font-family:Arial;padding:16px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;font-size:12px}th{background:#f3f4f6}</style></head><body><h2>Cheque Deposit Schedule</h2><table><thead><tr><th>Customer</th><th>Cheque #</th><th>Amount</th><th>Due</th><th>Status</th></tr></thead><tbody>${rows.map((r)=>`<tr><td>${esc(r.customerName||'-')}</td><td>${esc(r.chequeNumber||'-')}</td><td>Rs ${(Number(r.amount)||0).toLocaleString()}</td><td>${fmtDate(r.depositDueDate)}</td><td>${esc(r.status||'')}</td></tr>`).join('') || '<tr><td colspan="5">No rows</td></tr>'}</tbody></table></body></html>`;
+        const w = window.open('', '_blank'); if (!w) return;
+        w.document.open(); w.document.write(html); w.document.close(); setTimeout(()=>w.print(), 300);
+    }
+    function exportCsv(){
+        const rows = getFilteredRows();
+        const header = ['Customer name','Bank name','Cheque number','Amount','Issue date','Due date','Status','Days until due'];
+        const lines = [header.join(',')];
+        rows.forEach((r)=>{
+            lines.push([
+                `"${String(r.customerName||'').replace(/"/g,'""')}"`,
+                `"${String(r.bankName||'').replace(/"/g,'""')}"`,
+                `"${String(r.chequeNumber||'').replace(/"/g,'""')}"`,
+                Number(r.amount||0).toFixed(2),
+                `"${fmtDate(r.issueDate)}"`,
+                `"${fmtDate(r.depositDueDate)}"`,
+                `"${String(r.status||'')}"`,
+                String(dueDays(r.depositDueDate))
+            ].join(','));
+        });
+        const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'cheque-schedule-report.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+    function bind(){
+        $('btnSave').addEventListener('click', saveCheque);
+        $('btnReset').addEventListener('click', resetForm);
+        $('btnPrint').addEventListener('click', printSchedule);
+        $('btnCsv').addEventListener('click', exportCsv);
+        ['fltStatus','fltFrom','fltTo','fltHorizon'].forEach((id)=>$(id).addEventListener('change', renderRows));
+    }
+    firebase.auth().onAuthStateChanged(async (user) => {
+        if (!user) return void (window.location.href = '/');
+        state.user = user;
+        state.businessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '';
+        if (!state.businessId && window.dashboardCore) {
+            const ctx = await window.dashboardCore.getContext(user).catch(()=>null);
+            state.businessId = ctx && ctx.businessId ? ctx.businessId : '';
+        }
+        if (!state.businessId) return alert('Select a business first');
+        state.isPilot = isMwBusiness();
+        if (!state.isPilot) {
+            $('gateMsg').textContent = 'Cheque management is enabled only for MW Trading business.';
+            $('formCard').style.display = 'none';
+            $('rows').innerHTML = '<tr><td colspan="9" class="muted">Access restricted for this tenant.</td></tr>';
+            return;
+        }
+        bind();
+        await loadShops();
+        await loadRows();
+    });
+})();
+</script>
+</body>
+</html>

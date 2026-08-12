@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Free issues log - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/dashboard-core.js?v=34"></script>
+    <script src="/core/distributor-inventory.js?v=1"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <style>
+        body{font-family:Inter,system-ui,sans-serif;background:#f3f4f6;margin:0;}
+        .wrap{padding:24px;max-width:1200px;}
+        h1{font-size:22px;color:#111827;}
+        .sub{color:#64748b;font-size:13px;margin-bottom:16px;}
+        .bar{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:20px;}
+        .fld{display:flex;flex-direction:column;gap:4px;}
+        .fld label{font-size:11px;font-weight:600;color:#64748b;}
+        input,button{padding:8px 12px;border-radius:8px;border:1px solid #e5e7eb;}
+        button{background:#10b981;color:#fff;border:none;cursor:pointer;font-weight:600;}
+        table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+        th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #e5e7eb;font-size:13px;}
+        th{background:#f9fafb;font-weight:600;}
+        .num{text-align:right;}
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <h1>Free issues log</h1>
+        <p class="sub">Each line is a free issue from an order: item, brand, quantity, estimated value (qty × unit price), date, rep, and customer (shop).</p>
+        <div class="bar">
+            <div class="fld"><label>From</label><input type="date" id="startDate"></div>
+            <div class="fld"><label>To</label><input type="date" id="endDate"></div>
+            <button type="button" id="goBtn">Load</button>
+        </div>
+        <div id="out">Sign in…</div>
+    </div>
+    <script>
+        const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+
+        function esc(s) {
+            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        }
+        function money(n) {
+            return 'Rs ' + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        async function enrich(doc) {
+            const o = doc.data();
+            let rep = o.repId;
+            let shop = o.shopId;
+            try {
+                const r = await db.collection('reps').doc(o.repId).get();
+                if (r.exists) rep = r.data().name || rep;
+            } catch (e) {}
+            try {
+                const s = await db.collection('shops').doc(o.shopId).get();
+                if (s.exists) shop = s.data().name || shop;
+            } catch (e2) {}
+            const dt = o.orderDate && o.orderDate.toDate ? o.orderDate.toDate() : null;
+            return { id: doc.id, o, rep, shop, dt };
+        }
+        let currentBusinessId = null;
+        async function load() {
+            const baseBid = currentBusinessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            const businessName = sessionStorage.getItem('businessName') || localStorage.getItem('businessName') || '';
+            const inv = window.DigiBizDistributorInventory || {};
+            const isMW = typeof inv.isMwTradingBusiness === 'function'
+                ? inv.isMwTradingBusiness(baseBid, businessName)
+                : (String(baseBid || '').trim() === MW_TRADING_BUSINESS_ID || String(baseBid || '').trim() === 'SPRANZA_PVT_LTD');
+            const bid = baseBid;
+            if (!bid) { document.getElementById('out').textContent = 'No business selected.'; return; }
+            const sd = document.getElementById('startDate').value;
+            const ed = document.getElementById('endDate').value;
+            const start = new Date(sd); start.setHours(0, 0, 0, 0);
+            const end = new Date(ed); end.setHours(23, 59, 59, 999);
+            document.getElementById('out').innerHTML = '<p>Loading…</p>';
+            const rows = [];
+            try {
+                if (isMW) {
+                    // MW only: load from all orders (data-entry flow unchanged).
+                    const snap = await db.collection('orders')
+                        .where('businessId', '==', bid)
+                        .get();
+                    snap.docs.forEach((doc) => {
+                        const x = doc.data() || {};
+                        const extracted = (typeof inv.extractFreeIssueRowsFromOrder === 'function')
+                            ? inv.extractFreeIssueRowsFromOrder(x, doc.id)
+                            : [];
+                        extracted.forEach((row) => {
+                            const dtRaw = row.when || null;
+                            const dt = dtRaw && typeof dtRaw.toDate === 'function' ? dtRaw.toDate() : (dtRaw ? new Date(dtRaw) : null);
+                            if (dt && (dt < start || dt > end)) return;
+                            rows.push({
+                                id: row.orderId || doc.id,
+                                when: dt ? dt.toLocaleString() : '—',
+                                item: row.item || '—',
+                                brand: row.brand || '—',
+                                qty: Number(row.qty) || 0,
+                                val: Number(row.value) || 0,
+                                rep: row.rep || '—',
+                                customer: row.customer || '—',
+                                reason: row.note || '—'
+                            });
+                        });
+                        if (typeof inv.extractFreeIssueRowsFromOrder === 'function') return;
+                        const dtRaw = x.date || x.createdAt || x.orderDate || null;
+                        const dt = dtRaw && typeof dtRaw.toDate === 'function' ? dtRaw.toDate() : (dtRaw ? new Date(dtRaw) : null);
+                        if (dt && (dt < start || dt > end)) return;
+                        const qty = Number(x.freeQty != null ? x.freeQty : x.qty) || 0;
+                        if (qty <= 0) return;
+                        const unitPrice = Number(x.unitPrice || x.price || 0) || 0;
+                        rows.push({
+                            id: doc.id,
+                            when: dt ? dt.toLocaleString() : '—',
+                            item: x.itemName || x.productName || x.name || '—',
+                            brand: String(x.brand || x.productBrand || '—').trim() || '—',
+                            qty,
+                            val: Number(x.value || (qty * unitPrice)),
+                            rep: x.repName || x.repId || '—',
+                            customer: x.customerName || x.shopName || x.shopId || '—',
+                            reason: x.reason || x.note || x.freeReason || '—'
+                        });
+                    });
+                } else {
+                    // Keep original behavior for other distributors.
+                    const snap = await db.collection('orders')
+                        .where('businessId', '==', bid)
+                        .where('orderDate', '>=', start)
+                        .where('orderDate', '<=', end)
+                        .get();
+                    for (const doc of snap.docs) {
+                        const { o, rep, shop, dt } = await enrich(doc);
+                        (o.items || []).forEach((it) => {
+                            const fq = Number(it.freeQty) || 0;
+                            if (fq <= 0) return;
+                            const rate = Number(it.unitPrice) || 0;
+                            const brand = (String(it.productBrand || '').trim()) || '—';
+                            rows.push({
+                                id: doc.id,
+                                when: dt ? dt.toLocaleString() : '—',
+                                item: it.productName || '—',
+                                brand,
+                                qty: fq,
+                                val: fq * rate,
+                                rep,
+                                customer: shop || '—',
+                                reason: it.freeReason || '—'
+                            });
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('free-items load failed', err);
+                document.getElementById('out').innerHTML = '<p>Failed to load free issues data.</p>';
+                return;
+            }
+            rows.sort((a, b) => String(b.when).localeCompare(String(a.when)));
+            document.getElementById('out').innerHTML = `
+                <table>
+                    <thead><tr><th>Date / time</th><th>Item</th><th>Brand</th><th class="num">Qty</th><th class="num">Value (est.)</th><th>Rep</th><th>Customer</th><th>Note</th></tr></thead>
+                    <tbody>
+                        ${rows.length ? rows.map((r) => `<tr onclick="viewOrderDetails('${r.id}')" style="cursor:pointer;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='none'">
+                            <td>${esc(r.when)}</td>
+                            <td>${esc(r.item)}</td>
+                            <td>${esc(r.brand)}</td>
+                            <td class="num">${r.qty}</td>
+                            <td class="num">${money(r.val)}</td>
+                            <td>${esc(r.rep)}</td>
+                            <td>${esc(r.customer)}</td>
+                            <td>${esc(r.reason)}</td>
+                        </tr>`).join('') : '<tr><td colspan="8">No free-issue lines in this range.</td></tr>'}
+                    </tbody>
+                </table>`;
+        }
+
+        async function viewOrderDetails(id) {
+            try {
+                const doc = await db.collection('orders').doc(id).get();
+                if (!doc.exists) return;
+                const o = doc.data();
+                let details = `Order: ${o.orderNumber || doc.id}\nCustomer: ${o.shopName || '—'}\nDate: ${o.orderDate?.toDate ? o.orderDate.toDate().toLocaleString() : o.orderDate}\n\nFree Items:\n`;
+                (o.items || []).filter(i => (Number(i.freeQty) || 0) > 0).forEach(i => {
+                    details += `- ${i.productName}: ${i.freeQty} units (${i.freeReason || 'No reason'})\n`;
+                });
+                alert(details);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        document.getElementById('goBtn').addEventListener('click', () => load());
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (!user) { window.location.href = '/'; return; }
+            const ri = await window.getUserRole(user.uid);
+            if (String(ri && ri.role || '').toUpperCase() === 'REP') {
+                window.location.href = '/modules/distributor/mobile/order.html';
+                return;
+            }
+            currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            if (!currentBusinessId && window.dashboardCore) {
+                const ctx = await window.dashboardCore.getContext(user);
+                currentBusinessId = ctx && ctx.businessId;
+            }
+            if (!currentBusinessId) {
+                document.getElementById('out').textContent = 'Please open the dashboard and select a business first.';
+                return;
+            }
+            localStorage.setItem('currentBusinessId', currentBusinessId);
+            sessionStorage.setItem('currentBusinessId', currentBusinessId);
+            const t = new Date();
+            const a = new Date(); a.setDate(a.getDate() - 30);
+            document.getElementById('endDate').value = t.toISOString().split('T')[0];
+            document.getElementById('startDate').value = a.toISOString().split('T')[0];
+            await load();
+        });
+    </script>
+</body>
+</html>

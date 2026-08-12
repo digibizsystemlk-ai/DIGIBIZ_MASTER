@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staff Permissions - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/dashboard-core.js?v=72"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <style>
+        :root {
+            --primary: #10b981;
+            --primary-dark: #059669;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --header-bg: #f1f5f9;
+        }
+        * { box-sizing: border-box; }
+        body { 
+            margin: 0; 
+            font-family: 'Outfit', 'Inter', system-ui, sans-serif; 
+            background: var(--bg); 
+            color: var(--text);
+            line-height: 1.6;
+        }
+        .container { padding: 30px; max-width: 1400px; margin: 0 auto; }
+        
+        .header { margin-bottom: 30px; display: flex; justify-content: space-between; align-items: flex-end; }
+        .header-text h1 { margin: 0; font-size: 32px; font-weight: 800; color: #1e293b; letter-spacing: -0.02em; }
+        .header-text p { margin: 5px 0 0; color: var(--text-muted); font-size: 16px; }
+
+        .search-box {
+            position: relative;
+            max-width: 400px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 12px 15px 12px 40px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            outline: none;
+            font-size: 14px;
+            transition: all 0.2s;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .search-box input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1); }
+        .search-box i { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+
+        .card { 
+            background: var(--card); 
+            border-radius: 20px; 
+            border: 1px solid var(--border); 
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04);
+            overflow: hidden;
+            margin-bottom: 30px;
+        }
+
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; text-align: left; table-layout: fixed; }
+        th, td { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+        
+        /* Column Widths */
+        th:first-child, td:first-child { width: 350px; position: sticky; left: 0; background: var(--card); z-index: 10; box-shadow: 2px 0 5px rgba(0,0,0,0.02); }
+        th { background: var(--header-bg); font-weight: 700; font-size: 13px; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+        
+        .cat-row { background: #f8fafc; }
+        .cat-row td { padding: 10px 20px; font-weight: 800; font-size: 11px; color: var(--primary); text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 1px solid var(--border); }
+
+        .perm-row:hover { background: #fdfdfd; }
+        .perm-label { font-weight: 600; color: #1e293b; display: block; }
+        .perm-id { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+
+        .role-header { text-align: center; }
+        .role-name { display: block; font-size: 13px; }
+        .role-count { display: block; font-size: 10px; color: var(--text-muted); font-weight: 400; }
+
+        /* Toggle Switch */
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #cbd5e1; transition: .3s; border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute; content: ""; height: 18px; width: 18px;
+            left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        input:checked + .slider { background-color: var(--primary); }
+        input:checked + .slider:before { transform: translateX(20px); }
+        input:disabled + .slider { opacity: 0.4; cursor: not-allowed; }
+
+        .sticky-footer {
+            position: sticky; bottom: 20px; background: white;
+            padding: 15px 30px; border-top: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 -10px 15px -3px rgba(0,0,0,0.05);
+            border-radius: 0 0 20px 20px;
+            z-index: 20;
+        }
+        .footer-info { font-size: 14px; color: var(--text-muted); }
+        .footer-info strong { color: var(--text); }
+
+        .btn {
+            padding: 12px 24px; border-radius: 12px; font-weight: 700;
+            font-size: 15px; cursor: pointer; border: none; transition: all 0.2s;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3); }
+        .btn-primary:hover { background: var(--primary-dark); transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.4); }
+        .btn-primary:active { transform: translateY(0); }
+        .btn-primary:disabled { opacity: 0.7; cursor: not-allowed; transform: none; }
+        
+        .btn-lite { background: white; border: 1px solid var(--border); color: var(--text); }
+        .btn-lite:hover { background: #f9fafb; border-color: #cbd5e1; }
+
+        .loading-wrap { padding: 100px 20px; text-align: center; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .toast {
+            position: fixed; bottom: 30px; right: 30px; background: #0f172a; color: white;
+            padding: 15px 25px; border-radius: 15px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2);
+            display: flex; align-items: center; gap: 12px; z-index: 1000;
+            transform: translateY(100px); opacity: 0; transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast-icon { background: var(--primary); color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+
+        .denied-card { padding: 60px 20px; text-align: center; }
+        .denied-icon { font-size: 60px; margin-bottom: 20px; }
+        .denied-title { font-size: 24px; font-weight: 800; color: #1e293b; margin-bottom: 10px; }
+        .denied-text { color: var(--text-muted); max-width: 400px; margin: 0 auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="loading" class="loading-wrap">
+            <div class="spinner"></div>
+            <p style="font-weight:600; color:var(--text-muted);">පද්ධතිය සූදානම් වෙමින් පවතී...</p>
+        </div>
+
+        <div id="denied" class="card denied-card" style="display:none;">
+            <div class="denied-icon">🚫</div>
+            <div class="denied-title">ප්‍රවේශය අවහිර කර ඇත</div>
+            <div class="denied-text">මෙම පිටුවට පිවිසීමට ඔබට අදාළ ව්‍යාපාරයේ අයිතිකරු (Owner) ලෙස පූර්ණ අවසර තිබිය යුතුය.</div>
+            <button class="btn btn-lite" onclick="window.history.back()" style="margin-top:20px; display:inline-flex;">ආපසු යන්න</button>
+        </div>
+
+        <div id="gate" style="display:none;">
+            <div class="header">
+                <div class="header-text">
+                    <h1>Staff Permissions</h1>
+                    <p>සෑම සේවක මට්ටමක් සඳහාම අදාළ අවසරයන් මෙතැනින් නිවැරදිව කළමනාකරණය කරන්න.</p>
+                </div>
+            </div>
+
+            <div class="search-box">
+                <i>🔍</i>
+                <input type="text" id="permSearch" placeholder="අවසරයක් හෝ විශේෂාංගයක් සොයන්න (Search features...)" onkeyup="filterPermissions()">
+            </div>
+
+            <div class="card">
+                <div class="table-wrap">
+                    <table id="permTable">
+                        <thead id="permHeader">
+                            <!-- Dynamic columns injected here -->
+                        </thead>
+                        <tbody id="permBody">
+                            <!-- Dynamic rows injected here -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sticky-footer">
+                    <div class="footer-info">
+                        මෙහි සිදු කරන සියලුම වෙනස්කම් <strong>තත්‍ය කාලීනව (Real-time)</strong> සුරැකෙන අතර මීළඟ වතාවේ සේවකයා ලොග් වන විට ඒවා ක්‍රියාත්මක වේ.
+                    </div>
+                    <div style="display:flex; gap:12px;">
+                        <button class="btn btn-lite" onclick="window.location.reload()">Reset</button>
+                        <button class="btn btn-primary" id="saveBtn">
+                            <span>✅</span> Save All Permissions
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast">
+        <div class="toast-icon">✓</div>
+        <div>අවසරයන් සාර්ථකව යාවත්කාලීන කරන ලදී!</div>
+    </div>
+
+    <script>
+        let currentBusinessId = '';
+        let activeRoles = [];
+        let currentPermissions = {};
+
+        function showToast() {
+            const t = document.getElementById('toast');
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        function filterPermissions() {
+            const query = document.getElementById('permSearch').value.toLowerCase();
+            const rows = document.querySelectorAll('.perm-row');
+            const catRows = document.querySelectorAll('.cat-row');
+            
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(query) ? 'table-row' : 'none';
+            });
+
+            // Hide categories if no visible rows inside (approximate)
+            catRows.forEach(row => {
+                if (query) row.style.display = 'none';
+                else row.style.display = 'table-row';
+            });
+        }
+
+        async function init() {
+            firebase.auth().onAuthStateChanged(async (user) => {
+                if (!user) { 
+                    console.log('[Debug] No user found, redirecting to login.');
+                    window.location.href = '/'; 
+                    return; 
+                }
+
+                console.log('[Debug] Auth changed, user:', user.email);
+                const core = new DashboardCore();
+                
+                try {
+                    console.log('[Debug] Fetching context...');
+                    const context = await core.getContext(user);
+                    console.log('[Debug] Context fetched:', context);
+                    
+                    if (!context || !context.businessId) {
+                        console.warn('[Debug] No business context found.');
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('denied').style.display = 'block';
+                        return;
+                    }
+
+                    currentBusinessId = context.businessId;
+                    const role = String(context.userRole || '').toUpperCase();
+                    console.log('[Debug] User role:', role);
+                    
+                    // GATE: Must be Owner or Super Admin
+                    if (role !== 'DISTRIBUTOR_OWNER' && role !== 'BUSINESS_OWNER' && role !== 'SUPER_ADMIN' && role !== 'OWNER') {
+                        console.warn('[Debug] Access denied for role:', role);
+                        document.getElementById('loading').style.display = 'none';
+                        document.getElementById('denied').style.display = 'block';
+                        return;
+                    }
+
+                    // Fetch Dynamic Roles & Permissions
+                    console.log('[Debug] Fetching roles for business:', currentBusinessId);
+                    activeRoles = await window.getBusinessStaffRoles(currentBusinessId);
+                    console.log('[Debug] Active roles found:', activeRoles);
+                    
+                    // Fetch saved overrides
+                    console.log('[Debug] Fetching permissions from Firestore...');
+                    const cached = sessionStorage.getItem(`digibiz_perms_v2_${currentBusinessId}`);
+                    currentPermissions = cached ? JSON.parse(cached) : {};
+                    if (!cached) {
+                        const snap = await window.db.collection('businesses').doc(currentBusinessId).collection('configs').doc('permissions').get();
+                        currentPermissions = snap.exists ? snap.data() : {};
+                        sessionStorage.setItem(`digibiz_perms_v2_${currentBusinessId}`, JSON.stringify(currentPermissions));
+                    }
+                    console.log('[Debug] Permissions fetched:', currentPermissions);
+
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('gate').style.display = 'block';
+
+                    console.log('[Debug] Rendering UI...');
+                    renderHeader();
+                    renderMatrix();
+                    console.log('[Debug] Init complete.');
+                } catch (e) {
+                    console.error('[Debug] Error in init:', e);
+                    alert('Error loading permissions: ' + e.message);
+                }
+            });
+        }
+
+        function renderHeader() {
+            const header = document.getElementById('permHeader');
+            let html = `<tr><th>FEATURE / MODULE</th>`;
+            
+            activeRoles.forEach(role => {
+                html += `
+                    <th class="role-header">
+                        <span class="role-name">${role.replace(/_/g, ' ')}</span>
+                    </th>
+                `;
+            });
+            html += `</tr>`;
+            header.innerHTML = html;
+        }
+
+        function renderMatrix() {
+            const body = document.getElementById('permBody');
+            const registry = window.MASTER_PERMISSIONS || [];
+            
+            // Group by category
+            const groups = {};
+            registry.forEach(p => {
+                if (!groups[p.category]) groups[p.category] = [];
+                groups[p.category].push(p);
+            });
+
+            let html = '';
+            for (const cat in groups) {
+                html += `<tr class="cat-row"><td colspan="${activeRoles.length + 1}">${cat}</td></tr>`;
+                
+                groups[cat].forEach(p => {
+                    html += `<tr class="perm-row">
+                        <td>
+                            <div class="perm-label">${p.label}</div>
+                            <div class="perm-id">${p.id}</div>
+                            <div class="perm-status" style="font-size:11.5px; color:#065f46; margin-top:8px; padding:8px 12px; background:#f0fdf4; border-radius:8px; border-left:3px solid #10b981; line-height:1.4;">
+                                <span style="display:block; font-weight:700; margin-bottom:2px; font-size:10px; text-transform:uppercase; letter-spacing:0.02em; color:#059669;">🛡️ Capability & Menu Status</span>
+                                ${p.status || 'No description available.'}
+                            </div>
+                        </td>`;
+                    
+                    activeRoles.forEach(role => {
+                        const band = window.DigibizDistributorPermissions.roleBand(role);
+                        // Check override first, then default
+                        let isChecked = false;
+                        if (currentPermissions[band] && currentPermissions[band].hasOwnProperty(p.id)) {
+                            isChecked = currentPermissions[band][p.id];
+                        } else {
+                            isChecked = p.defaultRoles.includes(band);
+                        }
+
+                        // Owners can't revoke their own core management rights
+                        const isDisabled = (band === 'OWNER' && (p.id === 'canSettingsChange' || p.id === 'canStaffMutate' || p.id === 'canBusinessInfoEdit'));
+
+                        html += `
+                            <td style="text-align:center;">
+                                <label class="switch">
+                                    <input type="checkbox" data-role="${band}" data-key="${p.id}" ${isChecked ? 'checked' : ''} ${isDisabled ? 'disabled' : ''}>
+                                    <span class="slider"></span>
+                                </label>
+                            </td>
+                        `;
+                    });
+                    html += `</tr>`;
+                });
+            }
+            body.innerHTML = html;
+        }
+
+        document.getElementById('saveBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('saveBtn');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span>⏳</span> සුරකිමින් පවතී...';
+
+            const payload = {};
+            activeRoles.forEach(r => {
+                const band = window.DigibizDistributorPermissions.roleBand(r);
+                if (!payload[band]) payload[band] = {};
+            });
+
+            document.querySelectorAll('#permBody input[type="checkbox"]').forEach(input => {
+                const role = input.getAttribute('data-role');
+                const key = input.getAttribute('data-key');
+                payload[role][key] = input.checked;
+            });
+
+            try {
+                const businessRef = window.db.collection('businesses').doc(currentBusinessId);
+                const batch = window.db.batch();
+                
+                // 1. Save to master config (Owner only)
+                batch.set(businessRef.collection('configs').doc('permissions'), payload);
+                
+                // 2. Mirror to Permission Bridge (Staff visible) + Bump Version
+                const bridgePayload = {
+                    rbacConfig: payload,
+                    permVersion: Date.now()
+                };
+                batch.update(businessRef, bridgePayload);
+                
+                await batch.commit();
+
+                // Clear local v2 cache
+                sessionStorage.removeItem(`digibiz_perms_v2_${currentBusinessId}`);
+                
+                showToast();
+            } catch (e) {
+                console.error('Save failed:', e);
+                alert('සුරැකීම අසාර්ථකයි: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+
+        init();
+    </script>
+</body>
+</html>

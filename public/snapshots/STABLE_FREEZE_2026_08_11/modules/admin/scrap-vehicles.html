@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Assignment - DigiBiz</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <style>
+        body{font-family:'Inter',sans-serif;background:#f8fafc;margin:0;color:#1e293b}
+        .wrap{padding:24px}
+        .hero{background:linear-gradient(135deg,#0f172a,#334155);color:#fff;padding:24px;border-radius:16px;margin-bottom:20px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1)}
+        .hero h1{margin:0;font-size:24px;font-weight:800}
+        .hero p{margin:8px 0 0;opacity:0.8;font-size:14px}
+        .card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05)}
+        .form-grid{display:grid;grid-template-columns:1fr 1.5fr 120px auto;gap:12px;align-items:end}
+        .field{display:flex;flex-direction:column;gap:6px}
+        label{font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.025em}
+        input,select{padding:12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;background:#fcfcfc}
+        button{padding:12px 20px;border-radius:10px;border:none;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;transition:all 0.2s}
+        button:hover{background:#1d4ed8;transform:translateY(-1px)}
+        table{width:100%;border-collapse:collapse;margin-top:10px}
+        th,td{padding:14px;text-align:left;border-bottom:1px solid #f1f5f9}
+        th{font-size:12px;color:#64748b;text-transform:uppercase}
+        .badge{padding:4px 8px;border-radius:6px;font-size:11px;font-weight:700}
+        .badge-active{background:#dcfce7;color:#166534}
+        .btn-delete{background:#fee2e2;color:#b91c1c;padding:8px;border-radius:8px}
+        .btn-delete:hover{background:#fecaca}
+        @media (max-width:900px){.form-grid{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="hero">
+        <h1>Vehicle Management</h1>
+        <p>Assign business vehicles to suppliers/members and manage hire charges.</p>
+    </div>
+
+    <div class="card">
+        <h3 style="margin:0 0 16px">Assign New Vehicle</h3>
+        <div class="form-grid">
+            <div class="field">
+                <label>Vehicle Number</label>
+                <input id="vehicleNo" placeholder="WP CAS-1234">
+            </div>
+            <div class="field">
+                <label>Assign to Supplier</label>
+                <select id="customerId"><option value="">Select supplier...</option></select>
+            </div>
+            <div class="field">
+                <label>Hire Rate (Rs)</label>
+                <input id="hireRate" type="number" value="2500">
+            </div>
+            <button id="saveBtn">Assign Vehicle</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3 style="margin:0 0 16px">Active Assignments</h3>
+        <div style="overflow-x:auto">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Vehicle No</th>
+                        <th>Assigned To</th>
+                        <th>Hire Rate</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="rows"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+let businessId = null;
+const customerMap = {};
+
+async function loadSuppliers() {
+    try {
+        const snap = await db.collection('customers').where('businessId', '==', businessId).limit(500).get();
+        const sel = document.getElementById('customerId');
+        sel.innerHTML = '<option value="">Select supplier...</option>';
+        snap.docs.forEach(d => {
+            const data = d.data();
+            customerMap[d.id] = data;
+            const opt = document.createElement('option');
+            opt.value = d.id;
+            opt.textContent = data.fullName || d.id;
+            sel.appendChild(opt);
+        });
+    } catch (e) { console.error('loadSuppliers', e); }
+}
+
+async function saveAssignment() {
+    const vNo = document.getElementById('vehicleNo').value.trim();
+    const cid = document.getElementById('customerId').value;
+    const rate = Number(document.getElementById('hireRate').value) || 0;
+
+    if (!vNo || !cid) return alert('Vehicle Number and Supplier are required.');
+
+    try {
+        await db.collection('scrap_vehicles').add({
+            businessId,
+            vehicleNo: vNo,
+            assignedToId: cid,
+            assignedToName: customerMap[cid]?.fullName || cid,
+            defaultHireRate: rate,
+            active: true,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        document.getElementById('vehicleNo').value = '';
+        document.getElementById('customerId').value = '';
+        loadAssignments();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function deleteAssignment(id) {
+    if (!confirm('Remove this assignment?')) return;
+    try {
+        await db.collection('scrap_vehicles').doc(id).delete();
+        loadAssignments();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function loadAssignments() {
+    try {
+        const snap = await db.collection('scrap_vehicles').where('businessId', '==', businessId).get();
+        const tbody = document.getElementById('rows');
+        tbody.innerHTML = snap.docs.map(d => {
+            const r = d.data();
+            return `<tr>
+                <td><b>${r.vehicleNo}</b></td>
+                <td>${r.assignedToName}</td>
+                <td>Rs. ${Number(r.defaultHireRate || 0).toFixed(2)}</td>
+                <td><span class="badge badge-active">Assigned</span></td>
+                <td><button class="btn-delete" onclick="deleteAssignment('${d.id}')">Remove</button></td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="5" style="text-align:center;padding:40px;color:#64748b">No vehicle assignments found.</td></tr>';
+    } catch (e) { console.error('loadAssignments', e); }
+}
+
+firebase.auth().onAuthStateChanged(async user => {
+    if (!user) return location.href = '/';
+    const ctx = await window.dashboardCore.getContext(user);
+    businessId = String(ctx?.businessId || user.uid);
+    loadSuppliers();
+    loadAssignments();
+});
+
+document.getElementById('saveBtn').onclick = saveAssignment;
+</script>
+</body>
+</html>

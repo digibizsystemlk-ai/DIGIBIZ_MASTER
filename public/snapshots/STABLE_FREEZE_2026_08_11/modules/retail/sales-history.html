@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="si">
+
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales History - DIGIBIZ Retail</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/dashboard-core.js?v=3"></script>
+    <script src="/core/ui-helpers.js?v=1"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+
+    <style>
+        html.digibiz-sidebar-reserved body {
+            margin-left: 260px;
+        }
+
+        @media (max-width: 768px) {
+            html.digibiz-sidebar-reserved body {
+                margin-left: 0;
+            }
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f9fa;
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .filters input,
+        .filters select {
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .sales-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .sales-table th,
+        .sales-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #f1f3f5;
+            font-size: 14px;
+        }
+
+        .sales-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .status-pill {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-paid {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+
+        .status-unpaid {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+
+        .row-overdue {
+            background-color: #fef9c3 !important;
+        }
+
+        .row-cancelled {
+            background-color: #f1f5f9 !important;
+        }
+
+        .btn-sm {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            background-color: #2563eb;
+            color: white;
+        }
+
+        .btn-sm:hover {
+            background-color: #1d4ed8;
+        }
+
+        #loader {
+            text-align: center;
+            padding: 20px;
+            font-weight: 500;
+            color: #6b7280;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 25px;
+            border: 1px solid #888;
+            width: 90%;
+            max-width: 600px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .receipt-container {
+            font-family: monospace;
+            font-size: 13px;
+            color: #000;
+            padding: 15px;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: flex-end;
+        }
+
+        .btn-action {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-pdf { background-color: #dc2626; }
+        .btn-pdf:hover { background-color: #b91c1c; }
+        
+        .btn-wa { background-color: #16a34a; }
+        .btn-wa:hover { background-color: #15803d; }
+
+        .close-button {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .invoice-details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .invoice-details-grid>div {
+            display: contents;
+        }
+
+        .invoice-details-grid>div>span:first-child {
+            font-weight: 600;
+            color: #4b5563;
+        }
+
+        .invoice-items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .invoice-items-table th,
+        .invoice-items-table td {
+            border: 1px solid #e5e7eb;
+            padding: 8px;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        .invoice-items-table th {
+            background-color: #f9fafb;
+        }
+
+        .invoice-totals {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #e5e7eb;
+            text-align: right;
+        }
+
+        .invoice-totals div {
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .invoice-totals div span {
+            display: inline-block;
+            min-width: 120px;
+            text-align: left;
+        }
+
+        .invoice-totals .total {
+            font-weight: 700;
+            font-size: 16px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-content">
+        <div class="header">
+            <h1><i class="fas fa-history" style="color:#2563eb;"></i> Sales History & Reports</h1>
+        </div>
+
+        <!-- Financial KPI Summary Cards -->
+        <div
+            style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:15px; margin-bottom:20px;">
+            <div
+                style="background:white; padding:18px; border-radius:12px; border:1px solid #e5e7eb; box-shadow:0 2px 4px rgba(0,0,0,0.03);">
+                <div style="font-size:12px; font-weight:700; color:#6b7280; text-transform:uppercase;">Total Sales
+                    Revenue</div>
+                <div style="font-size:22px; font-weight:800; color:#0f3b2c; margin-top:4px;" id="kpiTotalRevenue">Rs.
+                    0.00</div>
+            </div>
+            <div
+                style="background:white; padding:18px; border-radius:12px; border:1px solid #e5e7eb; box-shadow:0 2px 4px rgba(0,0,0,0.03);">
+                <div style="font-size:12px; font-weight:700; color:#6b7280; text-transform:uppercase;">Total Invoices
+                </div>
+                <div style="font-size:22px; font-weight:800; color:#2563eb; margin-top:4px;" id="kpiTotalInvoices">0
+                </div>
+            </div>
+            <div
+                style="background:white; padding:18px; border-radius:12px; border:1px solid #e5e7eb; box-shadow:0 2px 4px rgba(0,0,0,0.03);">
+                <div style="font-size:12px; font-weight:700; color:#6b7280; text-transform:uppercase;">Total Amount Paid
+                </div>
+                <div style="font-size:22px; font-weight:800; color:#059669; margin-top:4px;" id="kpiTotalPaid">Rs. 0.00
+                </div>
+            </div>
+            <div
+                style="background:white; padding:18px; border-radius:12px; border:1px solid #e5e7eb; box-shadow:0 2px 4px rgba(0,0,0,0.03);">
+                <div style="font-size:12px; font-weight:700; color:#6b7280; text-transform:uppercase;">Credit
+                    Outstanding</div>
+                <div style="font-size:22px; font-weight:800; color:#dc2626; margin-top:4px;" id="kpiTotalCredit">Rs.
+                    0.00</div>
+            </div>
+        </div>
+
+        <div class="filters">
+            <select id="presetDateFilter" onchange="applyDatePreset(this.value)"
+                style="font-weight:700; color:#0f3b2c;">
+                <option value="all">All Dates</option>
+                <option value="today">Today (අද)</option>
+                <option value="yesterday">Yesterday (ඊයේ)</option>
+                <option value="this_week">This Week (මෙම සතිය)</option>
+                <option value="this_month">This Month (මෙම මාසය)</option>
+            </select>
+            <input type="date" id="dateFrom">
+            <input type="date" id="dateTo">
+            <input type="text" id="searchInput" placeholder="Search Invoice No or Customer..." style="min-width:240px;"
+                onkeyup="applyClientSideFilter()">
+            <button class="btn-sm" id="filterBtn"><i class="fas fa-filter"></i> Apply Filter</button>
+        </div>
+
+        <div style="overflow-x:auto;">
+            <table class="sales-table">
+                <thead>
+                    <tr>
+                        <th>Invoice No</th>
+                        <th>Date</th>
+                        <th>Customer</th>
+                        <th>Total</th>
+                        <th>Paid</th>
+                        <th>Balance</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="historyTableBody">
+
+                </tbody>
+            </table>
+            <div id="loader">Loading sales records...</div>
+        </div>
+    </div>
+
+    <!-- Invoice Details Modal -->
+    <div id="invoiceModal" class="modal">
+        <div class="modal-content" style="max-width: 450px;">
+            <div class="modal-header">
+                <h2 id="modalInvoiceNumber">Invoice Details</h2>
+                <span class="close-button" onclick="closeInvoiceModal()">&times;</span>
+            </div>
+            <div id="invoiceModalBody" style="background:#fff;">
+                <!-- Content injected here -->
+            </div>
+            <div class="action-buttons">
+                <button class="btn-action btn-pdf" onclick="downloadReceiptPDF()"><i class="fas fa-file-pdf"></i> Download PDF</button>
+                <button class="btn-action btn-wa" onclick="shareReceiptWhatsApp()"><i class="fab fa-whatsapp"></i> WhatsApp Share</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Sale Modal -->
+    <div id="editSaleModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="editSaleModalTitle">Edit Sale</h2>
+                <span class="close-button" onclick="closeEditSaleModal()">&times;</span>
+            </div>
+            <form id="editSaleForm" onsubmit="saveEditedSale(event)">
+                <input type="hidden" id="editSaleId">
+                <div class="invoice-details-grid" style="grid-template-columns:1fr;">
+                    <div>
+                        <label for="editCustomerName"
+                            style="display:block; font-weight:600; color:#4b5563; margin-bottom:4px; font-size:14px;">Customer
+                            Name</label>
+                        <input type="text" id="editCustomerName"
+                            style="width:100%; padding:10px; border:1px solid #dee2e6; border-radius:8px; font-size:14px; box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label for="editCustomerPhone"
+                            style="display:block; font-weight:600; color:#4b5563; margin-bottom:4px; font-size:14px;">Customer
+                            Phone</label>
+                        <input type="text" id="editCustomerPhone"
+                            style="width:100%; padding:10px; border:1px solid #dee2e6; border-radius:8px; font-size:14px; box-sizing:border-box;">
+                    </div>
+                    <div>
+                        <label for="editPaymentMethod"
+                            style="display:block; font-weight:600; color:#4b5563; margin-bottom:4px; font-size:14px;">Payment
+                            Method</label>
+                        <select id="editPaymentMethod"
+                            style="width:100%; padding:10px; border:1px solid #dee2e6; border-radius:8px; font-size:14px;">
+                            <option value="cash">Cash</option>
+                            <option value="credit">On Credit / Pay Later</option>
+                            <option value="cheque">Cheque</option>
+                            <option value="bank">Bank Transfer</option>
+                            <option value="card">Card</option>
+                        </select>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                        <div>
+                            <label for="editAmountPaid"
+                                style="display:block; font-weight:600; color:#4b5563; margin-bottom:4px; font-size:14px;">Amount
+                                Paid (Rs)</label>
+                            <input type="number" step="0.01" min="0" id="editAmountPaid"
+                                style="width:100%; padding:10px; border:1px solid #dee2e6; border-radius:8px; font-size:14px; box-sizing:border-box;"
+                                required>
+                        </div>
+                        <div>
+                            <label for="editBalanceDue"
+                                style="display:block; font-weight:600; color:#4b5563; margin-bottom:4px; font-size:14px;">Balance
+                                Due (Rs)</label>
+                            <input type="number" step="0.01" min="0" id="editBalanceDue"
+                                style="width:100%; padding:10px; border:1px solid #dee2e6; border-radius:8px; font-size:14px; box-sizing:border-box;"
+                                required>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="editDueDate"
+                            style="display:block; font-weight:600; color:#4b5563; margin-bottom:4px; font-size:14px;">Credit
+                            Due Date</label>
+                        <input type="date" id="editDueDate"
+                            style="width:100%; padding:10px; border:1px solid #dee2e6; border-radius:8px; font-size:14px; box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:15px;">
+                    <button type="button" class="btn-sm" onclick="closeEditSaleModal()"
+                        style="background:#6b7280;">Cancel</button>
+                    <button type="submit" class="btn-sm" style="background:#059669;"><i class="fas fa-save"></i> Save
+                        Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let currentBusinessId = null;
+        const KUBUKA_BUSINESS_ID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+
+        let allSales = [];
+        let lastVisible = null;
+        let isLoading = false;
+        const salesLimit = 20;
+
+        function formatCurrency(amount) {
+            return 'Rs. ' + (amount || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatDate(date) {
+            if (!date) return 'N/A';
+            if (typeof date === 'string') return date.split('T')[0];
+            if (date.toDate) date = date.toDate();
+            if (date instanceof Date && !isNaN(date)) {
+                return date.toLocaleDateString('en-CA'); // YYYY-MM-DD
+            }
+            return 'N/A';
+        }
+
+        function parseSaleDate(sale) {
+            if (sale.billDate) {
+                return new Date(sale.billDate + 'T12:00:00');
+            }
+            if (sale.createdAt) {
+                if (sale.createdAt.toDate) return sale.createdAt.toDate();
+                if (typeof sale.createdAt === 'string') return new Date(sale.createdAt);
+                if (sale.createdAt instanceof Date) return sale.createdAt;
+            }
+            return new Date();
+        }
+
+        function applyDatePreset(preset) {
+            const dateFromInput = document.getElementById('dateFrom');
+            const dateToInput = document.getElementById('dateTo');
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            if (preset === 'today') {
+                dateFromInput.value = todayStr;
+                dateToInput.value = todayStr;
+            } else if (preset === 'yesterday') {
+                const yest = new Date();
+                yest.setDate(yest.getDate() - 1);
+                const yestStr = yest.toISOString().split('T')[0];
+                dateFromInput.value = yestStr;
+                dateToInput.value = yestStr;
+            } else if (preset === 'this_week') {
+                const curr = new Date();
+                const firstDay = new Date(curr.setDate(curr.getDate() - curr.getDay()));
+                dateFromInput.value = firstDay.toISOString().split('T')[0];
+                dateToInput.value = todayStr;
+            } else if (preset === 'this_month') {
+                const curr = new Date();
+                const firstDay = new Date(curr.getFullYear(), curr.getMonth(), 1);
+                dateFromInput.value = firstDay.toISOString().split('T')[0];
+                dateToInput.value = todayStr;
+            } else {
+                dateFromInput.value = '';
+                dateToInput.value = '';
+            }
+            fetchSales(true);
+        }
+
+        function updateKpis(sales) {
+            let totalRev = 0, totalPaid = 0, totalCredit = 0, validCount = 0;
+            sales.forEach(sale => {
+                if (sale.status === 'cancelled' || sale.isReversed === true) return;
+                const tot = sale.total || 0;
+                const paid = sale.amountPaid !== undefined ? sale.amountPaid : (sale.paymentMethod !== 'credit' ? tot : 0);
+                const bal = sale.balanceDue !== undefined ? sale.balanceDue : Math.max(0, tot - paid);
+                totalRev += tot;
+                totalPaid += paid;
+                totalCredit += bal;
+                validCount++;
+            });
+
+            document.getElementById('kpiTotalRevenue').textContent = formatCurrency(totalRev);
+            document.getElementById('kpiTotalInvoices').textContent = validCount;
+            document.getElementById('kpiTotalPaid').textContent = formatCurrency(totalPaid);
+            document.getElementById('kpiTotalCredit').textContent = formatCurrency(totalCredit);
+        }
+
+        async function fetchSales(isInitialLoad = false) {
+            if (!currentBusinessId || isLoading) return;
+            isLoading = true;
+            document.getElementById('loader').style.display = 'block';
+
+            try {
+                const snapshot = await db.collection('orders').doc(currentBusinessId).collection('list').get();
+
+                allSales = [];
+                snapshot.forEach(doc => {
+                    allSales.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Sort by date descending
+                allSales.sort((a, b) => parseSaleDate(b) - parseSaleDate(a));
+
+                applyClientSideFilter();
+
+            } catch (error) {
+                console.error("Error fetching sales history: ", error);
+                document.getElementById('loader').innerHTML = `<span style="color: red;">Error loading data: ${error.message}</span>`;
+            } finally {
+                isLoading = false;
+            }
+        }
+
+        function applyClientSideFilter() {
+            const tableBody = document.getElementById('historyTableBody');
+            tableBody.innerHTML = '';
+
+            const searchTerm = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
+
+            let filtered = [...allSales];
+
+            if (dateFrom) {
+                const fromTime = new Date(dateFrom + 'T00:00:00').getTime();
+                filtered = filtered.filter(s => parseSaleDate(s).getTime() >= fromTime);
+            }
+
+            if (dateTo) {
+                const toTime = new Date(dateTo + 'T23:59:59').getTime();
+                filtered = filtered.filter(s => parseSaleDate(s).getTime() <= toTime);
+            }
+
+            if (searchTerm) {
+                filtered = filtered.filter(sale => {
+                    const customerName = (sale.customer && sale.customer.name) ? sale.customer.name.toLowerCase() : '';
+                    const invoiceNo = sale.invoiceNo ? sale.invoiceNo.toLowerCase() : '';
+                    return invoiceNo.includes(searchTerm) || customerName.includes(searchTerm);
+                });
+            }
+
+            updateKpis(filtered);
+            renderTable(filtered, true);
+
+            document.getElementById('loader').style.display = 'none';
+
+            if (filtered.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 40px;">No sales records match your filter criteria.</td></tr>';
+            }
+        }
+
+
+        function renderTable(sales, replace = false) {
+            const tableBody = document.getElementById('historyTableBody');
+            if (replace) tableBody.innerHTML = '';
+
+            if (sales.length === 0 && replace) {
+                tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 40px;">No sales records found.</td></tr>';
+                return;
+            }
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const rowsHtml = sales.map(sale => {
+                const total = sale.total || 0;
+                // Use amountPaid and balanceDue if they exist from pos.html, otherwise calculate
+                const amountPaid = sale.amountPaid !== undefined ? sale.amountPaid : (sale.paymentMethod !== 'credit' ? total : 0);
+                const balanceDue = sale.balanceDue !== undefined ? sale.balanceDue : Math.max(0, total - amountPaid);
+
+                const isCancelled = sale.status === 'cancelled' || sale.isReversed === true;
+                const isPaid = isCancelled ? false : (balanceDue < 0.01);
+                const statusPill = isCancelled
+                    ? `<span class="status-pill" style="background-color:#e2e8f0; color:#475569;">Cancelled</span>`
+                    : (isPaid
+                        ? `<span class="status-pill status-paid">Paid</span>`
+                        : `<span class="status-pill status-unpaid">Unpaid</span>`);
+
+                let dueDate = null;
+                if (sale.dueDate) {
+                    if (sale.dueDate.toDate) dueDate = sale.dueDate.toDate();
+                    else if (typeof sale.dueDate === 'string') dueDate = new Date(sale.dueDate + 'T12:00:00');
+                    else if (sale.dueDate instanceof Date) dueDate = sale.dueDate;
+                }
+                const isOverdue = !isPaid && !isCancelled && dueDate && dueDate < today;
+
+                const rowClass = isCancelled ? 'row-cancelled' : (isOverdue ? 'row-overdue' : '');
+
+                const actionsHtml = isCancelled
+                    ? `<button class="btn-sm" onclick="viewInvoice('${sale.id}')" title="View Cancelled Invoice" style="background:#2563eb;">View</button>`
+                    : `<div style="display:flex; gap:6px; justify-content:center;">
+                        <button class="btn-sm" onclick="viewInvoice('${sale.id}')" title="View Invoice" style="background:#2563eb;">View</button>
+                        <button class="btn-sm" onclick="openEditSaleModal('${sale.id}')" title="Edit Sale" style="background:#d97706;"><i class="fas fa-pen"></i></button>
+                        <button class="btn-sm" onclick="deleteSale('${sale.id}', '${sale.invoiceNo ? sale.invoiceNo.replace(/'/g, '') : 'N/A'}')" title="Delete Invoice & Revert Stock" style="background:#dc2626;"><i class="fas fa-trash"></i></button>
+                    </div>`;
+
+                return `
+                    <tr class="${rowClass}" data-id="${sale.id}" style="${isCancelled ? 'opacity:0.6;' : ''}">
+                        <td>${isCancelled ? `<del>${sale.invoiceNo || 'N/A'}</del>` : (sale.invoiceNo || 'N/A')}</td>
+                        <td>${formatDate(parseSaleDate(sale))}</td>
+                        <td>${(sale.customer && sale.customer.name) ? sale.customer.name : 'Walk-in Customer'}</td>
+                        <td>${isCancelled ? `<del>${formatCurrency(total)}</del>` : formatCurrency(total)}</td>
+                        <td>${isCancelled ? '-' : formatCurrency(amountPaid)}</td>
+                        <td>${isCancelled ? '-' : formatCurrency(balanceDue)}</td>
+                        <td>${dueDate ? formatDate(dueDate) : 'N/A'}</td>
+                        <td>${statusPill}</td>
+                        <td>${actionsHtml}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            tableBody.innerHTML += rowsHtml;
+        }
+
+        function closeInvoiceModal() {
+            document.getElementById('invoiceModal').style.display = 'none';
+        }
+
+        function viewInvoice(saleId) {
+            const sale = allSales.find(s => s.id === saleId);
+            if (!sale) {
+                alert('Could not find sale details.');
+                return;
+            }
+            
+            const modal = document.getElementById('invoiceModal');
+            document.getElementById('modalInvoiceNumber').innerText = `Receipt: ${sale.invoiceNo || 'N/A'}`;
+
+            const total = sale.total || 0;
+            const amountPaid = sale.amountPaid !== undefined ? sale.amountPaid : (sale.paymentMethod !== 'credit' ? total : 0);
+            const balanceDue = sale.balanceDue !== undefined ? sale.balanceDue : total - amountPaid;
+
+            const itemsHtml = (sale.items || []).map(item => {
+                const qty = item.quantity || item.qty || 0;
+                const pr = item.price || item.unitPrice || 0;
+                const amt = qty * pr;
+                return `
+                <div style="display:flex; justify-content:space-between; margin-bottom:2px; font-family:monospace; font-size:12px;">
+                    <div style="flex:1;">${item.name || ''}</div>
+                    <div style="width:40px; text-align:right;">${qty}</div>
+                    <div style="width:75px; text-align:right;">${formatCurrency(pr)}</div>
+                    <div style="width:85px; text-align:right; font-weight:bold;">${formatCurrency(amt)}</div>
+                </div>`;
+            }).join('');
+            
+            const bName = (window.currentBusinessData && window.currentBusinessData.businessName) || 'DIGIBIZ RETAIL';
+            const bAddr = (window.currentBusinessData && window.currentBusinessData.address) || '';
+            const bPhone = (window.currentBusinessData && window.currentBusinessData.phone) || '';
+            const cName = (sale.customer && sale.customer.name) ? sale.customer.name : 'Walk-in Customer';
+
+            const modalBody = `
+                <div id="receiptPaper" class="receipt-container">
+                    <div style="text-align:center; margin-bottom:10px;">
+                        <div style="font-size:18px; font-weight:bold; color:#064e3b;">${bName}</div>
+                        ${bAddr ? `<div style="font-size:11px; color:#334155;">${bAddr}</div>` : ''}
+                        ${bPhone ? `<div style="font-size:11px; color:#334155;">Tel: ${bPhone}</div>` : ''}
+                        <div style="font-size:12px; font-weight:bold; margin-top:4px; text-transform:uppercase;">SALES RECEIPT</div>
+                    </div>
+
+                    <div style="border-top:2px dashed #000; border-bottom:1px dashed #000; padding:6px 0; margin-bottom:6px; font-size:11px;">
+                        <div style="display:flex; justify-content:space-between;"><span>Invoice No:</span><strong>${sale.invoiceNo || 'N/A'}</strong></div>
+                        <div style="display:flex; justify-content:space-between;"><span>Date:</span><strong>${formatDate(parseSaleDate(sale))}</strong></div>
+                        <div style="display:flex; justify-content:space-between;"><span>Customer:</span><strong>${cName}</strong></div>
+                        <div style="display:flex; justify-content:space-between;"><span>Payment:</span><strong style="text-transform:uppercase;">${sale.paymentMethod || 'CASH'}</strong></div>
+                    </div>
+
+                    <div style="border-bottom:1px dashed #000; padding-bottom:4px; margin-bottom:6px; font-size:11px; font-weight:bold; display:flex; justify-content:space-between;">
+                        <span style="flex:1;">Item</span>
+                        <span style="width:40px; text-align:right;">Qty</span>
+                        <span style="width:75px; text-align:right;">Price</span>
+                        <span style="width:85px; text-align:right;">Amount</span>
+                    </div>
+
+                    <div style="border-bottom:1px dashed #000; padding-bottom:6px; margin-bottom:6px;">
+                        ${itemsHtml}
+                    </div>
+
+                    <div style="text-align:right; font-size:12px; margin-bottom:4px;">
+                        <div style="display:flex; justify-content:space-between;"><span>Subtotal:</span><span>${formatCurrency(sale.subtotal || total)}</span></div>
+                        ${sale.discount ? `<div style="display:flex; justify-content:space-between;"><span>Discount:</span><span>-${formatCurrency(sale.discount)}</span></div>` : ''}
+                        <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:bold; margin:6px 0;"><span>TOTAL:</span><span>${formatCurrency(total)}</span></div>
+                        <div style="display:flex; justify-content:space-between;"><span>Paid:</span><span>${formatCurrency(amountPaid)}</span></div>
+                        ${balanceDue > 0 ? `<div style="display:flex; justify-content:space-between; color:#dc2626; font-weight:bold;"><span>Balance Due:</span><span>${formatCurrency(balanceDue)}</span></div>` : ''}
+                    </div>
+
+                    <div style="text-align:center; font-size:11px; border-top:2px dashed #000; padding-top:8px; margin-top:10px;">
+                        Thank You For Your Business!<br>
+                        <span style="font-size:10px; color:#475569;">(Software by DIGIBIZ - 0713446500)</span>
+                    </div>
+                </div>
+            `;
+            document.getElementById('invoiceModalBody').innerHTML = modalBody;
+            
+            // Store globally for sharing
+            window.activeReceiptData = {
+                invoiceNo: sale.invoiceNo || 'N/A',
+                customer: cName,
+                total: total,
+                date: formatDate(parseSaleDate(sale)),
+                items: sale.items || []
+            };
+
+            modal.style.display = 'flex';
+        }
+        
+        function downloadReceiptPDF() {
+            const element = document.getElementById('receiptPaper');
+            const opt = {
+                margin: 10,
+                filename: `Receipt_${window.activeReceiptData.invoiceNo}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2 },
+                jsPDF: { unit: 'mm', format: [80, 200], orientation: 'portrait' } // Thermal roll width
+            };
+            html2pdf().set(opt).from(element).save();
+        }
+        
+        function shareReceiptWhatsApp() {
+            if (!window.activeReceiptData) return;
+            const r = window.activeReceiptData;
+            const bName = (window.currentBusinessData && window.currentBusinessData.businessName) || 'DIGIBIZ RETAIL';
+            
+            let txt = `*${bName}*\n`;
+            txt += `*SALES RECEIPT*\n`;
+            txt += `------------------------\n`;
+            txt += `Invoice No: ${r.invoiceNo}\n`;
+            txt += `Date: ${r.date}\n`;
+            txt += `Customer: ${r.customer}\n`;
+            txt += `------------------------\n`;
+            
+            r.items.forEach(i => {
+                const qty = i.quantity || i.qty || 0;
+                const pr = i.price || i.unitPrice || 0;
+                txt += `${i.name || ''} x ${qty} = Rs.${(qty*pr).toFixed(2)}\n`;
+            });
+            
+            txt += `------------------------\n`;
+            txt += `*TOTAL: Rs.${Number(r.total).toFixed(2)}*\n`;
+            txt += `\nThank You For Your Business!`;
+            
+            const encoded = encodeURIComponent(txt);
+            window.open(`https://wa.me/?text=${encoded}`, '_blank');
+        }
+
+        // ---- Edit & Delete Sale (with STOCK + cash/money reversal) ----
+
+        function openEditSaleModal(saleId) {
+            const sale = allSales.find(s => s.id === saleId);
+            if (!sale) { alert('Could not find sale details.'); return; }
+
+            document.getElementById('editSaleId').value = sale.id;
+            document.getElementById('editSaleModalTitle').innerText = `Edit Invoice: ${sale.invoiceNo || 'N/A'}`;
+            document.getElementById('editCustomerName').value = (sale.customer && sale.customer.name) ? sale.customer.name : 'Walk-in Customer';
+            document.getElementById('editCustomerPhone').value = (sale.customer && sale.customer.phone && sale.customer.phone !== '-') ? sale.customer.phone : '';
+            document.getElementById('editPaymentMethod').value = sale.paymentMethod || 'cash';
+
+            const total = sale.total || 0;
+            const amountPaid = sale.amountPaid !== undefined ? sale.amountPaid : (sale.paymentMethod !== 'credit' ? total : 0);
+            const balanceDue = sale.balanceDue !== undefined ? sale.balanceDue : Math.max(0, total - amountPaid);
+
+            document.getElementById('editAmountPaid').value = Number(amountPaid).toFixed(2);
+            document.getElementById('editBalanceDue').value = Number(balanceDue).toFixed(2);
+
+            let dueDate = '';
+            if (sale.dueDate) {
+                if (sale.dueDate.toDate) dueDate = sale.dueDate.toDate().toISOString().split('T')[0];
+                else if (typeof sale.dueDate === 'string') dueDate = sale.dueDate;
+                else if (sale.dueDate instanceof Date) dueDate = sale.dueDate.toISOString().split('T')[0];
+            }
+            document.getElementById('editDueDate').value = dueDate;
+
+            document.getElementById('editSaleModal').style.display = 'flex';
+        }
+
+        function closeEditSaleModal() {
+            document.getElementById('editSaleModal').style.display = 'none';
+        }
+
+        async function saveEditedSale(e) {
+            e.preventDefault();
+            const id = document.getElementById('editSaleId').value;
+            const name = document.getElementById('editCustomerName').value.trim();
+            const phone = document.getElementById('editCustomerPhone').value.trim();
+            const pm = document.getElementById('editPaymentMethod').value;
+            const paid = parseFloat(document.getElementById('editAmountPaid').value) || 0;
+            const due = parseFloat(document.getElementById('editBalanceDue').value) || 0;
+            const dueDate = document.getElementById('editDueDate').value;
+
+            if (due < 0 || paid < 0) { alert('Amounts cannot be negative.'); return; }
+
+            try {
+                const orderRef = db.collection('orders').doc(currentBusinessId).collection('list').doc(id);
+                const orderDoc = await orderRef.get();
+                if (!orderDoc.exists) { alert('Order not found!'); return; }
+
+                const oldData = orderDoc.data();
+                const oldCustomer = oldData.customer || {};
+                const updatedCustomer = {
+                    ...oldCustomer,
+                    name: name || 'Walk-in Customer',
+                    phone: phone ? phone : (oldCustomer.phone || '-')
+                };
+
+                await orderRef.update({
+                    customer: updatedCustomer,
+                    paymentMethod: pm,
+                    amountPaid: paid,
+                    balanceDue: due,
+                    dueDate: dueDate ? dueDate : null,
+                    status: due > 0 ? 'unpaid' : 'completed',
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                // Keep accounting consistent with the edited payment method / amounts:
+                // 1) Reverse the old journal entry for this order
+                try {
+                    let oldJournal = await db.collection('journal').doc(currentBusinessId)
+                        .collection('entries')
+                        .where('ref', '==', `orders/${id}`)
+                        .get();
+                    if (oldJournal.empty) {
+                        oldJournal = await db.collection('journal').doc(currentBusinessId)
+                            .collection('entries')
+                            .where('ref', '==', id)
+                            .get();
+                    }
+                    const reversalBatch = db.batch();
+                    oldJournal.docs.forEach(jDoc => {
+                        reversalBatch.update(jDoc.ref, {
+                            isReversed: true,
+                            reversalOf: id,
+                            reversalDate: new Date()
+                        });
+                    });
+
+                    // 2) Create a corrective journal entry based on the new payment method
+                    const newTotal = paid + due;
+                    const accounts = {
+                        cash: '1-1010-01',
+                        card: '1-1020-01',
+                        bank: '1-1020-01',
+                        cheque: '1-1020-01',
+                        credit: '1-1030-01'
+                    };
+                    const debitAccount = accounts[pm] || accounts.cash;
+                    const invoice = oldData.invoiceNo || 'INV';
+                    const newEntries = [
+                        { accountId: debitAccount, amount: newTotal, type: 'debit' },
+                        { accountId: '4-4010-01', amount: newTotal, type: 'credit' }
+                    ];
+                    await db.collection('journal').doc(currentBusinessId).collection('entries').add({
+                        date: new Date(),
+                        memo: `Sale to ${updatedCustomer.name || 'customer'}. Invoice: ${invoice} (Edited)`,
+                        entries: newEntries,
+                        ref: `orders/${id}`,
+                        refType: 'SALE',
+                        businessId: currentBusinessId,
+                        isReversalCorrection: true,
+                        correctionOf: id,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    await reversalBatch.commit();
+                } catch (je) {
+                    console.warn('[SalesHistory] Journal correction failed on edit:', je);
+                }
+
+                alert('Sale updated successfully!');
+                closeEditSaleModal();
+                await fetchSales(true);
+            } catch (err) {
+                alert('Failed to update sale: ' + err.message);
+            }
+        }
+
+        async function deleteSale(saleId, invoiceNo) {
+            if (!confirm(`⚠️ Are you sure you want to DELETE / CANCEL invoice ${invoiceNo}?\n\nThis will restore product stock levels in inventory and reverse the cash/receivable accounting entry.`)) return;
+
+            try {
+                const orderRef = db.collection('orders').doc(currentBusinessId).collection('list').doc(saleId);
+                const orderDoc = await orderRef.get();
+                if (!orderDoc.exists) { alert('Order not found!'); return; }
+
+                if (orderDoc.data().status === 'cancelled' || orderDoc.data().isReversed === true) {
+                    alert('This invoice has already been cancelled.');
+                    return;
+                }
+
+                const orderData = orderDoc.data();
+                const items = Array.isArray(orderData.items) ? orderData.items : [];
+                const invoice = orderData.invoiceNo || invoiceNo;
+
+                const batch = db.batch();
+
+                // 1. Restore stock for each product item and log stock history reversal
+                items.forEach(item => {
+                    const targetId = item.docId || item.id;
+                    const qty = Number(item.quantity || item.qty || 0);
+                    const isService = item.isService === true || (item.category && String(item.category).toLowerCase().includes('service'));
+
+                    if (!isService && targetId && qty > 0) {
+                        const prodRef = db.collection('products').doc(currentBusinessId).collection('list').doc(targetId);
+                        batch.update(prodRef, {
+                            stock: firebase.firestore.FieldValue.increment(qty)
+                        });
+                        const histRef = db.collection('stock_history').doc(currentBusinessId).collection('list').doc();
+                        batch.set(histRef, {
+                            productId: targetId,
+                            productName: item.name || '',
+                            qtyChange: qty,
+                            type: 'SALE_REVERSAL',
+                            ref: invoice,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    }
+                });
+
+                // 2. Mark the order as cancelled
+                batch.update(orderRef, {
+                    status: 'cancelled',
+                    isReversed: true,
+                    cancelledAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                // 3. Reverse the accounting journal entry for this sale
+                try {
+                    // Newer format: ref = 'orders/{orderId}'
+                    let journalSnap = await db.collection('journal').doc(currentBusinessId)
+                        .collection('entries')
+                        .where('ref', '==', `orders/${saleId}`)
+                        .get();
+                    // Fallback for older entries where ref was the raw order id
+                    if (journalSnap.empty) {
+                        journalSnap = await db.collection('journal').doc(currentBusinessId)
+                            .collection('entries')
+                            .where('ref', '==', saleId)
+                            .get();
+                    }
+                    journalSnap.docs.forEach(jDoc => {
+                        batch.update(jDoc.ref, {
+                            isReversed: true,
+                            reversalOf: saleId,
+                            reversalDate: new Date()
+                        });
+                    });
+                } catch (jErr) {
+                    console.warn('[SalesHistory] Journal reversal lookup failed:', jErr);
+                }
+
+                await batch.commit();
+
+                alert(`Invoice ${invoice} deleted & stock reversed!`);
+                closeEditSaleModal();
+                const invModal = document.getElementById('invoiceModal');
+                if (invModal) invModal.style.display = 'none';
+                await fetchSales(true);
+            } catch (err) {
+                alert('Failed to delete sale: ' + err.message);
+            }
+        }
+
+        function handleScroll() {
+            // Load more when user is 100px from the bottom
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 100) {
+                if (lastVisible && !isLoading) {
+                    fetchSales();
+                }
+            }
+        }
+
+        // Initialize
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = '/';
+                return;
+            }
+
+            try {
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                currentBusinessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(userDoc, user.uid) : (userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid);
+            } catch (e) {
+                currentBusinessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(null, user.uid) : user.uid;
+            }
+
+            if (currentBusinessId) {
+                document.documentElement.classList.add('digibiz-sidebar-reserved');
+                await fetchSales(true); // Initial fetch
+                window.addEventListener('scroll', handleScroll);
+            } else {
+                document.body.innerHTML = '<h1 style="text-align:center;margin-top:50px;">Access Denied</h1><p style="text-align:center;">This page is not available for your business.</p>';
+            }
+        });
+
+        // Event Listeners
+        document.getElementById('filterBtn').addEventListener('click', () => {
+            lastVisible = null; // Reset pagination
+            fetchSales(true);
+        });
+
+        document.getElementById('searchInput').addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') {
+                // For client-side search, we can filter the already loaded `allSales` array.
+                // For a server-side search, this would trigger a new fetch.
+                // Let's stick with a simpler client-side approach for now.
+                applyClientSideFilter();
+            }
+        });
+
+        // Modal close functionality
+        document.querySelector('.close-button').onclick = () => document.getElementById('invoiceModal').style.display = 'none';
+        window.onclick = (event) => {
+            const modal = document.getElementById('invoiceModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+            const editModal = document.getElementById('editSaleModal');
+            if (event.target == editModal) {
+                editModal.style.display = 'none';
+            }
+        };
+
+    </script>
+</body>
+
+</html>

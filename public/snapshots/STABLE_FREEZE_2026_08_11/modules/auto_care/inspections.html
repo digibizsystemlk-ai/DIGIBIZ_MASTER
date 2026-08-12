@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Inspections - DIGIBIZ Auto Care</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="autocare-theme.css?v=3">
+    
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=3"></script>
+    <script src="/core/event-bus.js?v=3"></script>
+    <script src="/core/accounts-core.js?v=3"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/dashboard-core.js?v=3"></script>
+    <script src="/core/subscription-manager.js?v=3"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <script src="autocare-utils.js?v=2"></script>
+    
+    <style>
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .checklist-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 25px; }
+        .check-item { background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 16px; display: flex; justify-content: space-between; align-items: center; }
+        .toggle-group { display: flex; gap: 6px; }
+        .toggle-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #cbd5e1; font-size: 12px; font-weight: 700; cursor: pointer; }
+        .toggle-btn.pass.active { background: rgba(16,185,129,0.25); color: #6ee7b7; border-color: #10b981; }
+        .toggle-btn.warn.active { background: rgba(245,158,11,0.25); color: #fde047; border-color: #f59e0b; }
+        .toggle-btn.fail.active { background: rgba(239,68,68,0.25); color: #fca5a5; border-color: #ef4444; }
+        .vehicle-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 25px; }
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div>
+            <h2 style="color:#38bdf8; font-size:24px; font-weight:800;"><i class="fa-solid fa-clipboard-check"></i> Multi-Point Vehicle Inspection</h2>
+            <p style="color:#94a3b8; font-size:14px; margin-top:4px;">වාහන පරීක්ෂාව සඳහා වන නියමිත පරීක්ෂණ චෙක්ලිස්ට් පද්ධතිය</p>
+        </div>
+        <button class="btn btn-primary" onclick="generateReport()"><i class="fa-solid fa-print"></i> Generate Inspection Certificate</button>
+    </div>
+
+    <!-- Vehicle Details Input Card -->
+    <div class="card-dark" style="padding:28px; margin-bottom:30px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:12px; margin-bottom:20px;">
+            <h3 style="font-size:16px; font-weight:700; color:#38bdf8;"><i class="fa-solid fa-car"></i> Vehicle Inspection Details</h3>
+            <span style="font-size:16px; font-weight:800; color:#38bdf8;" id="inspNoDisplay">INS-00001</span>
+        </div>
+
+        <div class="vehicle-meta">
+            <div>
+                <label>Inspection Number</label>
+                <input type="text" id="vInspNo" style="font-weight:700; color:#38bdf8;" title="Manual paper book override supported">
+            </div>
+            <div>
+                <label>Vehicle Reg Number *</label>
+                <input type="text" id="vRegNo" placeholder="e.g. CAB-8921" style="text-transform:uppercase;">
+            </div>
+            <div>
+                <label>Vehicle Brand *</label>
+                <input type="text" id="vBrand" list="brandList" placeholder="e.g. Toyota, Honda, Nissan...">
+                <datalist id="brandList"></datalist>
+            </div>
+            <div>
+                <label>Vehicle Model *</label>
+                <input type="text" id="vModel" list="modelList" placeholder="e.g. Prius, Axio, Vezel...">
+                <datalist id="modelList"></datalist>
+            </div>
+            <div>
+                <label>Inspector Name</label>
+                <input type="text" id="vInspector" placeholder="e.g. Suneth Jayasinghe">
+            </div>
+            <div>
+                <label>Inspection Date (DD/MM/YYYY)</label>
+                <input type="date" id="vDate">
+            </div>
+        </div>
+    </div>
+
+    <!-- Checklists Card -->
+    <div class="card-dark" style="padding:28px; margin-bottom:30px;">
+        <h3 style="font-size:16px; font-weight:700; color:#ea580c; margin-bottom:16px;"><i class="fa-solid fa-oil-can"></i> 1. Engine & Under-Hood Checks</h3>
+        <div class="checklist-grid">
+            <div class="check-item">
+                <span>Engine Oil Level & Quality</span>
+                <div class="toggle-group">
+                    <button class="toggle-btn pass active" onclick="setCheck(this, 'pass')">Good</button>
+                    <button class="toggle-btn warn" onclick="setCheck(this, 'warn')">Needs Service</button>
+                    <button class="toggle-btn fail" onclick="setCheck(this, 'fail')">Critical</button>
+                </div>
+            </div>
+            <div class="check-item">
+                <span>Coolant & Radiator Condition</span>
+                <div class="toggle-group">
+                    <button class="toggle-btn pass active" onclick="setCheck(this, 'pass')">Good</button>
+                    <button class="toggle-btn warn" onclick="setCheck(this, 'warn')">Needs Service</button>
+                    <button class="toggle-btn fail" onclick="setCheck(this, 'fail')">Critical</button>
+                </div>
+            </div>
+            <div class="check-item">
+                <span>Brake Fluid Level</span>
+                <div class="toggle-group">
+                    <button class="toggle-btn pass active" onclick="setCheck(this, 'pass')">Good</button>
+                    <button class="toggle-btn warn" onclick="setCheck(this, 'warn')">Needs Service</button>
+                    <button class="toggle-btn fail" onclick="setCheck(this, 'fail')">Critical</button>
+                </div>
+            </div>
+            <div class="check-item">
+                <span>Air Filter & Cabin Filter</span>
+                <div class="toggle-group">
+                    <button class="toggle-btn pass active" onclick="setCheck(this, 'pass')">Good</button>
+                    <button class="toggle-btn warn" onclick="setCheck(this, 'warn')">Needs Service</button>
+                    <button class="toggle-btn fail" onclick="setCheck(this, 'fail')">Critical</button>
+                </div>
+            </div>
+        </div>
+
+        <h3 style="font-size:16px; font-weight:700; color:#38bdf8; margin-bottom:16px;"><i class="fa-solid fa-compact-disc"></i> 2. Brakes, Tires & Suspension</h3>
+        <div class="checklist-grid">
+            <div class="check-item">
+                <span>Front Brake Pads & Rotors</span>
+                <div class="toggle-group">
+                    <button class="toggle-btn pass active" onclick="setCheck(this, 'pass')">Good</button>
+                    <button class="toggle-btn warn" onclick="setCheck(this, 'warn')">Needs Service</button>
+                    <button class="toggle-btn fail" onclick="setCheck(this, 'fail')">Critical</button>
+                </div>
+            </div>
+            <div class="check-item">
+                <span>Rear Brake Shoes/Pads</span>
+                <div class="toggle-group">
+                    <button class="toggle-btn pass active" onclick="setCheck(this, 'pass')">Good</button>
+                    <button class="toggle-btn warn" onclick="setCheck(this, 'warn')">Needs Service</button>
+                    <button class="toggle-btn fail" onclick="setCheck(this, 'fail')">Critical</button>
+                </div>
+            </div>
+            <div class="check-item">
+                <span>Tire Tread Depth & Pressure</span>
+                <div class="toggle-group">
+                    <button class="toggle-btn pass active" onclick="setCheck(this, 'pass')">Good</button>
+                    <button class="toggle-btn warn" onclick="setCheck(this, 'warn')">Needs Service</button>
+                    <button class="toggle-btn fail" onclick="setCheck(this, 'fail')">Critical</button>
+                </div>
+            </div>
+            <div class="check-item">
+                <span>Shock Absorbers & Suspension</span>
+                <div class="toggle-group">
+                    <button class="toggle-btn pass active" onclick="setCheck(this, 'pass')">Good</button>
+                    <button class="toggle-btn warn" onclick="setCheck(this, 'warn')">Needs Service</button>
+                    <button class="toggle-btn fail" onclick="setCheck(this, 'fail')">Critical</button>
+                </div>
+            </div>
+        </div>
+
+        <h3 style="font-size:16px; font-weight:700; color:#c084fc; margin-bottom:16px;"><i class="fa-solid fa-car-battery"></i> 3. Battery & Electrical System</h3>
+        <div class="checklist-grid">
+            <div class="check-item">
+                <span>12V Battery Health & Voltage</span>
+                <div class="toggle-group">
+                    <button class="toggle-btn pass active" onclick="setCheck(this, 'pass')">Good</button>
+                    <button class="toggle-btn warn" onclick="setCheck(this, 'warn')">Needs Service</button>
+                    <button class="toggle-btn fail" onclick="setCheck(this, 'fail')">Critical</button>
+                </div>
+            </div>
+            <div class="check-item">
+                <span>Headlights, Taillights & Signals</span>
+                <div class="toggle-group">
+                    <button class="toggle-btn pass active" onclick="setCheck(this, 'pass')">Good</button>
+                    <button class="toggle-btn warn" onclick="setCheck(this, 'warn')">Needs Service</button>
+                    <button class="toggle-btn fail" onclick="setCheck(this, 'fail')">Critical</button>
+                </div>
+            </div>
+        </div>
+
+        <h3 style="font-size:14px; font-weight:700; color:#38bdf8; margin-top:20px; margin-bottom:8px;"><i class="fa-solid fa-pen-nib"></i> Inspector Remarks / Additional Notes</h3>
+        <textarea id="inspectorNotes" rows="3" style="width:100%;" placeholder="Write any specific defects, body scratches, or recommendations..."></textarea>
+    </div>
+
+    <!-- Certificate Printable Layout -->
+    <div id="printableInspection" style="display:none; padding:30px; border:1px solid #cbd5e1; border-radius:12px; background:#ffffff; color:#000000;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:3px solid #059669; padding-bottom:16px; margin-bottom:20px;">
+            <div style="display:flex; align-items:center; gap:16px;">
+                <div id="inspLogoContainer" style="width:60px; height:60px; background:linear-gradient(135deg, #059669 0%, #047857 100%); border-radius:12px; display:flex; align-items:center; justify-content:center; color:#ffffff; font-size:26px; box-shadow:0 4px 12px rgba(5,150,105,0.3); flex-shrink:0;">
+                    <i class="fa-solid fa-clipboard-check"></i>
+                </div>
+                <div>
+                    <h2 style="color:#059669; font-size:20px; font-weight:900; margin:0; text-transform:uppercase; letter-spacing:0.5px;" id="pComp">DIGIBIZ AUTO CARE - VEHICLE INSPECTION CERTIFICATE</h2>
+                    <p style="color:#475569; font-size:13px; font-weight:600; margin:3px 0 0 0;"><i class="fa-solid fa-car-on" style="color:#059669;"></i> Technical Vehicle Diagnostics & Safety Audit Division</p>
+                </div>
+            </div>
+            <div style="text-align:right;">
+                <div style="display:inline-block; background:rgba(5, 150, 105, 0.15); border:1px solid #059669; color:#059669; font-size:11px; font-weight:800; padding:4px 12px; border-radius:20px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">
+                    SAFETY CERTIFICATE
+                </div>
+                <p style="font-size:15px; font-weight:900; color:#0f172a; margin:0;" id="pInspNo">INSPECTION #INS-00001</p>
+                <p style="font-size:12px; color:#475569; margin-top:2px;" id="pDate">Date: -</p>
+            </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; background:#f8fafc; padding:14px; border-radius:8px; border:1px solid #cbd5e1; margin-bottom:20px;">
+            <div>
+                <p style="font-size:11px; color:#059669; font-weight:700;">VEHICLE IDENTIFICATION</p>
+                <p style="font-size:15px; font-weight:800; color:#0f172a;" id="pReg">Reg: -</p>
+                <p style="font-size:13px; color:#334155;" id="pModel">Vehicle: -</p>
+            </div>
+            <div>
+                <p style="font-size:11px; color:#059669; font-weight:700;">INSPECTOR DETAILS</p>
+                <p style="font-size:15px; font-weight:800; color:#0f172a;" id="pInsp">Inspector: -</p>
+                <p style="font-size:13px; color:#334155;">Status: Verified & Certified Checkup</p>
+            </div>
+        </div>
+
+        <h4 style="margin-top:15px; color:#0f172a; font-weight:800;">Multi-Point Checklist Inspection Summary:</h4>
+        <div id="pChecklistSummary" style="margin-top:10px; margin-bottom:20px;">
+            <!-- JS populated -->
+        </div>
+
+        <h4 style="margin-top:15px; color:#0f172a; font-weight:800;">Inspector Remarks & Recommendations:</h4>
+        <p id="pNotes" style="background:#f8fafc; padding:12px; border-radius:6px; border:1px solid #cbd5e1; color:#1e293b; font-size:13px; margin-top:6px;"></p>
+
+        <div style="margin-top:40px; border-top:1px solid #cbd5e1; padding-top:20px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:30px;">
+                <div style="text-align:center; width:200px;">
+                    <p style="border-bottom:1px dashed #64748b; margin-bottom:6px; height:40px;"></p>
+                    <p style="font-size:12px; font-weight:700;">Vehicle Inspector Signature</p>
+                </div>
+                <div style="text-align:center; width:200px;">
+                    <p style="border-bottom:1px dashed #64748b; margin-bottom:6px; height:40px;"></p>
+                    <p style="font-size:12px; font-weight:700;">Workshop Supervisor Stamp</p>
+                </div>
+            </div>
+            <p style="text-align:center; font-size:11px; color:#64748b;">Driven by DIGIBIZ Auto Care Management Systems.</p>
+        </div>
+    </div>
+
+    <style>
+        @media print {
+            .header-bar, .card-dark, .no-print, .retail-navbar, .digibiz-mobile-topbar { display: none !important; }
+            #printableInspection { display: block !important; }
+        }
+    </style>
+
+    <script>
+        function populateAutoDatalists() {
+            const brandList = document.getElementById('brandList');
+            if (brandList) {
+                const brands = window.AutoCareUtils ? window.AutoCareUtils.getVehicleBrands() : [];
+                brandList.innerHTML = brands.map(b => `<option value="${b}"></option>`).join('');
+            }
+            const modelList = document.getElementById('modelList');
+            if (modelList) {
+                const models = window.AutoCareUtils ? window.AutoCareUtils.getVehicleModels() : [];
+                modelList.innerHTML = models.map(m => `<option value="${m}"></option>`).join('');
+            }
+        }
+
+        function initInspectionForm() {
+            populateAutoDatalists();
+            document.getElementById('vDate').valueAsDate = new Date();
+            const nextNo = window.AutoCareUtils ? window.AutoCareUtils.getNextInspNumber() : 'INS-00001';
+            document.getElementById('vInspNo').value = nextNo;
+            document.getElementById('inspNoDisplay').innerText = nextNo;
+        }
+
+        function setCheck(btn, status) {
+            const group = btn.parentElement;
+            group.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        function generateReport() {
+            const brand = document.getElementById('vBrand').value;
+            const model = document.getElementById('vModel').value;
+            if (window.AutoCareUtils) {
+                window.AutoCareUtils.saveInspCounter();
+                if (brand) window.AutoCareUtils.saveVehicleBrand(brand);
+                if (model) window.AutoCareUtils.saveVehicleModel(model);
+            }
+            const companyName = window.AutoCareUtils ? window.AutoCareUtils.getCompanyName() : "DIGIBIZ Auto Care";
+            const dateStr = window.AutoCareUtils ? window.AutoCareUtils.formatDateDDMMYYYY(document.getElementById('vDate').value) : document.getElementById('vDate').value;
+            
+            document.getElementById('pComp').innerText = companyName;
+            if (window.AutoCareUtils) window.AutoCareUtils.renderCompanyLogo('inspLogoContainer', 'fa-solid fa-clipboard-check');
+            document.getElementById('pInspNo').innerText = "INSPECTION #" + document.getElementById('vInspNo').value;
+            document.getElementById('pReg').innerText = document.getElementById('vRegNo').value || '-';
+            document.getElementById('pModel').innerText = (brand + ' ' + model).trim() || '-';
+            document.getElementById('pInsp').innerText = document.getElementById('vInspector').value || '-';
+            document.getElementById('pDate').innerText = 'Date: ' + dateStr;
+            document.getElementById('pNotes').innerText = document.getElementById('inspectorNotes').value || 'No critical defects noticed. All routine items checked.';
+
+            // Populate checklist items
+            const summaryDiv = document.getElementById('pChecklistSummary');
+            summaryDiv.innerHTML = '';
+            const items = document.querySelectorAll('.check-item');
+            let tableHtml = '<table style="width:100%; border-collapse:collapse;"><thead><tr style="background:#f1f5f9;"><th style="border:1px solid #cbd5e1; padding:6px; text-align:left;">Inspection Item</th><th style="border:1px solid #cbd5e1; padding:6px; text-align:center; width:140px;">Result</th></tr></thead><tbody>';
+            
+            items.forEach(it => {
+                const title = it.querySelector('span').innerText;
+                const activeBtn = it.querySelector('.toggle-btn.active');
+                const resultText = activeBtn ? activeBtn.innerText : 'Checked';
+                tableHtml += `<tr><td style="border:1px solid #cbd5e1; padding:6px; font-size:12px;">${title}</td><td style="border:1px solid #cbd5e1; padding:6px; text-align:center; font-weight:700; font-size:12px;">${resultText}</td></tr>`;
+            });
+            tableHtml += '</tbody></table>';
+            summaryDiv.innerHTML = tableHtml;
+
+            window.print();
+        }
+
+        window.onload = initInspectionForm;
+    </script>
+</body>
+</html>

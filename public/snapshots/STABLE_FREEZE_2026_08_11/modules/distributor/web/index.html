@@ -1,0 +1,3776 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distributor HQ - DIGIBIZ</title>
+    <style>
+        html.digibiz-sidebar-reserved body { margin-left: 260px; }
+        @media (max-width: 768px) {
+            html.digibiz-sidebar-reserved body { margin-left: 0; }
+        }
+        /* Keep main column beside fixed sidebar; avoid overlap with high z-index nav */
+        #sidebar-container {
+            position: relative;
+            z-index: 0;
+        }
+        .main-content {
+            position: relative;
+            z-index: 1;
+            min-width: 0;
+        }
+    </style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=46"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/auth-roles.js?v=49"></script>
+    <script src="/core/business-types.js?v=46"></script>
+    <script src="/core/dashboard-core.js?v=46"></script>
+    <script src="/core/subscription-manager.js?v=2"></script>
+    <script src="/core/distributor-inventory.js?v=46"></script>
+    <script src="/core/distributor-lorry-stock.js?v=1"></script>
+    <script src="/core/mw-trading-dsl-config.js?v=46"></script>
+    <script src="/core/sidebar.js?v=1010"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #f3f4f6;
+        }
+        /* Sidebar handles the margin - DO NOT add margin-left here */
+        .main-content {
+            padding: 24px;
+            min-height: 100vh;
+        }
+        .page-header {
+            margin-bottom: 24px;
+        }
+        .page-header h1 {
+            font-size: 24px;
+            color: #111827;
+            margin-bottom: 8px;
+        }
+        .page-header p {
+            color: #6b7280;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .stat-title {
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #10b981;
+        }
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .order-filters {
+            margin-bottom: 12px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .order-filters select {
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 12px;
+            background: #fff;
+        }
+        .tab {
+            padding: 8px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            background: #f3f4f6;
+            transition: all 0.2s;
+        }
+        .tab.active {
+            background: #10b981;
+            color: white;
+        }
+        .orders-table {
+            background: white;
+            border-radius: 16px;
+            overflow-x: auto;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .rep-summary {
+            background: white;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .cheque-widget {
+            background: #fff;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: none;
+        }
+        .cheque-widget table { min-width: 100%; }
+        .commission-widget{
+            background:#fff;border-radius:16px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:none;
+        }
+        .free-items-widget {
+            background: #fff;
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: none;
+        }
+        .accounting-widget{
+            background:#fff;border-radius:16px;padding:16px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:block;
+        }
+        .accounting-grid{
+            display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:10px;
+        }
+        .accounting-kpi{
+            border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#f9fafb;
+        }
+        .accounting-kpi .k{
+            font-size:12px;color:#6b7280;margin-bottom:4px;
+        }
+        .accounting-kpi .v{
+            font-size:20px;font-weight:700;color:#111827;
+        }
+        .rep-summary-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        .rep-summary-head h3 {
+            font-size: 16px;
+            color: #111827;
+        }
+        .rep-filter {
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 12px;
+        }
+        .rep-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .rep-table th, .rep-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+        }
+        .rep-table th {
+            background: #f9fafb;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 800px;
+        }
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 8px;
+            }
+            .stat-card {
+                padding: 10px;
+                border-radius: 12px;
+            }
+            .stat-title {
+                font-size: 11px;
+            }
+            .stat-value {
+                font-size: 20px;
+            }
+            .main-content {
+                padding: 12px;
+            }
+            /* Table simplification for mobile */
+            table {
+                min-width: 100%;
+            }
+            /* Hide Date, Branch, Lorry, Brands, Items columns on mobile */
+            th:nth-child(2), td:nth-child(2),
+            th:nth-child(5), td:nth-child(5),
+            th:nth-child(6), td:nth-child(6),
+            th:nth-child(7), td:nth-child(7),
+            th:nth-child(8), td:nth-child(8) {
+                display: none;
+            }
+            th, td {
+                padding: 8px 4px;
+                font-size: 12px;
+            }
+            .btn {
+                padding: 4px 8px;
+                font-size: 11px;
+            }
+        }
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        th {
+            background: #f9fafb;
+            font-weight: 600;
+            color: #374151;
+        }
+        .status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            display: inline-block;
+        }
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .status-approved {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .status-dispatched {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        .status-delivered {
+            background: #ccfbf1;
+            color: #115e59;
+        }
+        .status-rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .btn {
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            margin: 2px;
+        }
+        .btn-approve {
+            background: #10b981;
+            color: white;
+        }
+        .btn-reject {
+            background: #ef4444;
+            color: white;
+        }
+        .btn-view {
+            background: #3b82f6;
+            color: white;
+        }
+        .btn-dispatch {
+            background: #8b5cf6;
+            color: white;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 10050;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 24px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        .invoice-box {
+            background: #fff;
+            color: #111827;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .invoice-header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 2px solid #f3f4f6;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        .invoice-title {
+            font-size: 24px;
+            font-weight: 800;
+            color: #10b981;
+            text-transform: uppercase;
+        }
+        .invoice-info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        .info-group h4 {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #6b7280;
+            margin-bottom: 6px;
+            letter-spacing: 0.05em;
+        }
+        .info-group p {
+            margin: 0;
+            font-weight: 600;
+        }
+        .invoice-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 24px;
+        }
+        .invoice-table th {
+            background: #f9fafb;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #6b7280;
+            padding: 10px;
+            border-bottom: 2px solid #f3f4f6;
+        }
+        .invoice-table td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #f3f4f6;
+            vertical-align: top;
+        }
+        .invoice-table .num { text-align: right; }
+        .invoice-table .item-name { font-weight: 600; }
+        .invoice-table .item-meta { font-size: 12px; color: #6b7280; }
+        .invoice-total-section {
+            display: flex;
+            justify-content: flex-end;
+            gap: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #f3f4f6;
+        }
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 4px;
+        }
+        .total-row.grand {
+            font-size: 18px;
+            font-weight: 800;
+            color: #111827;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .badge-free {
+            background: #fff7ed;
+            color: #9a3412;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .badge-return {
+            background: #fef2f2;
+            color: #991b1b;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .btn-print {
+            background: #0f766e;
+            color: white;
+        }
+        .hq-order-actions {
+            display: none;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 14px;
+            align-items: center;
+        }
+        .hq-order-actions a {
+            text-decoration: none;
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .hq-order-actions .hq-cta-web { background: #10b981; color: #fff; }
+        .hq-order-actions .hq-cta-mob { background: #fff; color: #047857; border: 2px solid #10b981; }
+        #adminEditLineSuggest button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 8px 10px;
+            border: none;
+            border-bottom: 1px solid #e5e7eb;
+            background: #fff;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        #adminEditLineSuggest button:last-child { border-bottom: none; }
+        #adminEditLineSuggest button:hover { background: #f3f4f6; }
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .main-content {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar-container"></div>
+    <div class="main-content">
+        <div class="page-header">
+            <h1>📑 Order Status</h1>
+            <p id="orderStatusPageSubtitle">Pending queue and all rep orders in one place — approve, reject, dispatch, and mark delivered.</p>
+            <p id="repOrderMobileHint" style="display:none;margin-top:10px;padding:10px 12px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;font-size:13px;color:#065f46;">
+                <strong>Rep:</strong> place and edit draft orders on <a href="/modules/distributor/mobile/order.html" style="color:#047857;font-weight:600;">mobile Rep order</a>. Use this page to track status and print your bills when allowed.
+            </p>
+            <div class="hq-order-actions" id="hqOrderActionsBar">
+                <a href="/modules/distributor/web/new-order.html" class="hq-cta-web" id="hqNewOrderWebBtn">🛒 New sales order</a>
+                <a href="/modules/distributor/mobile/order.html" class="hq-cta-mob" id="hqNewOrderMobileBtn">📱 Rep order (phone)</a>
+                <button type="button" onclick="clearTestOrders()" class="btn btn-reject" id="clearTestOrdersBtn" style="display:inline-flex; padding:8px 14px; font-size:12px; background:#fef2f2; color:#991b1b; border:1px solid #fecaca; border-radius:8px; cursor:pointer; font-weight:700;">🗑️ Clear Test Orders</button>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card" id="statCardPending" style="display:none;">
+                <div class="stat-title">⏳ Pending</div>
+                <div class="stat-value" id="pendingCount">-</div>
+            </div>
+            <div class="stat-card" id="statCardApproved" style="display:none;">
+                <div class="stat-title">✅ Approved</div>
+                <div class="stat-value" id="approvedCount">-</div>
+            </div>
+            <div class="stat-card" id="statCardRejected" style="display:none;">
+                <div class="stat-title">❌ Rejected</div>
+                <div class="stat-value" id="rejectedCount">-</div>
+            </div>
+            <div class="stat-card" id="statCardDispatched" style="display:none;">
+                <div class="stat-title">🚚 Dispatched</div>
+                <div class="stat-value" id="dispatchedCount">-</div>
+            </div>
+            <div class="stat-card" id="statCardDelivered" style="display:none;">
+                <div class="stat-title">📬 Delivered</div>
+                <div class="stat-value" id="deliveredCount">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">📦 Today (all)</div>
+                <div class="stat-value" id="todayCount">-</div>
+            </div>
+            <div class="stat-card owner-profit-stat" style="display:flex; background:#f0fdf4; border:1px solid #bbf7d0;">
+                <div class="stat-title" style="color:#166534; font-weight:700;">📈 Today Profit</div>
+                <div class="stat-value" id="statTodayProfit" style="color:#166534; font-size:18px;">Rs. 0.00</div>
+            </div>
+            <div class="stat-card owner-profit-stat" style="display:flex; background:#f0fdf4; border:1px solid #bbf7d0;">
+                <div class="stat-title" style="color:#166534; font-weight:700;">📈 This Week Profit</div>
+                <div class="stat-value" id="statWeekProfit" style="color:#166534; font-size:18px;">Rs. 0.00</div>
+            </div>
+            <div class="stat-card owner-profit-stat" style="display:flex; background:#f0fdf4; border:1px solid #bbf7d0;">
+                <div class="stat-title" style="color:#166534; font-weight:700;">📈 This Month Profit</div>
+                <div class="stat-value" id="statMonthProfit" style="color:#166534; font-size:18px;">Rs. 0.00</div>
+            </div>
+            <div class="stat-card owner-profit-stat" style="display:flex; background:#f0fdf4; border:1px solid #bbf7d0;">
+                <div class="stat-title" style="color:#166534; font-weight:700;">📈 This Year Profit</div>
+                <div class="stat-value" id="statYearProfit" style="color:#166534; font-size:18px;">Rs. 0.00</div>
+            </div>
+        </div>
+        <!-- Owner Profit Analytics Blocks (Visible to Business Owner only) -->
+        <div id="ownerProfitCard" style="display:block; margin-bottom: 20px; background:#fff; border:1px solid #e2e8f0; border-radius:16px; padding:20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
+                <h3 style="margin:0; font-family:'Outfit',sans-serif; font-size:18px; font-weight:800; color:#0f172a; display:flex; align-items:center; gap:8px;">
+                    📈 Owner Profit Analytics <span style="font-size:11px; font-weight:700; background:#f0fdf4; color:#166534; padding:2px 8px; border-radius:6px;">Owner Only</span>
+                </h3>
+                <a href="/modules/distributor/web/revenue.html" class="btn btn-view" style="text-decoration:none; font-size:12px; padding:6px 12px;">Full Revenue Analysis ➔</a>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px;">
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:16px;">
+                    <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Today's Profit</div>
+                    <div id="ownerTodayProfit" style="font-size:20px; font-weight:800; color:#0f172a; margin-top:4px;">Rs. 0.00</div>
+                </div>
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:16px;">
+                    <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">This Week's Profit</div>
+                    <div id="ownerWeekProfit" style="font-size:20px; font-weight:800; color:#0f172a; margin-top:4px;">Rs. 0.00</div>
+                </div>
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:16px;">
+                    <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">This Month's Profit</div>
+                    <div id="ownerMonthProfit" style="font-size:20px; font-weight:800; color:#0f172a; margin-top:4px;">Rs. 0.00</div>
+                </div>
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:16px;">
+                    <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">This Year's Profit</div>
+                    <div id="ownerYearProfit" style="font-size:20px; font-weight:800; color:#0f172a; margin-top:4px;">Rs. 0.00</div>
+                </div>
+            </div>
+        </div>
+        <div class="rep-summary" id="repSummarySection">
+            <div class="rep-summary-head">
+                <h3>📌 Rep Summary</h3>
+                <select id="repFilter" class="rep-filter">
+                    <option value="ALL">All Reps</option>
+                </select>
+            </div>
+            <table class="rep-table">
+                <thead>
+                    <tr>
+                        <th>Rep</th>
+                        <th>Total Orders</th>
+                        <th>Free Issues</th>
+                        <th>Collections</th>
+                    </tr>
+                </thead>
+                <tbody id="repSummaryList">
+                    <tr><td colspan="4" class="loading">Loading rep summary...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="cheque-widget" id="chequeWidget">
+            <div class="rep-summary-head">
+                <h3>🏦 Upcoming Cheques to Deposit</h3>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <a href="/modules/distributor/web/credit-aging.html" class="btn btn-reject" style="text-decoration:none;">View Aging Report</a>
+                    <select id="chequeHorizonSelect" class="rep-filter">
+                        <option value="7">Next 7 days</option>
+                        <option value="14">Next 14 days</option>
+                        <option value="30">Next 30 days</option>
+                    </select>
+                </div>
+            </div>
+            <div id="chequeWidgetMeta" style="margin-bottom:8px;font-size:12px;color:#374151;"></div>
+            <div id="creditOverLimitAlert" style="display:none;margin-bottom:8px;padding:8px 10px;border-radius:8px;background:#fee2e2;color:#991b1b;font-size:12px;font-weight:700;"></div>
+            <table class="rep-table">
+                <thead><tr><th>Customer</th><th>Amount</th><th>Due date</th><th>Days left</th></tr></thead>
+                <tbody id="chequeWidgetRows"><tr><td colspan="4" class="loading">Loading cheques...</td></tr></tbody>
+            </table>
+        </div>
+        <div class="commission-widget" id="commissionWidget">
+            <div class="rep-summary-head">
+                <h3>💸 Commission Overview</h3>
+                <a href="/modules/distributor/web/rep-commission-report.html" class="btn btn-dispatch" style="text-decoration:none;">Open Commission Report</a>
+            </div>
+            <div id="commissionWidgetMeta" style="font-size:13px;color:#374151;"></div>
+        </div>
+        <div class="accounting-widget" id="accountingSummaryWidget" style="display:block;">
+            <div class="rep-summary-head">
+                <h3>📒 Accounting Summary</h3>
+                <a id="accountingWidgetLink" href="/modules/distributor/web/accounting.html" class="btn btn-view" style="text-decoration:none;">Open Accounting Report</a>
+            </div>
+            <div class="accounting-grid">
+                <div class="accounting-kpi"><div class="k">Total Purchases</div><div class="v" id="accTotalPurchases">Rs 0.00</div></div>
+                <div class="accounting-kpi"><div class="k">Supplier Outstanding</div><div class="v" id="accSupplierOutstanding">Rs 0.00</div></div>
+                <div class="accounting-kpi"><div class="k">Stock Value</div><div class="v" id="accStockValue">Rs 0.00</div></div>
+                <div class="accounting-kpi"><div class="k">Net Profit</div><div class="v" id="accNetProfit">Rs 0.00</div></div>
+            </div>
+        </div>
+        <div class="free-items-widget" id="freeItemsWidget" style="display:none;">
+            <div class="rep-summary-head">
+                <h3>🎁 Free Issues Summary</h3>
+                <a href="/modules/distributor/web/free-items.html" class="btn btn-view" style="text-decoration:none;">Open Free Items Log</a>
+            </div>
+            <div class="accounting-grid">
+                <div class="accounting-kpi"><div class="k">Free Issue Units</div><div class="v" id="freeUnitsCount">0</div></div>
+                <div class="accounting-kpi"><div class="k">Free Issue Value (est.)</div><div class="v" id="freeValueEst">LKR 0.00</div></div>
+                <div class="accounting-kpi"><div class="k">Orders With Free</div><div class="v" id="ordersWithFreeCount">0</div></div>
+                <div class="accounting-kpi"><div class="k">Top Free SKU</div><div class="v" id="topFreeSku">—</div></div>
+            </div>
+            <div style="font-size:11px; color:#6b7280; text-align:right; margin-top:8px;">
+                Last updated: <span id="freeWidgetLastUpdated">—</span>
+            </div>
+        </div>
+
+        <!-- Rep Order Workflow & Stock Deduction Mode Configuration -->
+        <div id="repWorkflowConfigCard" style="background:#ffffff; border:2px solid #10b981; border-radius:16px; padding:20px; margin-bottom:24px; box-shadow:0 4px 12px rgba(16,185,129,0.15);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <div>
+                    <h3 style="margin:0; font-size:17px; font-weight:800; color:#064e3b; display:flex; align-items:center; gap:8px;">
+                        ⚙️ Rep Order Workflow & Stock Deduction Settings
+                    </h3>
+                    <div style="margin-top:4px;">
+                        <span id="lblCurrentWorkflowStatus" style="font-size:12px; font-weight:800; background:#dbeafe; color:#1e40af; padding:3px 10px; border-radius:8px;">
+                            Mode: Instant Direct Stock Deduct (Default)
+                        </span>
+                    </div>
+                </div>
+                <div>
+                    <button type="button" id="btnUnlockSettings" onclick="unlockWorkflowSettings()" class="btn btn-view" style="background:#064e3b; color:#fff; font-weight:800; padding:8px 14px; border-radius:10px; font-size:12px;">
+                        🔒 Unlock Settings (Owner Password)
+                    </button>
+                    <button type="button" id="btnLockSettings" onclick="lockWorkflowSettings()" class="btn btn-reject" style="display:none; padding:8px 14px; border-radius:10px; font-size:12px; font-weight:800;">
+                        🔒 Lock & Close
+                    </button>
+                </div>
+            </div>
+
+            <!-- Collapsible Body (Hidden by default) -->
+            <div id="workflowSettingsBody" style="display:none; margin-top:16px; padding-top:16px; border-top:1.5px dashed #cbd5e1;">
+                <p style="font-size:13px; color:#475569; margin-bottom:16px;">
+                    මෙතැනින් Sales Reps ඇණවුම් කරන ආකාරය සහ Stock අඩු වන ආකාරය තෝරාගත හැක:
+                </p>
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-bottom:16px;">
+                    <label id="labelModeDirect" style="background:#eff6ff; border:2px solid #3b82f6; border-radius:14px; padding:16px; cursor:pointer; display:block;">
+                        <div style="display:flex; align-items:flex-start; gap:10px;">
+                            <input type="radio" name="repOrderMode" value="DIRECT_AUTO" checked style="margin-top:3px; transform:scale(1.2);" onchange="updateRepOrderModeUi()">
+                            <div>
+                                <strong style="color:#1e40af; font-size:14px; display:block;">⚡ 1. Instant Direct Stock Deduct (Default)</strong>
+                                <span style="font-size:12px; color:#475569; display:block; margin-top:4px;">
+                                    Rep ඇණවුම දැමූ සැනින්ම කෙලින්ම Stock අඩු වී Order එක Approved ලෙස සටහන් වේ.
+                                </span>
+                            </div>
+                        </div>
+                    </label>
+
+                    <label id="labelModeApproval" style="background:#f8fafc; border:2px solid #cbd5e1; border-radius:14px; padding:16px; cursor:pointer; display:block;">
+                        <div style="display:flex; align-items:flex-start; gap:10px;">
+                            <input type="radio" name="repOrderMode" value="OWNER_APPROVAL" style="margin-top:3px; transform:scale(1.2);" onchange="updateRepOrderModeUi()">
+                            <div>
+                                <strong style="color:#047857; font-size:14px; display:block;">⏳ 2. Require Owner Approval</strong>
+                                <span style="font-size:12px; color:#64748b; display:block; margin-top:4px;">
+                                    Rep ඇණවුම Pending ලෙස පැමිණේ. Owner අනුමත කළ පසු (Approve) පමණක් Stock අඩු වේ.
+                                </span>
+                            </div>
+                        </div>
+                    </label>
+                </div>
+                <button type="button" onclick="saveRepWorkflowSetting()" class="btn btn-approve" style="padding:10px 22px; font-size:14px; font-weight:800; border-radius:10px; background:#047857;">
+                    💾 Save Order Workflow Setting & Lock
+                </button>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab" id="tabPending" data-status="pending" onclick="switchTab('pending')" style="display:none;">⏳ Pending</div>
+            <div class="tab" id="tabApproved" data-status="approved" onclick="switchTab('approved')" style="display:none;">✅ Approved</div>
+            <div class="tab" id="tabRejected" data-status="rejected" onclick="switchTab('rejected')" style="display:none;">❌ Rejected</div>
+            <div class="tab" id="tabDispatched" data-status="dispatched" onclick="switchTab('dispatched')" style="display:none;">🚚 Dispatched</div>
+            <div class="tab" id="tabDelivered" data-status="delivered" onclick="switchTab('delivered')" style="display:none;">📬 Delivered</div>
+            <div class="tab active" id="tabAll" data-status="all" onclick="switchTab('all')">📋 All Orders</div>
+        </div>
+        <div class="order-filters" id="lorryFilterWrap" style="display:none;">
+            <label for="lorryFilterSelect" style="font-size:12px;color:#4b5563;">Filter by lorry</label>
+            <select id="lorryFilterSelect">
+                <option value="ALL">All Lorries</option>
+            </select>
+        </div>
+        <script>
+            (function () {
+                try {
+                    var p = new URLSearchParams(window.location.search).get('tab');
+                    if (!['pending', 'approved', 'rejected', 'dispatched', 'delivered', 'all'].includes(p)) return;
+                    document.querySelectorAll('.tabs .tab').forEach(function (t) { t.classList.remove('active'); });
+                    var el = document.querySelector('.tabs .tab[data-status="' + p + '"]');
+                    if (el) el.classList.add('active');
+                } catch (e) {}
+            })();
+        </script>
+
+        <div class="orders-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Order #</th>
+                        <th>Date</th>
+                        <th>Rep</th>
+                        <th>Shop</th>
+                        <th>Branch</th>
+                        <th>Lorry</th>
+                        <th>Brands</th>
+                        <th>Items</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="ordersList">
+                    <tr><td colspan="11" class="loading">Loading orders...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Order Details Modal -->
+    <div id="orderModal" class="modal">
+        <div class="modal-content">
+            <h3 id="modalTitle">Order Details</h3>
+            <div id="modalBody"></div>
+            <div id="modalActions" style="margin-top: 20px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;"></div>
+            <button onclick="closeModal()" style="margin-top: 16px; padding: 8px; width: 100%; background: #f3f4f6; border: none; border-radius: 8px;">Close</button>
+        </div>
+    </div>
+
+    <!-- MW Trading only: open with ?debugPrint=1 (saved to sessionStorage). Shows after 80mm print attempt. -->
+    <div id="digibizPrintDebugModal" class="modal" style="z-index:10100;display:none;" onclick="if(event.target===this)closeDigibizPrintDebugModal()">
+        <div class="modal-content" style="max-width:min(520px,96vw);">
+            <h3 style="margin:0 0 8px;">Print debug (MW)</h3>
+            <p style="font-size:11px;color:#64748b;margin:0 0 10px;line-height:1.45;">Enable: add <strong>?debugPrint=1</strong> to this page URL once (stays on for this browser tab). Disable: clear in DevTools <code>sessionStorage.removeItem('DIGIBIZ_DEBUG_PRINT')</code> or close the tab.</p>
+            <pre id="digibizPrintDebugBody" style="white-space:pre-wrap;word-break:break-word;font-size:11px;background:#f8fafc;padding:10px;border-radius:8px;max-height:48vh;overflow-y:auto;margin:0;border:1px solid #e2e8f0;"></pre>
+            <button type="button" onclick="closeDigibizPrintDebugModal()" style="margin-top:12px;padding:10px;width:100%;background:#0f766e;color:#fff;border:none;border-radius:8px;font-weight:600;">Close</button>
+        </div>
+    </div>
+
+    <div id="adminEditModal" class="modal">
+        <div class="modal-content" style="max-width: 640px; max-height: 85vh; overflow-y: auto;">
+            <h3 id="adminEditTitle">Edit order</h3>
+            <p style="font-size:12px;color:#64748b;margin-bottom:10px;">Edit header (shop/rep/payment/date/collection), every line (qty, free, returns, unit, reasons, batch), or remove a line. Agent return = resell; company return = factory. Firestore rules still apply.</p>
+            <div id="adminEditBody"></div>
+            <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+                <button type="button" class="btn btn-view" onclick="closeAdminEditModal()">Cancel</button>
+                <button type="button" class="btn btn-approve" onclick="saveAdminOrderEdit()">Save changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let currentBusinessId = null;
+        let __ORDER_STATUS_ROLE__ = '';
+        let __REP_DOC_ID__ = null;
+        let adminEditState = { collection: '', id: '', order: null };
+        let adminEditCatalog = [];
+        let adminEditCatalogLoaded = false;
+        let adminEditSuggestTimer = null;
+        let adminEditSuggestMatches = [];
+        let adminEditPickedProduct = null;
+        const BDK_EMAIL = 'bdkariyapperuma@gmail.com';
+
+        function isRepOrderView() {
+            return normalizeRole(__ORDER_STATUS_ROLE__) === 'REP';
+        }
+
+        function orderVisibleForCurrentRole(order) {
+            if (!isRepOrderView()) return true;
+            if (!__REP_DOC_ID__) return false;
+            return String(order.repId || '') === String(__REP_DOC_ID__);
+        }
+
+        function normalizeRole(r){
+            return String(r || '')
+                .toUpperCase()
+                .replace(/\s+/g,'_')
+                .replace(/[^A-Z0-9_]/g,'')
+                .trim();
+        }
+
+        function distributorOrderPerms() {
+            if (window.DigibizDistributorPermissions) {
+                return window.DigibizDistributorPermissions.permissionsForRole(__ORDER_STATUS_ROLE__);
+            }
+            return null;
+        }
+
+        function updateHqNewOrderBar() {
+            var webBtn = document.getElementById('hqNewOrderWebBtn');
+            var mobBtn = document.getElementById('hqNewOrderMobileBtn');
+            var clearBtn = document.getElementById('clearTestOrdersBtn');
+            var bar = document.getElementById('hqOrderActionsBar');
+            var p = distributorOrderPerms();
+            var canC = p ? !!p.canInvoiceCreateEdit : false;
+            var isRep = (normalizeRole(__ORDER_STATUS_ROLE__) === 'REP');
+            if (webBtn) webBtn.style.display = canC ? 'inline-flex' : 'none';
+            if (mobBtn) mobBtn.style.display = isRep ? 'inline-flex' : 'none';
+            if (clearBtn) clearBtn.style.display = !isRep ? 'inline-flex' : 'none';
+            if (bar) bar.style.display = 'flex';
+        }
+
+        function escapeAttr(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;');
+        }
+
+        function toDatetimeLocalValue(v) {
+            if (!v) return '';
+            let d = null;
+            if (typeof v.toDate === 'function') d = v.toDate();
+            else if (v.seconds) d = new Date(v.seconds * 1000);
+            else d = new Date(v);
+            if (!d || isNaN(d.getTime())) return '';
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        /** Who may open the full order editor (lines + header). Reps: own pending only — checked again in openAdminOrderEdit. */
+        function canAdminEditOrders() {
+            if (isRepOrderView()) return true;
+            const p = distributorOrderPerms();
+            if (p) return !!(p.canInvoiceCreateEdit || p.canStockView);
+            const r = normalizeRole(__ORDER_STATUS_ROLE__);
+            return ['BUSINESS_OWNER', 'DISTRIBUTOR_OWNER', 'SUPER_ADMIN', 'ADMIN', 'SALES_COORDINATOR', 'AREA_MANAGER', 'REP'].includes(r);
+        }
+
+        function showOrderEditButton(order) {
+            if (!order || !canAdminEditOrders()) return false;
+            if (isRepOrderView()) {
+                return orderVisibleForCurrentRole(order) && String(order.status || '').toLowerCase() === 'pending';
+            }
+            return true;
+        }
+
+        function canApproveInvoices(){
+            const p = distributorOrderPerms();
+            if (p) return !!p.canOrderWorkflowApprove;
+            const r = normalizeRole(__ORDER_STATUS_ROLE__);
+            return ['AREA_MANAGER','BUSINESS_OWNER','DISTRIBUTOR_OWNER','SUPER_ADMIN','ADMIN','SALES_COORDINATOR'].includes(r);
+        }
+
+        function canRejectInvoices() {
+            const p = distributorOrderPerms();
+            if (p) return !!p.canOrderReject;
+            const r = normalizeRole(__ORDER_STATUS_ROLE__);
+            return ['BUSINESS_OWNER','DISTRIBUTOR_OWNER','SUPER_ADMIN','ADMIN'].includes(r);
+        }
+
+        function recalcItemsAndTotals(items) {
+            const arr = Array.isArray(items) ? items.map((it) => ({ ...it })) : [];
+            let subtotal = 0;
+            arr.forEach((it) => {
+                const oq = Number(it.orderedQty) || 0;
+                const fq = Number(it.freeQty) || 0;
+                const rr = Number(it.returnResellQty) || 0;
+                const rc = Number(it.returnCompanyQty) || 0;
+                it.returnQty = rr + rc;
+                const rate = Number(it.unitPrice) || 0;
+                it.totalPrice = Math.max(0, oq - rr - rc) * rate;
+                subtotal += it.totalPrice;
+            });
+            return { items: arr, subtotal, totalAmount: subtotal };
+        }
+
+        function closeAdminEditModal() {
+            document.getElementById('adminEditModal').style.display = 'none';
+            adminEditState = { collection: '', id: '', order: null };
+            adminEditCatalogLoaded = false;
+            adminEditCatalog = [];
+            adminEditSuggestMatches = [];
+            adminEditPickedProduct = null;
+            hideAdminEditSuggest();
+        }
+
+        function hideAdminEditSuggest() {
+            const box = document.getElementById('adminEditLineSuggest');
+            if (box) {
+                box.style.display = 'none';
+                box.innerHTML = '';
+            }
+            adminEditSuggestMatches = [];
+        }
+
+        function renderAdminEditSuggest() {
+            const inp = document.getElementById('adminEditLineSearch');
+            const box = document.getElementById('adminEditLineSuggest');
+            if (!inp || !box) return;
+            const q = String(inp.value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            if (!q || !adminEditCatalogLoaded) {
+                hideAdminEditSuggest();
+                return;
+            }
+            const hits = [];
+            for (let i = 0; i < adminEditCatalog.length; i++) {
+                const p = adminEditCatalog[i];
+                const hay = p._hay != null ? p._hay : '';
+                if (hay.indexOf(q) !== -1) {
+                    hits.push(p);
+                    if (hits.length >= 40) break;
+                }
+            }
+            adminEditSuggestMatches = hits;
+            if (!hits.length) {
+                hideAdminEditSuggest();
+                return;
+            }
+            box.innerHTML = hits.map((p, idx) => {
+                const code = p.productCode ? String(p.productCode) : '';
+                const meta = [p.brand || '—', code ? ('Code: ' + code) : '', p.unitPrice != null ? ('Rs ' + Number(p.unitPrice).toFixed(2)) : ''].filter(Boolean).join(' · ');
+                return `<button type="button" data-admin-pick-idx="${idx}"><strong>${escapeAttr(String(p.name || 'Item'))}</strong><br><span style="font-size:11px;color:#64748b;font-weight:400;">${escapeAttr(meta)}</span></button>`;
+            }).join('');
+            box.style.display = 'block';
+        }
+
+        async function ensureAdminEditProductCatalog() {
+            if (!currentBusinessId) {
+                adminEditCatalog = [];
+                adminEditCatalogLoaded = true;
+                return;
+            }
+            const byId = {};
+            function addDoc(doc) {
+                const d = doc.data() || {};
+                if (d.isActive === false) return;
+                const row = Object.assign({ id: doc.id }, d);
+                if (!byId[row.id]) byId[row.id] = row;
+            }
+            try {
+                const flat = await db.collection('products').where('businessId', '==', currentBusinessId).get();
+                flat.forEach(addDoc);
+            } catch (e1) { console.warn('adminEdit products flat:', e1); }
+            try {
+                const nested = await db.collection('products').doc(currentBusinessId).collection('list').get();
+                nested.forEach(addDoc);
+            } catch (e2) { console.warn('adminEdit products nested:', e2); }
+            try {
+                const scoped = await db.collection('businesses').doc(currentBusinessId).collection('products').get();
+                scoped.forEach(addDoc);
+            } catch (e3) { console.warn('adminEdit products scoped:', e3); }
+            adminEditCatalog = Object.values(byId);
+            adminEditCatalog.forEach((p) => {
+                p._hay = [p.name, p.brand, p.category, p.model, p.productCode, p.barcode, p.id].filter(Boolean).join(' ').toLowerCase().replace(/\s+/g, ' ').trim();
+            });
+            adminEditCatalogLoaded = true;
+        }
+
+        function buildAdminEditBodyHtml(o) {
+            const items = Array.isArray(o.items) ? o.items : [];
+            const pay = String(o.paymentMethod || 'CASH').toUpperCase();
+            const headerBlock = `
+                <div style="border:1px solid #cbd5e1;border-radius:10px;padding:12px;margin-bottom:14px;background:#f8fafc;">
+                    <div style="font-weight:700;margin-bottom:10px;font-size:13px;">Header &amp; payment</div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;font-size:12px;">
+                        <label>Shop ID<br><input type="text" data-h="shopId" value="${escapeAttr(o.shopId || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Shop name<br><input type="text" data-h="shopName" value="${escapeAttr(o.shopName || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Rep ID<br><input type="text" data-h="repId" value="${escapeAttr(o.repId || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Rep name<br><input type="text" data-h="repName" value="${escapeAttr(o.repName || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Order #<br><input type="text" data-h="orderNumber" value="${escapeAttr(o.orderNumber || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Payment<br><select data-h="paymentMethod" style="width:100%;padding:6px;">
+                            <option value="CASH"${pay === 'CASH' ? ' selected' : ''}>Cash</option>
+                            <option value="CREDIT"${pay === 'CREDIT' || pay === 'BANK' ? ' selected' : ''}>Credit</option>
+                            <option value="CHEQUE"${pay === 'CHEQUE' ? ' selected' : ''}>Cheque</option>
+                        </select></label>
+                        <label>Order date<br><input type="datetime-local" data-h="orderDateLocal" value="${escapeAttr(toDatetimeLocalValue(o.orderDate))}" style="width:100%;padding:6px;"></label>
+                        <label>Collection Rs<br><input type="number" min="0" step="0.01" data-h="collectionAmount" value="${Number(o.collectionAmount != null ? o.collectionAmount : o.collectedAmount) || 0}" style="width:100%;padding:6px;"></label>
+                    </div>
+                </div>`;
+            const linesHtml = items.map((it, idx) => `
+                <div class="admin-line-block" data-original-idx="${idx}" style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-bottom:10px;">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">
+                        <div style="font-weight:600;">${escapeAttr(String(it.productName || ''))} <span style="color:#64748b;font-weight:400;">${escapeAttr(String(it.productBrand || ''))}</span></div>
+                        <button type="button" class="btn btn-reject" style="padding:4px 8px;font-size:11px;" onclick="this.closest('.admin-line-block').setAttribute('data-removed','1'); this.closest('.admin-line-block').style.opacity='0.45';">Remove line</button>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;font-size:12px;">
+                        <label>Sales qty<br><input type="number" min="0" data-f="oq" value="${Number(it.orderedQty) || 0}" style="width:100%;padding:6px;"></label>
+                        <label>Free qty<br><input type="number" min="0" data-f="fq" value="${Number(it.freeQty) || 0}" style="width:100%;padding:6px;"></label>
+                        <label>Agent return<br><input type="number" min="0" data-f="rr" value="${Number(it.returnResellQty) || 0}" style="width:100%;padding:6px;"></label>
+                        <label>Company return<br><input type="number" min="0" data-f="rc" value="${Number(it.returnCompanyQty) || 0}" style="width:100%;padding:6px;"></label>
+                        <label>Unit Rs<br><input type="number" min="0" step="0.01" data-f="pr" value="${Number(it.unitPrice) || 0}" style="width:100%;padding:6px;"></label>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:8px;font-size:12px;">
+                        <label>Free reason<br><input type="text" data-f="fr" value="${escapeAttr(it.freeReason || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Return reason<br><input type="text" data-f="rrs" value="${escapeAttr(it.returnReason || '')}" style="width:100%;padding:6px;"></label>
+                        <label>Batch / FIFO id<br><input type="text" data-f="bid" value="${escapeAttr(it.batchIdentifier || '')}" style="width:100%;padding:6px;"></label>
+                    </div>
+                </div>
+            `).join('');
+            const addBlock = `
+                <div class="admin-edit-add-wrap" style="margin-top:10px;padding-top:10px;border-top:1px dashed #e5e7eb;">
+                    <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px;">Add new line item</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
+                        <div style="flex:1;min-width:140px;position:relative;">
+                            <input type="text" id="adminEditLineSearch" placeholder="Search by name, brand, code…" autocomplete="off" spellcheck="false" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+                            <div id="adminEditLineSuggest" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;z-index:30;max-height:220px;overflow-y:auto;background:#fff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);"></div>
+                        </div>
+                        <input type="number" id="adminEditLineQty" value="1" min="1" step="1" title="Qty for new line" style="width:64px;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+                        <button type="button" id="adminEditAddLineBtn" class="btn btn-view" style="padding:6px 12px;white-space:nowrap;">+ Add Line</button>
+                    </div>
+                </div>`;
+            return headerBlock + linesHtml + addBlock;
+        }
+
+        function collectAdminEditLineItemsFromDom() {
+            if (!adminEditState.order) return [];
+            const baseItems = Array.isArray(adminEditState.order.items) ? adminEditState.order.items.map((it) => ({ ...it })) : [];
+            const newItems = [];
+            const blocks = Array.from(document.querySelectorAll('#adminEditBody .admin-line-block'));
+            blocks.sort((a, b) => {
+                const ai = parseInt(a.getAttribute('data-original-idx'), 10);
+                const bi = parseInt(b.getAttribute('data-original-idx'), 10);
+                return (isNaN(ai) ? 9999 : ai) - (isNaN(bi) ? 9999 : bi);
+            });
+            blocks.forEach((block) => {
+                if (block.getAttribute('data-removed') === '1') return;
+                const orig = parseInt(block.getAttribute('data-original-idx'), 10);
+                if (isNaN(orig) || !baseItems[orig]) return;
+                const row = { ...baseItems[orig] };
+                block.querySelectorAll('input[data-f]').forEach((inp) => {
+                    const f = inp.getAttribute('data-f');
+                    if (f === 'fr' || f === 'rrs' || f === 'bid') {
+                        row[f === 'fr' ? 'freeReason' : f === 'rrs' ? 'returnReason' : 'batchIdentifier'] = String(inp.value || '').trim();
+                        return;
+                    }
+                    const v = parseFloat(inp.value) || 0;
+                    if (f === 'oq') row.orderedQty = v;
+                    if (f === 'fq') row.freeQty = v;
+                    if (f === 'rr') row.returnResellQty = v;
+                    if (f === 'rc') row.returnCompanyQty = v;
+                    if (f === 'pr') row.unitPrice = v;
+                });
+                const rr = Number(row.returnResellQty) || 0;
+                const rc = Number(row.returnCompanyQty) || 0;
+                row.returnQty = rr + rc;
+                newItems.push(row);
+            });
+            return newItems;
+        }
+
+        function bindAdminEditAddLineUi() {
+            clearTimeout(adminEditSuggestTimer);
+            const inp = document.getElementById('adminEditLineSearch');
+            if (!inp || inp.dataset.boundAdminSuggest === '1') return;
+            inp.dataset.boundAdminSuggest = '1';
+            inp.addEventListener('input', function () {
+                adminEditPickedProduct = null;
+                clearTimeout(adminEditSuggestTimer);
+                adminEditSuggestTimer = setTimeout(renderAdminEditSuggest, 180);
+            });
+            inp.addEventListener('blur', function () {
+                setTimeout(hideAdminEditSuggest, 220);
+            });
+        }
+
+        function handleAdminEditAddLineClick() {
+            let product = adminEditPickedProduct;
+            if (!product && adminEditSuggestMatches.length === 1) {
+                product = adminEditSuggestMatches[0];
+            }
+            if (!product || !product.id) {
+                alert('Search and pick a product from the list (tap a row), or narrow search to a single match.');
+                return;
+            }
+            const synced = collectAdminEditLineItemsFromDom();
+            adminEditState.order.items = synced;
+            const qtyEl = document.getElementById('adminEditLineQty');
+            const qty = Math.max(1, parseInt(qtyEl && qtyEl.value, 10) || 1);
+            const rate = Number(product.unitPrice) || 0;
+            const newItem = {
+                productId: product.id,
+                productName: String(product.name || '').trim() || 'Item',
+                productBrand: String(product.brand || '').trim(),
+                productCode: String(product.productCode || '').trim(),
+                orderedQty: qty,
+                freeQty: 0,
+                returnResellQty: 0,
+                returnCompanyQty: 0,
+                returnQty: 0,
+                freeReason: '',
+                returnReason: '',
+                batchIdentifier: '',
+                unitPrice: rate,
+                totalPrice: qty * rate
+            };
+            adminEditState.order.items.push(newItem);
+            const body = document.getElementById('adminEditBody');
+            body.innerHTML = buildAdminEditBodyHtml(adminEditState.order);
+            bindAdminEditAddLineUi();
+            adminEditPickedProduct = null;
+            const si = document.getElementById('adminEditLineSearch');
+            if (si) {
+                si.value = '';
+                si.dataset.boundAdminSuggest = '';
+            }
+            const qi = document.getElementById('adminEditLineQty');
+            if (qi) qi.value = '1';
+            hideAdminEditSuggest();
+        }
+
+        (function initAdminEditLineModalDelegation() {
+            const modal = document.getElementById('adminEditModal');
+            if (!modal || modal.dataset.adminLineDeleg === '1') return;
+            modal.dataset.adminLineDeleg = '1';
+            modal.addEventListener('mousedown', function (ev) {
+                const sug = document.getElementById('adminEditLineSuggest');
+                if (!sug || !sug.contains(ev.target)) return;
+                const btn = ev.target.closest('[data-admin-pick-idx]');
+                if (btn) ev.preventDefault();
+            });
+            modal.addEventListener('click', function (ev) {
+                const addBtn = ev.target.closest('#adminEditAddLineBtn');
+                if (addBtn) {
+                    ev.preventDefault();
+                    handleAdminEditAddLineClick();
+                    return;
+                }
+                const pickBtn = ev.target.closest('[data-admin-pick-idx]');
+                if (!pickBtn) return;
+                const sug = document.getElementById('adminEditLineSuggest');
+                if (!sug || !sug.contains(pickBtn)) return;
+                const ix = parseInt(pickBtn.getAttribute('data-admin-pick-idx'), 10);
+                if (isNaN(ix) || !adminEditSuggestMatches[ix]) return;
+                adminEditPickedProduct = adminEditSuggestMatches[ix];
+                const inp = document.getElementById('adminEditLineSearch');
+                if (inp) inp.value = adminEditPickedProduct.name || '';
+                hideAdminEditSuggest();
+            });
+        })();
+
+        async function openAdminOrderEdit(order) {
+            if (!order) return;
+            if (isRepOrderView()) {
+                if (!orderVisibleForCurrentRole(order)) {
+                    alert('You can only edit your own orders.');
+                    return;
+                }
+                if (String(order.status || '').toLowerCase() !== 'pending') {
+                    alert('Reps can only edit pending orders here. Use HQ for changes after approval.');
+                    return;
+                }
+            } else {
+                const p = distributorOrderPerms();
+                const ok = p ? !!(p.canInvoiceCreateEdit || p.canStockView) : true;
+                if (!ok) {
+                    alert('Your role cannot edit orders.');
+                    return;
+                }
+            }
+            const collection = order.status === 'pending' ? 'pendingOrders' : 'orders';
+            adminEditState = { collection, id: order.id, order: JSON.parse(JSON.stringify(order)) };
+            const body = document.getElementById('adminEditBody');
+            const o = adminEditState.order;
+            document.getElementById('adminEditTitle').textContent = `Edit order ${o.orderNumber || order.id.slice(-8)}`;
+            try {
+                await ensureAdminEditProductCatalog();
+            } catch (eCat) {
+                console.warn(eCat);
+            }
+            body.innerHTML = buildAdminEditBodyHtml(adminEditState.order);
+            bindAdminEditAddLineUi();
+            document.getElementById('adminEditModal').style.display = 'flex';
+        }
+
+        async function saveAdminOrderEdit() {
+            if (!adminEditState.id || !adminEditState.order) return;
+            const newItems = collectAdminEditLineItemsFromDom();
+            const { items: recalced, subtotal, totalAmount } = recalcItemsAndTotals(newItems);
+            const freeIssuesTotal = recalced.reduce((s, it) => s + (Number(it.freeQty) || 0), 0);
+            const payload = {
+                ...adminEditState.order,
+                items: recalced,
+                subtotal,
+                totalAmount,
+                freeIssuesTotal,
+                lastEditedBy: currentUser?.uid,
+                lastEditedAt: new Date()
+            };
+            document.querySelectorAll('#adminEditBody [data-h]').forEach((inp) => {
+                const k = inp.getAttribute('data-h');
+                if (k === 'orderDateLocal') return;
+                if (k === 'collectionAmount') {
+                    const n = parseFloat(inp.value) || 0;
+                    payload.collectionAmount = n;
+                    payload.collectedAmount = n;
+                    return;
+                }
+                if (inp.tagName === 'SELECT' || inp.type === 'text' || inp.type === 'number') {
+                    payload[k] = String(inp.value || '').trim();
+                }
+            });
+            const odEl = document.querySelector('#adminEditBody [data-h="orderDateLocal"]');
+            if (odEl && odEl.value) {
+                const d = new Date(odEl.value);
+                if (!isNaN(d.getTime()) && typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.Timestamp) {
+                    payload.orderDate = firebase.firestore.Timestamp.fromDate(d);
+                } else if (!isNaN(d.getTime())) {
+                    payload.orderDate = d;
+                }
+            }
+            try {
+                await db.collection(adminEditState.collection).doc(adminEditState.id).set(payload, { merge: true });
+                alert('Order updated.');
+                closeAdminEditModal();
+                await loadOrders();
+                await loadStats();
+            } catch (e) {
+                console.error(e);
+                alert('Save failed: ' + (e.message || e));
+            }
+        }
+
+        function openAdminOrderEditFromView(orderId) {
+            closeModal();
+            const order = allOrders.find((o) => o.id === orderId);
+            if (order) openAdminOrderEdit(order);
+        }
+        const ORDER_TABS = ['pending', 'approved', 'rejected', 'dispatched', 'delivered', 'all'];
+        (function repairOrderStatusUrlTab() {
+            try {
+                const sp = new URLSearchParams(window.location.search);
+                const t = (sp.get('tab') || '').toLowerCase().trim();
+                if (!ORDER_TABS.includes(t)) {
+                    const u = new URL(window.location.href);
+                    u.searchParams.set('tab', 'pending');
+                    history.replaceState(null, '', u.pathname + '?' + u.searchParams.toString());
+                }
+            } catch (e) { /* ignore */ }
+        })();
+        const urlTabParam = (typeof URLSearchParams !== 'undefined')
+            ? new URLSearchParams(window.location.search).get('tab')
+            : null;
+        const urlLorryParam = (typeof URLSearchParams !== 'undefined')
+            ? (new URLSearchParams(window.location.search).get('lorry') || 'ALL')
+            : 'ALL';
+        let currentStatus = ORDER_TABS.includes(urlTabParam)
+            ? urlTabParam
+            : 'pending';
+        let currentLorryFilter = String(urlLorryParam || 'ALL');
+        let allOrders = [];
+        let chequeRows = [];
+        let repSummaryRows = [];
+        let currentBusinessName = '';
+        let currentBusinessData = null;
+        const BDK_ACCOUNTING_BUSINESS_ID = '3slrMTT9dVNlIETKbozzIsVZjjQ2';
+        let ordersUnsub = null;
+        let pendingOrdersUnsub = null;
+        let supplierLedgerUnsub = null;
+        let journalEntriesUnsub = null;
+        let accountBalancesUnsub = null;
+        let businessWatchdogTimer = null;
+        let lastSeenBusinessId = '';
+        let __CHEQUE_PILOT_ENABLED__ = false;
+        let commissionRows = [];
+        let freeItemsWidgetOrdersUnsub = null;
+
+        function escapeBillHtml(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function summarizeLineBrands(order) {
+            const items = Array.isArray(order.items) ? order.items : [];
+            const set = new Set();
+            items.forEach((item) => {
+                const b = String(item.productBrand || item.brand || '').trim();
+                if (b) set.add(b);
+            });
+            const arr = Array.from(set);
+            if (!arr.length) return '—';
+            const shown = arr.slice(0, 4).join(', ');
+            return arr.length > 4 ? `${shown}…` : shown;
+        }
+
+        function isMwTradingBusiness() {
+            if (currentBusinessData && currentBusinessData.mwTradingSolutionsTenant === true) return true;
+            if (window.DigibizMwDslConfig && typeof window.DigibizMwDslConfig.isMwTradingTenantActive === 'function') {
+                return !!window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData);
+            }
+            return false;
+        }
+
+        /** Android/iOS system PDF often rasterizes after the print dialog; closing the popup too soon can destroy the document and show "problem printing the page". */
+        function isDigibizMobilePrintClient() {
+            try {
+                const ua = String(navigator.userAgent || '');
+                return /Android|iPhone|iPad|iPod/i.test(ua);
+            } catch (eM) {
+                return false;
+            }
+        }
+
+        function pushPrintDebugLine(line) {
+            // Deprecated
+        }
+
+        async function attachMwFreeIssuesAndReturns(rows) {
+            if (!isMwTradingBusiness() || !Array.isArray(rows) || !rows.length) return rows;
+            const enriched = await Promise.all(rows.map(async (order) => {
+                const orderId = String(order.id || '').trim();
+                // Prefer stored order-level values written during save/backfill.
+                const items = Array.isArray(order.items) ? order.items : [];
+                
+                // Calculate from items if stored values are missing or 0
+                const calculatedFree = items.reduce((s, it) => s + (Number(it.freeQty) || 0), 0);
+                const calculatedReturns = items.reduce((s, it) => {
+                    const rr = Number(it.returnResellQty) || 0;
+                    const rc = Number(it.returnCompanyQty) || 0;
+                    const leg = Number(it.returnQty) || 0;
+                    // If detailed return fields exist, use them, otherwise fallback to legacy returnQty
+                    return s + (rr + rc > 0 ? (rr + rc) : leg);
+                }, 0);
+
+                const storedFree = Number(order.mwFreeIssuesQty);
+                if (!Number.isNaN(storedFree) && storedFree > 0) {
+                    order.mwFreeIssuesQty = storedFree;
+                } else {
+                    order.mwFreeIssuesQty = calculatedFree;
+                }
+
+                const storedReturns = Number(order.mwReturnsQty);
+                if (!Number.isNaN(storedReturns) && storedReturns > 0) {
+                    order.mwReturnsQty = storedReturns;
+                    return order;
+                }
+
+                // If no stored returns, use calculated returns
+                if (calculatedReturns > 0) {
+                    order.mwReturnsQty = calculatedReturns;
+                    return order;
+                }
+                
+                // If still no returns, try fetching from returns collection
+                if (!orderId) {
+                    order.mwReturnsQty = 0;
+                    return order;
+                }
+                try {
+                    const returnSnap = await db.collection('returns')
+                            .where('businessId', '==', currentBusinessId)
+                            .where('orderId', '==', orderId)
+                            .get()
+                            .catch(() => ({ docs: [] }));
+                    const returnQty = (returnSnap.docs || []).reduce((sum, d) => {
+                        const x = d.data() || {};
+                        const q = Number(x.returnQty ?? x.returnResellQty ?? x.returnCompanyQty ?? x.qty) || 0;
+                        return sum + q;
+                    }, 0);
+                    order.mwReturnsQty = returnQty;
+                } catch (_e) {
+                    order.mwReturnsQty = 0;
+                }
+                return order;
+            }));
+            return enriched;
+        }
+
+        function formatBillMoney(n) {
+            const v = Number(n) || 0;
+            return `Rs ${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+
+        function thermalBillSharedCss() {
+            return `
+@media print { @page { margin: 0; } body { margin: 0; } }
+html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Roboto',Arial,sans-serif;font-size:12px;line-height:1.2;}
+.bill{width:72mm;max-width:72mm;margin:0 auto;padding:5mm 2mm;box-sizing:border-box;}
+.receipt-header{text-align:center;margin-bottom:15px;}
+.biz-name{font-size:22px;font-weight:900;text-transform:uppercase;margin-bottom:5px;letter-spacing:1px;line-height:1;}
+.biz-info{font-size:10px;font-weight:600;margin-bottom:2px;color:#333;}
+.separator{border-top:1.5px solid #000;margin:8px 0;}
+.double-separator{border-top:3px double #000;margin:8px 0;}
+.dashed-separator{border-top:1px dashed #666;margin:8px 0;}
+.customer-highlight-box{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1.5px solid #000;margin-bottom:8px;}
+.cust-label{font-size:11px;font-weight:800;color:#000;text-transform:uppercase;}
+.cust-value{font-size:13px;font-weight:900;color:#000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:75%;}
+.meta-grid{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin-bottom:10px;font-size:10.5px;}
+.meta-label{font-weight:800;text-transform:uppercase;color:#444;}
+.meta-value{font-weight:900;text-align:right;}
+.item-row{margin-bottom:8px;}
+.item-header{display:flex;justify-content:space-between;font-weight:900;font-size:13px;text-transform:uppercase;}
+.item-sub{display:flex;justify-content:space-between;font-size:10px;font-weight:600;color:#444;margin-top:2px;font-style:italic;}
+.summary-box{margin-top:10px;}
+.summary-line{display:flex;justify-content:space-between;padding:3px 0;font-weight:700;font-size:12px;}
+.grand-total{font-size:18px;font-weight:900;padding:8px 0;border-top:2px solid #000;border-bottom:2px solid #000;margin:8px 0;}
+.badge{background:#000;color:#fff;padding:1px 4px;font-size:9px;font-weight:900;margin-left:5px;border-radius:2px;}
+.footer-section{text-align:center;margin-top:20px;padding-top:15px;border-top:1px solid #000;}
+.thank-you-note{font-size:13px;font-weight:900;text-transform:uppercase;margin-bottom:10px;}
+.digibiz-footer{margin-top:12px;font-weight:900;}
+.digibiz-text{font-size:11px;text-transform:uppercase;letter-spacing:1px;display:block;}
+.digibiz-hotline{font-size:13px;display:block;margin-top:4px;letter-spacing:0.5px;}
+.table-head{display:flex;justify-content:space-between;font-weight:900;font-size:11px;border-bottom:1.5px solid #000;padding-bottom:5px;margin-bottom:8px;text-transform:uppercase;}`;
+        }
+
+        async function tryMwBluetoothPrintSync(htmlContent, isDebug) {
+            if (!isDigibizMobilePrintClient()) return false;
+            
+            try {
+                pushPrintDebugLine('tryMwBluetoothPrintSync: using system print (iframe method)');
+                
+                // Create a hidden iframe
+                let iframe = document.getElementById('digibizPrintIframe');
+                if (iframe) iframe.remove();
+                
+                iframe = document.createElement('iframe');
+                iframe.id = 'digibizPrintIframe';
+                iframe.style.position = 'fixed';
+                iframe.style.right = '0';
+                iframe.style.bottom = '0';
+                iframe.style.width = '0';
+                iframe.style.height = '0';
+                iframe.style.border = '0';
+                document.body.appendChild(iframe);
+                
+                const doc = iframe.contentWindow.document;
+                doc.open();
+                doc.write(htmlContent);
+                doc.close();
+                
+                // Wait for content to load and then print
+                setTimeout(() => {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                    pushPrintDebugLine('System print dialog triggered');
+                }, 500);
+                
+                return true;
+            } catch (e) {
+                pushPrintDebugLine('System print failed: ' + (e && e.message));
+                console.error('Print failed', e);
+            }
+            return false;
+        }
+
+        async function tryMwBluetoothPrint(htmlContent) {
+            return tryMwBluetoothPrintSync(htmlContent, false);
+        }
+
+        async function openAndPrintInvoice(htmlContent) {
+            pushPrintDebugLine('openAndPrintInvoice: html length=' + (htmlContent ? htmlContent.length : 0));
+            const handledByShare = await tryMwBluetoothPrint(htmlContent);
+            pushPrintDebugLine('tryMwBluetoothPrint handled=' + handledByShare);
+            if (handledByShare) return;
+            const winName = 'digibizPrint_' + String(Date.now());
+            const w = window.open('', winName, 'width=420,height=700');
+            pushPrintDebugLine('window.open: ' + (w ? 'window ref OK' : 'NULL (pop-up blocked?)'));
+            if (!w) {
+                pushPrintDebugLine('abort: no print window');
+                alert('Please allow pop-ups to print the bill.');
+                return;
+            }
+            try {
+                w.opener = null;
+                pushPrintDebugLine('opener cleared');
+            } catch (eOp) {
+                pushPrintDebugLine('opener clear: ' + (eOp && eOp.message));
+            }
+            try {
+                w.document.open();
+                w.document.write(htmlContent);
+                w.document.close();
+                pushPrintDebugLine('document written + closed');
+            } catch (eDoc) {
+                pushPrintDebugLine('document write ERROR: ' + (eDoc && eDoc.message));
+                throw eDoc;
+            }
+            await new Promise(function (resolve) {
+                let settled = false;
+                const finish = function () {
+                    if (settled) return;
+                    settled = true;
+                    pushPrintDebugLine('openAndPrintInvoice: print step finished (await unblocks)');
+                    resolve();
+                };
+                const runPrint = function () {
+                    try {
+                        w.focus();
+                        pushPrintDebugLine('calling w.print() readyState=' + (w.document && w.document.readyState));
+                        w.print();
+                        pushPrintDebugLine('w.print() returned (Save as PDF / printer UI should be open)');
+                    } catch (e) {
+                        pushPrintDebugLine('w.print ERROR: ' + (e && e.message));
+                        console.warn('Print failed', e);
+                    }
+                    if (isDigibizMobilePrintClient()) {
+                        pushPrintDebugLine('mobile: not auto-closing print window (close tab after saving PDF)');
+                    } else {
+                        let closed = false;
+                        const doClose = function () {
+                            if (closed) return;
+                            closed = true;
+                            try { w.close(); } catch (e2) {}
+                            pushPrintDebugLine('child window closed');
+                        };
+                        try {
+                            w.addEventListener('afterprint', function () {
+                                pushPrintDebugLine('afterprint: scheduling child close');
+                                setTimeout(doClose, 400);
+                            }, { once: true });
+                        } catch (eAp) { /* ignore */ }
+                        setTimeout(function () {
+                            pushPrintDebugLine('desktop fallback close (45s)');
+                            doClose();
+                        }, 45000);
+                    }
+                    finish();
+                };
+                let fired = false;
+                let fallbackTimer = null;
+                const runOnce = function () {
+                    if (fired) return;
+                    fired = true;
+                    if (fallbackTimer != null) clearTimeout(fallbackTimer);
+                    setTimeout(runPrint, 200);
+                };
+                try {
+                    fallbackTimer = setTimeout(runOnce, 2000);
+                    if (w.document.readyState === 'complete') {
+                        runOnce();
+                    } else {
+                        w.addEventListener('load', function onLd() {
+                            w.removeEventListener('load', onLd);
+                            runOnce();
+                        });
+                    }
+                } catch (eR) {
+                    pushPrintDebugLine('ready guard: ' + (eR && eR.message));
+                    runOnce();
+                }
+            });
+        }
+
+        function computeBillLines(order) {
+            let subTotal = 0;
+            const items = Array.isArray(order.items) ? order.items : [];
+            const rows = items.map((item) => {
+                const name = item.productName || item.name || 'Unknown Item';
+                const brand = String(item.productBrand || item.brand || '').trim();
+                const rate = Number(item.unitPrice || item.price || item.sellingPrice) || 0;
+                const oq = Number(item.orderedQty || item.orderQty || item.quantity) || 0;
+                const fq = Number(item.freeQty || item.freeQuantity) || 0;
+                const rq = Number(item.returnQty || item.returnQuantity) || 0;
+                const lineTotal = Number(item.totalPrice || item.totalAmount) != null && !Number.isNaN(Number(item.totalPrice || item.totalAmount))
+                    ? Number(item.totalPrice || item.totalAmount)
+                    : (oq * rate);
+                subTotal += lineTotal;
+                
+                let qtyDisplay = oq;
+                if (fq > 0) qtyDisplay += `<span class="badge">F:${fq}</span>`;
+                if (rq > 0) qtyDisplay += `<span class="badge" style="background:#444">R:${rq}</span>`;
+
+                return `
+                <div class="item-row">
+                    <div class="item-header">
+                        <span>${escapeBillHtml(name)}</span>
+                        <span>${lineTotal.toFixed(2)}</span>
+                    </div>
+                    <div class="item-sub">
+                        <span>${escapeBillHtml(brand)} | ${qtyDisplay} @ ${rate.toFixed(2)}</span>
+                    </div>
+                </div>`;
+            }).join('');
+            const total = Number(order.totalAmount) != null ? Number(order.totalAmount) : subTotal;
+            const paid = Number(order.collectionAmount) || Number(order.collectedAmount) || 0;
+            const payMethod = String(order.paymentMethod || 'CASH').toUpperCase();
+            const paidCash = payMethod === 'CASH' && paid === 0 ? total : paid;
+            const balance = Math.max(0, total - paidCash);
+            return { rows, subTotal, total, paidCash, balance };
+        }
+
+        function buildMetaBlockHtml(order, shopData) {
+            const customer = order.shopName || 'Walk-in';
+            const custAddr = (shopData && (shopData.address || shopData.shopAddress)) || order.customerAddress || '';
+            const billNo = order.orderNumber || order.id;
+            const cashier = order.repName || order.repId || '—';
+            const dt = order.orderDate?.toDate ? order.orderDate.toDate() : (order.orderDate ? new Date(order.orderDate) : new Date());
+            const dtStr = dt.toLocaleString('en-LK', { hour12: true });
+            
+            const rows = [
+                { l: 'BILL NO', v: billNo },
+                { l: 'DATE/TIME', v: dtStr },
+                { l: 'SALES REP', v: cashier },
+                { l: 'BRANCH', v: order.branchName },
+                { l: 'LOCATION', v: order.branchLocation },
+                { l: 'ADDRESS', v: custAddr }
+            ];
+
+            const html = rows.map(r => {
+                if (!r.v || r.v === '-' || r.v === '—') return '';
+                return `<span class="meta-label">${r.l}:</span><span class="meta-value">${escapeBillHtml(String(r.v))}</span>`;
+            }).join('');
+
+            return `
+            <div class="customer-highlight-box">
+                <span class="cust-label">CUSTOMER:</span>
+                <span class="cust-value">${escapeBillHtml(customer)}</span>
+            </div>
+            <div class="meta-grid">${html}</div>`;
+        }
+
+        function buildMwDslThermalBillHtml(order, shopData) {
+            const cfg = window.DigibizMwDslConfig || {};
+            const billNo = order.orderNumber || order.id;
+            const { rows, subTotal, total, paidCash, balance } = computeBillLines(order);
+            const meta = buildMetaBlockHtml(order, shopData);
+            
+            const title = 'DSL ENTERPRISES (PVT) LTD';
+            const address = currentBusinessData?.address || cfg.DSL_SUBHEADER || '';
+            const phone = currentBusinessData?.phone || '';
+
+            return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bill ${escapeBillHtml(billNo)}</title>
+<style>${thermalBillSharedCss()}</style></head><body><div class="bill">
+    <div class="receipt-header">
+        <div class="biz-name">${escapeBillHtml(title)}</div>
+        ${address ? `<div class="biz-info">${escapeBillHtml(address)}</div>` : ''}
+        ${phone ? `<div class="biz-info">TEL: ${escapeBillHtml(phone)}</div>` : ''}
+    </div>
+    <div class="separator"></div>
+    ${meta}
+    <div class="double-separator"></div>
+    <div class="table-head">
+        <span>ITEM / DESCRIPTION</span>
+        <span>AMOUNT</span>
+    </div>
+    <div class="item-list">${rows || '<div style="text-align:center">No items</div>'}</div>
+    <div class="double-separator"></div>
+    <div class="summary-box">
+        <div class="grand-total summary-line" style="border-top:2px solid #000;"><span>GRAND TOTAL</span><span>Rs. ${total.toFixed(2)}</span></div>
+        <div class="summary-line" style="margin-top:5px;"><span>PAID (CASH)</span><span>${paidCash.toFixed(2)}</span></div>
+        <div class="summary-line"><span>BALANCE DUE</span><span>${balance.toFixed(2)}</span></div>
+    </div>
+    <div class="dashed-separator"></div>
+    <div class="footer-section">
+        <div class="thank-you-note">Thank You! Come Again</div>
+        <div class="digibiz-footer">
+            <span class="digibiz-text">Software Solution by DIGIBIZ</span>
+            <span class="digibiz-hotline">Hotline: 0713446500</span>
+        </div>
+    </div>
+</div><\/body><\/html>`;
+        }
+
+        function buildGenericThermalBillHtml(order, shopData, bizData) {
+            const cfg = window.DigibizMwDslConfig || {};
+            const billNo = order.orderNumber || order.id;
+            const biz = bizData || {};
+            const { rows, subTotal, total, paidCash, balance } = computeBillLines(order);
+            const meta = buildMetaBlockHtml(order, shopData);
+            const tableBody = rows || '<tr><td colspan="3" style="text-align:center">No items</td></tr>';
+
+            // Document Settings
+            const allS = biz.documentSettings || {};
+            const ds = allS['invoice'] || allS['distributor_invoice'] || {};
+            const title = ds.header || biz.name || 'INVOICE';
+            const address = ds.subHeader || [biz.address, biz.city, biz.phone].filter(Boolean).join(' | ') || '';
+            const footerNote = ds.footer || 'Thank You! Come Again';
+
+            return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bill ${escapeBillHtml(billNo)}</title>
+<style>${thermalBillSharedCss()}</style></head><body><div class="bill">
+    <div class="header">
+        <div class="biz-title">${escapeBillHtml(title)}</div>
+        ${address ? `<div class="biz-sub">${escapeBillHtml(address)}</div>` : ''}
+    </div>
+    ${meta}
+    <table class="bill-table">
+        <thead><tr><th>ITEM / DETAILS</th><th style="text-align:center">QTY</th><th style="text-align:right">AMOUNT</th></tr></thead>
+        <tbody>${tableBody}</tbody>
+    </table>
+    <div class="summary-box">
+        <div class="grand-total summary-line"><span>GRAND TOTAL</span><span>Rs. ${total.toFixed(2)}</span></div>
+        <div class="summary-line" style="margin-top:5px;"><span>PAID (CASH)</span><span>${paidCash.toFixed(2)}</span></div>
+        <div class="summary-line"><span>BALANCE DUE</span><span style="font-weight:900">Rs. ${balance.toFixed(2)}</span></div>
+    </div>
+    <div class="footer">
+        <div class="thank-you">${escapeBillHtml(footerNote)}</div>
+        <div class="digibiz-footer">
+            <span class="digibiz-text">Software Solution by DIGIBIZ</span>
+            <span class="digibiz-hotline">Hotline: 0713446500</span>
+        </div>
+    </div>
+</div><\/body><\/html>`;
+        }
+
+        async function printDistributorThermalBill(orderId, btnEl, forceDebug) {
+            if (btnEl) {
+                btnEl.disabled = true;
+                btnEl.dataset.origHtml = btnEl.innerHTML;
+                btnEl.innerHTML = '⌛ Loading...';
+            }
+            if (forceDebug) sessionStorage.setItem('DIGIBIZ_DEBUG_PRINT_ACTIVE', '1');
+            window.__DIGIBIZ_PRINT_DEBUG_LINES__ = [];
+            pushPrintDebugLine('UA: ' + String(navigator.userAgent || '').slice(0, 120));
+            pushPrintDebugLine('printDistributorThermalBill orderId=' + orderId);
+            try {
+                // Try to use cached data immediately to preserve user interaction context for mobile
+                let order = allOrders.find((o) => o.id === orderId);
+                const hasFullData = order && Array.isArray(order.items) && order.items.length > 0;
+                
+                pushPrintDebugLine('order in cache: ' + !!order + ' hasItems=' + hasFullData);
+
+                if (!hasFullData) {
+                    pushPrintDebugLine('fetching from Firestore (this may block popups/intents on some mobile browsers)');
+                    order = await resolveOrderForDisplay(orderId);
+                }
+
+                if (!order) {
+                    pushPrintDebugLine('abort: no order data found');
+                    if (isMwPrintDebugEnabled()) showDigibizPrintDebugModal('Print stopped: No data');
+                    return;
+                }
+
+                let shopData = null;
+                if (order.shopId) {
+                    try {
+                        const s = await db.collection('shops').doc(order.shopId).get();
+                        if (s.exists) shopData = s.data();
+                    } catch (e) {
+                        pushPrintDebugLine('shop lookup error: ' + e.message);
+                    }
+                }
+
+                const isMw = isMwTradingBusiness();
+                // If user has custom document settings for invoice header, prioritize generic template for branding
+                const ds = (currentBusinessData && currentBusinessData.documentSettings) || {};
+                const invSettings = ds['invoice'] || ds['distributor_invoice'] || {};
+                const hasCustomBranding = !!(invSettings.header || ds.invoiceHeaderOverride);
+
+                pushPrintDebugLine('template logic: isMw=' + isMw + ' hasCustomBranding=' + hasCustomBranding);
+                
+                const html = (isMw && !hasCustomBranding)
+                    ? buildMwDslThermalBillHtml(order, shopData)
+                    : buildGenericThermalBillHtml(order, shopData, currentBusinessData);
+
+                // SYNC-like CALL for mobile intent preservation
+                const handled = await tryMwBluetoothPrintSync(html);
+                if (handled) {
+                    pushPrintDebugLine('Intent handled synchronously');
+                } else {
+                    await openAndPrintInvoice(html);
+                }
+                pushPrintDebugLine('openAndPrintInvoice finished');
+                
+                if (isMwPrintDebugEnabled() && sessionStorage.getItem('DIGIBIZ_DEBUG_PRINT_ACTIVE') === '1') {
+                    showDigibizPrintDebugModal('Print Trace');
+                    sessionStorage.removeItem('DIGIBIZ_DEBUG_PRINT_ACTIVE');
+                }
+            } catch (err) {
+                pushPrintDebugLine('FATAL: ' + (err && err.message));
+                console.error(err);
+                if (isMwPrintDebugEnabled()) showDigibizPrintDebugModal('Print Error');
+                else alert('Print error: ' + (err && err.message ? err.message : String(err)));
+            } finally {
+                if (btnEl) {
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = btnEl.dataset.origHtml || '🖨 Print 80mm';
+                }
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const pendingSnapshot = await db.collection('pendingOrders')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                const approvedSnapshot = await db.collection('orders')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                
+                let pending = 0, approved = 0, rejected = 0, dispatched = 0, delivered = 0, today = 0;
+                const todayStart = new Date();
+                todayStart.setHours(0, 0, 0, 0);
+                
+                pendingSnapshot.docs.forEach(doc => {
+                    const order = doc.data();
+                    if (!orderVisibleForCurrentRole(order)) return;
+                    pending++;
+                    const orderDate = order.orderDate?.toDate ? order.orderDate.toDate() : null;
+                    if (orderDate && orderDate >= todayStart) today++;
+                });
+                approvedSnapshot.docs.forEach(doc => {
+                    const order = doc.data();
+                    if (!orderVisibleForCurrentRole(order)) return;
+                    const status = String(order.status || '').toLowerCase();
+                    if (status === 'approved') approved++;
+                    if (status === 'rejected') rejected++;
+                    if (status === 'dispatched') dispatched++;
+                    if (status === 'delivered') delivered++;
+                    const orderDate = order.orderDate?.toDate ? order.orderDate.toDate() : null;
+                    if (orderDate && orderDate >= todayStart) today++;
+                });
+                
+                document.getElementById('pendingCount').innerText = pending;
+                document.getElementById('approvedCount').innerText = approved;
+                document.getElementById('rejectedCount').innerText = rejected;
+                document.getElementById('dispatchedCount').innerText = dispatched;
+                document.getElementById('deliveredCount').innerText = delivered;
+                document.getElementById('todayCount').innerText = today;
+
+                loadOwnerProfitDashboard();
+                
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        function formatWidgetMoney(n) {
+            const v = Number(n) || 0;
+            return 'Rs ' + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function toWidgetAmount(v) {
+            if (v == null) return 0;
+            if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+            const raw = String(v).replace(/,/g, '').trim();
+            const n = Number(raw);
+            return Number.isFinite(n) ? n : 0;
+        }
+
+        function msToDaysLeft(ms) {
+            const now = new Date(); now.setHours(0,0,0,0);
+            return Math.ceil((ms - now.getTime()) / 86400000);
+        }
+
+        function renderChequeWidget() {
+            const body = document.getElementById('chequeWidgetRows');
+            const meta = document.getElementById('chequeWidgetMeta');
+            if (!body) return;
+            const horizon = Number(document.getElementById('chequeHorizonSelect')?.value || 7);
+            const now = new Date(); now.setHours(0,0,0,0);
+            const end = now.getTime() + horizon * 86400000;
+            const pendingTotal = (chequeRows || [])
+                .filter((r) => String(r.status || '') === 'pending_deposit' && r.isActive !== false)
+                .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+            if (meta) meta.textContent = 'Total Pending Cheques Amount: Rs ' + pendingTotal.toLocaleString();
+            const rows = (chequeRows || [])
+                .filter((r) => String(r.status || '') === 'pending_deposit' && r.isActive !== false)
+                .filter((r) => {
+                    const due = r.depositDueDate?.toMillis ? r.depositDueDate.toMillis() : 0;
+                    return due >= now.getTime() && due <= end;
+                })
+                .sort((a,b)=> (a.depositDueDate?.toMillis?.()||0) - (b.depositDueDate?.toMillis?.()||0));
+            if (!rows.length) {
+                body.innerHTML = '<tr><td colspan="4" class="loading">No upcoming cheques</td></tr>';
+                return;
+            }
+            body.innerHTML = rows.map((r) => {
+                const dueMs = r.depositDueDate?.toMillis ? r.depositDueDate.toMillis() : 0;
+                const dueDate = dueMs ? new Date(dueMs).toLocaleDateString() : '-';
+                const left = dueMs ? msToDaysLeft(dueMs) : '-';
+                return `<tr style="cursor:pointer;" onclick="window.location.href='/modules/distributor/web/cheques.html'">
+                    <td>${r.customerName || r.customerId || '-'}</td>
+                    <td>Rs ${(Number(r.amount)||0).toLocaleString()}</td>
+                    <td>${dueDate}</td>
+                    <td>${left}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function extractOutstanding(order) {
+            const total = Number(order.totalAmount || order.subtotal || 0) || 0;
+            const paid = Number(order.collectionAmount || order.collectedAmount || 0) || 0;
+            const explicit = Number(order.outstandingBalance);
+            const out = Number.isFinite(explicit) ? explicit : (total - paid);
+            return Math.max(0, out);
+        }
+
+        async function loadCreditOverLimitAlert() {
+            const box = document.getElementById('creditOverLimitAlert');
+            if (!box || !__CHEQUE_PILOT_ENABLED__) {
+                if (box) box.style.display = 'none';
+                return;
+            }
+            try {
+                const [shopsSnap, ordersSnap] = await Promise.all([
+                    db.collection('shops').where('businessId', '==', currentBusinessId).get(),
+                    db.collection('orders').where('businessId', '==', currentBusinessId).get()
+                ]);
+                const shops = {};
+                shopsSnap.docs.forEach((d) => {
+                    const x = d.data() || {};
+                    shops[d.id] = { creditLimit: Number(x.creditLimit || 0) || 0, name: x.name || d.id };
+                });
+                const outstandingByShop = {};
+                ordersSnap.docs.forEach((d) => {
+                    const o = d.data() || {};
+                    const sid = String(o.shopId || '').trim();
+                    if (!sid) return;
+                    const out = extractOutstanding(o);
+                    if (out <= 0) return;
+                    outstandingByShop[sid] = (outstandingByShop[sid] || 0) + out;
+                });
+                const overRows = Object.keys(outstandingByShop).filter((sid) => {
+                    const lim = Number((shops[sid] && shops[sid].creditLimit) || 0);
+                    return lim > 0 && outstandingByShop[sid] > lim;
+                });
+                if (!overRows.length) {
+                    box.style.display = 'none';
+                    box.textContent = '';
+                    return;
+                }
+                box.style.display = 'block';
+                box.textContent = 'Overdue Credit Alert: ' + overRows.length + ' customer(s) exceed credit limit.';
+            } catch (e) {
+                console.warn('Credit over-limit alert load failed', e);
+                box.style.display = 'none';
+            }
+        }
+
+        async function loadUpcomingChequesWidget() {
+            const card = document.getElementById('chequeWidget');
+            if (!card) return;
+            if (!__CHEQUE_PILOT_ENABLED__) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            try {
+                const snap = await db.collection('cheques')
+                    .where('businessId', '==', currentBusinessId)
+                    .where('isActive', '==', true)
+                    .get();
+                chequeRows = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+                renderChequeWidget();
+                await loadCreditOverLimitAlert();
+            } catch (e) {
+                console.error('Cheque widget load failed', e);
+                const body = document.getElementById('chequeWidgetRows');
+                if (body) body.innerHTML = '<tr><td colspan="4" class="loading">Could not load cheques</td></tr>';
+            }
+        }
+
+        function startOfMonthTs() {
+            const d = new Date();
+            d.setDate(1);
+            d.setHours(0,0,0,0);
+            return d.getTime();
+        }
+
+        async function loadCommissionWidget() {
+            const card = document.getElementById('commissionWidget');
+            const meta = document.getElementById('commissionWidgetMeta');
+            if (!card || !meta) return;
+            if (!__CHEQUE_PILOT_ENABLED__) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            try {
+                const snap = await db.collection('commissionTransactions')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                commissionRows = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+                const monthStart = startOfMonthTs();
+                const monthRows = commissionRows.filter((r) => {
+                    const ms = r.calculatedAt?.toMillis ? r.calculatedAt.toMillis() : 0;
+                    return ms >= monthStart;
+                });
+                const byRep = {};
+                monthRows.forEach((r) => {
+                    const k = r.repId || 'UNASSIGNED';
+                    if (!byRep[k]) byRep[k] = { repName: r.repName || k, total: 0 };
+                    byRep[k].total += Number(r.commissionAmount || 0);
+                });
+                const top = Object.values(byRep).sort((a,b)=>b.total-a.total)[0] || null;
+                const pending = commissionRows
+                    .filter((r) => String(r.status || 'pending') !== 'paid')
+                    .reduce((sum, r) => sum + (Number(r.commissionAmount) || 0), 0);
+                const topText = top ? (top.repName + ' (Rs ' + Number(top.total || 0).toLocaleString() + ')') : 'No commission yet';
+                meta.textContent = 'Top Rep by Commission (current month): ' + topText + ' | Total commission pending to pay: Rs ' + pending.toLocaleString();
+            } catch (e) {
+                meta.textContent = 'Could not load commission data.';
+            }
+        }
+
+        function tearFreeItemsWidgetListener() {
+            if (typeof freeItemsWidgetOrdersUnsub === 'function') {
+                try { freeItemsWidgetOrdersUnsub(); } catch (eFw) {}
+            }
+            freeItemsWidgetOrdersUnsub = null;
+        }
+
+        async function loadFreeItemsWidget() {
+            const user = firebase.auth().currentUser;
+            const widget = document.getElementById('freeItemsWidget');
+            if (widget && (!user || !isMwTradingBusiness())) {
+                widget.style.display = 'none';
+            }
+            if (!user) return;
+            if (!widget) return;
+            widget.style.display = 'block';
+            try {
+                const prodMap = await ensureDistributorProductsLoaded();
+                const ordersSnap = await firebase.firestore().collection('orders')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                let totalFreeUnits = 0;
+                let totalFreeValue = 0;
+                let ordersWithFree = 0;
+                const skuMap = new Map();
+                ordersSnap.forEach(function (doc) {
+                    const items = (doc.data() && doc.data().items) || [];
+                    let hasFree = false;
+                    items.forEach(function (item) {
+                        const freeQty = Number(item.freeQty) || 0;
+                        if (freeQty > 0) {
+                            hasFree = true;
+                            totalFreeUnits += freeQty;
+                            
+                            const pRef = prodMap[item.productId] || prodMap[item.productCode] || prodMap[item.id];
+                            const buyPrice = getProductCost(pRef, item);
+
+                            totalFreeValue += freeQty * buyPrice;
+                            const sku = item.productName || item.productId || 'Unknown';
+                            skuMap.set(sku, (skuMap.get(sku) || 0) + freeQty);
+                        }
+                    });
+                    if (hasFree) ordersWithFree += 1;
+                });
+                let topSku = '—';
+                let topCount = 0;
+                for (const entry of skuMap) {
+                    const sku = entry[0];
+                    const count = entry[1];
+                    if (count > topCount) {
+                        topCount = count;
+                        topSku = sku;
+                    }
+                }
+                const elU = document.getElementById('freeUnitsCount');
+                const elV = document.getElementById('freeValueEst');
+                const elO = document.getElementById('ordersWithFreeCount');
+                const elT = document.getElementById('topFreeSku');
+                const elLu = document.getElementById('freeWidgetLastUpdated');
+                if (elU) elU.innerText = String(totalFreeUnits);
+                if (elV) elV.innerText = 'LKR ' + totalFreeValue.toLocaleString();
+                if (elO) elO.innerText = String(ordersWithFree);
+                if (elT) elT.innerText = topSku;
+                if (elLu) elLu.innerText = new Date().toLocaleTimeString();
+            } catch (e) {
+                console.warn('loadFreeItemsWidget failed', e);
+            }
+        }
+        window.loadFreeItemsWidget = loadFreeItemsWidget;
+
+        function attachFreeItemsWidgetListener() {
+            tearFreeItemsWidgetListener();
+            if (!isMwTradingBusiness()) return;
+            freeItemsWidgetOrdersUnsub = firebase.firestore().collection('orders')
+                .where('businessId', '==', currentBusinessId)
+                .onSnapshot(function () {
+                    loadFreeItemsWidget();
+                }, function (err) {
+                    console.warn('Free items widget orders listener', err);
+                });
+        }
+
+        async function resolveCommissionRateForOrder(order) {
+            const repId = String(order && order.repId || '').trim();
+            if (!repId) return { rate: 0, amount: 0 };
+            const total = Number(order.totalAmount || order.subtotal || 0) || 0;
+            const cfgDoc = await db.collection('commissionConfig').doc(repId).get();
+            if (!cfgDoc.exists) return { rate: 0, amount: 0 };
+            const cfg = cfgDoc.data() || {};
+            if (cfg.commissionType === 'tiered') {
+                const tiers = Array.isArray(cfg.tiers) ? cfg.tiers.slice().sort((a,b)=>Number(a.threshold||0)-Number(b.threshold||0)) : [];
+                let rate = 0;
+                for (let i = 0; i < tiers.length; i++) {
+                    if (total >= Number(tiers[i].threshold || 0)) rate = Number(tiers[i].rate || 0);
+                }
+                return { rate, amount: (total * rate / 100) };
+            }
+            const rate = Number(cfg.percentageValue || 0);
+            return { rate, amount: (total * rate / 100) };
+        }
+
+        async function upsertCommissionForOrder(orderId, order) {
+            if (!__CHEQUE_PILOT_ENABLED__) return;
+            if (!order || !order.repId) return;
+            const calc = await resolveCommissionRateForOrder(order);
+            const amount = Number(calc.amount || 0);
+            const rate = Number(calc.rate || 0);
+            const orderRef = db.collection('orders').doc(orderId);
+            await orderRef.set({
+                commissionAmount: amount,
+                commissionRate: rate,
+                commissionCalculatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            const txId = String(orderId) + '__' + String(order.repId);
+            await db.collection('commissionTransactions').doc(txId).set({
+                businessId: currentBusinessId,
+                orderId: orderId,
+                repId: order.repId,
+                repName: order.repName || '',
+                orderTotal: Number(order.totalAmount || 0),
+                commissionRate: rate,
+                commissionAmount: amount,
+                calculatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                status: 'pending'
+            }, { merge: true });
+        }
+
+        function orderDateMs(order) {
+            if (!order) return 0;
+            const od = order.orderDate;
+            if (od && typeof od.toDate === 'function') {
+                const d = od.toDate();
+                return d && !isNaN(d.getTime()) ? d.getTime() : 0;
+            }
+            if (od && typeof od.seconds === 'number') {
+                return od.seconds * 1000 + Math.floor((od.nanoseconds || 0) / 1e6);
+            }
+            const ca = order.createdAt;
+            if (ca && typeof ca.toDate === 'function') {
+                const d2 = ca.toDate();
+                return d2 && !isNaN(d2.getTime()) ? d2.getTime() : 0;
+            }
+            if (ca && typeof ca.seconds === 'number') {
+                return ca.seconds * 1000 + Math.floor((ca.nanoseconds || 0) / 1e6);
+            }
+            return 0;
+        }
+
+        async function enrichOrderRow(doc, forcedStatus) {
+            const order = doc.data() || {};
+            let repName = order.repName || order.salesRepName || order.repId || 'Chirath Kavinda';
+            try {
+                if (order.repId) {
+                    const repDoc = await db.collection('reps').doc(order.repId).get();
+                    if (repDoc.exists && repDoc.data() && repDoc.data().name) repName = repDoc.data().name;
+                }
+            } catch (e) { /* ignore */ }
+            let shopName = order.shopName || order.customerName || order.shopId || 'Shop';
+            try {
+                if (order.shopId) {
+                    const shopDoc = await db.collection('shops').doc(order.shopId).get();
+                    if (shopDoc.exists && shopDoc.data() && shopDoc.data().name) shopName = shopDoc.data().name;
+                }
+            } catch (e2) { /* ignore */ }
+            const normalizedStatus = forcedStatus != null ? forcedStatus : String(order.status || 'approved').toLowerCase();
+            return {
+                id: doc.id,
+                ...order,
+                status: normalizedStatus,
+                repName,
+                shopName
+            };
+        }
+
+        /** Single-doc read for print/view — no enrichOrderRow (avoids invalid rep/shop refs). */
+        async function fetchOrderRawForPrint(orderId) {
+            const id = String(orderId || '').trim();
+            if (!id) return null;
+            try {
+                const oSnap = await db.collection('orders').doc(id).get();
+                if (oSnap.exists) return Object.assign({ id: oSnap.id }, oSnap.data() || {});
+            } catch (e) { /* ignore */ }
+            try {
+                const pSnap = await db.collection('pendingOrders').doc(id).get();
+                if (pSnap.exists) {
+                    const d = pSnap.data() || {};
+                    return Object.assign({ id: pSnap.id }, d, { status: String(d.status || 'pending').toLowerCase() });
+                }
+            } catch (e2) { /* ignore */ }
+            return null;
+        }
+
+        /** Merge Firestore doc over list cache so items/totals match server (debug showed cache items=0). */
+        async function resolveOrderForDisplay(orderId) {
+            const cached = allOrders.find((o) => o.id === orderId);
+            const fresh = await fetchOrderRawForPrint(orderId);
+            if (!fresh && !cached) return null;
+            if (!fresh) return cached;
+            const repName = (fresh.repName != null && String(fresh.repName).trim() !== '')
+                ? fresh.repName : (cached && cached.repName) || fresh.repId;
+            const shopName = (fresh.shopName != null && String(fresh.shopName).trim() !== '')
+                ? fresh.shopName : (cached && cached.shopName) || fresh.shopId;
+            return Object.assign({}, cached || {}, fresh, { id: fresh.id, repName, shopName });
+        }
+
+        async function clearTestOrders() {
+            const u = firebase.auth().currentUser;
+            if (!u) return;
+            const bid = currentBusinessId || localStorage.getItem('currentBusinessId') || u.uid;
+            const r = (window.__ORDER_STATUS_ROLE__ || localStorage.getItem('userRole') || sessionStorage.getItem('userRole') || '').toUpperCase();
+            const isOwner = (u.uid === bid) || ['OWNER', 'BUSINESS_OWNER', 'DISTRIBUTOR_OWNER', 'SUPER_ADMIN'].includes(r) || (r !== 'REP');
+            if (!isOwner) {
+                alert('Only the Business Owner can clear test transactions.');
+                return;
+            }
+
+            const conf = prompt('⚠️ WARNING: This will permanently delete ALL test orders, journal entries, ledger records, free issues, and sales history for this business so you can start fresh.\n\nType DELETE to confirm:');
+            if (String(conf || '').trim().toUpperCase() !== 'DELETE') {
+                alert('Action cancelled.');
+                return;
+            }
+
+            try {
+                const [oFlat, oPending, oNested, jEntries, jFlat, lFlat, slFlat, abFlat, fFlat1, fFlat2, eFlat, eNested] = await Promise.all([
+                    db.collection('orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('pendingOrders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('orders').doc(bid).collection('list').get().catch(() => ({ docs: [] })),
+                    db.collection('journal').doc(bid).collection('entries').get().catch(() => ({ docs: [] })),
+                    db.collection('journal_entries').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('ledger').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('supplier_ledger').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('account_balances').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('free_issues').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('freeIssues').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('expenses').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('expenses').doc(bid).collection('list').get().catch(() => ({ docs: [] }))
+                ]);
+
+                const refs = [];
+                [...oFlat.docs, ...oPending.docs, ...oNested.docs, ...jEntries.docs, ...jFlat.docs, ...lFlat.docs, ...slFlat.docs, ...abFlat.docs, ...fFlat1.docs, ...fFlat2.docs, ...eFlat.docs, ...eNested.docs].forEach(d => refs.push(d.ref));
+
+                if (refs.length === 0) {
+                    alert('No test transaction records found to delete.');
+                    return;
+                }
+
+                for (let i = 0; i < refs.length; i += 400) {
+                    const batch = db.batch();
+                    const chunk = refs.slice(i, i + 400);
+                    chunk.forEach(r => batch.delete(r));
+                    await batch.commit();
+                }
+
+                alert(`Successfully deleted ${refs.length} test records (orders + journal entries)! Everything is reset to 0.`);
+                location.reload();
+            } catch (e) {
+                alert('Error clearing test transactions: ' + e.message);
+            }
+        }
+
+        const distributorProductsMap = {};
+        async function ensureDistributorProductsLoaded() {
+            if (!currentBusinessId) return distributorProductsMap;
+            try {
+                const opt = navigator.onLine ? {} : { source: 'cache' };
+                const [pFlat, pNested] = await Promise.all([
+                    db.collection('products').where('businessId', '==', currentBusinessId).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('products').doc(currentBusinessId).collection('list').get(opt).catch(() => ({ docs: [] }))
+                ]);
+                [...pFlat.docs, ...pNested.docs].forEach(d => {
+                    const data = d.data() || {};
+                    distributorProductsMap[d.id] = data;
+                    if (data.productCode) distributorProductsMap[String(data.productCode).trim()] = data;
+                });
+            } catch (e) {
+                console.warn('Product catalog cache error:', e);
+            }
+            return distributorProductsMap;
+        }
+
+        function getProductCost(pRef, item) {
+            if (pRef) {
+                if (pRef.buyingPrice != null && !isNaN(Number(pRef.buyingPrice)) && Number(pRef.buyingPrice) > 0) {
+                    return Number(pRef.buyingPrice);
+                }
+                if (pRef.buyingPriceRaw != null && !isNaN(Number(pRef.buyingPriceRaw)) && Number(pRef.buyingPriceRaw) > 0) {
+                    return Number(pRef.buyingPriceRaw);
+                }
+                if (pRef.buyPrice != null && !isNaN(Number(pRef.buyPrice)) && Number(pRef.buyPrice) > 0) {
+                    return Number(pRef.buyPrice);
+                }
+                if (pRef.costPrice != null && !isNaN(Number(pRef.costPrice)) && Number(pRef.costPrice) > 0) {
+                    return Number(pRef.costPrice);
+                }
+                if (pRef.unitCost != null && !isNaN(Number(pRef.unitCost)) && Number(pRef.unitCost) > 0) {
+                    return Number(pRef.unitCost);
+                }
+            }
+            if (item) {
+                if (item.buyingPrice != null && !isNaN(Number(item.buyingPrice)) && Number(item.buyingPrice) > 0) {
+                    return Number(item.buyingPrice);
+                }
+                if (item.buyingPriceRaw != null && !isNaN(Number(item.buyingPriceRaw)) && Number(item.buyingPriceRaw) > 0) {
+                    return Number(item.buyingPriceRaw);
+                }
+                if (item.costPrice != null && !isNaN(Number(item.costPrice)) && Number(item.costPrice) > 0) {
+                    return Number(item.costPrice);
+                }
+            }
+            const unitP = Number(item && item.unitPrice || pRef && pRef.unitPrice || 0);
+            return unitP > 0 ? unitP * 0.93 : 0;
+        }
+
+        function parseDateAny(v) {
+            if (!v) return null;
+            if (typeof v.toDate === 'function') return v.toDate();
+            if (v.seconds) return new Date(v.seconds * 1000);
+            if (typeof v === 'number') return new Date(v);
+            if (typeof v === 'string' || v instanceof Date) return new Date(v);
+            return null;
+        }
+
+        async function loadOwnerProfitDashboard() {
+            const card = document.getElementById('ownerProfitCard');
+            const statEls = document.querySelectorAll('.owner-profit-stat');
+            const u = firebase.auth().currentUser;
+            const bid = currentBusinessId || localStorage.getItem('currentBusinessId') || (u && u.uid);
+            if (!bid) return;
+
+            const r = (window.__ORDER_STATUS_ROLE__ || localStorage.getItem('userRole') || sessionStorage.getItem('userRole') || '').toUpperCase();
+            const isOwner = (u && u.uid === bid) || ['OWNER', 'BUSINESS_OWNER', 'DISTRIBUTOR_OWNER', 'SUPER_ADMIN', 'ADMIN'].includes(r) || (r !== 'REP');
+
+            if (card) card.style.display = isOwner ? 'block' : 'none';
+            statEls.forEach(el => el.style.display = isOwner ? 'flex' : 'none');
+
+            try {
+                const prodMap = await ensureDistributorProductsLoaded();
+                const opt = navigator.onLine ? {} : { source: 'cache' };
+
+                const userEmail = u && u.email ? String(u.email).trim().toLowerCase() : null;
+                const oOwnerPromise = userEmail ? db.collection('orders').where('ownerEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+
+                const [oFlat, oPending, oNested, eFlat, eNested, oOwner] = await Promise.all([
+                    db.collection('orders').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('pendingOrders').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('orders').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('expenses').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('expenses').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    oOwnerPromise
+                ]);
+
+                const orderDocsMap = {};
+                [...oFlat.docs, ...oPending.docs, ...oNested.docs, ...oOwner.docs].forEach(d => { orderDocsMap[d.id] = d; });
+                const allOrderDocs = Object.values(orderDocsMap);
+
+                const expDocsMap = {};
+                [...eFlat.docs, ...eNested.docs].forEach(d => { expDocsMap[d.id] = d; });
+                const allExpDocs = Object.values(expDocsMap);
+
+                const now = new Date();
+                const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                
+                const dayOfWeek = now.getDay();
+                const diffToMon = (dayOfWeek === 0 ? -6 : 1 - dayOfWeek);
+                const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMon);
+
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+                let profitToday = 0, profitWeek = 0, profitMonth = 0, profitYear = 0;
+
+                allOrderDocs.forEach(doc => {
+                    const b = doc.data() || {};
+                    const status = String(b.status || '').toLowerCase();
+                    if (status === 'rejected' || status === 'cancelled') return;
+
+                    const dt = parseDateAny(b.orderDate || b.createdAt);
+                    if (!dt || isNaN(dt.getTime())) return;
+
+                    if (dt < startOfYear) return;
+
+                    let orderRevenue = 0;
+                    let orderCogs = 0;
+                    const items = Array.isArray(b.items) ? b.items : [];
+                    items.forEach(line => {
+                        const soldQty = Math.max(0, Number(line.orderedQty != null ? line.orderedQty : line.qty) || 0);
+                        const freeQty = Math.max(0, Number(line.freeQty) || 0);
+                        const returnQty = Math.max(0, Number(line.returnResellQty != null ? line.returnResellQty : line.returnQty) || 0);
+                        const billedQty = Math.max(0, soldQty - returnQty);
+                        const unitPrice = Number(line.unitPrice) || 0;
+
+                        const pRef = prodMap[line.productId] || prodMap[line.productCode] || prodMap[line.id];
+                        const buyPrice = getProductCost(pRef, line);
+
+                        orderRevenue += billedQty * unitPrice;
+                        orderCogs += (billedQty + freeQty) * buyPrice;
+                    });
+
+                    const orderTotal = Number(b.totalAmount || b.orderLinesTotal || orderRevenue);
+                    const grossMargin = orderTotal - orderCogs;
+
+                    if (dt >= startOfYear) profitYear += grossMargin;
+                    if (dt >= startOfMonth) profitMonth += grossMargin;
+                    if (dt >= startOfWeek) profitWeek += grossMargin;
+                    if (dt >= startOfToday) profitToday += grossMargin;
+                });
+
+                allExpDocs.forEach(doc => {
+                    const r = doc.data() || {};
+                    const dt = parseDateAny(r.createdAt || r.expenseDate);
+                    if (!dt || isNaN(dt.getTime())) return;
+
+                    if (dt < startOfYear) return;
+                    const amt = Number(r.amount) || 0;
+
+                    if (dt >= startOfYear) profitYear -= amt;
+                    if (dt >= startOfMonth) profitMonth -= amt;
+                    if (dt >= startOfWeek) profitWeek -= amt;
+                    if (dt >= startOfToday) profitToday -= amt;
+                });
+
+                const fmtProfit = (v) => {
+                    const val = Math.round(v);
+                    const cls = val >= 0 ? '#166534' : '#991b1b';
+                    const sign = val >= 0 ? 'Rs. ' : '-Rs. ';
+                    return `<span style="color:${cls}">${sign}${Math.abs(val).toLocaleString()}</span>`;
+                };
+
+                if (document.getElementById('ownerTodayProfit')) document.getElementById('ownerTodayProfit').innerHTML = fmtProfit(profitToday);
+                if (document.getElementById('ownerWeekProfit')) document.getElementById('ownerWeekProfit').innerHTML = fmtProfit(profitWeek);
+                if (document.getElementById('ownerMonthProfit')) document.getElementById('ownerMonthProfit').innerHTML = fmtProfit(profitMonth);
+                if (document.getElementById('ownerYearProfit')) document.getElementById('ownerYearProfit').innerHTML = fmtProfit(profitYear);
+
+                if (document.getElementById('statTodayProfit')) document.getElementById('statTodayProfit').innerHTML = fmtProfit(profitToday);
+                if (document.getElementById('statWeekProfit')) document.getElementById('statWeekProfit').innerHTML = fmtProfit(profitWeek);
+                if (document.getElementById('statMonthProfit')) document.getElementById('statMonthProfit').innerHTML = fmtProfit(profitMonth);
+                if (document.getElementById('statYearProfit')) document.getElementById('statYearProfit').innerHTML = fmtProfit(profitYear);
+            } catch (err) {
+                console.warn('Owner profit load error:', err);
+            }
+        }
+
+        async function loadOrders() {
+            try {
+                let orders = [];
+                const targetBid = currentBusinessId || (firebase.auth().currentUser && firebase.auth().currentUser.uid) || '';
+                if (!targetBid) {
+                    allOrders = [];
+                    displayOrders();
+                    return;
+                }
+
+                const ownerEm = (currentBusinessData && currentBusinessData.ownerEmail) ? String(currentBusinessData.ownerEmail).toLowerCase().trim() : '';
+
+                const orderQueries = [
+                    db.collection('orders').where('businessId', '==', targetBid).limit(300).get().catch(() => ({ docs: [] })),
+                    db.collection('orders').doc(targetBid).collection('list').limit(300).get().catch(() => ({ docs: [] })),
+                    db.collection('pendingOrders').where('businessId', '==', targetBid).limit(150).get().catch(() => ({ docs: [] })),
+                    db.collection('pendingOrders').doc(targetBid).collection('list').limit(150).get().catch(() => ({ docs: [] }))
+                ];
+
+                if (ownerEm) {
+                    orderQueries.push(db.collection('orders').where('ownerEmail', '==', ownerEm).limit(300).get().catch(() => ({ docs: [] })));
+                    orderQueries.push(db.collection('pendingOrders').where('ownerEmail', '==', ownerEm).limit(150).get().catch(() => ({ docs: [] })));
+                }
+
+                const snaps = await Promise.all(orderQueries);
+                const map = new Map();
+
+                snaps.forEach(snap => {
+                    (snap.docs || []).forEach(doc => {
+                        const d = doc.data() || {};
+                        const st = String(d.status || 'approved').toLowerCase();
+                        map.set(doc.id, {
+                            id: doc.id,
+                            ...d,
+                            status: st,
+                            repName: d.repName || d.salesRepName || d.repId || 'Sales Rep',
+                            shopName: d.shopName || d.customerName || d.shopId || 'Shop'
+                        });
+                    });
+                });
+
+                const allFetched = Array.from(map.values());
+
+                if (currentStatus === 'all') {
+                    orders = allFetched;
+                } else if (currentStatus === 'pending') {
+                    orders = allFetched.filter(o => {
+                        const st = String(o.status || '').toLowerCase();
+                        return st === 'pending' || st === 'submitted' || st === 'approved';
+                    });
+                    if (orders.length === 0) {
+                        orders = allFetched;
+                    }
+                } else {
+                    const want = String(currentStatus || '').toLowerCase();
+                    orders = allFetched.filter(o => String(o.status || '').toLowerCase() === want);
+                }
+
+                orders.sort((a, b) => orderDateMs(b) - orderDateMs(a));
+                orders = orders.slice(0, 200);
+
+                allOrders = isRepOrderView()
+                    ? orders.filter((o) => orderVisibleForCurrentRole(o))
+                    : orders;
+                allOrders = await attachMwFreeIssuesAndReturns(allOrders);
+                populateLorryFilter(allOrders);
+                displayOrders();
+                
+            } catch (error) {
+                console.error('Error loading orders:', error);
+                document.getElementById('ordersList').innerHTML = '<tr><td colspan="11" class="loading">Error loading orders</td></tr>';
+            }
+        }
+
+        function getLorryLabel(order) {
+            const id = String(order && order.lorryId || '').trim();
+            if (!id) return '—';
+            return id;
+        }
+
+        function populateLorryFilter(rows) {
+            const sel = document.getElementById('lorryFilterSelect');
+            const wrap = document.getElementById('lorryFilterWrap');
+            const enabled = !!(window.DigiBizDistributorLorryStock
+                && currentUser
+                && currentUser.email
+                && window.DigiBizDistributorLorryStock.activeForSession(currentUser.email, currentBusinessId));
+            if (!sel || !wrap || !enabled) {
+                if (wrap) wrap.style.display = 'none';
+                currentLorryFilter = 'ALL';
+                return;
+            }
+            const set = new Set();
+            (rows || []).forEach((o) => {
+                const lid = String(o.lorryId || '').trim();
+                if (lid) set.add(lid);
+            });
+            const options = Array.from(set).sort().map((id) => `<option value="${id}">${id}</option>`).join('');
+            sel.innerHTML = '<option value="ALL">All Lorries</option>' + options;
+            if (!set.has(currentLorryFilter)) currentLorryFilter = 'ALL';
+            sel.value = currentLorryFilter;
+            wrap.style.display = 'flex';
+        }
+
+        function renderRepSummaryTable() {
+            const tbody = document.getElementById('repSummaryList');
+            const selectedRep = document.getElementById('repFilter').value;
+            const rows = repSummaryRows.filter((row) => selectedRep === 'ALL' || row.repId === selectedRep);
+            tbody.innerHTML = rows.map((row) => `
+                <tr>
+                    <td>${row.repName}</td>
+                    <td>${row.totalOrders}</td>
+                    <td>${row.freeIssues}</td>
+                    <td>Rs ${(row.collections || 0).toLocaleString()}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="4" class="loading">No rep data</td></tr>';
+        }
+
+        async function loadRepSummary() {
+            if (isRepOrderView()) return;
+            try {
+                const pendingSnapshot = await db.collection('pendingOrders')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                const approvedSnapshot = await db.collection('orders')
+                    .where('businessId', '==', currentBusinessId)
+                    .get();
+                const repMap = {};
+                [...pendingSnapshot.docs, ...approvedSnapshot.docs].forEach((doc) => {
+                    const order = doc.data();
+                    const repId = order.repId || 'UNASSIGNED';
+                    const repName = order.repName || order.salesRepName || order.repId || 'Unassigned Rep';
+                    if (!repMap[repId]) {
+                        repMap[repId] = { repId, repName, totalOrders: 0, freeIssues: 0, collections: 0 };
+                    }
+                    repMap[repId].totalOrders += 1;
+                    const freeIssues = Array.isArray(order.items)
+                        ? order.items.reduce((sum, item) => sum + (Number(item.freeQty) || 0), 0)
+                        : 0;
+                    repMap[repId].freeIssues += freeIssues;
+                    repMap[repId].collections += Number(order.collectionAmount) || Number(order.collectedAmount) || 0;
+                });
+                repSummaryRows = Object.values(repMap).sort((a, b) => b.totalOrders - a.totalOrders);
+                const filter = document.getElementById('repFilter');
+                const current = filter.value;
+                filter.innerHTML = '<option value="ALL">All Reps</option>' + repSummaryRows
+                    .map((row) => `<option value="${row.repId}">${row.repName}</option>`).join('');
+                filter.value = repSummaryRows.some((row) => row.repId === current) ? current : 'ALL';
+                renderRepSummaryTable();
+            } catch (error) {
+                console.error('Error loading rep summary:', error);
+            }
+        }
+
+        function displayOrders() {
+            const tbody = document.getElementById('ordersList');
+            const visible = allOrders.filter((o) => {
+                if (currentLorryFilter === 'ALL') return true;
+                return String(o.lorryId || '').trim() === String(currentLorryFilter || '').trim();
+            });
+
+            if (visible.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="11" class="loading">No orders found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = visible.map(order => {
+                const dRaw = order.orderDate || order.createdAt || null;
+                let dText = '-';
+                if (dRaw && typeof dRaw.toDate === 'function') {
+                    dText = dRaw.toDate().toLocaleString('en-LK', { dateStyle: 'short', timeStyle: 'short', hour12: true });
+                } else if (dRaw && dRaw.seconds) {
+                    dText = new Date(dRaw.seconds * 1000).toLocaleString('en-LK', { dateStyle: 'short', timeStyle: 'short', hour12: true });
+                } else if (typeof dRaw === 'string') {
+                    const dObj = new Date(dRaw);
+                    dText = Number.isNaN(dObj.getTime()) ? dRaw : dObj.toLocaleString('en-LK', { dateStyle: 'short', timeStyle: 'short', hour12: true });
+                } else if (dRaw instanceof Date) {
+                    dText = dRaw.toLocaleString('en-LK', { dateStyle: 'short', timeStyle: 'short', hour12: true });
+                }
+                const itemCount = order.items?.reduce((sum, i) => sum + (i.orderedQty || 0) + (i.freeQty || 0), 0) || 0;
+                const mwLine = isMwTradingBusiness()
+                    ? `<div style="font-size:11px;color:#475569;margin-top:2px;">Free: ${Number(order.mwFreeIssuesQty || 0)} | Returns: ${Number(order.mwReturnsQty || 0)}</div>`
+                    : '';
+                const brands = summarizeLineBrands(order);
+                return `
+                    <tr>
+                        <td><strong>${order.orderNumber || order.id.slice(-8)}</strong></td>
+                        <td>${dText}</td>
+                        <td>${escapeBillHtml(order.repName || order.salesRepName || order.repId || 'Chirath Kavinda')}</td>
+                        <td>${escapeBillHtml(order.shopName || order.customerName || order.shopId || 'Shop')}</td>
+                        <td>${order.branchName || '-'}</td>
+                        <td>${getLorryLabel(order)}</td>
+                        <td style="max-width:180px;font-size:12px;color:#475569;">${brands}</td>
+                        <td>${itemCount} items${mwLine}</td>
+                        <td>Rs ${(order.totalAmount || 0).toLocaleString()}</td>
+                        <td><span class="status status-${order.status}">${order.status}</span></td>
+                        <td>${getActionButtons(order)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function thermalPrintBtn(orderId) {
+            return `<button type="button" class="btn btn-print" onclick="printDistributorThermalBill('${orderId}')">🖨 80mm</button>`;
+        }
+
+        async function deleteApprovedOrder(orderId) {
+            if (!confirm('මෙම ඇණවුම මකාදැමීමට ස්ථිරද? (Delete order and restore stock back to inventory?)')) return;
+            try {
+                let order = allOrders.find(o => o.id === orderId);
+                if (!order) {
+                    const snap = await db.collection('orders').doc(orderId).get();
+                    if (snap.exists) order = { id: snap.id, ...snap.data() };
+                }
+                if (!order) {
+                    alert('Order not found.');
+                    return;
+                }
+
+                // Restore Stock
+                const items = Array.isArray(order.items) ? order.items : [];
+                if (items.length > 0) {
+                    const productsSnap = await db.collection('products').where('businessId', '==', currentBusinessId).get();
+                    const byId = {};
+                    const byName = {};
+                    productsSnap.docs.forEach((doc) => {
+                        byId[doc.id] = doc;
+                        byName[String(doc.data().name || '').toLowerCase()] = doc;
+                    });
+
+                    const batch = db.batch();
+                    items.forEach((item) => {
+                        const productDoc = item.productId ? byId[item.productId] : byName[String(item.productName || '').toLowerCase()];
+                        if (!productDoc) return;
+                        const restoreQty = Math.max(0, (Number(item.orderedQty) || 0) + (Number(item.freeQty) || 0) - (Number(item.returnQty) || 0));
+                        if (restoreQty > 0) {
+                            batch.update(productDoc.ref, {
+                                stock: firebase.firestore.FieldValue.increment(restoreQty),
+                                currentStock: firebase.firestore.FieldValue.increment(restoreQty),
+                                updatedAt: new Date()
+                            });
+                        }
+                    });
+                    await batch.commit();
+                }
+
+                // Delete order documents
+                await db.collection('orders').doc(orderId).delete().catch(() => {});
+                await db.collection('pendingOrders').doc(orderId).delete().catch(() => {});
+
+                alert('Order deleted successfully and stock restored to inventory!');
+                await loadStats();
+                await loadOrders();
+            } catch (err) {
+                console.error("Error deleting order:", err);
+                alert("Failed to delete order: " + (err.message || String(err)));
+            }
+        }
+
+        function getActionButtons(order) {
+            const editBtn = showOrderEditButton(order)
+                ? `<button class="btn btn-view" onclick="openAdminOrderEditFromView('${order.id}')">✏️ Edit</button>` : '';
+            const deleteBtn = `<button class="btn btn-reject" style="background:#dc2626; color:#fff;" onclick="deleteApprovedOrder('${order.id}')">🗑️ Delete</button>`;
+
+            return `
+                <button class="btn btn-view" onclick="viewOrder('${order.id}')">👁 View</button>
+                ${editBtn}
+                ${deleteBtn}
+            `;
+        }
+
+        function toMillis(v) {
+            if (!v) return 0;
+            if (typeof v.toDate === 'function') return v.toDate().getTime();
+            if (v.seconds) return Number(v.seconds) * 1000;
+            const d = new Date(v);
+            return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+        }
+
+        function consumeFifoBatches(stockBatches, qtyToConsume) {
+            const arr = Array.isArray(stockBatches) ? stockBatches.map((b) => ({ ...b })) : [];
+            // Absolute FIFO: deplete strictly by oldest createdAt (price or identifier never changes priority).
+            arr.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt));
+            let left = Math.max(0, Number(qtyToConsume) || 0);
+            for (let i = 0; i < arr.length && left > 0; i += 1) {
+                const av = Math.max(0, Number(arr[i].availableQty) || 0);
+                if (!av) continue;
+                const take = Math.min(av, left);
+                arr[i].availableQty = av - take;
+                left -= take;
+            }
+            return arr;
+        }
+
+        async function adjustInventoryForApprovedOrder(order) {
+            if (!order || order.stockDeducted === true) {
+                console.log('[Inventory] Stock already deducted on order creation for order:', order?.id);
+                return;
+            }
+            const inv = window.DigiBizDistributorInventory;
+            const batch = db.batch();
+            const items = Array.isArray(order.items) ? order.items : [];
+            const productsSnap = await db.collection('products').where('businessId', '==', currentBusinessId).get();
+            const byId = {};
+            const byName = {};
+            productsSnap.docs.forEach((doc) => {
+                byId[doc.id] = doc;
+                byName[String(doc.data().name || '').toLowerCase()] = doc;
+            });
+            const agg = new Map();
+            items.forEach((item) => {
+                const productDoc = item.productId ? byId[item.productId] : byName[String(item.productName || '').toLowerCase()];
+                if (!productDoc) return;
+                const delta = inv ? inv.orderApprovalStockDelta(item) : -(Number(item.orderedQty) || 0) - (Number(item.freeQty) || 0) + (Number(item.returnQty) || 0);
+                const factoryAdd = inv ? inv.factoryReturnUnitsFromLine(item) : (Number(item.returnCompanyQty) || 0);
+                const saleQty = Math.max(
+                    0,
+                    (Number(item.orderedQty) || 0) +
+                    (Number(item.freeQty) || 0) -
+                    (Number(item.returnResellQty != null ? item.returnResellQty : item.returnQty) || 0)
+                );
+                const key = productDoc.ref.path;
+                if (!agg.has(key)) {
+                    agg.set(key, { ref: productDoc.ref, doc: productDoc, deltaSum: 0, factorySum: 0, saleQtySum: 0 });
+                }
+                const row = agg.get(key);
+                row.deltaSum += delta;
+                row.factorySum += factoryAdd;
+                row.saleQtySum += saleQty;
+            });
+            agg.forEach(({ ref, doc, deltaSum, factorySum, saleQtySum }) => {
+                if (!deltaSum && !factorySum) return;
+                const cur = inv ? inv.numericStock(doc.data()) : (Number(doc.data().stock) || 0);
+                const next = Math.max(0, cur + (deltaSum || 0));
+                const payload = inv ? inv.syncStockPayload(next) : { stock: next, currentStock: next };
+                if (saleQtySum > 0) {
+                    payload.stockBatches = consumeFifoBatches(doc.data().stockBatches, saleQtySum);
+                }
+                payload.updatedAt = new Date();
+                if (factorySum > 0) {
+                    payload.factoryReturnBucket = firebase.firestore.FieldValue.increment(factorySum);
+                }
+                batch.update(ref, payload);
+            });
+            await batch.commit();
+            order.stockDeducted = true;
+        }
+
+        async function approveOrder(orderId) {
+            if(!canApproveInvoices()){
+                alert('Approve is restricted to Owner, Sales Coordinator, or Area Manager.');
+                return;
+            }
+            if (!confirm('Approve this order?')) return;
+            try {
+                const order = allOrders.find(o => o.id === orderId);
+                if (!order) return;
+                const pendingRef = db.collection('pendingOrders').doc(orderId);
+                if (!order.lorryId) {
+                    await adjustInventoryForApprovedOrder(order);
+                }
+                const approvedPayload = {
+                    ...order,
+                    status: 'approved',
+                    approvedBy: currentUser?.uid,
+                    approvedAt: new Date(),
+                    source: 'pendingOrders'
+                };
+                await db.collection('orders').doc(orderId).set(approvedPayload);
+                await upsertCommissionForOrder(orderId, approvedPayload);
+                await pendingRef.delete();
+                if (window.eventBus && order) {
+                    window.eventBus.publish('DISTRIBUTOR_ORDER_APPROVED', {
+                        orderId,
+                        orderNo: order.orderNumber || orderId,
+                        amount: Number(order.totalAmount) || 0,
+                        businessId: currentBusinessId,
+                        approvedBy: currentUser?.uid || ''
+                    });
+
+                    // Free items are informational only and must remain zero-cost in accounting.
+                    // Keep freeQty in order lines, but do not create accounting expense entries.
+                    const items = Array.isArray(order.items) ? order.items : [];
+
+                    // Calculate and publish Market Returns
+                    const returnVal = items.reduce((sum, i) => {
+                        const q = Number(i.returnCompanyQty || i.returnResellQty || i.returnQty || 0);
+                        return sum + (q * (Number(i.unitPrice) || 0));
+                    }, 0);
+                    if (returnVal > 0) {
+                        window.eventBus.publish('MARKET_RETURNS_RECORDED', {
+                            businessId: currentBusinessId,
+                            orderId,
+                            amount: returnVal,
+                            date: order.orderDate
+                        });
+                    }
+                }
+                alert('Order approved!');
+                loadStats();
+                loadOrders();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error approving order');
+            }
+        }
+
+        async function dispatchOrder(orderId) {
+            if(!canApproveInvoices()){
+                alert('Dispatch is restricted to Owner, Sales Coordinator, or Area Manager.');
+                return;
+            }
+            if (!confirm('Mark as dispatched?')) return;
+            try {
+                await db.collection('orders').doc(orderId).update({
+                    status: 'dispatched',
+                    dispatchedAt: new Date()
+                });
+                alert('Order dispatched!');
+                loadStats();
+                loadOrders();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error dispatching order');
+            }
+        }
+
+        async function rejectOrder(orderId) {
+            if(!canRejectInvoices()){
+                alert('Reject is restricted to the business owner.');
+                return;
+            }
+            if (!confirm('Reject this order? It will leave the pending queue and be recorded as rejected.')) return;
+            try {
+                const order = allOrders.find((o) => o.id === orderId);
+                if (!order || order.status !== 'pending') return;
+                const pendingRef = db.collection('pendingOrders').doc(orderId);
+                const rejectedPayload = {
+                    ...order,
+                    status: 'rejected',
+                    rejectedBy: currentUser?.uid,
+                    rejectedAt: new Date(),
+                    source: 'pendingOrders'
+                };
+                await db.collection('orders').doc(orderId).set(rejectedPayload);
+                await pendingRef.delete();
+                alert('Order rejected.');
+                loadStats();
+                loadOrders();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error rejecting order');
+            }
+        }
+
+        async function markDelivered(orderId) {
+            if(!canApproveInvoices()){
+                alert('Delivered marking is restricted to Owner, Sales Coordinator, or Area Manager.');
+                return;
+            }
+            if (!confirm('Mark this order as delivered?')) return;
+            try {
+                await db.collection('orders').doc(orderId).update({
+                    status: 'delivered',
+                    deliveredAt: new Date()
+                });
+                const od = await db.collection('orders').doc(orderId).get();
+                if (od.exists) {
+                    const ox = od.data() || {};
+                    if (!(Number(ox.commissionAmount || 0) > 0) || !(Number(ox.commissionRate || 0) > 0)) {
+                        await upsertCommissionForOrder(orderId, ox);
+                    }
+                }
+                alert('Marked as delivered.');
+                loadStats();
+                loadOrders();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error updating order');
+            }
+        }
+
+        async function viewOrder(orderId) {
+            const order = await resolveOrderForDisplay(orderId);
+            if (!order) return;
+
+            let shopData = null;
+            if (order.shopId) {
+                try {
+                    const s = await db.collection('shops').doc(order.shopId).get();
+                    if (s.exists) shopData = s.data();
+                } catch (e) { console.warn('Shop lookup failed', e); }
+            }
+
+            const modal = document.getElementById('orderModal');
+            const modalBody = document.getElementById('modalBody');
+            const modalActions = document.getElementById('modalActions');
+
+            document.getElementById('modalTitle').innerHTML = `Invoice - ${order.orderNumber || order.id.slice(-8)}`;
+
+            let itemsRows = '';
+            let subtotal = 0;
+            let freeQtyTotal = 0;
+
+            const freeIssuesSummary = [];
+            const returnsSummary = [];
+
+            const prodMap = await ensureDistributorProductsLoaded();
+            const items = Array.isArray(order.items) ? order.items : [];
+            items.forEach((item, idx) => {
+                const qty = Number(item.orderedQty) || 0;
+                const free = Number(item.freeQty) || 0;
+                const price = Number(item.unitPrice) || 0;
+                const pRef = prodMap[item.productId] || prodMap[item.productCode] || prodMap[item.id];
+                const cost = getProductCost(pRef, item);
+                const total = Number(item.totalPrice) || 0;
+                subtotal += total;
+                freeQtyTotal += free;
+
+                const pb = String(item.productBrand || '').trim();
+                const rc = Number(item.returnCompanyQty) || 0;
+                const rr = Number(item.returnResellQty) || 0;
+                const leg = Number(item.returnQty) || 0;
+
+                if (free > 0) {
+                    freeIssuesSummary.push({ name: item.productName, qty: free, price: price, cost: cost, reason: item.freeReason || '-' });
+                }
+                if (rc > 0) {
+                    returnsSummary.push({ name: item.productName, qty: rc, price: price, type: 'To Company (Non-sellable)', reason: item.returnReason || '-' });
+                }
+                if (rr > 0) {
+                    returnsSummary.push({ name: item.productName, qty: rr, price: price, type: 'To Stock (Resell)', reason: item.returnReason || '-' });
+                }
+                if (!rc && !rr && leg > 0) {
+                    returnsSummary.push({ name: item.productName, qty: leg, price: price, type: 'General Return', reason: item.returnReason || '-' });
+                }
+
+                let extra = '';
+                if (free > 0) extra += `<div><span class="badge-free">Free: ${free}</span></div>`;
+                const totalReturn = (rc + rr) > 0 ? (rc + rr) : leg;
+                if (totalReturn > 0) extra += `<div><span class="badge-return">Return: ${totalReturn}</span></div>`;
+
+                itemsRows += `
+                    <tr>
+                        <td>${idx + 1}</td>
+                        <td>
+                            <div class="item-name">${item.productName}</div>
+                            ${pb ? `<div class="item-meta">${pb}</div>` : ''}
+                            ${extra}
+                        </td>
+                        <td class="num">${qty}</td>
+                        <td class="num">${price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        <td class="num">${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    </tr>
+                `;
+            });
+
+            // Standalone returns
+            const standaloneReturns = Array.isArray(order.returns) ? order.returns : [];
+            standaloneReturns.forEach(ret => {
+                const q = Number(ret.returnQty) || 0;
+                const p = Number(ret.unitPrice || 0);
+                returnsSummary.push({ name: ret.productName, qty: q, price: p, type: 'Standalone Return', reason: ret.reason || '-' });
+            });
+
+            let freeSection = '';
+            if (freeIssuesSummary.length > 0) {
+                let frRows = '';
+                freeIssuesSummary.forEach((f, i) => {
+                    frRows += `
+                        <tr>
+                            <td>${i + 1}</td>
+                            <td>${f.name}</td>
+                            <td class="num">${f.qty}</td>
+                            <td class="num"><span style="color:#166534; font-weight:700;">FREE (LKR 0.00)</span></td>
+                            <td><small>${f.reason}</small></td>
+                        </tr>
+                    `;
+                });
+                freeSection = `
+                    <div style="margin-top:30px; border: 1px solid #bbf7d0; border-radius:12px; padding:12px; background:#f0fdf4;">
+                        <h4 style="font-size:12px; text-transform:uppercase; color:#166534; margin-bottom:10px; display:flex; align-items:center; gap:8px;">
+                            🎁 Free Issues Summary
+                        </h4>
+                        <table class="invoice-table" style="font-size:12px; margin-bottom:0;">
+                            <thead><tr><th>#</th><th>Product</th><th class="num">Qty</th><th class="num">Price</th><th>Reason</th></tr></thead>
+                            <tbody>${frRows}</tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            let returnsSection = '';
+            if (returnsSummary.length > 0) {
+                let retRows = '';
+                returnsSummary.forEach((r, i) => {
+                    retRows += `
+                        <tr>
+                            <td>${i + 1}</td>
+                            <td>${r.name}</td>
+                            <td class="num">${r.qty}</td>
+                            <td class="num">Rs ${(r.qty * r.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                            <td><span style="font-size:10px; padding:2px 6px; border-radius:4px; background:#f3f4f6;">${r.type}</span></td>
+                            <td><small>${r.reason}</small></td>
+                        </tr>
+                    `;
+                });
+                returnsSection = `
+                    <div style="margin-top:20px; border: 1px solid #fee2e2; border-radius:12px; padding:12px; background:#fffafb;">
+                        <h4 style="font-size:12px; text-transform:uppercase; color:#991b1b; margin-bottom:10px; display:flex; align-items:center; gap:8px;">
+                            ↩️ Returns Summary
+                        </h4>
+                        <table class="invoice-table" style="font-size:12px; margin-bottom:0;">
+                            <thead><tr><th>#</th><th>Product</th><th class="num">Qty</th><th class="num">Value</th><th>Target</th><th>Reason</th></tr></thead>
+                            <tbody>${retRows}</tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            const bizName = currentBusinessData?.name || 'Distributor';
+            const bizAddress = currentBusinessData?.address || '';
+            const bizPhone = currentBusinessData?.phone || '';
+
+            modalBody.innerHTML = `
+                <div class="invoice-box">
+                    <div class="invoice-header">
+                        <div>
+                            <div class="invoice-title">${bizName}</div>
+                            <div style="color:#6b7280; font-size:12px;">${bizAddress}</div>
+                            <div style="color:#6b7280; font-size:12px;">${bizPhone}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-weight:700; font-size:16px;">ORDER #${order.orderNumber || order.id.slice(-8)}</div>
+                            <div style="color:#6b7280; font-size:12px;">Status: <span class="status status-${order.status}">${order.status.toUpperCase()}</span></div>
+                            <div style="color:#6b7280; font-size:12px;">Date: ${order.orderDate?.toDate ? new Date(order.orderDate.toDate()).toLocaleString() : '-'}</div>
+                        </div>
+                    </div>
+
+                    <div class="invoice-info-grid">
+                        <div class="info-group">
+                            <h4>Customer / Shop</h4>
+                            <p>${order.shopName}</p>
+                            ${order.branchName ? `<div style="font-size:12px;color:#4b5563;">Branch: ${order.branchName}</div>` : ''}
+                            ${shopData ? `
+                                <div style="font-size:12px;color:#4b5563;margin-top:4px;">
+                                    ${shopData.address ? `<div>📍 ${shopData.address}</div>` : ''}
+                                    ${(shopData.mobile || shopData.phone) ? `<div>📞 ${shopData.mobile || shopData.phone}</div>` : ''}
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="info-group" style="text-align:right;">
+                            <h4>Sales Representative</h4>
+                            <p>${order.repName}</p>
+                            <div style="font-size:12px;color:#4b5563;margin-top:4px;">Vehicle: ${getLorryLabel(order)}</div>
+                        </div>
+                    </div>
+
+                    <table class="invoice-table">
+                        <thead>
+                            <tr>
+                                <th style="width:30px;">#</th>
+                                <th>Description</th>
+                                <th class="num">Qty</th>
+                                <th class="num">Price</th>
+                                <th class="num">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsRows}
+                        </tbody>
+                    </table>
+
+                    ${freeSection}
+                    ${returnsSection}
+
+                    <div class="invoice-total-section">
+                        <div style="width:250px;">
+                            <div class="total-row">
+                                <span style="color:#6b7280;">Subtotal</span>
+                                <span>Rs ${subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            </div>
+                            <div class="total-row">
+                                <span style="color:#6b7280;">Free Issues Total</span>
+                                <span>${freeQtyTotal} Items</span>
+                            </div>
+                            <div class="total-row grand">
+                                <span>Grand Total</span>
+                                <span>Rs ${(order.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const print80 = `<button type="button" class="btn btn-print" onclick="printDistributorThermalBill('${order.id}', this)">🖨 Print 80mm</button>`;
+            const adminEd = showOrderEditButton(order)
+                ? `<button type="button" class="btn btn-view" onclick="openAdminOrderEditFromView('${order.id}')">✏️ Edit</button>` : '';
+            const canApprove = canApproveInvoices();
+            const canReject = canRejectInvoices();
+
+            let actions = `${print80}${adminEd}`;
+            const collected = Number(order.collectionAmount != null ? order.collectionAmount : order.collectedAmount) || 0;
+            if (collected > 0) {
+                actions += `<button type="button" class="btn btn-print" style="background:#0891b2;" onclick="printOrderCollectionReceipt('${order.id}')">🖨 Collection Receipt</button>`;
+            }
+
+            if ((order.status === 'approved' || order.status === 'pending' || order.status === 'submitted') && canApprove) {
+                actions += `<button class="btn btn-dispatch" onclick="dispatchOrder('${order.id}'); closeModal();">🚚 Dispatch</button>`;
+            } else if (order.status === 'dispatched' && canApprove) {
+                actions += `<button class="btn btn-approve" onclick="markDelivered('${order.id}'); closeModal();">📬 Delivered</button>`;
+            }
+            modalActions.innerHTML = actions;
+
+            modal.style.display = 'flex';
+        }
+
+        async function printOrderCollectionReceipt(orderId) {
+            const order = await resolveOrderForDisplay(orderId);
+            if (!order) return;
+            const amt = Number(order.collectionAmount != null ? order.collectionAmount : order.collectedAmount) || 0;
+            if (amt <= 0) {
+                alert('No collection amount recorded for this order.');
+                return;
+            }
+
+            try {
+                const bid = currentBusinessId;
+                const bizData = currentBusinessData || {};
+                const docSettings = bizData.documentSettings || {};
+                const s = docSettings.collection_receipt || {};
+
+                const header = s.header || bizData.name || 'Collection Receipt';
+                const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+                const footer = s.footer || 'Thank you for your business!';
+                const agentNote = s.showAgentDetails ? `Rep: ${order.repName || order.repId}` : '';
+
+                // Calculate balance if possible
+                const total = Number(order.totalAmount || 0);
+                const bal = Math.max(0, total - amt);
+
+                const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Collection Receipt - ${order.orderNumber || order.id.slice(-8)}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 5mm; }
+            body { width: 70mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; line-height: 1.4; color: #000; padding: 10px; width: 70mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 10px; margin: 4px 0 0; }
+        .receipt-title { font-size: 13px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; text-decoration: underline; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .meta-label { font-weight: 600; }
+        .amount-box { border: 2px solid #000; padding: 8px; text-align: center; margin: 15px 0; font-size: 18px; font-weight: 800; }
+        .balance-box { background: #f0f0f0; padding: 6px; text-align: center; font-size: 11px; margin-top: 10px; border-radius: 4px; }
+        .footer { text-align: center; font-size: 10px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; }
+        .sig-space { margin-top: 40px; display: flex; justify-content: space-between; font-size: 10px; }
+        .sig-line { border-top: 1px solid #000; width: 45%; text-align: center; padding-top: 2px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Collection Receipt</div>
+    
+    <div class="meta-row"><span class="meta-label">Invoice No:</span><span>${order.orderNumber || order.id.slice(-8).toUpperCase()}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${new Date().toLocaleDateString()}</span></div>
+    <div class="meta-row"><span class="meta-label">Customer:</span><span>${order.shopName || '-'}</span></div>
+    <div class="meta-row"><span class="meta-label">Pay Mode:</span><span>CASH/CHEQUE</span></div>
+    
+    <div class="amount-box">Rs. ${amt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+    
+    <div style="font-size:11px; margin-bottom:10px;">
+        Received against Invoice <strong>#${order.orderNumber || order.id.slice(-8)}</strong> 
+        of Rs. ${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}.
+    </div>
+
+    <div class="balance-box">
+        Outstanding for this Invoice: <strong>Rs. ${bal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+    </div>
+    
+    <div class="sig-space">
+        <div class="sig-line">Customer</div>
+        <div class="sig-line">Authorized</div>
+    </div>
+    
+    <div class="footer">
+        <div>${footer}</div>
+        ${agentNote ? `<div style="margin-top:4px;">${agentNote}</div>` : ''}
+        <div style="font-size: 8px; color: #666; margin-top: 8px;">Software Solution by DIGIBIZ - 0713446500</div>
+    </div>
+
+    <sc' + 'ript>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    </sc' + 'ript>
+<\/body>
+<\/html>`;
+
+                const win = window.open('', '_blank', 'width=400,height=600');
+                if (!win) {
+                    alert('Popup blocked. Please allow popups to print the receipt.');
+                    return;
+                }
+                win.document.write(html);
+                win.document.close();
+
+            } catch (e) {
+                console.error(e);
+                alert('Failed to generate receipt: ' + e.message);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('orderModal').style.display = 'none';
+        }
+
+        function switchTab(status) {
+            currentStatus = status;
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            const t = document.querySelector(`.tab[data-status="${status}"]`);
+            if (t) t.classList.add('active');
+            try {
+                const u = new URL(window.location.href);
+                u.searchParams.set('tab', status);
+                history.replaceState(null, '', u.pathname + '?' + u.searchParams.toString());
+            } catch (e) { /* ignore */ }
+            loadOrders();
+        }
+
+        function getBusinessIdFromStorage() {
+            return localStorage.getItem('selectedBusinessId')
+                || sessionStorage.getItem('selectedBusinessId')
+                || localStorage.getItem('currentBusinessId')
+                || sessionStorage.getItem('currentBusinessId')
+                || '';
+        }
+
+        function clearDashboardRealtimeListeners() {
+            if (typeof ordersUnsub === 'function') {
+                try { ordersUnsub(); } catch (e) {}
+            }
+            if (typeof pendingOrdersUnsub === 'function') {
+                try { pendingOrdersUnsub(); } catch (e2) {}
+            }
+            if (typeof supplierLedgerUnsub === 'function') {
+                try { supplierLedgerUnsub(); } catch (e3) {}
+            }
+            if (typeof journalEntriesUnsub === 'function') {
+                try { journalEntriesUnsub(); } catch (e4) {}
+            }
+            if (typeof accountBalancesUnsub === 'function') {
+                try { accountBalancesUnsub(); } catch (e5) {}
+            }
+            tearFreeItemsWidgetListener();
+            ordersUnsub = null;
+            pendingOrdersUnsub = null;
+            supplierLedgerUnsub = null;
+            journalEntriesUnsub = null;
+            accountBalancesUnsub = null;
+        }
+
+        function attachDashboardRealtimeListeners() {
+            clearDashboardRealtimeListeners();
+            ordersUnsub = db.collection('orders').where('businessId', '==', currentBusinessId).onSnapshot(() => {
+                loadStats();
+                loadOrders();
+                loadRepSummary();
+                loadUpcomingChequesWidget();
+                loadCommissionWidget();
+            });
+            pendingOrdersUnsub = db.collection('pendingOrders').where('businessId', '==', currentBusinessId).onSnapshot(() => {
+                loadStats();
+                loadOrders();
+                loadRepSummary();
+                loadUpcomingChequesWidget();
+                loadCommissionWidget();
+            });
+            attachFreeItemsWidgetListener();
+            const email = String((currentUser && currentUser.email) || '').trim().toLowerCase();
+            if (email === BDK_EMAIL) {
+                const accountingBid = BDK_ACCOUNTING_BUSINESS_ID || currentBusinessId;
+                supplierLedgerUnsub = db.collection('supplier_ledger').where('businessId', '==', accountingBid).onSnapshot(() => {
+                    loadAccountingSummaryWidget();
+                });
+                journalEntriesUnsub = db.collection('journal_entries').where('businessId', '==', accountingBid).onSnapshot(() => {
+                    loadAccountingSummaryWidget();
+                });
+                accountBalancesUnsub = db.collection('account_balances').where('businessId', '==', accountingBid).onSnapshot(() => {
+                    loadAccountingSummaryWidget();
+                });
+            }
+        }
+
+        async function reloadDashboardForBusinessChange(nextBusinessId) {
+            const next = String(nextBusinessId || '').trim();
+            if (!next || !currentUser || next === currentBusinessId) return;
+            currentBusinessId = next;
+            lastSeenBusinessId = next;
+            localStorage.setItem('currentBusinessId', currentBusinessId);
+            sessionStorage.setItem('currentBusinessId', currentBusinessId);
+            localStorage.setItem('currentBusinessType', 'distributor');
+            sessionStorage.setItem('currentBusinessType', 'distributor');
+            try {
+                const roleInfo = window.getUserRole ? await window.getUserRole(currentUser.uid, currentBusinessId) : null;
+                let userRole = String(roleInfo && roleInfo.role || '').toUpperCase();
+                try {
+                    const bu = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(currentUser.uid).get();
+                    if (bu.exists && bu.data().role) userRole = String(bu.data().role).toUpperCase();
+                } catch (e) { /* ignore */ }
+                __ORDER_STATUS_ROLE__ = userRole;
+                __REP_DOC_ID__ = null;
+                if (userRole === 'REP') {
+                    try {
+                        let rs = await db.collection('reps').where('userId', '==', currentUser.uid).where('businessId', '==', currentBusinessId).limit(1).get();
+                        if (rs.empty) rs = await db.collection('reps').where('userId', '==', currentUser.uid).limit(1).get();
+                        if (rs.empty && currentUser.email) {
+                            rs = await db.collection('reps').where('email', '==', currentUser.email).where('businessId', '==', currentBusinessId).limit(1).get();
+                        }
+                        if (!rs.empty) __REP_DOC_ID__ = rs.docs[0].id;
+                    } catch (e3) { console.warn('Rep profile lookup failed', e3); }
+                }
+                const bdSnap = await db.collection('businesses').doc(currentBusinessId).get();
+                currentBusinessData = bdSnap.exists ? bdSnap.data() : null;
+                currentBusinessName = currentBusinessData ? String(currentBusinessData.name || '') : '';
+                window.__DIGIBIZ_IS_MW_TRADING__ = !!(window.DigibizMwDslConfig
+                    && window.DigibizMwDslConfig.isMwTradingTenantActive(currentBusinessId, currentBusinessData));
+                __CHEQUE_PILOT_ENABLED__ = !!(window.DigiBizDistributorLorryStock
+                    && window.DigiBizDistributorLorryStock.activeForSession(currentUser && currentUser.email, currentBusinessId));
+            } catch (err) {
+                console.warn('Business switch reload failed', err);
+            }
+            clearDashboardRealtimeListeners();
+            await loadStats();
+            await loadOrders();
+            await loadRepSummary();
+            await loadUpcomingChequesWidget();
+            await loadCommissionWidget();
+            attachDashboardRealtimeListeners();
+        }
+
+        function bindBusinessSwitchWatchers() {
+            if (window.__DIGIBIZ_DASHBOARD_BID_WATCHER_BOUND__) return;
+            window.__DIGIBIZ_DASHBOARD_BID_WATCHER_BOUND__ = true;
+            window.addEventListener('storage', function (ev) {
+                if (!ev) return;
+                if (ev.key !== 'selectedBusinessId' && ev.key !== 'currentBusinessId') return;
+                reloadDashboardForBusinessChange(getBusinessIdFromStorage());
+            });
+            window.addEventListener('digibiz:business-changed', function () {
+                reloadDashboardForBusinessChange(getBusinessIdFromStorage());
+            });
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') {
+                    reloadDashboardForBusinessChange(getBusinessIdFromStorage());
+                }
+            });
+            window.addEventListener('focus', function () {
+                reloadDashboardForBusinessChange(getBusinessIdFromStorage());
+            });
+            businessWatchdogTimer = setInterval(function () {
+                const nowBid = getBusinessIdFromStorage();
+                if (nowBid && nowBid !== lastSeenBusinessId) {
+                    reloadDashboardForBusinessChange(nowBid);
+                }
+            }, 1200);
+        }
+
+        async function loadAccountingSummaryWidget() {
+            console.log('[DEBUG] loadAccountingSummaryWidget called');
+            const card = document.getElementById('accountingSummaryWidget');
+            if (!card) {
+                console.log('[DEBUG] Widget element not found');
+                return;
+            }
+            const email = firebase.auth().currentUser?.email?.toLowerCase();
+            const BDK_EMAIL = 'bdkariyapperuma@gmail.com';
+            const BDK_BID = '3slrMTT9dVNlIETKbozzIsVZjjQ2';
+            
+            if (email !== BDK_EMAIL) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            
+            try {
+                const [jeSnap, slSnap, abSnap] = await Promise.all([
+                    db.collection('journal_entries').where('businessId', '==', BDK_BID).get(),
+                    db.collection('supplier_ledger').where('businessId', '==', BDK_BID).get(),
+                    db.collection('account_balances').where('businessId', '==', BDK_BID).get()
+                ]);
+                
+                let purchases = 0;
+                jeSnap.forEach(d => {
+                    if (d.data().account === 'Purchases') purchases += Number(d.data().amount) || 0;
+                });
+                
+                let outstanding = 0;
+                slSnap.forEach(d => {
+                    const amt = Number(d.data().amount) || 0;
+                    if (d.data().type === 'credit') outstanding += amt;
+                    else outstanding -= amt;
+                });
+                
+                let stockVal = 0;
+                abSnap.forEach(d => {
+                    if (d.data().account === 'StockValue') stockVal = Number(d.data().balance) || 0;
+                });
+                
+                document.getElementById('accTotalPurchases').innerText = 'Rs ' + purchases.toLocaleString();
+                document.getElementById('accSupplierOutstanding').innerText = 'Rs ' + outstanding.toLocaleString();
+                document.getElementById('accStockValue').innerText = 'Rs ' + stockVal.toLocaleString();
+                document.getElementById('accNetProfit').innerText = 'Rs 0';
+                
+                console.log('[DEBUG] Widget updated:', {purchases, outstanding, stockVal});
+            } catch (err) {
+                console.error('[DEBUG] Widget error:', err);
+            }
+        }
+        window.loadAccountingSummaryWidget = loadAccountingSummaryWidget;
+        document.addEventListener('DOMContentLoaded', () => {
+            Promise.resolve(window.loadAccountingSummaryWidget && window.loadAccountingSummaryWidget()).catch(() => {});
+        });
+
+        // --- REP ORDER WORKFLOW FUNCTIONS ---
+        let repOrderWorkflowMode = 'DIRECT_AUTO';
+
+        async function loadRepWorkflowSetting() {
+            try {
+                if (!currentBusinessId) return;
+                const doc = await db.collection('businesses').doc(currentBusinessId).get();
+                if (doc.exists) {
+                    repOrderWorkflowMode = doc.data().repOrderWorkflowMode || 'DIRECT_AUTO';
+                    const radioDirect = document.querySelector('input[name="repOrderMode"][value="DIRECT_AUTO"]');
+                    const radioApproval = document.querySelector('input[name="repOrderMode"][value="OWNER_APPROVAL"]');
+                    if (radioDirect && radioApproval) {
+                        if (repOrderWorkflowMode === 'OWNER_APPROVAL') {
+                            radioApproval.checked = true;
+                        } else {
+                            radioDirect.checked = true;
+                        }
+                    }
+                    updateRepOrderModeUi();
+                    adjustTabsForWorkflowMode();
+                } else {
+                    adjustTabsForWorkflowMode();
+                }
+            } catch (err) {
+                console.error("Error loading workflow setting:", err);
+                adjustTabsForWorkflowMode();
+            }
+        }
+
+        function updateRepOrderModeUi() {
+            const modeInput = document.querySelector('input[name="repOrderMode"]:checked');
+            if (!modeInput) return;
+            const mode = modeInput.value;
+            const lbl = document.getElementById('lblCurrentWorkflowStatus');
+            const lDirect = document.getElementById('labelModeDirect');
+            const lApproval = document.getElementById('labelModeApproval');
+            if (!lbl || !lDirect || !lApproval) return;
+            
+            if (mode === 'DIRECT_AUTO') {
+                lbl.innerText = 'Mode: Instant Direct Stock Deduct (Default)';
+                lbl.style.background = '#dbeafe';
+                lbl.style.color = '#1e40af';
+                lDirect.style.borderColor = '#3b82f6';
+                lDirect.style.background = '#eff6ff';
+                lApproval.style.borderColor = '#cbd5e1';
+                lApproval.style.background = '#f8fafc';
+            } else {
+                lbl.innerText = 'Mode: Require Owner Approval';
+                lbl.style.background = '#d1fae5';
+                lbl.style.color = '#065f46';
+                lApproval.style.borderColor = '#10b981';
+                lApproval.style.background = '#ecfdf5';
+                lDirect.style.borderColor = '#cbd5e1';
+                lDirect.style.background = '#f8fafc';
+            }
+        }
+
+        async function saveRepWorkflowSetting() {
+            try {
+                const modeInput = document.querySelector('input[name="repOrderMode"]:checked');
+                if (!modeInput) return;
+                const mode = modeInput.value;
+                if (!currentBusinessId) return;
+                await db.collection('businesses').doc(currentBusinessId).set({
+                    repOrderWorkflowMode: mode
+                }, { merge: true });
+                repOrderWorkflowMode = mode;
+                
+                const btn = document.querySelector('#btnLockSettings');
+                if (btn) btn.innerHTML = '✅ Saved Successfully!';
+                
+                setTimeout(() => {
+                    lockWorkflowSettings();
+                    adjustTabsForWorkflowMode();
+                    if (btn) btn.innerHTML = '🔒 Lock & Close';
+                    
+                    if (mode === 'DIRECT_AUTO' && ['pending', 'approved', 'rejected'].includes(currentTab)) {
+                        switchTab('all');
+                    } else {
+                        loadStats();
+                        loadOrders();
+                    }
+                }, 1000);
+            } catch (err) {
+                console.error("Error saving workflow setting:", err);
+                alert("Failed to save setting.");
+            }
+        }
+
+        function unlockWorkflowSettings() {
+            const container = document.getElementById('repWorkflowConfigCard');
+            if (!container) return;
+            let pwdContainer = document.getElementById('pwdInputContainer');
+            
+            if (pwdContainer) {
+                pwdContainer.remove();
+            }
+
+            pwdContainer = document.createElement('div');
+            pwdContainer.id = 'pwdInputContainer';
+            pwdContainer.style = 'margin-top:12px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:10px; padding:12px 15px; display:flex; gap:10px; align-items:center;';
+            pwdContainer.innerHTML = `
+                <input type="password" id="inlinePwdInput" placeholder="Enter Owner Password" style="flex:1; padding:8px 12px; border:1px solid #94a3b8; border-radius:6px; font-size:14px;">
+                <button type="button" id="inlinePwdVerifyBtn" style="background:#047857; color:#fff; font-weight:700; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">Unlock</button>
+                <button type="button" id="inlinePwdCancelBtn" style="background:#ef4444; color:#fff; font-weight:700; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">Cancel</button>
+            `;
+
+            container.appendChild(pwdContainer);
+            const inputEl = document.getElementById('inlinePwdInput');
+            if (inputEl) inputEl.focus();
+
+            document.getElementById('inlinePwdVerifyBtn').onclick = () => {
+                const pwd = document.getElementById('inlinePwdInput').value;
+                if (pwd === "Sirimal123") {
+                    document.getElementById('workflowSettingsBody').style.display = 'block';
+                    document.getElementById('btnUnlockSettings').style.display = 'none';
+                    document.getElementById('btnLockSettings').style.display = 'inline-flex';
+                    pwdContainer.remove();
+                } else {
+                    alert("Incorrect Password!");
+                }
+            };
+            
+            document.getElementById('inlinePwdCancelBtn').onclick = () => {
+                pwdContainer.remove();
+            };
+        }
+
+        function lockWorkflowSettings() {
+            const body = document.getElementById('workflowSettingsBody');
+            const unlockBtn = document.getElementById('btnUnlockSettings');
+            const lockBtn = document.getElementById('btnLockSettings');
+            if (body) body.style.display = 'none';
+            if (unlockBtn) unlockBtn.style.display = 'inline-flex';
+            if (lockBtn) lockBtn.style.display = 'none';
+        }
+
+        function adjustTabsForWorkflowMode() {
+            const pendingTab = document.getElementById('tabPending');
+            const approvedTab = document.getElementById('tabApproved');
+            const rejectedTab = document.getElementById('tabRejected');
+            const statPending = document.getElementById('statCardPending');
+            const statApproved = document.getElementById('statCardApproved');
+            const statRejected = document.getElementById('statCardRejected');
+            
+            if (repOrderWorkflowMode === 'DIRECT_AUTO') {
+                if (pendingTab) pendingTab.style.display = 'none';
+                if (approvedTab) approvedTab.style.display = 'none';
+                if (rejectedTab) rejectedTab.style.display = 'none';
+                if (statPending) statPending.style.display = 'none';
+                if (statApproved) statApproved.style.display = 'none';
+                if (statRejected) statRejected.style.display = 'none';
+
+                if (['pending', 'approved', 'rejected'].includes(currentStatus)) {
+                    currentStatus = 'all';
+                    document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
+                    const allTabEl = document.getElementById('tabAll');
+                    if (allTabEl) allTabEl.classList.add('active');
+                }
+            } else {
+                if (pendingTab) pendingTab.style.display = 'inline-block';
+                if (approvedTab) approvedTab.style.display = 'inline-block';
+                if (rejectedTab) rejectedTab.style.display = 'inline-block';
+                if (statPending) statPending.style.display = 'block';
+                if (statApproved) statApproved.style.display = 'block';
+                if (statRejected) statRejected.style.display = 'block';
+            }
+        }
+        // Run immediately on script execution to ensure default state
+        try { adjustTabsForWorkflowMode(); } catch (e) {}
+        // --- END REP ORDER WORKFLOW FUNCTIONS ---
+
+        firebase.auth().onAuthStateChanged(async (user) => {
+            try {
+                if (user) {
+                    currentUser = user;
+                    currentBusinessId = getBusinessIdFromStorage();
+                    
+                    if (!currentBusinessId) {
+                        const context = window.dashboardCore ? await window.dashboardCore.getContext(user) : null;
+                        currentBusinessId = context ? context.businessId : null;
+                    }
+                    
+                    if (!currentBusinessId) {
+                        alert('Please select a business first');
+                        window.location.href = '/modules/distributor/web/dashboard.html';
+                        return;
+                    }
+
+                    console.log('[DEBUG] Dashboard Context Resolve:', { bid: currentBusinessId });
+
+                    localStorage.setItem('currentBusinessId', currentBusinessId);
+                    sessionStorage.setItem('currentBusinessId', currentBusinessId);
+                    localStorage.setItem('selectedBusinessId', currentBusinessId);
+                    sessionStorage.setItem('selectedBusinessId', currentBusinessId);
+                    localStorage.setItem('currentBusinessType', 'distributor');
+                    sessionStorage.setItem('currentBusinessType', 'distributor');
+                    lastSeenBusinessId = currentBusinessId;
+
+                    // Fetch Business Data FIRST to enable feature flags
+                    const bdSnap = await db.collection('businesses').doc(currentBusinessId).get();
+                    currentBusinessData = bdSnap.exists ? bdSnap.data() : null;
+                    currentBusinessName = currentBusinessData ? String(currentBusinessData.name || '') : '';
+
+                    const roleInfo = window.getUserRole ? await window.getUserRole(user.uid, currentBusinessId) : null;
+                    let userRole = String(roleInfo?.role || '').toUpperCase();
+                    
+                    const isResolvedOwner = userRole === 'DISTRIBUTOR_OWNER' || userRole === 'BUSINESS_OWNER' || userRole === 'OWNER';
+                    
+                    if (!isResolvedOwner) {
+                        try {
+                            const bu = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(user.uid).get();
+                            if (bu.exists && bu.data().role) userRole = String(bu.data().role).toUpperCase();
+                        } catch (e) { /* ignore */ }
+                    }
+
+                    console.log('[DEBUG] User Role Resolved:', userRole);
+                    __ORDER_STATUS_ROLE__ = userRole;
+                    __REP_DOC_ID__ = null;
+                    
+                    if (userRole === 'REP') {
+                        try {
+                            let rs = await db.collection('reps').where('userId', '==', user.uid).where('businessId', '==', currentBusinessId).limit(1).get();
+                            if (rs.empty) rs = await db.collection('reps').where('userId', '==', user.uid).limit(1).get();
+                            if (rs.empty && user.email) {
+                                rs = await db.collection('reps').where('email', '==', user.email).where('businessId', '==', currentBusinessId).limit(1).get();
+                            }
+                            if (!rs.empty) __REP_DOC_ID__ = rs.docs[0].id;
+                        } catch (e) { console.warn('Rep profile lookup failed', e); }
+                        const hint = document.getElementById('repOrderMobileHint');
+                        if (hint) hint.style.display = 'block';
+                        const sub = document.getElementById('orderStatusPageSubtitle');
+                        if (sub) sub.textContent = __REP_DOC_ID__
+                            ? 'Showing your orders only.'
+                            : 'Rep profile not linked — contact the owner.';
+                        const rsSec = document.getElementById('repSummarySection');
+                        if (rsSec) rsSec.style.display = 'none';
+                    } else {
+                        const hintOff = document.getElementById('repOrderMobileHint');
+                        if (hintOff) hintOff.style.display = 'none';
+                        const rsSec = document.getElementById('repSummarySection');
+                        if (rsSec) rsSec.style.display = '';
+                    }
+
+                    updateHqNewOrderBar();
+                    
+                    if (window.DigibizMwDslConfig) {
+                        try {
+                            await window.DigibizMwDslConfig.ensureMwTradingTenantProvisioned(db, currentBusinessId);
+                            await window.DigibizMwDslConfig.resolveMwTradingBusinessId(db);
+                        } catch (e) { console.warn('DSL provision error', e); }
+                    }
+                    
+                    window.__DIGIBIZ_IS_MW_TRADING__ = isMwTradingBusiness();
+                    __CHEQUE_PILOT_ENABLED__ = !!(window.DigiBizDistributorLorryStock
+                        && window.DigiBizDistributorLorryStock.activeForSession(user.email, currentBusinessId));
+
+                    document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
+                    const activeTabEl = document.querySelector(`.tab[data-status="${currentStatus}"]`);
+                    if (activeTabEl) activeTabEl.classList.add('active');
+
+                    await loadStats();
+                    await loadOrders();
+                    await loadRepSummary();
+                    await loadUpcomingChequesWidget();
+                    await loadOwnerProfitDashboard();
+                    await loadCommissionWidget();
+                    await loadAccountingSummaryWidget();
+
+                    document.getElementById('repFilter').addEventListener('change', renderRepSummaryTable);
+                    const hs = document.getElementById('chequeHorizonSelect');
+                    if (hs) hs.addEventListener('change', renderChequeWidget);
+                    const lf = document.getElementById('lorryFilterSelect');
+                    if (lf) {
+                        lf.addEventListener('change', function () {
+                            currentLorryFilter = String(lf.value || 'ALL');
+                            displayOrders();
+                        });
+                    }
+                    attachDashboardRealtimeListeners();
+
+                    // MW-specific widgets check via feature flag
+                    if (window.__DIGIBIZ_IS_MW_TRADING__) {
+                        if (typeof window.loadFreeItemsWidget === 'function') {
+                            await window.loadFreeItemsWidget();
+                        }
+                    }
+                    bindBusinessSwitchWatchers();
+                } else {
+                    clearDashboardRealtimeListeners();
+                    if (businessWatchdogTimer) {
+                        clearInterval(businessWatchdogTimer);
+                        businessWatchdogTimer = null;
+                    }
+                    window.__DIGIBIZ_DASHBOARD_BID_WATCHER_BOUND__ = false;
+                    window.location.href = '/';
+                }
+            } catch (initErr) {
+                console.error('[FATAL] Dashboard initialization failed:', initErr);
+                alert('System error during initialization. Please refresh the page.');
+            }
+        });
+    </script>
+</body>
+</html>

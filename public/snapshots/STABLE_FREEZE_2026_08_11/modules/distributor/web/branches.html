@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Branches - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/dashboard-core.js?v=70"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <style>
+        body{font-family:Inter,system-ui,sans-serif;background:#f8fafc;margin:0}
+        .wrap{max-width:1200px;margin:0 auto;padding:18px}
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+        .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px}
+        h2,h3{margin:0 0 10px}
+        label{font-size:12px;color:#475569;display:block;margin:8px 0 4px}
+        input,select{width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:8px}
+        button{padding:8px 10px;border:none;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th,td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:left}
+        .muted{color:#64748b;font-size:12px}
+        .ok{color:#166534}.err{color:#b91c1c}
+        @media (max-width:980px){.grid{grid-template-columns:1fr}}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h2>SPRANZA Branch / Warehouse Management</h2>
+    <p class="muted">Manage branches, stock transfers, and branch-level reports.</p>
+    <div class="grid">
+    <div class="card" id="corpCard" style="margin-bottom:16px;">
+        <h3>🏢 Corporate Head Office & Holding Details</h3>
+        <p class="muted">Manage central corporate entity address, hotline, and registration for legal bills & receipts.</p>
+        <div class="grid" style="grid-template-columns:1fr 1fr 1fr;">
+            <div><label>Corporate Name</label><input id="corpName" placeholder="e.g. SPRANZA HOLDINGS (PVT) LTD"></div>
+            <div><label>Head Office Address</label><input id="corpAddress" placeholder="e.g. 123 Main Street, Colombo 03"></div>
+            <div><label>Corporate Hotline / Phone</label><input id="corpPhone" placeholder="e.g. +94 11 234 5678"></div>
+            <div><label>Corporate Email</label><input id="corpEmail" placeholder="info@spranza.lk"></div>
+            <div><label>Tax / VAT Reg No</label><input id="corpTaxNo" placeholder="VAT-10029384"></div>
+            <div style="display:flex; align-items:flex-end;"><button id="saveCorpBtn" style="width:100%; height:38px;">Save Corporate Details</button></div>
+        </div>
+        <div id="corpMsg" class="muted" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="grid">
+        <div class="card" id="branchCard">
+            <h3>🏢 Branch & Warehouse Locations</h3>
+            <label>Branch Name</label><input id="bName" placeholder="Head Office / Kandy Branch">
+            <label>Branch Address</label><input id="bAddress" placeholder="12 Branch Road, Kandy">
+            <label>Branch Phone / Hotline</label><input id="bPhone" placeholder="081 223 4455">
+            <label>Manager Name</label><input id="bManager" placeholder="Manager Name">
+            <button id="saveBranchBtn" style="margin-top:12px;">Save Branch</button>
+            <div id="branchMsg" class="muted" style="margin-top:8px;"></div>
+            <table style="margin-top:12px;">
+                <thead><tr><th>Branch Name</th><th>Address / Phone</th><th>Manager</th><th>Action</th></tr></thead>
+                <tbody id="branchRows"><tr><td colspan="4" class="muted">Loading...</td></tr></tbody>
+            </table>
+        </div>
+        <div class="card" id="transfers">
+            <h3>Stock Transfer</h3>
+            <label>From Branch</label><select id="tFrom"></select>
+            <label>To Branch</label><select id="tTo"></select>
+            <label>Product ID</label><input id="tProduct" placeholder="product document id">
+            <label>Quantity</label><input id="tQty" type="number" min="0" step="0.01" placeholder="0">
+            <button id="transferBtn" style="margin-top:10px;">Transfer Stock</button>
+            <div id="transferMsg" class="muted" style="margin-top:8px;"></div>
+        </div>
+    </div>
+    <div class="card" id="reports" style="margin-top:12px;">
+        <h3>Branch Reports</h3>
+        <label>Branch</label><select id="reportBranch"></select>
+        <button id="loadReportBtn" style="margin-top:10px;">Load Report</button>
+        <div id="reportMsg" class="muted" style="margin-top:8px;"></div>
+        <div id="reportOut" class="muted" style="margin-top:8px;"></div>
+    </div>
+</div>
+<script>
+const SPRANZA_BID = 'SPRANZA_PVT_LTD';
+let currentBusinessId = '';
+let branchList = [];
+
+function msg(id, text, ok){
+    const el = document.getElementById(id); if(!el) return;
+    el.textContent = text || '';
+    el.className = ok ? 'ok' : 'err';
+}
+
+function esc(v){ return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+async function loadCorporateDetails() {
+    try {
+        const docSnap = await db.collection('corporate_details').doc(currentBusinessId).get();
+        if (docSnap.exists) {
+            const data = docSnap.data() || {};
+            if (document.getElementById('corpName')) document.getElementById('corpName').value = data.name || '';
+            if (document.getElementById('corpAddress')) document.getElementById('corpAddress').value = data.address || '';
+            if (document.getElementById('corpPhone')) document.getElementById('corpPhone').value = data.phone || '';
+            if (document.getElementById('corpEmail')) document.getElementById('corpEmail').value = data.email || '';
+            if (document.getElementById('corpTaxNo')) document.getElementById('corpTaxNo').value = data.taxNo || '';
+        }
+    } catch (e) {
+        console.warn('loadCorporateDetails:', e);
+    }
+}
+
+async function saveCorporateDetails() {
+    const name = String(document.getElementById('corpName').value || '').trim();
+    const address = String(document.getElementById('corpAddress').value || '').trim();
+    const phone = String(document.getElementById('corpPhone').value || '').trim();
+    const email = String(document.getElementById('corpEmail').value || '').trim();
+    const taxNo = String(document.getElementById('corpTaxNo').value || '').trim();
+    
+    try {
+        await db.collection('corporate_details').doc(currentBusinessId).set({
+            businessId: currentBusinessId,
+            name, address, phone, email, taxNo,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        msg('corpMsg', 'Corporate Holding details saved successfully!', true);
+    } catch (e) {
+        msg('corpMsg', 'Failed to save corporate details: ' + e.message, false);
+    }
+}
+
+async function loadBranches(){
+    await loadCorporateDetails();
+    const snap = await db.collection('branches').where('businessId','==',currentBusinessId).get().catch(()=>({docs:[]}));
+    branchList = (snap.docs||[]).map(d=>({id:d.id,data:d.data()||{}})).filter(x=>x.data.isActive!==false);
+    branchList.sort((a,b)=>String(a.data.name||'').localeCompare(String(b.data.name||'')));
+    const rows = document.getElementById('branchRows');
+    rows.innerHTML = branchList.map(b=>{
+        const x=b.data||{};
+        const addrPhone = [x.address || x.location || '', x.phone || ''].filter(Boolean).join(' | ') || '-';
+        return `<tr>
+            <td><strong>${esc(x.name||'-')}</strong></td><td>${esc(addrPhone)}</td><td>${esc(x.managerName||'-')}</td>
+            <td><button type="button" onclick="deleteBranch('${esc(b.id)}')">🗑️</button></td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="4" class="muted">No branches</td></tr>';
+    const opts = '<option value="">Select...</option>' + branchList.map(b=>`<option value="${esc(b.id)}">${esc((b.data.name||b.id) + ((b.data.address?' - '+b.data.address:(b.data.location?' - '+b.data.location:''))))}</option>`).join('');
+    document.getElementById('tFrom').innerHTML = opts;
+    document.getElementById('tTo').innerHTML = opts;
+    document.getElementById('reportBranch').innerHTML = '<option value="ALL">All branches</option>' + branchList.map(b=>`<option value="${esc(b.id)}">${esc(b.data.name||b.id)}</option>`).join('');
+}
+
+async function saveBranch(){
+    const name = String(document.getElementById('bName').value||'').trim();
+    const address = String(document.getElementById('bAddress').value||'').trim();
+    const phone = String(document.getElementById('bPhone').value||'').trim();
+    const managerName = String(document.getElementById('bManager').value||'').trim();
+    if(!name){ msg('branchMsg','Branch name required',false); return; }
+    const id = name.toUpperCase().replace(/[^A-Z0-9]+/g,'_');
+    await db.collection('branches').doc(currentBusinessId + '_' + id).set({
+        businessId: currentBusinessId,
+        name, address, phone, managerName,
+        isActive: true,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, {merge:true});
+    msg('branchMsg','Branch saved',true);
+    await loadBranches();
+}
+
+async function deleteBranch(id){
+    if(!confirm('Delete branch?')) return;
+    await db.collection('branches').doc(id).set({
+        isActive:false, deletedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, {merge:true});
+    await loadBranches();
+}
+window.deleteBranch = deleteBranch;
+
+function branchStockRef(branchId, productId){
+    return db.collection('branch_stock').doc(currentBusinessId + '_' + branchId + '_' + productId);
+}
+
+async function transferStock(){
+    const from = String(document.getElementById('tFrom').value||'').trim();
+    const to = String(document.getElementById('tTo').value||'').trim();
+    const productId = String(document.getElementById('tProduct').value||'').trim();
+    const qty = Number(document.getElementById('tQty').value||0);
+    if(!from || !to || !productId || qty<=0 || from===to){ msg('transferMsg','Check transfer inputs',false); return; }
+    await db.runTransaction(async(tx)=>{
+        const fromRef = branchStockRef(from, productId);
+        const toRef = branchStockRef(to, productId);
+        const fromSnap = await tx.get(fromRef);
+        const available = fromSnap.exists ? (Number((fromSnap.data()||{}).qty)||0) : 0;
+        if(available < qty) throw new Error('Insufficient from-branch stock');
+        tx.set(fromRef, {businessId:currentBusinessId, branchId:from, productId, qty: firebase.firestore.FieldValue.increment(-qty), updatedAt:new Date()}, {merge:true});
+        tx.set(toRef, {businessId:currentBusinessId, branchId:to, productId, qty: firebase.firestore.FieldValue.increment(qty), updatedAt:new Date()}, {merge:true});
+        tx.set(db.collection('branch_transfers').doc(), {
+            businessId: currentBusinessId, fromBranchId: from, toBranchId: to, productId, qty,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    });
+    msg('transferMsg','Transfer completed',true);
+}
+
+async function loadReport(){
+    const branchId = String(document.getElementById('reportBranch').value||'ALL');
+    const orderSnap = await db.collection('orders').where('businessId','==',currentBusinessId).get().catch(()=>({docs:[]}));
+    const rows = (orderSnap.docs||[]).map(d=>d.data()||{}).filter(o=>branchId==='ALL' ? true : String(o.branchId||'')===branchId);
+    const sales = rows.reduce((s,o)=>s + (Number(o.totalAmount)||0), 0);
+    const count = rows.length;
+    const branchStocks = await db.collection('branch_stock').where('businessId','==',currentBusinessId).get().catch(()=>({docs:[]}));
+    const stockRows = (branchStocks.docs||[]).map(d=>d.data()||{}).filter(x=>branchId==='ALL' ? true : String(x.branchId||'')===branchId);
+    const stockQty = stockRows.reduce((s,x)=>s + (Number(x.qty)||0), 0);
+    document.getElementById('reportOut').innerHTML = `
+        <div><strong>Orders:</strong> ${count}</div>
+        <div><strong>Sales:</strong> Rs ${sales.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        <div><strong>Stock Qty:</strong> ${stockQty.toLocaleString()}</div>
+    `;
+}
+
+document.getElementById('saveCorpBtn').addEventListener('click', saveCorporateDetails);
+document.getElementById('saveBranchBtn').addEventListener('click', saveBranch);
+document.getElementById('transferBtn').addEventListener('click', transferStock);
+document.getElementById('loadReportBtn').addEventListener('click', loadReport);
+
+firebase.auth().onAuthStateChanged(async (u)=>{
+    if(!u){ location.href='/'; return; }
+    const ctx = await window.dashboardCore.getContext(u).catch(()=>null);
+    currentBusinessId = String((ctx && ctx.businessId) || localStorage.getItem('currentBusinessId') || '').trim();
+    if(!currentBusinessId){ msg('branchMsg','No business selected',false); return; }
+    if(currentBusinessId !== SPRANZA_BID){
+        document.body.innerHTML = '<div style="padding:20px;font-family:Inter,sans-serif;">Branches page is enabled for SPRANZA only.</div>';
+        return;
+    }
+    await loadBranches();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script>
+        window.addEventListener('error', function(e) {
+            var d = document.createElement('div');
+            d.style.position = 'fixed'; d.style.top = '10px'; d.style.left = '10px'; d.style.right = '10px';
+            d.style.background = '#fee2e2'; d.style.color = '#991b1b'; d.style.border = '2px solid #ef4444';
+            d.style.padding = '15px'; d.style.borderRadius = '8px'; d.style.zIndex = '99999999';
+            d.style.fontFamily = 'monospace'; d.style.fontSize = '14px'; d.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.1)';
+            d.innerHTML = '<strong>[DIGIBIZ FRONTEND ERROR]</strong><br>' +
+                          'Message: ' + e.message + '<br>' +
+                          'File: ' + e.filename + '<br>' +
+                          'Line: ' + e.lineno + ':' + e.colno + '<br>' +
+                          'Stack: <pre style="margin-top:5px; white-space:pre-wrap; font-size:12px;">' + (e.error ? e.error.stack : '') + '</pre>';
+            if (document.body) document.body.appendChild(d);
+        });
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - ලෙජර් ගිණුම් Directory</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css?v=55">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f3b2c 0%, #114d39 100%);
+            min-height: 100vh;
+            color: #ffffff;
+            overflow-x: hidden;
+        }
+        .main-content {
+            padding: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        /* Header & Glassmorphism Search block */
+        .page-header {
+            margin-bottom: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .title-area h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 28px;
+            font-weight: 800;
+            color: #ffd966;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .title-area p {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-top: 4px;
+        }
+        
+        .controls-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 16px 24px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+        }
+        
+        .search-box-wrapper {
+            position: relative;
+            flex: 1;
+            min-width: 280px;
+        }
+        .search-box-wrapper i {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 16px;
+        }
+        .search-input {
+            width: 100%;
+            padding: 12px 16px 12px 48px;
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            border-radius: 12px;
+            color: #ffffff;
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.3s ease;
+        }
+        .search-input:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.2);
+            border-color: #ffd966;
+            box-shadow: 0 0 0 3px rgba(255, 217, 102, 0.2);
+        }
+        .search-input::placeholder {
+            color: rgba(255, 255, 255, 0.65);
+            opacity: 1;
+        }
+        
+        /* Toggle Switch */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .toggle-label {
+            font-size: 13.5px;
+            color: rgba(255, 255, 255, 0.85);
+            font-weight: 500;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.2);
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #10b981;
+        }
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+        
+        /* Category Sections */
+        .ledger-section {
+            margin-bottom: 40px;
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 10px;
+            margin-bottom: 18px;
+        }
+        .section-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 20px;
+            font-weight: 800;
+            color: #ffd966;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .section-subtitle {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            font-weight: 500;
+        }
+        .section-count {
+            background: rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 2px 10px;
+            border-radius: 20px;
+        }
+        
+        /* Grid and Cards */
+        .ledger-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+        }
+        
+        .ledger-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 16px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .ledger-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 217, 102, 0.4);
+            box-shadow: 0 12px 25px rgba(0,0,0,0.25);
+        }
+        
+        .card-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .icon-wrap {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        .details-wrap {
+            flex: 1;
+            min-width: 0;
+        }
+        .acc-name {
+            font-family: 'Outfit', sans-serif;
+            font-size: 16.5px;
+            font-weight: 700;
+            color: #ffffff;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .acc-code {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 2px;
+            font-family: monospace;
+        }
+        
+        .card-bottom {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            padding-top: 14px;
+        }
+        .view-link {
+            font-size: 12px;
+            color: #ffd966;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: gap 0.2s;
+        }
+        .ledger-card:hover .view-link {
+            gap: 8px;
+        }
+        
+        .balance-wrap {
+            text-align: right;
+        }
+        .bal-label {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .bal-amount {
+            font-family: 'Outfit', sans-serif;
+            font-size: 20px;
+            font-weight: 800;
+            margin-top: 2px;
+        }
+        
+        /* Status Colors */
+        .color-positive {
+            color: #10b981; /* Emerald green */
+        }
+        .color-negative {
+            color: #f87171; /* Soft red */
+        }
+        .color-neutral {
+            color: #94a3b8; /* Slate gray */
+        }
+        
+        /* Empty / Loading screen */
+        .state-container {
+            text-align: center;
+            padding: 40px 20px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 16px;
+            border: 1px dashed rgba(255,255,255,0.08);
+            grid-column: 1 / -1;
+        }
+        .state-container i {
+            font-size: 28px;
+            color: rgba(255,255,255,0.25);
+            margin-bottom: 12px;
+        }
+        .state-container p {
+            font-size: 14px;
+            color: rgba(255,255,255,0.5);
+        }
+        
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animated-entry {
+            animation: fadeIn 0.35s ease forwards;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="main-content">
+        <!-- Page Header -->
+        <div class="page-header">
+            <div class="title-area">
+                <h1>ලෙජර් ගිණුම් (Ledger Directory)</h1>
+                <p>වත්කම්, වගකීම් සහ ගනුදෙනුකරුවන්ගේ/සැපයුම්කරුවන්ගේ ගිණුම් ශේෂයන් එකම තැනකින් සැනෙන් බලාගන්න.</p>
+            </div>
+            
+            <div class="controls-row">
+                <div class="search-box-wrapper">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="ledgerSearchInput" class="search-input" placeholder="ගිණුම් නම, කේතය හෝ පුද්ගලයෙකුගේ නමකින් සොයන්න (Search globally...)" oninput="filterLedgers()">
+                </div>
+                
+                <label class="toggle-container">
+                    <span class="toggle-label">ශුන්‍ය (0) ශේෂයන් පෙන්වන්න</span>
+                    <div class="switch">
+                        <input type="checkbox" id="showZeroBalancesCheck" onchange="toggleZeroBalances()">
+                        <span class="slider"></span>
+                    </div>
+                </label>
+            </div>
+        </div>
+        
+        <!-- Category 1: General Ledgers -->
+        <div class="ledger-section" id="glSection">
+            <div class="section-header">
+                <div class="section-title">
+                    <i class="fa-solid fa-folder-open"></i> වත්කම්, වගකීම් සහ ප්‍රාග්ධන ගිණුම් (General Accounts)
+                </div>
+                <div>
+                    <span class="section-subtitle">සක්‍රීය ගිණුම්: </span>
+                    <span class="section-count" id="count-gl">0</span>
+                </div>
+            </div>
+            <div id="glLedgerGrid" class="ledger-grid">
+                <div class="state-container">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <p>දත්ත සක්‍රීය වෙමින් පවතී... (Loading...)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category 2: Customers -->
+        <div class="ledger-section" id="customerSection">
+            <div class="section-header">
+                <div class="section-title">
+                    <i class="fa-solid fa-user-tie"></i> අපට මුදල් ලැබීමට ඇති ගනුදෙනුකරුවන් (Customers / Receivables)
+                </div>
+                <div>
+                    <span class="section-subtitle">සක්‍රීය පුද්ගලයින්: </span>
+                    <span class="section-count" id="count-customers">0</span>
+                </div>
+            </div>
+            <div id="customerLedgerGrid" class="ledger-grid">
+                <div class="state-container">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <p>දත්ත සක්‍රීය වෙමින් පවතී... (Loading...)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category 3: Suppliers -->
+        <div class="ledger-section" id="supplierSection">
+            <div class="section-header">
+                <div class="section-title">
+                    <i class="fa-solid fa-handshake"></i> අප විසින් මුදල් ගෙවීමට ඇති සැපයුම්කරුවන් (Suppliers / Payables)
+                </div>
+                <div>
+                    <span class="section-subtitle">සක්‍රීය සැපයුම්කරුවන්: </span>
+                    <span class="section-count" id="count-suppliers">0</span>
+                </div>
+            </div>
+            <div id="supplierLedgerGrid" class="ledger-grid">
+                <div class="state-container">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <p>දත්ත සක්‍රීය වෙමින් පවතී... (Loading...)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Global Empty State -->
+        <div id="globalEmptyState" class="state-container" style="display: none; padding: 60px 20px;">
+            <i class="fa-solid fa-folder-open" style="font-size: 40px; color: rgba(255,255,255,0.3); margin-bottom: 16px;"></i>
+            <p style="font-size: 15px; color: rgba(255,255,255,0.6);">සොයන ලද නමින් කිසිදු ගිණුමක් හෝ ලෙජරයක් හමු නොවුණි. (No matching accounts found.)</p>
+        </div>
+    </div>
+
+    <script>
+        let allLedgers = {
+            GL: [],
+            CUSTOMER: [],
+            SUPPLIER: []
+        };
+        let searchQuery = '';
+        let showZeroBalances = false;
+        let businessId = '';
+
+        // Initialize and setup Firestore listener
+        document.addEventListener('DOMContentLoaded', () => {
+            firebase.auth().onAuthStateChanged(user => {
+                if (!user) {
+                    window.location.href = '/login.html';
+                    return;
+                }
+                
+                businessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                if (!businessId) {
+                    console.error('[LedgerPage] Business ID not found.');
+                    return;
+                }
+                
+                startRealtimeLedgerListener();
+            });
+        });
+
+        function startRealtimeLedgerListener() {
+            const fs = firebase.firestore();
+            fs.collection('journal').doc(businessId).collection('entries')
+                .orderBy('date', 'desc')
+                .onSnapshot(snapshot => {
+                    const entries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    
+                    // Share with global sidebar auditor modal
+                    if (window.sidebar) {
+                        window.sidebar.cachedJournalEntries = entries;
+                    }
+                    
+                    processLedgerBalances(entries);
+                    renderLedgers();
+                }, error => {
+                    console.error('[LedgerPage] Firestore snapshot listener error:', error);
+                });
+        }
+
+        // Aggregate journal entries into ledger balances
+        function processLedgerBalances(entries) {
+            const glBalances = {};
+            const customerBalances = {};
+            const supplierBalances = {};
+
+            entries.forEach(entry => {
+                if (entry.isReversed || entry.reversalOf) return;
+                
+                (entry.entries || []).forEach(row => {
+                    const code = row.accountCode || row.accountId || '';
+                    if (!code) return;
+                    
+                    let dr = Number(row.debit) || 0;
+                    let cr = Number(row.credit) || 0;
+                    if (row.amount !== undefined && row.type !== undefined) {
+                        if (row.type === 'debit') dr = Number(row.amount) || 0;
+                        if (row.type === 'credit') cr = Number(row.amount) || 0;
+                    }
+
+                    // 1. General Ledger Accounts
+                    if (!glBalances[code]) {
+                        glBalances[code] = {
+                            code,
+                            name: row.accountName || getFallbackGLName(code),
+                            debit: 0,
+                            credit: 0
+                        };
+                    }
+                    glBalances[code].debit += dr;
+                    glBalances[code].credit += cr;
+
+                    const memo = entry.memo || '';
+
+                    // 2. Customers (Debtors starting with 1-1030)
+                    if (code.startsWith('1-1030')) {
+                        let customerName = '';
+                        if (memo.includes('Customer - ')) {
+                            customerName = memo.split('Customer - ')[1].trim();
+                        } else if (memo.includes('Received from ')) {
+                            customerName = memo.split('Received from ')[1].split('.')[0].trim();
+                        } else if (memo.includes('Sale to ')) {
+                            customerName = memo.split('Sale to ')[1].trim();
+                        } else if (memo.includes('Loan Given to ')) {
+                            customerName = memo.split('Loan Given to ')[1].split(' - ')[0].trim();
+                        } else if (memo.includes('Loan Settled from ')) {
+                            customerName = memo.split('Loan Settled from ')[1].trim();
+                        }
+
+                        if (customerName) {
+                            if (!customerBalances[customerName]) {
+                                customerBalances[customerName] = { name: customerName, debit: 0, credit: 0 };
+                            }
+                            customerBalances[customerName].debit += dr;
+                            customerBalances[customerName].credit += cr;
+                        }
+                    }
+
+                    // 3. Suppliers (Creditors starting with 2-2010)
+                    if (code.startsWith('2-2010')) {
+                        let supplierName = '';
+                        if (memo.includes('Supplier - ')) {
+                            supplierName = memo.split('Supplier - ')[1].trim();
+                        } else if (memo.includes('Purchase - Order PO-')) {
+                            if (memo.includes('(') && memo.includes(')')) {
+                                supplierName = memo.split('(')[1].split(')')[0].trim();
+                            }
+                        }
+
+                        if (supplierName) {
+                            if (!supplierBalances[supplierName]) {
+                                supplierBalances[supplierName] = { name: supplierName, debit: 0, credit: 0 };
+                            }
+                            supplierBalances[supplierName].debit += dr;
+                            supplierBalances[supplierName].credit += cr;
+                        }
+                    }
+                });
+            });
+
+            // Convert to sorted lists
+            allLedgers.GL = [];
+            for (const code in glBalances) {
+                const acc = glBalances[code];
+                const isDebitNormal = code.startsWith('1') || code.startsWith('5');
+                const balance = isDebitNormal ? (acc.debit - acc.credit) : (acc.credit - acc.debit);
+                allLedgers.GL.push({
+                    code,
+                    name: acc.name,
+                    balance
+                });
+            }
+            allLedgers.GL.sort((a, b) => a.code.localeCompare(b.code));
+
+            allLedgers.CUSTOMER = [];
+            for (const name in customerBalances) {
+                const cb = customerBalances[name];
+                const balance = cb.debit - cb.credit;
+                allLedgers.CUSTOMER.push({ name, balance });
+            }
+            allLedgers.CUSTOMER.sort((a, b) => a.name.localeCompare(b.name));
+
+            allLedgers.SUPPLIER = [];
+            for (const name in supplierBalances) {
+                const sb = supplierBalances[name];
+                const balance = sb.credit - sb.debit;
+                allLedgers.SUPPLIER.push({ name, balance });
+            }
+            allLedgers.SUPPLIER.sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        function getFallbackGLName(code) {
+            const dict = {
+                '1-1010-01': 'CASH (ඇතැති මුදල්)',
+                '1-1020-01': 'BANK (බැංකු ශේෂය)',
+                '1-1030-01': 'Debtors (පාරිභෝගික ණය)',
+                '1-1040-01': 'Inventory (තොග වටිනාකම)',
+                '2-2010-01': 'Creditors (සැපයුම්කරුවන්ගේ ණය)',
+                '3-3010-01': 'Equity (ප්‍රාග්ධනය)',
+                '4-4010-01': 'Sales Revenue (විකුණුම්)',
+                '5-5010-01': 'Cost of Goods Sold (COGS)',
+                '5-5020-01': 'Expenses - Salaries',
+                '5-5030-01': 'Expenses - Rent',
+                '5-5040-01': 'Expenses - Utilities',
+                '5-5050-01': 'Expenses - Marketing',
+                '5-5060-01': 'Expenses - Other'
+            };
+            return dict[code] || 'General Ledger Account';
+        }
+
+        // Render sections dynamically
+        function renderLedgers() {
+            const glGrid = document.getElementById('glLedgerGrid');
+            const custGrid = document.getElementById('customerLedgerGrid');
+            const suppGrid = document.getElementById('supplierLedgerGrid');
+
+            const glSec = document.getElementById('glSection');
+            const custSec = document.getElementById('customerSection');
+            const suppSec = document.getElementById('supplierSection');
+            const globalEmpty = document.getElementById('globalEmptyState');
+
+            if (!glGrid || !custGrid || !suppGrid) return;
+
+            // Apply filters globally to all three arrays
+            const filteredGL = filterList(allLedgers.GL, 'GL');
+            const filteredCust = filterList(allLedgers.CUSTOMER, 'CUSTOMER');
+            const filteredSupp = filterList(allLedgers.SUPPLIER, 'SUPPLIER');
+
+            // GL Section toggle
+            if (filteredGL.length === 0) {
+                if (glSec) glSec.style.display = 'none';
+            } else {
+                if (glSec) glSec.style.display = 'block';
+                const countEl = document.getElementById('count-gl');
+                if (countEl) countEl.textContent = filteredGL.length;
+                renderSectionGrid(glGrid, filteredGL, 'GL');
+            }
+
+            // Customers Section toggle
+            if (filteredCust.length === 0) {
+                if (custSec) custSec.style.display = 'none';
+            } else {
+                if (custSec) custSec.style.display = 'block';
+                const countEl = document.getElementById('count-customers');
+                if (countEl) countEl.textContent = filteredCust.length;
+                renderSectionGrid(custGrid, filteredCust, 'CUSTOMER');
+            }
+
+            // Suppliers Section toggle
+            if (filteredSupp.length === 0) {
+                if (suppSec) suppSec.style.display = 'none';
+            } else {
+                if (suppSec) suppSec.style.display = 'block';
+                const countEl = document.getElementById('count-suppliers');
+                if (countEl) countEl.textContent = filteredSupp.length;
+                renderSectionGrid(suppGrid, filteredSupp, 'SUPPLIER');
+            }
+
+            // Global empty state toggle
+            if (globalEmpty) {
+                if (filteredGL.length === 0 && filteredCust.length === 0 && filteredSupp.length === 0) {
+                    globalEmpty.style.display = 'block';
+                } else {
+                    globalEmpty.style.display = 'none';
+                }
+            }
+        }
+
+        function renderSectionGrid(gridElement, list, type) {
+            if (list.length === 0) {
+                gridElement.innerHTML = `
+                    <div class="state-container">
+                        <i class="fa-solid fa-folder-open"></i>
+                        <p>මෙහි පෙන්වීමට ගිණුම් කිසිවක් නොමැත. (No accounts in this category.)</p>
+                    </div>
+                `;
+                return;
+            }
+
+            gridElement.innerHTML = list.map(item => {
+                let name = item.name;
+                let idText = type === 'GL' ? item.code : (type === 'CUSTOMER' ? 'CUSTOMER DEBT (පාරිභෝගික ණය)' : 'SUPPLIER CREDIT (සැපයුම්කරු ණය)');
+                let icon = type === 'GL' ? '📁' : (type === 'CUSTOMER' ? '👤' : '🤝');
+                let bal = item.balance;
+                
+                // Color formatting
+                let balColorClass = 'color-neutral';
+                if (Math.abs(bal) >= 0.01) {
+                    balColorClass = bal >= 0 ? 'color-positive' : 'color-negative';
+                }
+
+                // Modal call arguments
+                let modalArgs = '';
+                if (type === 'GL') {
+                    modalArgs = `'GL', '${item.code}', '${item.name}'`;
+                } else if (type === 'CUSTOMER') {
+                    modalArgs = `'CUSTOMER', 'debtor_${item.name}', '${item.name}'`;
+                } else {
+                    modalArgs = `'SUPPLIER', 'creditor_${item.name}', '${item.name}'`;
+                }
+
+                return `
+                    <div class="ledger-card animated-entry" onclick="triggerModal(${modalArgs})">
+                        <div class="card-top">
+                            <div class="icon-wrap">${icon}</div>
+                            <div class="details-wrap">
+                                <div class="acc-name" title="${name}">${name}</div>
+                                <div class="acc-code">${idText}</div>
+                            </div>
+                        </div>
+                        <div class="card-bottom">
+                            <div class="view-link">විස්තර පරීක්ෂා කරන්න <i class="fa-solid fa-arrow-right"></i></div>
+                            <div class="balance-wrap">
+                                <div class="bal-label">ශේෂය (Balance)</div>
+                                <div class="bal-amount ${balColorClass}">Rs. ${Math.floor(bal).toLocaleString()}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function filterList(list, type) {
+            return list.filter(item => {
+                // 1. Zero balance check
+                if (!showZeroBalances && Math.abs(item.balance) < 0.01) {
+                    return false;
+                }
+                
+                // 2. Search query check
+                if (searchQuery) {
+                    const q = searchQuery.toLowerCase();
+                    const nameMatch = item.name.toLowerCase().includes(q);
+                    const codeMatch = type === 'GL' && item.code.toLowerCase().includes(q);
+                    return nameMatch || codeMatch;
+                }
+                
+                return true;
+            });
+        }
+
+        function triggerModal(type, key, name) {
+            if (window.sidebar && typeof window.sidebar.openLedgerModal === 'function') {
+                window.sidebar.openLedgerModal(type, key, name);
+            } else {
+                console.warn('[LedgerPage] window.sidebar.openLedgerModal is not available.');
+            }
+        }
+
+        function filterLedgers() {
+            const input = document.getElementById('ledgerSearchInput');
+            searchQuery = input ? input.value : '';
+            renderLedgers();
+        }
+
+        function toggleZeroBalances() {
+            const check = document.getElementById('showZeroBalancesCheck');
+            showZeroBalances = check ? check.checked : false;
+            renderLedgers();
+        }
+    </script>
+</body>
+</html>

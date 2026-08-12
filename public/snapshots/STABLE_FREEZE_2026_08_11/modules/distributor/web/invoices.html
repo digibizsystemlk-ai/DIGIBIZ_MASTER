@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoices - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/dashboard-core.js?v=46"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <style>
+        body{font-family:'Inter',system-ui,sans-serif;background:#f3f4f6;margin:0;color:#1f2937;}
+        .wrap{padding:24px;max-width:1200px;margin:0 auto;}
+        .header-flex{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
+        h2{margin:0;font-size:24px;font-weight:700;color:#111827;}
+        .card{background:#fff;border-radius:16px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);overflow:hidden;}
+        table{width:100%;border-collapse:collapse;}
+        th,td{padding:12px 16px;border-bottom:1px solid #e5e7eb;font-size:14px;text-align:left;}
+        th{background:#f8fafc;font-weight:600;color:#4b5563;text-transform:uppercase;font-size:12px;letter-spacing:0.025em;}
+        tr:hover{background:#f9fafb;}
+        .num{text-align:right;font-family:monospace;}
+        .status{padding:4px 8px;border-radius:9999px;font-size:12px;font-weight:500;text-transform:capitalize;}
+        .status-approved{background:#dcfce7;color:#166534;}
+        .status-delivered{background:#dbeafe;color:#1e40af;}
+        .btn{padding:8px 12px;border:none;border-radius:8px;background:#0f766e;color:#fff;cursor:pointer;font-size:13px;font-weight:500;transition:all 0.2s;display:inline-flex;align-items:center;gap:6px;}
+        .btn:hover{background:#0d9488;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);}
+        .loading{padding:40px;text-align:center;color:#6b7280;}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="header-flex">
+        <h2>Approved Invoices</h2>
+        <div id="bizCtx" style="font-size:12px;color:#6b7280;"></div>
+    </div>
+    <div class="card">
+        <table>
+            <thead><tr><th>Invoice #</th><th>Date</th><th>Customer</th><th>Sales Rep</th><th class="num">Amount</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="rows"><tr><td colspan="7" class="loading">Loading invoices...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+let invoiceRows=[];
+let currentBusinessId = '';
+let currentBusinessData = null;
+
+function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+function money(n){return (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+
+async function printInvoice(idx) {
+    const o = invoiceRows[idx];
+    if (!o) return;
+
+    try {
+        const docSettings = currentBusinessData?.documentSettings || {};
+        const s = docSettings.invoice || docSettings.delivery_note || {};
+
+        let header = s.header || currentBusinessData?.name || 'INVOICE';
+        if (header.toUpperCase().trim() === 'DSL ENTERPRISES' || header.toUpperCase().trim() === 'DSL ENTERPRISES (PVT) LTD') {
+            header = 'DSL ENTERPRISES (PVT) LTD';
+        }
+        const subheader = s.subheader || [currentBusinessData?.address, currentBusinessData?.phone].filter(Boolean).join(' | ') || '';
+        const footer = s.footer || 'Thank you for your business!';
+        const showLogo = s.showLogo !== false;
+
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Invoice ${o.orderNumber || o.id.slice(-8)}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 4mm; }
+            body { width: 72mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 11px; line-height: 1.4; color: #000; padding: 10px; width: 72mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 9px; margin: 4px 0 0; }
+        .receipt-title { font-size: 13px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; border-bottom: 1px dashed #000; padding-bottom: 4px; }
+        .customer-highlight-box { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; border-bottom: 1.5px solid #000; margin-bottom: 8px; }
+        .cust-label { font-size: 11px; font-weight: 800; color: #000; text-transform: uppercase; }
+        .cust-value { font-size: 13px; font-weight: 900; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 75%; }
+        .meta-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin-bottom: 10px; font-size: 10.5px; }
+        .meta-label { font-weight: 800; text-transform: uppercase; color: #444; }
+        .meta-value { font-weight: 900; text-align: right; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
+        th, td { border: 1px solid #000; padding: 4px; text-align: left; }
+        th { background: #f0f0f0; font-size: 9px; }
+        .num-col { text-align: right; }
+        .total-section { margin-top: 10px; border-top: 1px solid #000; padding-top: 6px; }
+        .total-row { display: flex; justify-content: space-between; font-weight: 600; font-size: 12px; }
+        .footer { text-align: center; font-size: 9px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; font-weight: 600; }
+        .softby { text-align: center; font-size: 8px; color: #666; margin-top: 6px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        ${showLogo && currentBusinessData?.logoUrl ? \`<img src="\${currentBusinessData.logoUrl}" style="height:40px; margin-bottom:5px;"><br>\` : ''}
+        <h1 class="biz-name">\${header}</h1>
+        <div class="biz-sub">\${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Sales Invoice</div>
+    
+    <div class="customer-highlight-box">
+        <span class="cust-label">CUSTOMER:</span>
+        <span class="cust-value">\${esc(o.shopName || o.shopId || '-')}</span>
+    </div>
+    
+    <div class="meta-grid">
+        <span class="meta-label">Invoice #:</span><span class="meta-value">\${o.orderNumber || o.id.slice(-8).toUpperCase()}</span>
+        <span class="meta-label">Date:</span><span class="meta-value">\${o.date}</span>
+        <span class="meta-label">Sales Rep:</span><span class="meta-value">\${esc(o.repName || o.repId || '-')}</span>
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th class="num-col">Qty</th>
+                <th class="num-col">Price</th>
+                <th class="num-col">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            \${(o.items || []).map(it => \`
+                <tr>
+                    <td>\${esc(it.productName || '-')}</td>
+                    <td class="num-col">\${Number(it.orderedQty || 0)}\${it.freeQty ? \`+\${it.freeQty}\` : ''}</td>
+                    <td class="num-col">\${money(it.unitPrice)}</td>
+                    <td class="num-col">\${money(it.totalPrice)}</td>
+                </tr>
+            \`).join('')}
+        </tbody>
+    </table>
+    
+    <div class="total-section">
+        <div class="total-row">
+            <span>GRAND TOTAL</span>
+            <span>Rs. \${money(o.totalAmount)}</span>
+        </div>
+    </div>
+    
+    <div class="footer">
+        \${footer}
+    </div>
+    <div class="softby">Software Solution by DIGIBIZ - 0713446500</div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    </script>
+</body>
+</html>\`;
+
+        const win = window.open('', '_blank', 'width=400,height=600');
+        if (!win) {
+            alert('Please allow pop-ups to print the invoice.');
+            return;
+        }
+        win.document.write(html);
+        win.document.close();
+    } catch (e) {
+        console.error(e);
+        alert('Failed to print: ' + e.message);
+    }
+}
+
+function render() {
+    const tbody = document.getElementById('rows');
+    if (invoiceRows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="loading">No approved invoices found.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = invoiceRows.map((o, i) => \`
+        <tr>
+            <td><strong>\${esc(o.orderNumber || o.id.slice(-8))}</strong></td>
+            <td>\${esc(o.date)}</td>
+            <td>\${esc(o.shopName || o.shopId || '-')}</td>
+            <td>\${esc(o.repName || o.repId || '-')}</td>
+            <td class="num">Rs \${money(o.totalAmount)}</td>
+            <td><span class="status status-\${o.status}">\${esc(o.status)}</span></td>
+            <td>
+                <button class="btn" onclick="printInvoice(\${i})">🖨️ Print 80mm</button>
+            </td>
+        </tr>
+    \`).join('');
+}
+
+firebase.auth().onAuthStateChanged(async (u) => {
+    if (!u) { location.href = '/'; return; }
+    
+    let bid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+    if (!bid && window.dashboardCore) {
+        const ctx = await window.dashboardCore.getContext(u).catch(() => null);
+        bid = ctx?.businessId || '';
+    }
+    
+    if (!bid) {
+        document.getElementById('rows').innerHTML = '<tr><td colspan="7" class="loading">Please select a business first.</td></tr>';
+        return;
+    }
+    
+    currentBusinessId = bid;
+    document.getElementById('bizCtx').textContent = \`Business ID: \${bid}\`;
+    
+    try {
+        const bizSnap = await db.collection('businesses').doc(bid).get();
+        currentBusinessData = bizSnap.exists ? bizSnap.data() : null;
+
+        const snap = await db.collection('orders')
+            .where('businessId', '==', bid)
+            .where('status', 'in', ['approved', 'dispatched', 'delivered'])
+            .limit(100)
+            .get();
+            
+        invoiceRows = snap.docs.map(d => {
+            const o = d.data();
+            const dt = o.approvedAt?.toDate ? o.approvedAt.toDate() : (o.orderDate?.toDate ? o.orderDate.toDate() : new Date());
+            return { id: d.id, ...o, date: dt.toLocaleString() };
+        }).sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        render();
+    } catch (err) {
+        console.error(err);
+        document.getElementById('rows').innerHTML = \`<tr><td colspan="7" class="loading" style="color:red;">Error: \${err.message}</td></tr>\`;
+    }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supplier Management - DIGIBIZ Retail</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=3"></script>
+    <script src="/core/event-bus.js?v=3"></script>
+    <script src="/core/accounts-core.js?v=3"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=3"></script>
+    <script src="/core/dashboard-core.js?v=3"></script>
+    <script src="/core/subscription-manager.js?v=3"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter',sans-serif;background:#f5f6fa;color:#1a1a2e;}
+        
+        .main-content{padding:30px 35px;min-height:100vh;}
+        @media (max-width:768px){.main-content{padding:20px;}}
+        
+        .page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px;flex-wrap:wrap;gap:15px;}
+        .page-header h1{font-size:26px;font-weight:700;color:#1a1a2e;}
+        .page-header h1 i{color:#10b981;margin-right:12px;}
+        
+        .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-bottom:25px;}
+        .stat-card{background:white;border-radius:16px;padding:20px;border:1px solid #e9ecef;}
+        .stat-card .label{font-size:12px;color:#64748b;margin-bottom:5px;}
+        .stat-card .value{font-size:28px;font-weight:700;color:#1a1a2e;}
+        
+        .filter-bar{background:white;border-radius:16px;padding:15px 20px;margin-bottom:25px;display:flex;gap:15px;flex-wrap:wrap;align-items:center;border:1px solid #e9ecef;}
+        .filter-bar input{flex:2;min-width:200px;padding:10px;border:1px solid #e9ecef;border-radius:8px;}
+        .filter-bar button{background:#10b981;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;}
+        
+        .btn-primary{background:#10b981;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;}
+        .btn-outline{background:transparent;border:1px solid #10b981;color:#10b981;padding:10px 20px;border-radius:8px;cursor:pointer;}
+        .btn-danger{background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;}
+        
+        .card{background:white;border-radius:20px;border:1px solid #e9ecef;overflow:hidden;}
+        .card-header{padding:18px 22px;border-bottom:1px solid #e9ecef;background:#fafbfc;display:flex;justify-content:space-between;align-items:center;}
+        .card-header h3{font-size:16px;font-weight:600;}
+        .card-header h3 i{margin-right:10px;color:#10b981;}
+        .card-body{padding:0;overflow-x:auto;}
+        
+        .data-table{width:100%;border-collapse:collapse;}
+        .data-table th,.data-table td{padding:14px 18px;text-align:left;border-bottom:1px solid #e9ecef;font-size:13px;}
+        .data-table th{background:#fafbfc;font-weight:600;}
+        .data-table tr:hover{background:#f8f9fa;}
+        
+        .badge{padding:4px 10px;border-radius:30px;font-size:11px;}
+        .badge-active{background:#d1fae5;color:#10b981;}
+        .badge-inactive{background:#fee2e2;color:#ef4444;}
+        
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:2000;justify-content:center;align-items:center;}
+        .modal-content{background:white;border-radius:24px;padding:32px;width:90%;max-width:550px;}
+        .modal-content input,.modal-content select,.modal-content textarea{width:100%;padding:12px;margin-bottom:15px;border:1px solid #e9ecef;border-radius:10px;}
+        .modal-buttons{display:flex;gap:12px;justify-content:flex-end;margin-top:15px;}
+        
+        .tabs{display:flex;gap:10px;margin-bottom:20px;border-bottom:2px solid #e9ecef;}
+        .tab-btn{background:none;border:none;padding:10px 20px;font-size:14px;font-weight:500;cursor:pointer;color:#64748b;}
+        .tab-btn.active{color:#10b981;border-bottom:2px solid #10b981;}
+        
+        .toast{position:fixed;bottom:30px;right:30px;background:#1a1a2e;color:white;padding:12px 20px;border-radius:10px;z-index:3000;display:none;align-items:center;gap:10px;}
+        .toast.show{display:flex;animation:slideIn 0.3s;}
+        @keyframes slideIn{from{transform:translateX(100%);opacity:0;}to{transform:translateX(0);opacity:1;}}
+        
+        footer{text-align:center;padding:25px;color:#adb5bd;font-size:12px;border-top:1px solid #e9ecef;margin-top:25px;}
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="page-header">
+            <h1><i class="fas fa-truck"></i> Supplier Management</h1>
+            <button class="btn-primary" id="addSupplierBtn"><i class="fas fa-plus"></i> Add Supplier</button>
+        </div>
+        
+        <div class="stats-row">
+            <div class="stat-card"><div class="label">Total Suppliers</div><div class="value" id="totalSuppliers">0</div></div>
+            <div class="stat-card"><div class="label">Active Suppliers</div><div class="value" id="activeSuppliers">0</div></div>
+            <div class="stat-card"><div class="label">Total Purchases</div><div class="value" id="totalPurchases">Rs. 0</div></div>
+            <div class="stat-card"><div class="label">Outstanding</div><div class="value" id="outstanding">Rs. 0</div></div>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="suppliers"><i class="fas fa-list"></i> All Suppliers</button>
+            <button class="tab-btn" data-tab="purchases"><i class="fas fa-history"></i> Purchase History</button>
+        </div>
+        
+        <!-- Suppliers Tab -->
+        <div id="tab-suppliers" class="tab-pane active">
+            <div class="filter-bar">
+                <input type="text" id="searchSupplier" placeholder="🔍 Search by name, contact or phone...">
+                <button id="applyFilterBtn"><i class="fas fa-search"></i> Search</button>
+                <button id="exportSuppliersBtn" class="btn-outline"><i class="fas fa-download"></i> Export</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-header"><h3><i class="fas fa-building"></i> Suppliers List</h3><span id="supplierCount"></span></div>
+                <div class="card-body">
+                    <table class="data-table" id="supplierTable">
+                        <thead>
+                            <tr><th>Code</th><th>Name</th><th>Contact Person</th><th>Phone</th><th>Email</th><th>Total Purchases</th><th>Status</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody id="supplierList">
+                            <tr><td colspan="8" style="text-align:center;padding:40px;">Loading suppliers...</tbody>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Purchase History Tab -->
+        <div id="tab-purchases" class="tab-pane">
+            <div class="filter-bar">
+                <select id="historySupplierSelect"><option value="">Select Supplier</option></select>
+                <input type="date" id="historyStartDate">
+                <input type="date" id="historyEndDate">
+                <button id="loadHistoryBtn"><i class="fas fa-search"></i> Load</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-header"><h3><i class="fas fa-history"></i> Purchase Orders</h3></div>
+                <div class="card-body">
+                    <table class="data-table" id="historyTable">
+                        <thead>
+                            <tr><th>PO No</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th></tr>
+                        </thead>
+                        <tbody id="historyList">
+                            <tr><td colspan="5" style="text-align:center;padding:40px;">Select a supplier to view history</tbody>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <footer><p>© 2025 DIGIBIZ Universal - Supplier Management System</p></footer>
+    </div>
+    
+    <!-- Add/Edit Supplier Modal -->
+    <div id="supplierModal" class="modal">
+        <div class="modal-content">
+            <h3 id="modalTitle">Add New Supplier</h3>
+            <input type="text" id="supplierCode" placeholder="Supplier Code (auto)">
+            <input type="text" id="supplierName" placeholder="Supplier Name *">
+            <input type="text" id="supplierContact" placeholder="Contact Person">
+            <input type="tel" id="supplierPhone" placeholder="Phone Number *">
+            <input type="email" id="supplierEmail" placeholder="Email">
+            <input type="text" id="supplierAddress" placeholder="Address">
+            <textarea id="supplierNotes" placeholder="Notes (payment terms, etc.)" rows="3"></textarea>
+            <select id="supplierStatus">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+            </select>
+            <div class="modal-buttons">
+                <button class="btn-outline" id="closeModalBtn">Cancel</button>
+                <button class="btn-primary" id="saveSupplierBtn">Save Supplier</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="toast" class="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
+
+    <script>
+        let currentBusinessId = null;
+        let suppliers = [];
+        let editingSupplierId = null;
+        let purchaseOrders = [];
+        
+        function formatCurrency(amt){ return 'Rs. ' + (amt||0).toLocaleString('en-LK'); }
+        
+        function showToast(msg, isError=false){
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerHTML = msg;
+            toast.style.background = isError ? '#ef4444' : '#10b981';
+            toast.classList.add('show');
+            setTimeout(()=>toast.classList.remove('show'), 3000);
+        }
+        
+        // Load suppliers
+        async function loadSuppliers(){
+            if(!currentBusinessId) return;
+            const snapshot = await db.collection('suppliers').doc(currentBusinessId).collection('list').get();
+            suppliers = [];
+            snapshot.forEach(doc => suppliers.push({id: doc.id, ...doc.data()}));
+            
+            if(suppliers.length === 0){
+                // Demo suppliers
+                suppliers = [
+                    { id: 'S001', code: 'S001', name: 'Cargills Food City', contact: 'Nimal Perera', phone: '0112345678', email: 'orders@cargills.lk', address: 'Colombo', notes: 'Net 30 days', status: 'active' },
+                    { id: 'S002', code: 'S002', name: 'Keells Supermarket', contact: 'Sunil Silva', phone: '0113456789', email: 'purchase@keells.lk', address: 'Colombo', notes: 'Net 15 days', status: 'active' },
+                    { id: 'S003', code: 'S003', name: 'Lanka Groceries', contact: 'Kamal Fernando', phone: '0771234567', email: 'info@lankagroceries.lk', address: 'Kandy', notes: 'Cash on delivery', status: 'active' }
+                ];
+                for(const s of suppliers){
+                    await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(s.id).set(s);
+                }
+            }
+            renderSuppliers();
+            updateSupplierSelect();
+            updateStats();
+        }
+        
+        function renderSuppliers(){
+            const search = document.getElementById('searchSupplier').value.toLowerCase();
+            let filtered = [...suppliers];
+            if(search) filtered = filtered.filter(s => s.name.toLowerCase().includes(search) || (s.contact && s.contact.toLowerCase().includes(search)) || s.phone.includes(search));
+            
+            const tbody = document.getElementById('supplierList');
+            if(filtered.length === 0){
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;">No suppliers found</tbody>';
+                document.getElementById('supplierCount').innerHTML = '0 records';
+                return;
+            }
+            
+            tbody.innerHTML = filtered.map(s => `<tr>
+                <td><code>${s.code || s.id}</code></td>
+                <td><strong>${s.name}</strong></td>
+                <td>${s.contact || '-'}</td>
+                <td>${s.phone}</td>
+                <td>${s.email || '-'}</td>
+                <td>${formatCurrency(s.totalPurchases || 0)}</td>
+                <td><span class="badge ${s.status === 'active' ? 'badge-active' : 'badge-inactive'}">${s.status}</span></td>
+                <td>
+                    <button class="btn-outline" onclick="editSupplier('${s.id}')" style="padding:5px 10px;margin-right:5px;"><i class="fas fa-edit"></i></button>
+                    <button class="btn-danger" onclick="deleteSupplier('${s.id}')" style="padding:5px 10px;"><i class="fas fa-trash"></i></button>
+                   </td>
+            </tr>`).join('');
+            document.getElementById('supplierCount').innerHTML = `${filtered.length} records`;
+        }
+        
+        async function updateStats(){
+            document.getElementById('totalSuppliers').innerHTML = suppliers.length;
+            document.getElementById('activeSuppliers').innerHTML = suppliers.filter(s => s.status === 'active').length;
+            
+            // Load purchase orders to calculate totals
+            const poSnapshot = await db.collection('purchases').doc(currentBusinessId).collection('orders').get();
+            purchaseOrders = [];
+            poSnapshot.forEach(doc => purchaseOrders.push({id: doc.id, ...doc.data()}));
+            
+            const totalPurchases = purchaseOrders.reduce((sum, po) => sum + (po.total || 0), 0);
+            const outstanding = purchaseOrders.filter(po => po.status === 'pending').reduce((sum, po) => sum + (po.total || 0), 0);
+            
+            document.getElementById('totalPurchases').innerHTML = formatCurrency(totalPurchases);
+            document.getElementById('outstanding').innerHTML = formatCurrency(outstanding);
+        }
+        
+        function updateSupplierSelect(){
+            const select = document.getElementById('historySupplierSelect');
+            select.innerHTML = '<option value="">Select Supplier</option>' + suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+        }
+        
+        // Add/Edit supplier
+        function openAddModal(){
+            editingSupplierId = null;
+            document.getElementById('modalTitle').innerHTML = 'Add New Supplier';
+            document.getElementById('supplierCode').value = '';
+            document.getElementById('supplierName').value = '';
+            document.getElementById('supplierContact').value = '';
+            document.getElementById('supplierPhone').value = '';
+            document.getElementById('supplierEmail').value = '';
+            document.getElementById('supplierAddress').value = '';
+            document.getElementById('supplierNotes').value = '';
+            document.getElementById('supplierStatus').value = 'active';
+            document.getElementById('supplierModal').style.display = 'flex';
+        }
+        
+        window.editSupplier = async (id) => {
+            const supplier = suppliers.find(s => s.id === id);
+            if(supplier){
+                editingSupplierId = id;
+                document.getElementById('modalTitle').innerHTML = 'Edit Supplier';
+                document.getElementById('supplierCode').value = supplier.code || '';
+                document.getElementById('supplierName').value = supplier.name;
+                document.getElementById('supplierContact').value = supplier.contact || '';
+                document.getElementById('supplierPhone').value = supplier.phone;
+                document.getElementById('supplierEmail').value = supplier.email || '';
+                document.getElementById('supplierAddress').value = supplier.address || '';
+                document.getElementById('supplierNotes').value = supplier.notes || '';
+                document.getElementById('supplierStatus').value = supplier.status || 'active';
+                document.getElementById('supplierModal').style.display = 'flex';
+            }
+        };
+        
+        async function saveSupplier(){
+            const name = document.getElementById('supplierName').value;
+            const phone = document.getElementById('supplierPhone').value;
+            
+            if(!name || !phone){
+                showToast('Supplier Name and Phone are required!', true);
+                return;
+            }
+            
+            const code = document.getElementById('supplierCode').value || 'SUP-' + Date.now();
+            const supplierData = {
+                id: code,
+                code: code,
+                name: name,
+                contact: document.getElementById('supplierContact').value,
+                phone: phone,
+                email: document.getElementById('supplierEmail').value,
+                address: document.getElementById('supplierAddress').value,
+                notes: document.getElementById('supplierNotes').value,
+                status: document.getElementById('supplierStatus').value,
+                updatedAt: new Date()
+            };
+            
+            if(editingSupplierId){
+                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(editingSupplierId).update(supplierData);
+                showToast('Supplier updated successfully!');
+            } else {
+                supplierData.createdAt = new Date();
+                supplierData.totalPurchases = 0;
+                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(code).set(supplierData);
+                showToast('Supplier added successfully!');
+            }
+            
+            document.getElementById('supplierModal').style.display = 'none';
+            await loadSuppliers();
+        }
+        
+        window.deleteSupplier = async (id) => {
+            if(confirm('Delete this supplier? This will also delete all purchase history.')){
+                await db.collection('suppliers').doc(currentBusinessId).collection('list').doc(id).delete();
+                showToast('Supplier deleted');
+                await loadSuppliers();
+            }
+        };
+        
+        // Load purchase history for a supplier
+        async function loadPurchaseHistory(){
+            const supplierId = document.getElementById('historySupplierSelect').value;
+            if(!supplierId){
+                document.getElementById('historyList').innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;">Select a supplier</tbody>';
+                return;
+            }
+            
+            const supplier = suppliers.find(s => s.id === supplierId);
+            if(!supplier) return;
+            
+            const poSnapshot = await db.collection('purchases').doc(currentBusinessId).collection('orders').where('supplierId', '==', supplierId).orderBy('createdAt', 'desc').get();
+            const orders = [];
+            poSnapshot.forEach(doc => orders.push({id: doc.id, ...doc.data()}));
+            
+            const tbody = document.getElementById('historyList');
+            if(orders.length === 0){
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;">No purchase orders found</tbody>';
+                return;
+            }
+            
+            tbody.innerHTML = orders.map(po => `<tr>
+                <td>${po.poNo}</td>
+                <td>${po.createdAt?.toDate?.().toLocaleDateString() || '-'}</td>
+                <td>${po.items?.length || 0}</td>
+                <td>${formatCurrency(po.total)}</td>
+                <td><span class="badge ${po.status === 'received' ? 'badge-active' : 'badge-inactive'}">${po.status}</span></td>
+            </tr>`).join('');
+        }
+        
+        function exportSuppliers(){
+            let csv = 'Code,Name,Contact Person,Phone,Email,Address,Notes,Status\n';
+            suppliers.forEach(s => {
+                csv += `${s.code || s.id},${s.name},${s.contact || ''},${s.phone},${s.email || ''},${s.address || ''},${s.notes || ''},${s.status}\n`;
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `suppliers_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Export completed!');
+        }
+        
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+            };
+        });
+        
+        // Event listeners
+        document.getElementById('addSupplierBtn').onclick = openAddModal;
+        document.getElementById('closeModalBtn').onclick = () => document.getElementById('supplierModal').style.display = 'none';
+        document.getElementById('saveSupplierBtn').onclick = saveSupplier;
+        document.getElementById('applyFilterBtn').onclick = () => renderSuppliers();
+        document.getElementById('searchSupplier').onkeyup = () => renderSuppliers();
+        document.getElementById('exportSuppliersBtn').onclick = exportSuppliers;
+        document.getElementById('loadHistoryBtn').onclick = loadPurchaseHistory;
+        
+        auth.onAuthStateChanged(async(user)=>{
+            if(!user){ window.location.href='/'; return; }
+            let businessId = user.uid;
+            try {
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(userDoc, user.uid) : (userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid);
+            } catch(e) {
+                businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(null, user.uid) : user.uid;
+            }
+            currentBusinessId = businessId;
+            await loadSuppliers();
+        });
+    </script>
+</body>
+</html>

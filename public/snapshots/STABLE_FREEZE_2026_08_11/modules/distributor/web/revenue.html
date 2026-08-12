@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Revenue & Profit Analysis — Distributor Terminal</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; line-height: 1.5; }
+        .page { padding: 24px; max-width: 1240px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 16px; }
+        .header-text h1 { font-family: 'Outfit', sans-serif; font-size: 26px; font-weight: 800; color: #1e293b; margin: 0; letter-spacing: -0.5px; }
+        .header-text p { font-size: 14px; color: #64748b; margin: 4px 0 0; }
+        
+        .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; transition: transform 0.2s; }
+        .kpi:hover { transform: translateY(-2px); border-color: #cbd5e1; }
+        .kpi .l { font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+        .kpi .v { font-size: 24px; font-weight: 800; color: #0f172a; margin-top: 8px; }
+        .kpi.highlight { background: #f0fdf4; border-color: #bbf7d0; }
+        .kpi.highlight .v { color: #166534; }
+        .kpi.danger { background: #fef2f2; border-color: #fecaca; }
+        .kpi.danger .v { color: #991b1b; }
+ 
+        table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+        th { background: #f8fafc; color: #475569; font-weight: 700; padding: 12px 14px; text-align: left; border-bottom: 2px solid #e2e8f0; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+        td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f8fafc; }
+        .num { text-align: right; font-family: monospace; font-weight: 600; font-size: 13px; }
+        
+        .btn { background: #0f172a; color: #fff; border: none; padding: 10px 20px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 13.5px; transition: background 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+        .btn:hover { background: #334155; }
+        
+        .badge { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #475569; }
+        .section-title { font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 800; color: #1e293b; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+        .modal-card { background: #fff; border-radius: 20px; width: 100%; max-width: 640px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); animation: modalIn 0.3s ease-out; overflow: hidden; }
+        @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .modal-header { padding: 18px 24px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; }
+        .modal-header h2 { margin: 0; font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 800; color: #0f172a; }
+        .modal-close { background: #f1f5f9; border: none; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; }
+        .modal-close:hover { background: #e2e8f0; color: #0f172a; }
+        .modal-body { padding: 20px 24px; max-height: 70vh; overflow-y: auto; }
+        .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f5f9; align-items: center; }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-info { display: flex; flex-direction: column; gap: 2px; }
+        .detail-name { font-weight: 700; color: #0f172a; font-size: 14px; }
+        .detail-meta { font-size: 12px; color: #64748b; font-family: monospace; }
+        .detail-profit { font-weight: 800; color: #16a34a; font-family: monospace; text-align: right; font-size: 13.5px; }
+        .customer-link { color: #2563eb; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+        .customer-link:hover { color: #1d4ed8; }
+        .owner-restricted-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 24px; text-align: center; color: #991b1b; font-weight: 700; }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="header">
+        <div class="header-text">
+            <h1>Distributor Revenue & Profit Analysis</h1>
+            <p>Real-time profitability tracking accounting for sales revenue, inventory cost of goods sold (COGS), free issue costs, and daily expenses.</p>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <button type="button" id="refreshBtn" class="btn">
+                <span>🔄</span> Refresh Data
+            </button>
+        </div>
+    </div>
+
+    <div id="ownerArea" style="display:none;">
+        <div class="kpis" id="kpis">
+            <div class="kpi">
+                <div class="l">Total Sales (Today)</div>
+                <div class="v" id="kSales">LKR 0.00</div>
+            </div>
+            <div class="kpi highlight">
+                <div class="l">Actual Gross Profit (Margin)</div>
+                <div class="v" id="kMargin">LKR 0.00</div>
+            </div>
+            <div class="kpi danger">
+                <div class="l">Daily Expenses</div>
+                <div class="v" id="kExp">LKR 0.00</div>
+            </div>
+            <div class="kpi highlight" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none;">
+                <div class="l" style="color: rgba(255,255,255,0.85);">Net Daily Profit</div>
+                <div class="v" id="kNet" style="color: #fff;">LKR 0.00</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="section-title"><i class="fa-solid fa-file-invoice-dollar" style="color:#10b981;"></i> Today's Sales Orders & Profit Breakdown</div>
+            <div style="overflow:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Shop / Customer</th>
+                            <th>Invoice / Order</th>
+                            <th class="num">Order Total</th>
+                            <th class="num">Free Items Cost</th>
+                            <th class="num">Actual Net Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="salesBody">
+                        <tr><td colspan="6" style="text-align:center; padding:40px; color:#64748b;">Initializing financial data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="section-title"><i class="fa-solid fa-wallet" style="color:#ef4444;"></i> Daily Expenses Breakdown</div>
+            <div style="overflow:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Category</th>
+                            <th class="num">Amount</th>
+                            <th>Note</th>
+                        </tr>
+                    </thead>
+                    <tbody id="expBody">
+                        <tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">No expenses recorded today.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="section-title"><i class="fa-solid fa-chart-line" style="color:#10b981;"></i> Daily Profit History (365 Days)</div>
+            <div style="overflow:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th class="num">Daily Sales</th>
+                            <th class="num">Free Issues Cost</th>
+                            <th class="num">Gross Profit</th>
+                            <th class="num">Expenses</th>
+                            <th class="num">Net Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <tr><td colspan="6" style="text-align:center; padding:40px; color:#64748b;">Calculating history...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="restrictedArea" class="owner-restricted-box" style="display:none;">
+        <i class="fa-solid fa-lock" style="font-size:32px; margin-bottom:12px; display:block;"></i>
+        Access Restricted: Financial Revenue & Profit Analysis is available only to the Business Owner.
+    </div>
+</div>
+
+<!-- Details Modal -->
+<div id="detailsModal" class="modal-overlay" onclick="if(event.target===this) closeModal()">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h2 id="modalTitle">Order Profit Breakdown</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body" id="modalBody">
+            <!-- Details injected here -->
+        </div>
+    </div>
+</div>
+
+<script>
+let DISTRIBUTOR_BUSINESS_ID = '';
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtInt = (v) => `Rs ${(Math.round(Number(v)) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+function localDateKey(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function rowLocalDateKey(row) {
+    const raw = row.orderDate || row.createdAt || row.expenseDate;
+    let dt = null;
+    if (raw && typeof raw.toDate === 'function') dt = raw.toDate();
+    else if (typeof raw === 'number') dt = new Date(raw);
+    else if (typeof raw === 'string' || raw instanceof Date) dt = new Date(raw);
+    if (!dt || Number.isNaN(dt.getTime())) return '';
+    return localDateKey(dt);
+}
+
+function isTodayRow(row) {
+    const rk = rowLocalDateKey(row);
+    const tk = localDateKey();
+    return rk && tk && rk.slice(0, 10) === tk.slice(0, 10);
+}
+
+async function refresh() {
+    try {
+        if (!DISTRIBUTOR_BUSINESS_ID) return;
+        const todayK = localDateKey();
+        const opt = navigator.onLine ? {} : { source: 'cache' };
+
+        // Fetch products catalog for fallback buying prices
+        const productsMap = {};
+        try {
+            const [pFlat, pNested] = await Promise.all([
+                db.collection('products').where('businessId', '==', DISTRIBUTOR_BUSINESS_ID).get(opt).catch(() => ({ docs: [] })),
+                db.collection('products').doc(DISTRIBUTOR_BUSINESS_ID).collection('list').get(opt).catch(() => ({ docs: [] }))
+            ]);
+            [...pFlat.docs, ...pNested.docs].forEach(doc => {
+                const p = doc.data() || {};
+                productsMap[doc.id] = p;
+                if (p.productCode) productsMap[String(p.productCode).trim()] = p;
+            });
+        } catch (eP) {
+            console.warn("Product map fetch error:", eP);
+        }
+
+        // Query distributor orders and expenses across flat and nested collections
+        const [oFlat, oPending, oNested, eFlat, eNested] = await Promise.all([
+            db.collection('orders').where('businessId', '==', DISTRIBUTOR_BUSINESS_ID).limit(1000).get(opt).catch(() => ({ docs: [] })),
+            db.collection('pendingOrders').where('businessId', '==', DISTRIBUTOR_BUSINESS_ID).limit(1000).get(opt).catch(() => ({ docs: [] })),
+            db.collection('orders').doc(DISTRIBUTOR_BUSINESS_ID).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] })),
+            db.collection('expenses').where('businessId', '==', DISTRIBUTOR_BUSINESS_ID).limit(1000).get(opt).catch(() => ({ docs: [] })),
+            db.collection('expenses').doc(DISTRIBUTOR_BUSINESS_ID).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] }))
+        ]);
+
+        const orderDocsMap = {};
+        [...oFlat.docs, ...oPending.docs, ...oNested.docs].forEach(d => { orderDocsMap[d.id] = d; });
+        const allOrderDocs = Object.values(orderDocsMap);
+
+        const expDocsMap = {};
+        [...eFlat.docs, ...eNested.docs].forEach(d => { expDocsMap[d.id] = d; });
+        const allExpDocs = Object.values(expDocsMap);
+
+        let salesTotal = 0;
+        let marginTotal = 0;
+        const salesRows = [];
+
+        allOrderDocs.forEach((d) => {
+            const b = d.data() || {};
+            const isToday = isTodayRow(b);
+            const status = String(b.status || '').toLowerCase();
+            if (status === 'rejected' || status === 'cancelled') return;
+
+            let orderRevenue = 0;
+            let orderCogs = 0;
+            let freeIssueCost = 0;
+            const items = Array.isArray(b.items) ? b.items : [];
+
+            items.forEach((line) => {
+                const soldQty = Math.max(0, Number(line.orderedQty != null ? line.orderedQty : line.qty) || 0);
+                const freeQty = Math.max(0, Number(line.freeQty) || 0);
+                const returnQty = Math.max(0, Number(line.returnResellQty != null ? line.returnResellQty : line.returnQty) || 0);
+                const billedQty = Math.max(0, soldQty - returnQty);
+
+                const unitPrice = Number(line.unitPrice) || 0;
+                
+                let buyPrice = 0;
+                const pRef = productsMap[line.productId] || productsMap[line.productCode] || productsMap[line.id];
+                if (pRef) {
+                    buyPrice = Number(pRef.buyingPrice || pRef.buyingPriceRaw || pRef.costPrice || pRef.buyPrice || 0);
+                }
+                if (isNaN(buyPrice) || buyPrice <= 0) {
+                    buyPrice = Number(line.buyingPrice || line.buyingPriceRaw || line.costPrice || 0);
+                }
+                if (isNaN(buyPrice) || buyPrice <= 0) {
+                    buyPrice = unitPrice * 0.93;
+                }
+
+                const lineRev = billedQty * unitPrice;
+                const totalItemUnits = billedQty + freeQty;
+                const lineCogs = totalItemUnits * buyPrice;
+                const lineFreeCost = freeQty * buyPrice;
+
+                orderRevenue += lineRev;
+                orderCogs += lineCogs;
+                freeIssueCost += lineFreeCost;
+            });
+
+            const orderTotal = Number(b.totalAmount || b.orderLinesTotal || orderRevenue);
+            const margin = orderTotal - orderCogs;
+
+            if (isToday) {
+                salesTotal += orderTotal;
+                marginTotal += margin;
+
+                const rawBt = b.orderDate || b.createdAt;
+                const btDt = rawBt && rawBt.toDate ? rawBt.toDate() : (rawBt ? new Date(rawBt) : null);
+                const tlabel = btDt && !Number.isNaN(btDt.getTime()) ? btDt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : (rowLocalDateKey(b) || '-');
+
+                const breakdown = items.map(line => {
+                    const soldQty = Math.max(0, Number(line.orderedQty != null ? line.orderedQty : line.qty) || 0);
+                    const freeQty = Math.max(0, Number(line.freeQty) || 0);
+                    const returnQty = Math.max(0, Number(line.returnResellQty != null ? line.returnResellQty : line.returnQty) || 0);
+                    const billedQty = Math.max(0, soldQty - returnQty);
+                    const unitPrice = Number(line.unitPrice) || 0;
+                    
+                    let buyPrice = Number(line.buyingPrice || line.buyingPriceRaw || line.costPrice);
+                    if (isNaN(buyPrice) || buyPrice <= 0) {
+                        const pRef = productsMap[line.productId] || productsMap[line.productCode];
+                        buyPrice = pRef ? (Number(pRef.buyingPrice) || Number(pRef.unitPrice) * 0.93) : (unitPrice * 0.93);
+                    }
+
+                    const rev = billedQty * unitPrice;
+                    const cogs = (billedQty + freeQty) * buyPrice;
+                    const profit = rev - cogs;
+
+                    return {
+                        name: line.productName || line.name || 'Item',
+                        billedQty,
+                        freeQty,
+                        unitPrice,
+                        buyPrice,
+                        rev,
+                        cogs,
+                        profit
+                    };
+                });
+
+                salesRows.push({
+                    t: tlabel,
+                    shopName: b.shopName || b.customerName || b.branchName || 'Distributor Customer',
+                    invoiceNo: b.invoiceNo || b.id || 'N/A',
+                    total: orderTotal,
+                    freeCost: freeIssueCost,
+                    margin: margin,
+                    items: breakdown
+                });
+            }
+        });
+
+        document.getElementById('kSales').textContent = fmt(salesTotal);
+        document.getElementById('kMargin').textContent = fmt(marginTotal);
+
+        let expTotal = 0;
+        const expRows = [];
+        allExpDocs.forEach((d) => {
+            const r = d.data() || {};
+            if (String(r.expenseDate || rowLocalDateKey(r) || '') === todayK) {
+                const a = Number(r.amount) || 0;
+                expTotal += a;
+                expRows.push({ 
+                    t: r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-', 
+                    cat: r.category || '-', 
+                    a, 
+                    note: r.note || '' 
+                });
+            }
+        });
+
+        document.getElementById('kExp').textContent = fmt(expTotal);
+        document.getElementById('kNet').textContent = fmt(marginTotal - expTotal);
+
+        document.getElementById('salesBody').innerHTML = salesRows.length
+            ? salesRows.map((r, idx) => `<tr>
+                <td><span class="badge">${r.t}</span></td>
+                <td><span class="customer-link" onclick="showDetails(${idx})">${String(r.shopName).replace(/</g,'&lt;')}</span></td>
+                <td><span style="font-family:monospace; font-weight:700;">${r.invoiceNo}</span></td>
+                <td class="num">${fmt(r.total)}</td>
+                <td class="num" style="color:#b45309;">${r.freeCost > 0 ? ('- ' + fmt(r.freeCost)) : '-'}</td>
+                <td class="num" style="color:${r.margin >= 0 ? '#166534' : '#991b1b'};">${r.margin >= 0 ? '+ ' : ''}${fmt(r.margin)}</td>
+            </tr>`).join('')
+            : '<tr><td colspan="6" style="text-align:center; padding:40px; color:#64748b;">No sales orders recorded today.</td></tr>';
+
+        document.getElementById('expBody').innerHTML = expRows.length
+            ? expRows.map((r) => `<tr><td><span class="badge">${r.t}</span></td><td>${String(r.cat).replace(/</g,'&lt;')}</td><td class="num" style="color:#991b1b;">- ${fmt(r.a)}</td><td>${String(r.note).replace(/</g,'&lt;')}</td></tr>`).join('')
+            : '<tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">No expenses recorded today.</td></tr>';
+
+        // 365 Days Daily Profit History
+        const historySalesMap = {};
+        const historyMarginMap = {};
+        const historyFreeCostMap = {};
+        const historyExpMap = {};
+
+        allOrderDocs.forEach((d) => {
+            const b = d.data() || {};
+            const dateKey = rowLocalDateKey(b);
+            if (!dateKey) return;
+            const status = String(b.status || '').toLowerCase();
+            if (status === 'rejected' || status === 'cancelled') return;
+
+            let orderRevenue = 0;
+            let orderCogs = 0;
+            let freeIssueCost = 0;
+            const items = Array.isArray(b.items) ? b.items : [];
+
+            items.forEach((line) => {
+                const soldQty = Math.max(0, Number(line.orderedQty != null ? line.orderedQty : line.qty) || 0);
+                const freeQty = Math.max(0, Number(line.freeQty) || 0);
+                const returnQty = Math.max(0, Number(line.returnResellQty != null ? line.returnResellQty : line.returnQty) || 0);
+                const billedQty = Math.max(0, soldQty - returnQty);
+                const unitPrice = Number(line.unitPrice) || 0;
+
+                let buyPrice = Number(line.buyingPrice || line.buyingPriceRaw || line.costPrice);
+                if (isNaN(buyPrice) || buyPrice <= 0) {
+                    const pRef = productsMap[line.productId] || productsMap[line.productCode];
+                    buyPrice = pRef ? (Number(pRef.buyingPrice) || Number(pRef.unitPrice) * 0.93) : (unitPrice * 0.93);
+                }
+
+                orderRevenue += billedQty * unitPrice;
+                orderCogs += (billedQty + freeQty) * buyPrice;
+                freeIssueCost += freeQty * buyPrice;
+            });
+
+            const orderTotal = Number(b.totalAmount || b.orderLinesTotal || orderRevenue);
+            const margin = orderTotal - orderCogs;
+
+            historySalesMap[dateKey] = (historySalesMap[dateKey] || 0) + orderTotal;
+            historyMarginMap[dateKey] = (historyMarginMap[dateKey] || 0) + margin;
+            historyFreeCostMap[dateKey] = (historyFreeCostMap[dateKey] || 0) + freeIssueCost;
+        });
+
+        allExpDocs.forEach((d) => {
+            const r = d.data() || {};
+            const dateKey = String(r.expenseDate || rowLocalDateKey(r));
+            if (!dateKey) return;
+            historyExpMap[dateKey] = (historyExpMap[dateKey] || 0) + (Number(r.amount) || 0);
+        });
+
+        const allDates = Array.from(new Set([...Object.keys(historyMarginMap), ...Object.keys(historyExpMap)])).sort((a, b) => b.localeCompare(a)).slice(0, 365);
+        
+        document.getElementById('historyBody').innerHTML = allDates.length
+            ? allDates.map(k => {
+                const sales = historySalesMap[k] || 0;
+                const gross = historyMarginMap[k] || 0;
+                const freeCost = historyFreeCostMap[k] || 0;
+                const exp = historyExpMap[k] || 0;
+                const net = gross - exp;
+                return `<tr>
+                    <td style="font-weight:600; color:#1e293b;">${k}</td>
+                    <td class="num">${fmtInt(sales)}</td>
+                    <td class="num" style="color:#b45309;">${freeCost > 0 ? ('Rs ' + Math.round(freeCost).toLocaleString()) : '-'}</td>
+                    <td class="num" style="color:#166534;">+ ${fmtInt(gross)}</td>
+                    <td class="num" style="color:#991b1b;">- ${fmtInt(exp)}</td>
+                    <td class="num" style="font-weight:800; color:${net >= 0 ? '#166534' : '#991b1b'};">${net >= 0 ? '+ ' : ''}${fmtInt(net)}</td>
+                </tr>`;
+            }).join('')
+            : '<tr><td colspan="6" style="text-align:center; padding:40px; color:#64748b;">No history available.</td></tr>';
+
+        window.lastSalesRows = salesRows;
+    } catch (err) {
+        console.error("[RefreshError]", err);
+        document.getElementById('salesBody').innerHTML = `<tr><td colspan="6" style="text-align:center; padding:20px; color:red;">Error loading data: ${err.message}</td></tr>`;
+    }
+}
+
+document.getElementById('refreshBtn').addEventListener('click', () => {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+    refresh().catch((e) => alert(String(e && e.message || e))).finally(() => {
+        btn.disabled = false;
+        btn.textContent = 'Refresh Data';
+    });
+});
+
+function showDetails(idx) {
+    const session = window.lastSalesRows && window.lastSalesRows[idx];
+    if (!session) return;
+
+    document.getElementById('modalTitle').textContent = `Profit Breakdown: ${session.invoiceNo} (${session.shopName})`;
+    const body = document.getElementById('modalBody');
+    
+    if (!session.items || session.items.length === 0) {
+        body.innerHTML = '<p style="text-align:center; color:#64748b;">No items found for this invoice.</p>';
+    } else {
+        body.innerHTML = session.items.map(it => `
+            <div class="detail-row">
+                <div class="detail-info">
+                    <span class="detail-name">${it.name}</span>
+                    <span class="detail-meta">Sold: ${it.billedQty} @ Rs ${it.unitPrice.toFixed(2)} | Cost: ${(it.billedQty + it.freeQty)} units @ Rs ${it.buyPrice.toFixed(2)}${it.freeQty > 0 ? ` (Includes ${it.freeQty} Free)` : ''}</span>
+                </div>
+                <div class="detail-profit" style="color:${it.profit >= 0 ? '#16a34a' : '#dc2626'};">${it.profit >= 0 ? '+ ' : ''}${fmt(it.profit)}</div>
+            </div>
+        `).join('');
+    }
+    
+    document.getElementById('detailsModal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('detailsModal').style.display = 'none';
+}
+
+function isDistributorOwnerUser(user, userDoc) {
+    if (!user) return false;
+    const bid = (userDoc && userDoc.businessId) || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || user.uid;
+    if (user.uid === bid) return true;
+    const r = (userDoc && userDoc.role || window.__ORDER_STATUS_ROLE__ || localStorage.getItem('userRole') || sessionStorage.getItem('userRole') || '').toUpperCase();
+    if (r === 'REP') return false;
+    return ['OWNER', 'BUSINESS_OWNER', 'DISTRIBUTOR_OWNER', 'SUPER_ADMIN', 'ADMIN'].includes(r) || (r !== 'REP' && !isRepOrderView());
+}
+
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '/'; return; }
+    const userSnap = await db.collection('users').doc(user.uid).get();
+    const userDoc = userSnap.exists ? userSnap.data() : {};
+    const businessId = userDoc.businessId || user.uid;
+    DISTRIBUTOR_BUSINESS_ID = businessId;
+
+    const isOwner = isDistributorOwnerUser(user, userDoc);
+    if (isOwner) {
+        document.getElementById('ownerArea').style.display = 'block';
+        document.getElementById('restrictedArea').style.display = 'none';
+        await refresh();
+    } else {
+        document.getElementById('ownerArea').style.display = 'none';
+        document.getElementById('restrictedArea').style.display = 'block';
+    }
+});
+</script>
+</body>
+</html>

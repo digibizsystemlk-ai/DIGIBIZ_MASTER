@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Bill</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=58"></script>
+    <script src="/core/event-bus.js?v=58"></script>
+    <script src="/core/accounts-core.js?v=58"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=58"></script>
+    <script src="/core/dashboard-core.js?v=58"></script>
+    <script src="/core/subscription-manager.js?v=58"></script>
+    <script src="/core/sidebar.js?v=2000"></script>
+    <script src="/core/sms-wallet-core.js?v=4"></script>
+    <script src="/core/scrap-vba-core.js?v=70"></script>
+    <script src="/core/scrap-loans-store.js?v=2"></script>
+    <style>
+        body{font-family:Inter,Segoe UI,sans-serif;background:#f5f7fb;color:#0f172a;}
+        .page{padding:20px;}
+        .card{background:#fff;border:1px solid #dbe4ee;border-radius:12px;padding:20px;margin-bottom:12px;}
+        .customer-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:10px;}
+        input,select,button{padding:9px;border:1px solid #cbd5e1;border-radius:8px;}
+        button{background:#0f3b2c;color:#fff;border:none;cursor:pointer;}
+        .sheet{border:1px solid #0f172a;border-radius:10px;background:#fff;overflow:hidden;}
+        table{width:100%;border-collapse:collapse;font-size:12px;}
+        th,td{padding:6px;border:1px solid #0f172a;text-align:left;}
+        th{background:#f8fafc;font-weight:800;}
+        .num{text-align:right;}
+        .small{font-size:12px;color:#64748b;}
+        .total{font-size:20px;font-weight:800;color:#0f3b2c;}
+
+        .bill-workbench{margin-bottom:12px;}
+        .bill-page-grid{display:grid;grid-template-columns:minmax(300px,1fr) minmax(260px,1.15fr) minmax(260px,0.95fr);gap:0;align-items:stretch;border-radius:12px;overflow:hidden;border:1px solid #dbe4ee;}
+        .bill-pane{padding:16px;background:#fff;}
+        .bill-pane--left{border-right:1px solid #e2e8f0;}
+        .bill-pane--center{border-right:1px solid #e2e8f0;background:#fafbfc;}
+        .bill-pane--right{background:linear-gradient(180deg,#f0f9ff 0%,#fff 40%);}
+        .pane-title{margin:0 0 10px;font-size:15px;font-weight:800;color:#0f3b2c;}
+        .buy-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;}
+        .buy-table td:nth-child(2), .buy-table td:nth-child(3), .buy-table th:nth-child(2), .buy-table th:nth-child(3){text-align:right;}
+        .buy-table input{width:100%;padding:4px 6px;border:0;border-radius:0;text-align:right;outline:none;font-size:12px;}
+        .bill-totals-heading{font-size:13px;font-weight:800;color:#0369a1;text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px;text-align:right;}
+        .bill-grand-line{font-size:22px;font-weight:800;color:#0c4a6e;text-align:right;padding-bottom:10px;margin-bottom:10px;border-bottom:2px solid #38bdf8;}
+        .bill-summary{margin-top:0;display:grid;grid-template-columns:1fr;gap:8px;}
+        .bill-summary--right .sum-box{text-align:right;}
+        .bill-summary--right .sum-box .lbl{text-align:right;display:block;}
+        .bill-summary--right .sum-box .val{text-align:right;display:block;}
+        .sum-box{border:1px solid #dbe4ee;border-radius:8px;padding:8px;background:#fff;}
+        .sum-box .lbl{font-size:11px;color:#64748b;}
+        .sum-box .val{font-size:14px;font-weight:700;color:#0f172a;}
+        .charge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px;margin-top:10px;}
+        .charge-box{border:1px solid #7dd3fc;background:linear-gradient(180deg,#e0f2fe 0%,#f0f9ff 100%);border-radius:10px;padding:10px;}
+        .charge-box .t{font-size:11px;font-weight:800;color:#0369a1;text-transform:uppercase;letter-spacing:.03em;}
+        .charge-box .bal{font-size:13px;font-weight:700;color:#0c4a6e;margin:4px 0;}
+        .charge-box input{width:100%;margin-top:6px;padding:7px;border:1px solid #bae6fd;border-radius:8px;box-sizing:border-box;}
+        .bill-preview-wrap{margin-top:14px;border:1px solid #0ea5e9;border-radius:12px;padding:12px;background:#fff;}
+        .bill-preview-wrap h3{margin:0 0 8px;font-size:14px;color:#0369a1;text-align:right;}
+        #billLivePreview{font-size:12px;line-height:1.45;color:#0f172a;}
+        #billLivePreview table{width:100%;border-collapse:collapse;margin-top:6px;}
+        #billLivePreview th,#billLivePreview td{border:1px solid #cbd5e1;padding:5px;}
+        #billLivePreview th{background:#e0f2fe;text-align:left;}
+        #billLivePreview .r{text-align:right;}
+        @media print{
+            body *{visibility:hidden;}
+            #a5PrintSheet, #a5PrintSheet *{visibility:visible;}
+            #a5PrintSheet{position:absolute;left:0;top:0;width:148mm;min-height:210mm;padding:8mm;background:#fff;}
+        }
+
+        @media (max-width:1180px){
+            .bill-page-grid{grid-template-columns:1fr;}
+            .bill-pane--left,.bill-pane--center{border-right:none;border-bottom:1px solid #e2e8f0;}
+            .bill-pane:last-child{border-bottom:none;}
+            .buy-grid{grid-template-columns:1fr;}
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="card bill-workbench" style="padding:0;">
+        <div class="bill-page-grid">
+        <section class="bill-pane bill-pane--left">
+        <h1 style="margin:0 0 6px;">Bill</h1>
+        <p class="small" style="margin:0 0 12px;">Enter weight and press Enter to jump to the next item.</p>
+        <div class="customer-grid">
+            <div>
+                <input id="supplierName" list="supplierList" placeholder="Supplier name">
+                <datalist id="supplierList"></datalist>
+            </div>
+            <input id="billDateTime" type="datetime-local">
+            <select id="customerType">
+                <option value="REGISTERED">Registered</option>
+                <option value="LOAN_REGISTERED">Loan Registered</option>
+                <option value="OTHERS">Others</option>
+            </select>
+            <button id="saveSessionBtn">Save Buying Session</button>
+        </div>
+        <div style="margin-top:10px;" class="small">
+            Session Total: <span class="total" id="sessionTotal">LKR 0.00</span>
+            <span style="margin-left:16px;">Total Weight: <b id="sessionWeight">0.00</b></span>
+            <span style="margin-left:16px;">Advance Balance: <b id="supplierAdvance">LKR 0.00</b></span>
+        </div>
+        <div class="small" style="margin-top:10px;">α╢½α╢║ α╖üα╖Üα╖é <strong>Scrap Debts</strong> α╢┤α╖Æα╢ºα╖öα╖Çα╢º α╖âα╢╕α╖Åα╢▒ α╖Çα╖Öα╢╢α╖è cache α╢æα╢Üα╢Üα╖Æα╢▒α╖è ΓÇö α╢▒α╖Ç α╢½α╢║ α╖äα╖¥ α╢£α╖Öα╖Çα╖ôα╢╕α╖è α╢æα╢╕ α╢┤α╖Æα╢ºα╖öα╖Çα╖Öα╢▒α╖è α╖äα╖¥ α╢╕α╖Öα╖äα╖Æ buying session save α╢æα╢Üα╖Öα╢▒α╖è α╢┤α╖âα╖ö α╖âα╖èα╖Çα╢║α╢é refresh α╖Çα╖Ü.</div>
+        <div class="charge-grid" id="chargeGrid">
+            <div class="charge-box">
+                <div class="t">Supplier Advance</div>
+                <div class="bal">α╖üα╖Üα╖é: <span id="supplierAdvanceInline">LKR 0.00</span></div>
+                <label class="small" for="advanceApplyAmount">α╢╕α╖Öα╢╕ α╢╢α╖Æα╢╜α╖Öα╢▒α╖è</label>
+                <input id="advanceApplyAmount" type="number" step="0.01" min="0" placeholder="0">
+            </div>
+            <div class="charge-box">
+                <div class="t">Hand loan</div>
+                <div class="bal">α╖üα╖Üα╖é: <span id="bal_HAND">LKR 0.00</span></div>
+                <label class="small" for="apply_HAND">α╢╕α╖Öα╢╕ α╢╢α╖Æα╢╜α╖Öα╢▒α╖è</label>
+                <input id="apply_HAND" type="number" step="0.01" min="0" value="0" data-bucket="HAND" placeholder="0">
+            </div>
+            <div class="charge-box">
+                <div class="t">No-interest (ADV-LN)</div>
+                <div class="bal">α╖üα╖Üα╖é: <span id="bal_ADV_LN">LKR 0.00</span></div>
+                <label class="small" for="apply_ADV_LN">α╢╕α╖Öα╢╕ α╢╢α╖Æα╢╜α╖Öα╢▒α╖è</label>
+                <input id="apply_ADV_LN" type="number" step="0.01" min="0" value="0" data-bucket="ADV_LN" placeholder="0">
+            </div>
+            <div class="charge-box">
+                <div class="t">Interest loan (Standard)</div>
+                <div class="bal">α╖üα╖Üα╖é: <span id="bal_STANDARD">LKR 0.00</span></div>
+                <label class="small" for="apply_STANDARD">α╢╕α╖Öα╢╕ α╢╢α╖Æα╢╜α╖Öα╢▒α╖è</label>
+                <input id="apply_STANDARD" type="number" step="0.01" min="0" value="0" data-bucket="STANDARD" placeholder="0">
+            </div>
+            <div class="charge-box">
+                <div class="t">Investor loan (8%)</div>
+                <div class="bal">α╖üα╖Üα╖é: <span id="bal_INVESTOR_8">LKR 0.00</span></div>
+                <label class="small" for="apply_INVESTOR_8">α╢╕α╖Öα╢╕ α╢╢α╖Æα╢╜α╖Öα╢▒α╖è</label>
+                <input id="apply_INVESTOR_8" type="number" step="0.01" min="0" value="0" data-bucket="INVESTOR_8" placeholder="0">
+            </div>
+            <div class="charge-box">
+                <div class="t">α╖Çα╖Öα╢▒α╢¡α╖è α╢àα╢║α╢Üα╖Æα╢╗α╖ôα╢╕α╖è</div>
+                <div class="bal small">α╢╢α╖Æα╢╜α╖è α╢╕α╖öα╖àα╖öα╖Çα╢º α╢æα╢Üα╢¡α╖ö (Rs)</div>
+                <label class="small" for="miscChargesAmount">α╢╕α╖öα╢»α╢╜</label>
+                <input id="miscChargesAmount" type="number" step="0.01" min="0" value="0" placeholder="0">
+            </div>
+        </div>
+        <div class="loan-panel" style="margin-top:12px;padding:10px;border:1px dashed #7dd3fc;border-radius:10px;background:#fff;">
+            <div style="font-weight:700;color:#0369a1;font-size:12px;">Active α╢½α╢║ α╢┤α╖Üα╖àα╖Æ (supplier)</div>
+            <div id="loanMatchHint" class="small" style="margin-top:4px;color:#64748b;"></div>
+            <div id="loanPerRow" class="small" style="margin-top:6px;max-height:140px;overflow:auto;"></div>
+        </div>
+        <div style="margin-top:8px;display:grid;grid-template-columns:220px 1fr;gap:8px;align-items:center;">
+            <select id="paymentMethod"><option value="CASH">Cash</option><option value="BANK">Bank</option></select>
+            <div class="small">α╢£α╖Öα╖Çα╖ôα╢╕α╖Ü α╢╕α╖Åα╢░α╖èΓÇìα╢║α╢║ (Bill settlement method)</div>
+        </div>
+        <div style="margin-top:8px;">
+            <button id="printA5Btn" type="button" style="background:#1d4ed8;">Print A5 Bill</button>
+        </div>
+        <div id="smsDebugBadge" class="small" style="margin-top:8px;display:none;padding:8px;border-radius:8px;"></div>
+        </section>
+        <section class="bill-pane bill-pane--center">
+            <h3 class="pane-title">α╢╢α╢╗ / Items</h3>
+            <div class="sheet">
+                <div class="buy-grid" id="sheetWrap">
+                    <div><table class="buy-table"><thead><tr><th>Item</th><th class="num">Weight</th><th class="num">Amount</th></tr></thead><tbody><tr><td colspan="3">Loading...</td></tr></tbody></table></div>
+                    <div><table class="buy-table"><thead><tr><th>Item</th><th class="num">Weight</th><th class="num">Amount</th></tr></thead><tbody><tr><td colspan="3">Loading...</td></tr></tbody></table></div>
+                </div>
+            </div>
+        </section>
+        <section class="bill-pane bill-pane--right">
+            <div class="bill-totals-heading">α╖âα╢╕α╖âα╖èα╢¡ / Bill α╖âα╖Åα╢╗α╖Åα╢éα╖ü</div>
+            <div id="billGrandRight" class="bill-grand-line">LKR 0.00</div>
+            <div class="bill-summary bill-summary--right">
+                <div class="sum-box"><div class="lbl">α╢╖α╖Åα╢½α╖èα╢⌐ α╢╕α╖öα╖àα╖öα╖Ç (items)</div><div id="billItemsPreview" class="val">LKR 0.00</div></div>
+                <div class="sum-box"><div class="lbl">α╖Çα╖Öα╢▒α╢¡α╖è + α╢æα╢Üα╢¡α╖ö</div><div id="billMiscPreview" class="val">LKR 0.00</div></div>
+                <div class="sum-box"><div class="lbl">Bill α╢£α╖Öα╖Çα╖Æα╢║ α╢║α╖öα╢¡α╖ö α╢╕α╖öα╖àα╖öα╖Ç</div><div id="billTotalPreview" class="val">LKR 0.00</div></div>
+                <div class="sum-box"><div class="lbl">Advance Used</div><div id="advanceUsedPreview" class="val">LKR 0.00</div></div>
+                <div class="sum-box"><div class="lbl">α╢½α╢║ α╢╕α╖öα╖àα╖öα╖Ç (4 α╖Çα╢╗α╖èα╢£)</div><div id="loanUsedPreview" class="val">LKR 0.00</div></div>
+                <div class="sum-box"><div class="lbl">Cash Due</div><div id="cashDuePreview" class="val">LKR 0.00</div></div>
+            </div>
+            <div class="bill-preview-wrap">
+                <h3>α╢╢α╖Æα╢╜α╖è preview</h3>
+                <div id="billLivePreview">ΓÇö</div>
+            </div>
+        </section>
+        </div>
+    </div>
+    <div class="card" style="overflow:auto;">
+        <h3 style="margin:0 0 10px;">Buying History</h3>
+        <table>
+            <thead><tr><th>Date</th><th>Supplier</th><th>Type</th><th>Total Weight</th><th>Total Amount</th><th>Advance</th><th>Cash</th><th>Loans</th><th>Action</th></tr></thead>
+            <tbody id="buyHistBody"><tr><td colspan="9">Loading...</td></tr></tbody>
+        </table>
+    </div>
+</div>
+<script>
+/** Set in auth from users.businessId (or user.uid). All scrap_* queries use this ΓÇö not a hardcoded UID. */
+let SCRAP_BUSINESS_ID = '';
+const state = { items: [], weights: {}, loans: [] };
+const peopleByName = {};
+let selectedSupplierPhone = '';
+let supplierRefreshTimer = null;
+const fmt = (v) => `LKR ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function smsSkipReasonText(code) {
+    if (code === 'event_disabled') return 'SMS skipped: Buying event toggle is OFF.';
+    if (code === 'no_phone') return 'SMS skipped: customer phone number missing.';
+    if (code === 'wallet_exhausted') return 'SMS skipped: SMS wallet exhausted.';
+    if (code === 'quota_exhausted') return 'SMS skipped: Firestore quota exceeded (billing / daily limit).';
+    if (code === 'permission') return 'SMS skipped: permission denied for SMS queue.';
+    if (code === 'invalid_input') return 'SMS skipped: invalid phone/message input.';
+    if (code === 'db_unavailable') return 'SMS skipped: database unavailable.';
+    if (code === 'firestore_error') return 'SMS skipped: queue write failed (see detail below).';
+    return `SMS skipped: ${code || 'unknown reason'}`;
+}
+function showSmsDebug(result, extraReason) {
+    const el = document.getElementById('smsDebugBadge');
+    if (!el) return;
+    let ok = false;
+    let txt = '';
+    if (result && result.ok) {
+        ok = true;
+        if (result.via === 'rtdb_quota_fallback') {
+            txt = 'SMS queued via Realtime Database (Firestore write quota exceeded). Gateway app should send; cloud wallet was not debited ΓÇö reconcile when Firestore is available again.';
+        } else if (result.fallback) {
+            txt = 'SMS queued via direct gateway fallback.';
+        } else {
+            txt = 'SMS queued successfully.';
+        }
+    } else {
+        txt = smsSkipReasonText(extraReason || (result && result.skipped));
+        if (result && result.error) {
+            txt += ' ΓÇö ' + String(result.error);
+        }
+    }
+    el.style.display = 'block';
+    el.style.background = ok ? '#dcfce7' : '#fee2e2';
+    el.style.color = ok ? '#14532d' : '#7f1d1d';
+    el.style.border = `1px solid ${ok ? '#86efac' : '#fca5a5'}`;
+    el.textContent = txt;
+}
+function advanceDocId(name) {
+    return `ADV_${SCRAP_BUSINESS_ID}_${String(name || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
+}
+function sessionBillTotal() {
+    let t = 0;
+    state.items.forEach((item) => {
+        const w = Number(state.weights[item.id]) || 0;
+        t += w * buyingPrice(item);
+    });
+    return t;
+}
+/** Copy weight inputs from DOM into state (fixes print / preview after re-render). */
+function syncWeightsFromDom() {
+    const wrap = document.getElementById('sheetWrap');
+    if (!wrap) return;
+    wrap.querySelectorAll('input[data-input="weight"]').forEach((inp) => {
+        const id = inp.dataset.id;
+        if (id) state.weights[id] = Number(inp.value) || 0;
+    });
+}
+function billItemsSubtotal() {
+    syncWeightsFromDom();
+    return sessionBillTotal();
+}
+function miscChargesVal() {
+    return Math.max(0, Number(document.getElementById('miscChargesAmount')?.value || 0));
+}
+function billGrandTotal() {
+    return billItemsSubtotal() + miscChargesVal();
+}
+/** Firestore field names vary (camelCase / PascalCase). Never use generic `type` ΓÇö it is not loan product. */
+function scrapCustomerKindNoise(s) {
+    return /^(REGISTERED|LOAN_REGISTERED|OTHERS|BORROWER|CUSTOMER|RETAIL|PERSONAL|SCRAP|MEMBER|SUPPLIER)$/i.test(String(s || '').trim());
+}
+function readLoanTypeFromRow(L) {
+    if (!L || typeof L !== 'object') return '';
+    /** `kind` is often customer context ΓÇö read real loan fields first, then kind with filter. */
+    const keys = ['loanType', 'LoanType', 'loan_type', 'loanKind', 'productType', 'kind'];
+    for (const k of keys) {
+        const v = L[k];
+        if (v == null || String(v).trim() === '') continue;
+        const t = String(v).trim();
+        if (k === 'kind' && scrapCustomerKindNoise(t)) continue;
+        return t;
+    }
+    return '';
+}
+/** Map legacy / alternate labels to Scrap Debts select values (ADV_LN / STANDARD / INVESTOR_8). */
+function normalizeScrapLoanProductCode(s) {
+    if (!s) return '';
+    const u = String(s).trim().toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
+    if (u.includes('HAND')) return 'HAND_LOAN';
+    if (/^INVESTOR|^INV_/.test(u) || u.includes('INVESTOR_8') || u === 'INVESTOR8') return 'INVESTOR_8';
+    const advTokens = ['ADV_LN', 'ADVLN', 'ADVANCE', 'NO_INTEREST', 'NOINTEREST', 'INTEREST_FREE', 'INTERESTFREE', 'FREE_INTEREST', 'FREEINTEREST', 'NON_INTEREST', 'CASH_ADVANCE', 'CASHADVANCE', 'ZERO_INTEREST'];
+    if (advTokens.includes(u) || u.includes('NO_INTEREST') || u.includes('INTEREST_FREE')) return 'ADV_LN';
+    if (u.includes('ADV_LN') || (u.includes('ADV') && u.includes('LN') && !u.includes('STANDARD'))) return 'ADV_LN';
+    const stdTokens = ['STANDARD', 'STD', 'STDLN', 'INTEREST_LOAN', 'STANDARD_INTEREST', 'PRINCIPAL_PLUS', 'INTEREST'];
+    if (stdTokens.includes(u) || (u.includes('STANDARD') && !u.includes('ADV_LN'))) return 'STANDARD';
+    return u;
+}
+function rawLoanTypeString(L) {
+    if (L && L._loanSource === 'loan_advanced_entries') return 'INVESTOR_8';
+    const s = readLoanTypeFromRow(L);
+    if (s) {
+        const norm = normalizeScrapLoanProductCode(s);
+        if (['ADV_LN', 'STANDARD', 'INVESTOR_8', 'HAND_LOAN'].includes(norm)) return norm;
+    }
+    const src = String(L.source || '').toUpperCase();
+    if (src === 'THIRD_PARTY_INVESTOR') return 'INVESTOR_8';
+    const mr = Number(L.monthlyRate);
+    if (Number.isFinite(mr) && mr > 0) return 'STANDARD';
+    if (Number.isFinite(mr) && mr <= 0) return 'ADV_LN';
+    return '';
+}
+function bucketForLoan(L) {
+    const raw = rawLoanTypeString(L);
+    let u = String(raw).toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
+    if (!u) return 'STANDARD';
+    if (u === 'HAND_LOAN' || u.includes('HAND')) return 'HAND';
+    if (u === 'INVESTOR_8' || u.startsWith('INVESTOR_8') || /^INVESTOR/.test(u)) return 'INVESTOR_8';
+    if (u === 'STANDARD' || u === 'INTEREST' || (u.includes('STANDARD') && !u.includes('ADV_LN'))) return 'STANDARD';
+    if (u === 'ADV_LN' || u === 'ADVLN') return 'ADV_LN';
+    if (u.includes('NO_INTEREST') || u === 'NOINTEREST') return 'ADV_LN';
+    if (u.includes('ADV_LN') || (u.includes('ADV') && u.includes('LN') && !u.includes('STANDARD') && !u.includes('INVESTOR'))) return 'ADV_LN';
+    return 'STANDARD';
+}
+function normalizePersonKey(s) {
+    return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+function stripNameNoise(s) {
+    return String(s || '')
+        .replace(/^(mr|mrs|miss|ms|dr)\.?\s+/i, '')
+        .trim();
+}
+/** Bill / α╢½α╢║ α╢£α╖Éα╢╜α╢┤α╖ôα╢╕α╖Üα╢»α╖ô customer ΓÇ£α╢Üα╖Éα╢ºα╢£α╢╗α╖ÆΓÇ¥ (type label) α╢▒α╢╕α╖Ü α╢Üα╖£α╢ºα╖âα╢Üα╖è α╢╜α╖Öα╖â α╢▒α╖£α╖âα╢╜α╢Üα╢║α╖Æ. */
+function stripLoanCategoryNoise(s) {
+    let t = String(s || '').trim();
+    t = t.replace(/\s*[-ΓÇôΓÇö]\s*(INVESTOR|INVESTOR_8|STD|STANDARD|ADV_LN|ADV|LOAN|REGISTERED|LOAN_REGISTERED|OTHERS)[\w\s%]*$/i, '').trim();
+    t = t.replace(/\s*\([^)]*(INVESTOR|investor|8%|registered|loan\s*registered|std|standard)[^)]*\)\s*$/i, '').trim();
+    return t;
+}
+function loanPersonKey(row) {
+    const raw = stripLoanCategoryNoise(stripNameNoise(
+        row.customerName || row.CustomerName || row.supplierName || row.SupplierName
+        || row.borrowerName || row.borrower || row.name || row.Name || ''
+    ));
+    return normalizePersonKey(raw);
+}
+/** Typed α╢▒α╢╕ vs α╢½α╢║ customerName ΓÇö α╢Üα╖Öα╢ºα╖Æ α╢┤α╖àα╢╕α╖ö α╢▒α╢╕ (ΓÇ£MaheshΓÇ¥ vs ΓÇ£Mahesh PereraΓÇ¥), α╢»α╖Æα╢£α╖ö substring, category strip α╢┤α╖âα╖öα╖Ç. */
+function personRowMatchesTargets(key, targets) {
+    if (!key) return false;
+    if (targets.has(key)) return true;
+    const kf0 = (key.split(' ')[0] || '');
+    for (const t of targets) {
+        if (!t || t.length < 2) continue;
+        if (t.length >= 3 && key.length > t.length && (key.startsWith(`${t} `) || key === t)) return true;
+        if (key.length >= 3 && t.length > key.length && (t.startsWith(`${key} `) || t === key)) return true;
+        const tf0 = (t.split(' ')[0] || '');
+        if (tf0.length >= 4 && kf0.length >= 4 && tf0 === kf0) return true;
+        if (tf0.length >= 4 && kf0.length >= 4 && (kf0.startsWith(tf0) || tf0.startsWith(kf0))) return true;
+        if (t.length < 4) continue;
+        if (key.length >= 8 && t.length >= 8 && (key.includes(t) || t.includes(key))) return true;
+    }
+    return false;
+}
+function loanBalance(L) {
+    if (L && L._loanSource === 'loan_advanced_entries') {
+        const p = Number(L.balance != null ? L.balance : L.principalOutstanding) || 0;
+        const intv = Number(L.interestOutstanding) || 0;
+        const s = p + intv;
+        if (Number.isFinite(s)) return Math.max(0, s);
+    }
+    const b = Number(L.balance);
+    if (Number.isFinite(b)) return Math.max(0, b);
+    const p = Number(L.principal);
+    if (Number.isFinite(p)) return Math.max(0, p);
+    const o = Number(L.outstanding);
+    if (Number.isFinite(o)) return Math.max(0, o);
+    return 0;
+}
+/** loan-advanced-investor.html Receive logic ΓÇö interest first, then principal; investor due fields update. */
+function computeAdvancedReceivePatch(r, pay) {
+    let remain = Math.max(0, Number(pay) || 0);
+    let int = Number(r.interestOutstanding) || 0;
+    let p = Number(r.balance != null ? r.balance : r.principalOutstanding) || 0;
+    const intPaid = Math.min(int, remain);
+    int -= intPaid;
+    remain -= intPaid;
+    const principalPaid = Math.min(p, remain);
+    p -= principalPaid;
+    remain -= principalPaid;
+    const totAdv = p + int;
+    const colPr = (Number(r.collectedPrincipal) || 0) + principalPaid;
+    const colIn = (Number(r.collectedInterest) || 0) + intPaid;
+    const duePr = (Number(r.principalDueToInvestor) || 0) + principalPaid;
+    const dueIn = (Number(r.interestDueToInvestor) || 0) + intPaid;
+    const patch = {
+        interestOutstanding: int,
+        principalOutstanding: p,
+        balance: p,
+        collectedPrincipal: colPr,
+        collectedInterest: colIn,
+        principalDueToInvestor: duePr,
+        interestDueToInvestor: dueIn,
+        lastPaymentDate: new Date().toISOString().slice(0, 10),
+        active: totAdv > 0.0001
+    };
+    if (totAdv <= 0.0001 && window.LoanZeroCleanup && typeof window.LoanZeroCleanup.removalTimestamp === 'function') {
+        patch.pendingRemovalAt = window.LoanZeroCleanup.removalTimestamp();
+    } else {
+        patch.pendingRemovalAt = firebase.firestore.FieldValue.delete();
+    }
+    return { intPaid, principalPaid, pay: Number(pay) || 0, patch };
+}
+function loanCreatedMillis(L) {
+    if (!L || typeof L !== 'object') return 0;
+    const c = L.createdAt;
+    if (c && typeof c.toMillis === 'function') return c.toMillis();
+    if (c && typeof c.seconds === 'number') return c.seconds * 1000 + Math.floor((c.nanoseconds || 0) / 1e6);
+    const d = L.date || L.created || '';
+    const p = Date.parse(String(d));
+    return Number.isFinite(p) ? p : 0;
+}
+/** α╢æα╢Üα╢╕ α╖üα╖Üα╖éα╢║α╖Ü ΓÇö α╖Çα╖Æα╖üα╖Åα╢╜ α╢½α╢║ α╢┤α╖àα╢╕α╖öα╖Ç; α╢æα╢Üα╢╕ α╖üα╖Üα╖é α╢▒α╢╕α╖è α╢▒α╖Çα╢¡α╢╕ doc (ΓÇ£α╢ïα╢⌐α╢╕ΓÇ¥) α╢┤α╖àα╢╕α╖öα╖Ç allocate. */
+function compareLoansRepayOrder(a, b) {
+    const bd = loanBalance(b) - loanBalance(a);
+    if (Math.abs(bd) > 0.0001) return bd;
+    return loanCreatedMillis(b) - loanCreatedMillis(a);
+}
+function bucketUiTag(L) {
+    return bucketUiTagFromCode(bucketForLoan(L));
+}
+function bucketUiTagFromCode(b) {
+    if (b === 'ADV_LN') return 'ADV';
+    if (b === 'INVESTOR_8') return 'Inv';
+    if (b === 'HAND') return 'Hand';
+    return 'Std';
+}
+function peoplePickForSupplierInput(supplierName) {
+    const core = stripLoanCategoryNoise(stripNameNoise(String(supplierName || '')));
+    return peopleByName[normalizePersonKey(core)]
+        || peopleByName[core.toLowerCase()]
+        || peopleByName[normalizePersonKey(String(supplierName || ''))]
+        || peopleByName[String(supplierName || '').toLowerCase()];
+}
+function collectUniquePeopleRows() {
+    const list = [];
+    const seen = new Set();
+    for (const row of Object.values(peopleByName)) {
+        if (!row || typeof row !== 'object') continue;
+        const fn = String(row.fullName || '').trim();
+        if (!fn) continue;
+        const k = normalizePersonKey(stripLoanCategoryNoise(stripNameNoise(fn)));
+        if (!k || seen.has(k)) continue;
+        seen.add(k);
+        list.push(row);
+    }
+    return list;
+}
+/** Bill supplier α╢▒α╢╕ ΓÇö α╢Üα╖Éα╢ºα╢£α╢╗α╖Æ α╢▒α╖£α╖Ç, α╢┤α╖öα╢»α╖èα╢£α╢╜ α╢▒α╢╕ α╢┤α╢╕α╢½α╖Æ; customers.fullName α╖Çα╖Æα╖âα╖èα╢¡α╖Åα╢╗α╢║ (α╢Üα╖Öα╢ºα╖Æ α╢▒α╢╕α╖è ΓåÆ α╢┤α╖ûα╢╗α╖èα╢½ α╢▒α╢╕). */
+function supplierNameAliases(rawInput) {
+    const raw = String(rawInput || '').trim();
+    const out = [];
+    const coreRaw = stripLoanCategoryNoise(stripNameNoise(raw));
+    if (raw) out.push(raw);
+    if (coreRaw && normalizePersonKey(coreRaw) !== normalizePersonKey(raw)) out.push(coreRaw);
+    const pick = peoplePickForSupplierInput(raw);
+    if (pick && pick.fullName) {
+        const fn = String(stripLoanCategoryNoise(stripNameNoise(pick.fullName))).trim();
+        if (fn) out.push(fn);
+    }
+    const nk = normalizePersonKey(coreRaw || raw);
+    if (nk.length >= 3) {
+        const seenN = new Set(out.map((x) => normalizePersonKey(String(x))));
+        for (const row of collectUniquePeopleRows()) {
+            const fnm = String(row.fullName || '').trim();
+            const nfn = normalizePersonKey(stripLoanCategoryNoise(stripNameNoise(fnm)));
+            if (!nfn || seenN.has(nfn)) continue;
+            const first = (nfn.split(' ')[0] || '');
+            let hit = false;
+            if (nk.length >= 4 && first && (first === nk || first.startsWith(nk) || nk.startsWith(first))) {
+                if (first.length >= 4 || nk.length >= 4) hit = true;
+            }
+            if (!hit && nk.length >= 4 && nfn.includes(nk)) hit = true;
+            if (hit) {
+                out.push(fnm);
+                seenN.add(nfn);
+            }
+        }
+    }
+    const dedup = [];
+    const seenF = new Set();
+    for (const x of out) {
+        const k = normalizePersonKey(String(x));
+        if (!k || seenF.has(k)) continue;
+        seenF.add(k);
+        dedup.push(String(x).trim());
+    }
+    return dedup;
+}
+/** Hand Loans α╢┤α╖Æα╢ºα╖öα╖Çα╖Ü `hand_loans` (type GIVEN α╢┤α╢╕α╢½α╖Æ ΓÇö α╢àα╢┤α╖Æ α╢»α╖öα╢▒α╖è α╢½α╢║ supplier α╢åα╢┤α╖âα╖ö α╢£α╖Öα╖Çα╢║α╖Æ). */
+async function fetchHandLoansForSupplier(rawInput) {
+    if (!SCRAP_BUSINESS_ID || !window.db) return [];
+    const aliases = supplierNameAliases(rawInput);
+    if (!aliases.length) return [];
+    const targets = new Set(aliases.map(normalizePersonKey).filter(Boolean));
+    const snap = await db.collection('hand_loans')
+        .where('businessId', '==', SCRAP_BUSINESS_ID)
+        .limit(500)
+        .get()
+        .catch(() => ({ docs: [] }));
+    const out = [];
+    snap.docs.forEach((d) => {
+        const row = d.data() || {};
+        if (row.active === false) return;
+        if (String(row.type || '').toUpperCase() !== 'GIVEN') return;
+        const key = loanPersonKey({ customerName: row.customerName });
+        if (!personRowMatchesTargets(key, targets)) return;
+        if ((Number(row.balance) || 0) <= 0.0001) return;
+        out.push({
+            id: d.id,
+            ...row,
+            loanType: 'HAND_LOAN',
+            _loanSource: 'hand_loans',
+            customerName: row.customerName || ''
+        });
+    });
+    return out;
+}
+/** Advanced Loan (Investor Fund) ΓÇö `loan_advanced_entries` (modules/core/loan-advanced-investor.html). */
+async function fetchAdvancedInvestorLoansForSupplier(rawInput) {
+    if (!SCRAP_BUSINESS_ID || !window.db) return [];
+    const aliases = supplierNameAliases(rawInput);
+    if (!aliases.length) return [];
+    const targets = new Set(aliases.map(normalizePersonKey).filter(Boolean));
+    const snap = await db.collection('loan_advanced_entries')
+        .where('businessId', '==', SCRAP_BUSINESS_ID)
+        .limit(500)
+        .get()
+        .catch(() => ({ docs: [] }));
+    const out = [];
+    snap.docs.forEach((d) => {
+        const row = d.data() || {};
+        if (row.active === false) return;
+        const bal = Number(row.balance != null ? row.balance : row.principalOutstanding) || 0;
+        const intv = Number(row.interestOutstanding) || 0;
+        if (bal + intv <= 0.0001) return;
+        const key = loanPersonKey({ customerName: row.customerName || row.memberName });
+        if (!personRowMatchesTargets(key, targets)) return;
+        out.push({
+            id: d.id,
+            ...row,
+            loanType: 'INVESTOR_8',
+            _loanSource: 'loan_advanced_entries',
+            customerName: row.customerName || row.memberName || ''
+        });
+    });
+    return out;
+}
+/** Supplier α╢½α╢║ ΓÇö scrap_loans (store) + hand_loans + loan_advanced_entries (Investor Fund). */
+async function fetchActiveLoansForSupplier(rawInput) {
+    if (!SCRAP_BUSINESS_ID) {
+        console.warn('[Bill] SCRAP_BUSINESS_ID not set yet');
+        return [];
+    }
+    const aliases = supplierNameAliases(rawInput);
+    if (!aliases.length) return [];
+    const targets = new Set(aliases.map(normalizePersonKey).filter(Boolean));
+    let scrapMatched = [];
+    if (window.scrapLoansStore && typeof window.scrapLoansStore.fetchAllActive === 'function') {
+        const all = await window.scrapLoansStore.fetchAllActive(SCRAP_BUSINESS_ID, { force: true });
+        scrapMatched = all.filter((row) => personRowMatchesTargets(loanPersonKey(row), targets));
+    } else {
+        console.warn('[Bill] scrap-loans-store.js not loaded ΓÇö check script path');
+    }
+    const handMatched = await fetchHandLoansForSupplier(rawInput);
+    const advMatched = await fetchAdvancedInvestorLoansForSupplier(rawInput);
+    const merged = [...scrapMatched, ...handMatched, ...advMatched];
+    merged.sort(compareLoansRepayOrder);
+    return merged;
+}
+async function loadSupplierLoansIntoState(rawInput) {
+    const raw = String(rawInput || '').trim();
+    if (!raw) {
+        state.loans = [];
+        return [];
+    }
+    state.loans = await fetchActiveLoansForSupplier(raw);
+    return state.loans;
+}
+function loansInBucket(bucket) {
+    return state.loans.filter((L) => bucketForLoan(L) === bucket);
+}
+function poolSumForBucket(bucket) {
+    return loansInBucket(bucket).reduce((s, L) => s + loanBalance(L), 0);
+}
+function getBucketApply(bucket) {
+    const el = document.getElementById(`apply_${bucket}`);
+    return Math.max(0, Number(el?.value || 0));
+}
+function allLoanApplies() {
+    return {
+        HAND: getBucketApply('HAND'),
+        ADV_LN: getBucketApply('ADV_LN'),
+        STANDARD: getBucketApply('STANDARD'),
+        INVESTOR_8: getBucketApply('INVESTOR_8')
+    };
+}
+function totalLoanApply() {
+    const a = allLoanApplies();
+    return a.HAND + a.ADV_LN + a.STANDARD + a.INVESTOR_8;
+}
+function escHtml(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+/** Split repayment across loans (largest balance first). Returns rows {id, amount, loanType}. */
+function allocateAcrossLoans(amount, loanRows) {
+    const out = [];
+    let left = Math.max(0, Number(amount) || 0);
+    if (left <= 0) return out;
+    const sorted = [...loanRows].filter((L) => loanBalance(L) > 0.0001)
+        .sort(compareLoansRepayOrder);
+    for (const L of sorted) {
+        if (left <= 0) break;
+        const b = loanBalance(L);
+        const take = Math.min(b, left);
+        if (take > 0.0001) {
+            out.push({
+                id: L.id,
+                amount: take,
+                loanType: L.loanType,
+                customerName: L.customerName,
+                sourceCollection: L._loanSource || 'scrap_loans'
+            });
+            left -= take;
+        }
+    }
+    return out;
+}
+function suggestAdvanceFromBanner() {
+    const advBalText = String(document.getElementById('supplierAdvance')?.textContent || '').replace(/[^0-9.]/g, '');
+    const advBal = Number(advBalText || 0);
+    const total = billGrandTotal();
+    const applyEl = document.getElementById('advanceApplyAmount');
+    if (!applyEl || applyEl.dataset.userEdited === '1') return;
+    const suggested = Math.min(advBal, Math.max(0, total));
+    applyEl.value = suggested > 0 ? suggested.toFixed(2) : '';
+}
+function renderBillLivePreviewHtml() {
+    const itemsSub = billItemsSubtotal();
+    const misc = miscChargesVal();
+    const grand = itemsSub + misc;
+    const advBalText = String(document.getElementById('supplierAdvance')?.textContent || '').replace(/[^0-9.]/g, '');
+    const advBal = Number(advBalText || 0);
+    const requested = Number(document.getElementById('advanceApplyAmount')?.value || 0);
+    const applied = Math.min(Math.max(0, requested), Math.max(0, advBal), Math.max(0, grand));
+    const la = allLoanApplies();
+    const loanSum = totalLoanApply();
+    const cashDue = Math.max(0, grand - applied - loanSum);
+    const lines = [];
+    state.items.forEach((item) => {
+        const w = Number(state.weights[item.id]) || 0;
+        if (!w) return;
+        const unit = buyingPrice(item);
+        const amt = w * unit;
+        lines.push(`<tr><td>${escHtml(item.itemName || '-')}</td><td class="r">${w.toFixed(2)}</td><td class="r">${unit.toFixed(2)}</td><td class="r">${amt.toFixed(2)}</td></tr>`);
+    });
+    if (misc > 0.0001) {
+        lines.push(`<tr><td colspan="3">${escHtml('α╖Çα╖Öα╢▒α╢¡α╖è α╢àα╢║α╢Üα╖Æα╢╗α╖ôα╢╕α╖è')}</td><td class="r">${misc.toFixed(2)}</td></tr>`);
+    }
+    const bodyRows = lines.length ? lines.join('') : '<tr><td colspan="4" class="small">α╢╖α╖Åα╢½α╖èα╢⌐ α╢┤α╖Üα╖àα╖Æ α╢▒α╖Éα╢¡ (weights α╖äα╖Æα╖âα╖è). α╖Çα╖Öα╢▒α╢¡α╖è α╢àα╢║α╢Üα╖Æα╢╗α╖ôα╢╕α╖è α╢┤α╢╕α╢½α╢Üα╖è α╢▒α╢╕α╖è print α╢æα╢Üα╢º α╢æα╢Üα╢¡α╖ö α╖Çα╖Ü.</td></tr>';
+    const dedRows = [
+        ['Hand loan', la.HAND],
+        ['No-interest (ADV-LN)', la.ADV_LN],
+        ['Interest (Standard)', la.STANDARD],
+        ['Investor (8%)', la.INVESTOR_8]
+    ].map(([n, v]) => (v > 0.0001 ? `<tr><td>${escHtml(n)}</td><td class="r">${fmt(v)}</td></tr>` : '')).join('');
+    return `<div><strong>Items subtotal:</strong> ${fmt(itemsSub)} &nbsp;|&nbsp; <strong>Grand:</strong> ${fmt(grand)}</div>
+    <table><thead><tr><th>Item</th><th class="r">Weight</th><th class="r">Rate</th><th class="r">Amount</th></tr></thead><tbody>${bodyRows}</tbody></table>
+    <table style="margin-top:8px;"><thead><tr><th>Deduction</th><th class="r">Amount</th></tr></thead><tbody>
+    <tr><td>Advance applied</td><td class="r">${fmt(applied)}</td></tr>
+    ${dedRows || '<tr><td colspan="2" class="small">α╢½α╢║ α╢Üα╖Éα╢┤α╖ôα╢╕α╖è 0</td></tr>'}
+    <tr><td><strong>Cash due</strong></td><td class="r"><strong>${fmt(cashDue)}</strong></td></tr>
+    </tbody></table>`;
+}
+function updateBillPreview() {
+    const itemsSub = billItemsSubtotal();
+    const misc = miscChargesVal();
+    const grand = itemsSub + misc;
+    const advBalText = String(document.getElementById('supplierAdvance')?.textContent || '').replace(/[^0-9.]/g, '');
+    const advBal = Number(advBalText || 0);
+    const requested = Number(document.getElementById('advanceApplyAmount')?.value || 0);
+    const applied = Math.min(Math.max(0, requested), Math.max(0, advBal), Math.max(0, grand));
+    const loanSum = totalLoanApply();
+    const cashDue = Math.max(0, grand - applied - loanSum);
+    const bi = document.getElementById('billItemsPreview');
+    const bm = document.getElementById('billMiscPreview');
+    const bt = document.getElementById('billTotalPreview');
+    const au = document.getElementById('advanceUsedPreview');
+    const cd = document.getElementById('cashDuePreview');
+    const lu = document.getElementById('loanUsedPreview');
+    const live = document.getElementById('billLivePreview');
+    const grEl = document.getElementById('billGrandRight');
+    if (bi) bi.textContent = fmt(itemsSub);
+    if (bm) bm.textContent = fmt(misc);
+    if (bt) bt.textContent = fmt(grand);
+    if (grEl) grEl.textContent = fmt(grand);
+    if (au) au.textContent = fmt(applied);
+    if (lu) lu.textContent = fmt(loanSum);
+    if (cd) cd.textContent = fmt(cashDue);
+    if (live) live.innerHTML = renderBillLivePreviewHtml();
+}
+
+function buyingPrice(item) {
+    const cp = Number(item.costPrice);
+    if (Number.isFinite(cp) && cp > 0) return cp;
+    return 0;
+}
+
+function computeDerived(stock, sellingPrice, profit, costPrice) {
+    const s = Number(stock) || 0;
+    const sp = Number(sellingPrice) || 0;
+    const pf = Number(profit) || 0;
+    const cpInput = Number(costPrice);
+    const cp = Number.isFinite(cpInput) && cpInput > 0 ? cpInput : 0;
+    return {
+        costPrice: cp,
+        totalBuyingValue: s * cp,
+        totalSellingValue: s * sp,
+        potentialProfitValue: s * pf
+    };
+}
+
+function renderSheet() {
+    const wrap = document.getElementById('sheetWrap');
+    if (!wrap) return;
+
+    const mid = Math.ceil(state.items.length / 2);
+    const leftRows = state.items.slice(0, mid);
+    const rightRows = state.items.slice(mid);
+
+    const renderTable = (rows, startIdx) => `
+        <table class="buy-table">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th class="num">Weight</th>
+                    <th class="num">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows.map((item, offset) => {
+                    const idx = startIdx + offset;
+                    const price = buyingPrice(item);
+                    const weight = Number(state.weights[item.id]) || 0;
+                    const sub = weight * price;
+                    return `<tr data-id="${item.id}">
+                        <td>${item.itemName || '-'}</td>
+                        <td class="num"><input data-input="weight" data-idx="${idx}" data-id="${item.id}" type="number" step="0.01" value="${weight || ''}"></td>
+                        <td class="num" data-subtotal="${item.id}">${fmt(sub)}</td>
+                    </tr>`;
+                }).join('') || '<tr><td colspan="3">No items in scrap_items.</td></tr>'}
+            </tbody>
+        </table>`;
+
+    wrap.innerHTML = `
+        <div>${renderTable(leftRows, 0)}</div>
+        <div>${renderTable(rightRows, leftRows.length)}</div>
+    `;
+
+    const allInputs = Array.from(wrap.querySelectorAll('input[data-input="weight"]'));
+    allInputs.forEach((input) => {
+        input.addEventListener('input', () => {
+            const id = input.dataset.id;
+            state.weights[id] = Number(input.value) || 0;
+            const item = state.items.find((r) => r.id === id);
+            const sub = (Number(state.weights[id]) || 0) * buyingPrice(item || {});
+            const subEl = wrap.querySelector(`[data-subtotal="${id}"]`);
+            if (subEl) subEl.textContent = fmt(sub);
+            updateTotals();
+        });
+        input.addEventListener('keydown', (ev) => {
+            if (ev.key !== 'Enter') return;
+            ev.preventDefault();
+            const idx = Number(input.dataset.idx);
+            const next = allInputs.find((el) => Number(el.dataset.idx) === idx + 1);
+            if (next) next.focus();
+        });
+    });
+
+    updateTotals();
+}
+
+function updateTotals() {
+    let total = 0;
+    let totalW = 0;
+    state.items.forEach((item) => {
+        const w = Number(state.weights[item.id]) || 0;
+        totalW += w;
+        total += w * buyingPrice(item);
+    });
+    document.getElementById('sessionTotal').textContent = fmt(total);
+    document.getElementById('sessionWeight').textContent = totalW.toFixed(2);
+    updateBillPreview();
+    suggestAdvanceFromBanner();
+}
+
+async function loadItems() {
+    const snap = await db.collection('scrap_items')
+        .where('businessId', '==', SCRAP_BUSINESS_ID)
+        .get();
+    state.items = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => String(a.itemName || '').localeCompare(String(b.itemName || '')));
+    renderSheet();
+}
+
+async function loadPeople() {
+    try {
+        const snap = await db.collection('customers').where('businessId', '==', SCRAP_BUSINESS_ID).limit(700).get();
+        const list = document.getElementById('supplierList');
+        if (list) {
+            list.innerHTML = snap.docs.map((d) => {
+                const row = d.data() || {};
+                const name = String(row.fullName || '').trim();
+                if (!name) return '';
+                peopleByName[name.toLowerCase()] = row;
+                peopleByName[normalizePersonKey(name)] = row;
+                return `<option value="${name.replace(/\"/g,'&quot;')}"></option>`;
+            }).join('');
+        }
+    } catch (e) {
+        console.warn('buying people load', e);
+    }
+}
+
+async function saveBuyingSession() {
+    const supplierName = String(document.getElementById('supplierName').value || '').trim();
+    if (!supplierName) {
+        alert('Supplier name is required.');
+        return;
+    }
+    syncWeightsFromDom();
+    await loadSupplierLoansIntoState(supplierName);
+    const pick = peoplePickForSupplierInput(supplierName);
+    if (pick && pick.mobile) {
+        selectedSupplierPhone = String(pick.mobile);
+    }
+    const customerType = document.getElementById('customerType').value;
+    const billDateTime = String(document.getElementById('billDateTime').value || '').trim();
+    const items = state.items
+        .map((item) => {
+            const weight = Number(state.weights[item.id]) || 0;
+            if (!weight) return null;
+            const price = buyingPrice(item);
+            return {
+                itemId: item.id,
+                itemName: item.itemName || '',
+                weight,
+                buyingPrice: price,
+                subtotal: weight * price
+            };
+        })
+        .filter(Boolean);
+
+    const miscCharges = miscChargesVal();
+    if (!items.length && miscCharges <= 0.0001) {
+        alert('Enter at least one item weight, or a positive α╖Çα╖Öα╢▒α╢¡α╖è α╢àα╢║α╢Üα╖Æα╢╗α╖ôα╢╕α╖è amount.');
+        return;
+    }
+
+    const totalWeight = items.reduce((s, r) => s + (Number(r.weight) || 0), 0);
+    const itemsTotal = items.reduce((s, r) => s + (Number(r.subtotal) || 0), 0);
+    const billGrand = itemsTotal + miscCharges;
+    const advRef = db.collection('scrap_advances').doc(advanceDocId(supplierName));
+    const advSnap = await advRef.get();
+    const advanceBalance = advSnap.exists ? (Number(advSnap.data().balance) || 0) : 0;
+    const requestedAdvance = Number(document.getElementById('advanceApplyAmount')?.value || 0);
+    if (requestedAdvance < 0) {
+        alert('Advance apply amount cannot be negative.');
+        return;
+    }
+    if (requestedAdvance > advanceBalance) {
+        alert(`Advance apply amount exceeds available balance (${fmt(advanceBalance)}).`);
+        return;
+    }
+    const advanceApplied = Math.min(billGrand, Math.max(0, requestedAdvance));
+    const applies = allLoanApplies();
+    const buckets = ['HAND', 'ADV_LN', 'STANDARD', 'INVESTOR_8'];
+    for (const b of buckets) {
+        const pool = poolSumForBucket(b);
+        const req = applies[b];
+        if (req > pool + 0.02) {
+            alert(`${b} α╢½α╢║ α╢Üα╖Éα╢┤α╖ôα╢╕ (${fmt(req)}) α╢æα╢Üα╢¡α╖ö α╖üα╖Üα╖éα╢║ (${fmt(pool)}) α╢ëα╢Üα╖èα╢╕α╖Çα╢║α╖Æ.`);
+            return;
+        }
+    }
+    const allocHand = allocateAcrossLoans(applies.HAND, loansInBucket('HAND'));
+    const allocAdv = allocateAcrossLoans(applies.ADV_LN, loansInBucket('ADV_LN'));
+    const allocStd = allocateAcrossLoans(applies.STANDARD, loansInBucket('STANDARD'));
+    const allocInv = allocateAcrossLoans(applies.INVESTOR_8, loansInBucket('INVESTOR_8'));
+    const loanAllocations = [...allocHand, ...allocAdv, ...allocStd, ...allocInv];
+    const sumAlloc = (arr, tgt) => {
+        const s = arr.reduce((a, x) => a + x.amount, 0);
+        if (tgt > 0.02 && Math.abs(s - tgt) > 0.05) return false;
+        return true;
+    };
+    if (!sumAlloc(allocHand, applies.HAND) || !sumAlloc(allocAdv, applies.ADV_LN)
+        || !sumAlloc(allocStd, applies.STANDARD) || !sumAlloc(allocInv, applies.INVESTOR_8)) {
+        alert('α╢½α╢║ α╢Üα╖Éα╢┤α╖ôα╢╕ allocate α╢Üα╢╗α╢▒α╖èα╢▒ α╢╢α╖Éα╢╗α╖Æ α╖Çα╖Æα╢║ (α╢»α╢¡α╖èα╢¡ α╢┤α╢╗α╖ôα╢Üα╖èα╖éα╖Å α╢Üα╢╗α╢▒α╖èα╢▒).');
+        return;
+    }
+    const loanPayTotal = applies.HAND + applies.ADV_LN + applies.STANDARD + applies.INVESTOR_8;
+    const loanDeduction = applies.HAND + applies.STANDARD + applies.INVESTOR_8;
+    const advanceLoanDeduction = applies.ADV_LN;
+    if (advanceApplied + loanPayTotal > billGrand + 0.02) {
+        alert('Advance + α╢½α╢║ α╢Üα╖Éα╢┤α╖ôα╢╕α╖è α╢æα╢Üα╢¡α╖öα╖Ç α╢╢α╖Æα╢╜α╖è α╢╕α╖öα╖àα╖öα╖Çα╢º α╖Çα╢⌐α╖Å α╖Çα╖Éα╢⌐α╖Æα╢║α╖Æ.');
+        return;
+    }
+    const cashPaid = Math.max(0, billGrand - advanceApplied - loanPayTotal);
+    const customerRow = pick || null;
+    const smsSettingsSnap = await db.collection('scrap_sms_settings').doc(SCRAP_BUSINESS_ID).get();
+    const smsSettings = smsSettingsSnap.exists ? smsSettingsSnap.data() : {};
+    for (const line of items) {
+        const itemRef = db.collection('scrap_items').doc(line.itemId);
+        const itemSnap = await itemRef.get();
+        if (!itemSnap.exists) continue;
+        const row = itemSnap.data();
+        const currentStock = Number(row.currentStock) || 0;
+        const nextStock = currentStock + (Number(line.weight) || 0);
+        const derived = computeDerived(nextStock, row.sellingPrice, row.profit, row.costPrice);
+        await itemRef.update({
+            currentStock: nextStock,
+            costPrice: derived.costPrice,
+            totalBuyingValue: derived.totalBuyingValue,
+            totalSellingValue: derived.totalSellingValue,
+            potentialProfitValue: derived.potentialProfitValue,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    }
+    await db.collection('buying_history').add({
+        businessId: SCRAP_BUSINESS_ID,
+        customerType,
+        supplierName,
+        supplierPhone: selectedSupplierPhone || customerRow?.mobile || customerRow?.phone || '',
+        date: new Date().toISOString(),
+        billDateTime: billDateTime || new Date().toISOString(),
+        items,
+        totalWeight,
+        totalAmount: itemsTotal,
+        miscCharges,
+        billGrandTotal: billGrand,
+        advanceApplied,
+        loanDeduction,
+        advanceLoanDeduction,
+        loanApplyBreakdown: applies,
+        cashPaid,
+        loanAllocations,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (advanceApplied > 0) {
+        await db.collection('scrap_advance_history').add({
+            businessId: SCRAP_BUSINESS_ID,
+            supplierName,
+            amount: -Math.abs(advanceApplied),
+            note: 'Applied in bill',
+            date: new Date().toISOString(),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            type: 'APPLIED_IN_BILL'
+        });
+    }
+    let scrapLoanCredit = 0;
+    let handLoanCredit = 0;
+    let advLoanPrincipalCredit = 0;
+    let advLoanInterestCredit = 0;
+    for (const row of loanAllocations) {
+        const amt = Number(row.amount) || 0;
+        if (amt <= 0.0001) continue;
+        const src = row.sourceCollection || 'scrap_loans';
+        if (src === 'hand_loans') {
+            const ref = db.collection('hand_loans').doc(row.id);
+            const s = await ref.get();
+            if (!s.exists) continue;
+            const r = s.data() || {};
+            const b = Number(r.balance) || 0;
+            const next = Math.max(0, b - amt);
+            await ref.update({
+                balance: next,
+                active: next > 0.0001,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            handLoanCredit += amt;
+            continue;
+        }
+        if (src === 'loan_advanced_entries') {
+            const ref = db.collection('loan_advanced_entries').doc(row.id);
+            const s = await ref.get();
+            if (!s.exists) continue;
+            const r = s.data() || {};
+            const comp = computeAdvancedReceivePatch(r, amt);
+            await ref.set({
+                ...comp.patch,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            advLoanPrincipalCredit += comp.principalPaid;
+            advLoanInterestCredit += comp.intPaid;
+            continue;
+        }
+        const ref = db.collection('scrap_loans').doc(row.id);
+        const s = await ref.get();
+        if (!s.exists) continue;
+        const b = Number(s.data().balance) || 0;
+        await ref.update({
+            balance: Math.max(0, b - amt),
+            lastSupplyAt: new Date().toISOString(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        scrapLoanCredit += amt;
+    }
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+        const inventoryDebit = itemsTotal + miscCharges;
+        const lines = [{ accountCode: '1-1030-01', accountName: 'Scrap Inventory', debit: inventoryDebit, credit: 0 }];
+        const payMethod = String(document.getElementById('paymentMethod')?.value || 'CASH').toUpperCase();
+        if (cashPaid > 0) {
+            if (payMethod === 'BANK') lines.push({ accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: 0, credit: cashPaid });
+            else lines.push({ accountCode: '1-1010-01', accountName: 'Cash - Main', debit: 0, credit: cashPaid });
+        }
+        if (advanceApplied > 0) lines.push({ accountCode: '1-1060-01', accountName: 'Supplier Advances (Scrap)', debit: 0, credit: advanceApplied });
+        if (scrapLoanCredit > 0.01) lines.push({ accountCode: '1-1050-01', accountName: 'Loans Given', debit: 0, credit: scrapLoanCredit });
+        if (handLoanCredit > 0.01) {
+            lines.push({ accountCode: '1-1030-10', accountName: 'A/R ΓÇö Hand loans (given)', debit: 0, credit: handLoanCredit });
+        }
+        if (advLoanPrincipalCredit > 0.01) {
+            lines.push({ accountCode: '1-1030-13', accountName: 'A/R ΓÇö Advanced (investor) loans', debit: 0, credit: advLoanPrincipalCredit });
+        }
+        if (advLoanInterestCredit > 0.01) {
+            lines.push({ accountCode: '2-2060-10', accountName: 'Investor funds payable ΓÇö Advanced loans', debit: 0, credit: advLoanInterestCredit });
+        }
+        await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+            description: `Scrap buying - ${supplierName}`,
+            reference: supplierName,
+            referenceType: 'SCRAP_BUYING',
+            date: new Date().toISOString(),
+            entries: lines
+        });
+    }
+    if (advanceApplied > 0) {
+        await advRef.set({
+            businessId: SCRAP_BUSINESS_ID,
+            supplierName,
+            balance: advanceBalance - advanceApplied,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+    }
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.logEvent === 'function') {
+        await window.scrapVbaCore.logEvent(SCRAP_BUSINESS_ID, 'BUYING_SESSION', `${supplierName} total ${billGrand}`, 'Admin');
+        await window.scrapVbaCore.upsertCustomerLedger(SCRAP_BUSINESS_ID, supplierName);
+        if (typeof window.scrapVbaCore.syncInventoryAssetWithStock === 'function') {
+            await window.scrapVbaCore.syncInventoryAssetWithStock(SCRAP_BUSINESS_ID);
+        }
+    }
+    const loansForTouch = await fetchActiveLoansForSupplier(supplierName);
+    for (const L of loansForTouch) {
+        if (L._loanSource === 'hand_loans') {
+            await db.collection('hand_loans').doc(L.id).update({
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } else if (L._loanSource === 'loan_advanced_entries') {
+            await db.collection('loan_advanced_entries').doc(L.id).set({
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+        } else {
+            await db.collection('scrap_loans').doc(L.id).update({
+                lastSupplyAt: new Date().toISOString(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+    }
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.enqueuePendingSms === 'function') {
+        const enabled = window.scrapVbaCore.isScrapSmsEventEnabled
+            ? await window.scrapVbaCore.isScrapSmsEventEnabled(SCRAP_BUSINESS_ID, 'buying')
+            : false;
+        const phone = selectedSupplierPhone || customerRow?.mobile || customerRow?.phone || '';
+        if (enabled && phone) {
+            const message = String(smsSettings.tplBuying || `Dear {{name}},\nBuying recorded.\nTotal Weight: {{weight}} kg\nTotal Amount: {{amount}}\nThank you.`)
+                .replace(/\{\{name\}\}/g, supplierName)
+                .replace(/\{\{weight\}\}/g, totalWeight.toFixed(2))
+                .replace(/\{\{amount\}\}/g, fmt(billGrand));
+            let smsBody = advanceApplied > 0
+                ? `${message}\nAdvance used: ${fmt(advanceApplied)}\nRemaining advance: ${fmt(Math.max(0, advanceBalance - advanceApplied))}`
+                : message;
+            if (loanPayTotal > 0.01) {
+                smsBody += `\nα╢½α╢║ α╢╢α╖Æα╢╜α╖Öα╢▒α╖è α╢Üα╖Éα╢┤α╖ôα╢╕: ${fmt(loanPayTotal)}`;
+            }
+            let smsRes;
+            if (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function') {
+                smsRes = await window.scrapVbaCore.enqueuePendingSmsForScrap(phone, smsBody);
+            } else {
+                smsRes = await window.scrapVbaCore.enqueuePendingSms(SCRAP_BUSINESS_ID, phone, smsBody);
+            }
+            showSmsDebug(smsRes);
+        } else {
+            showSmsDebug(null, enabled ? 'no_phone' : 'event_disabled');
+        }
+    }
+    state.weights = {};
+    renderSheet();
+    ['apply_HAND', 'apply_ADV_LN', 'apply_STANDARD', 'apply_INVESTOR_8'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = '0';
+    });
+    const miscEl = document.getElementById('miscChargesAmount');
+    if (miscEl) miscEl.value = '0';
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.checkClosedLoans === 'function') {
+        await window.scrapVbaCore.checkClosedLoans(SCRAP_BUSINESS_ID);
+    }
+    if (window.scrapLoansStore && typeof window.scrapLoansStore.invalidate === 'function') {
+        window.scrapLoansStore.invalidate();
+    }
+    await refreshSupplierBalances();
+    updateBillPreview();
+    await loadBuyingHistory();
+    alert('Buying session saved.');
+}
+
+function setAdvanceBalanceText(bal) {
+    const t = fmt(bal);
+    const a = document.getElementById('supplierAdvance');
+    if (a) a.textContent = t;
+    const inline = document.getElementById('supplierAdvanceInline');
+    if (inline) inline.textContent = t;
+}
+async function refreshSupplierBalances() {
+    const supplierName = String(document.getElementById('supplierName').value || '').trim();
+    state.loans = [];
+    if (!supplierName) {
+        setAdvanceBalanceText(0);
+        ['HAND', 'ADV_LN', 'STANDARD', 'INVESTOR_8'].forEach((b) => {
+            const el = document.getElementById(`bal_${b}`);
+            if (el) el.textContent = fmt(0);
+        });
+        const lr = document.getElementById('loanPerRow');
+        if (lr) lr.innerHTML = '';
+        const applyEl = document.getElementById('advanceApplyAmount');
+        if (applyEl) applyEl.value = '';
+        updateBillPreview();
+        return;
+    }
+    const pick = peoplePickForSupplierInput(supplierName);
+    selectedSupplierPhone = pick && pick.mobile ? String(pick.mobile) : '';
+    const advSnap = await db.collection('scrap_advances').doc(advanceDocId(supplierName)).get().catch(() => null);
+    const bal = advSnap && advSnap.exists ? (Number(advSnap.data().balance) || 0) : 0;
+    setAdvanceBalanceText(bal);
+    await loadSupplierLoansIntoState(supplierName);
+    ['HAND', 'ADV_LN', 'STANDARD', 'INVESTOR_8'].forEach((b) => {
+        const el = document.getElementById(`bal_${b}`);
+        if (el) el.textContent = fmt(poolSumForBucket(b));
+    });
+    const hint = document.getElementById('loanMatchHint');
+    if (hint) {
+        const nm = escHtml(supplierName);
+        if (!state.loans.length) {
+            hint.innerHTML = `α╢╕α╖Öα╢╕ α╢▒α╢╕α╢º (<b>${nm}</b>) α╢£α╖Éα╢╜α╢┤α╖öα╢½α╖ö α╢½α╢║ <b>0</b>. <strong>Scrap Debts</strong>, <strong>Hand Loans</strong> (Loan Given), α╖äα╖¥ <strong>Advanced Loan (Investor Fund)</strong> α╢┤α╖Æα╢ºα╖öα╖Çα╖Ü member α╢▒α╢╕ α╢╕α╖Öα╖äα╖Æ supplier α╢▒α╢╕α╢º α╖âα╢╕α╖Åα╢▒α╢»α╖Éα╢║α╖Æ α╢╢α╢╜α╢▒α╖èα╢▒. Supplier <strong>advance</strong> α╢½α╢║ bucket α╢▒α╖£α╖Çα╖Ü.`;
+        } else {
+            const parts = ['HAND', 'ADV_LN', 'STANDARD', 'INVESTOR_8'].map((b) => `${bucketUiTagFromCode(b)}:${fmt(poolSumForBucket(b))}`);
+            hint.innerHTML = `α╢£α╖Éα╢╜α╢┤α╖öα╢½α╖ö α╢½α╢║ <b>${state.loans.length}</b> ΓÇö bucket α╖üα╖Üα╖é: ${parts.join(' ┬╖ ')}`;
+        }
+    }
+    const lr = document.getElementById('loanPerRow');
+    if (lr) {
+        lr.innerHTML = state.loans.length
+            ? state.loans.map((L) => {
+                const rawT = L._loanSource === 'loan_advanced_entries'
+                    ? 'Investor (Adv. fund sheet)'
+                    : (readLoanTypeFromRow(L) || rawLoanTypeString(L) || '-');
+                const tag = bucketUiTag(L);
+                return `<div>ΓÇó <b>[${tag}]</b> ${escHtml(rawT)} ΓÇö ${fmt(loanBalance(L))} <span class="small">(${String(L.id).slice(-8)})</span></div>`;
+            }).join('')
+            : '';
+    }
+    suggestAdvanceFromBanner();
+    updateBillPreview();
+}
+
+async function loadBuyingHistory() {
+    const body = document.getElementById('buyHistBody');
+    if (!body) return;
+    const snap = await db.collection('buying_history').where('businessId', '==', SCRAP_BUSINESS_ID).limit(120).get().catch(() => ({ docs: [] }));
+    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    body.innerHTML = rows.slice(0, 50).map((r) => {
+        const dt = r.date ? new Date(r.date).toLocaleString() : '-';
+        const br = r.loanApplyBreakdown || {};
+        const hasBr = br && typeof br === 'object' && ('HAND' in br || 'ADV_LN' in br);
+        const la = hasBr
+            ? (Number(br.HAND) || 0) + (Number(br.ADV_LN) || 0) + (Number(br.STANDARD) || 0) + (Number(br.INVESTOR_8) || 0)
+            : (Number(r.loanDeduction) || 0) + (Number(r.advanceLoanDeduction) || 0);
+        const dispAmt = Number(r.billGrandTotal) || (Number(r.totalAmount) || 0) + (Number(r.miscCharges) || 0);
+        return `<tr><td>${dt}</td><td>${String(r.supplierName || '-')}</td><td>${String(r.customerType || '-')}</td><td class="num">${(Number(r.totalWeight) || 0).toFixed(2)}</td><td class="num">${fmt(dispAmt)}</td><td class="num">${fmt(r.advanceApplied)}</td><td class="num">${fmt(r.cashPaid)}</td><td class="num small">${la > 0 ? fmt(la) : 'ΓÇö'}</td><td>ΓÇö</td></tr>`;
+    }).join('') || '<tr><td colspan="9">No history</td></tr>';
+}
+function getCurrentBillLines() {
+    syncWeightsFromDom();
+    const out = state.items.map((item) => {
+        const weight = Number(state.weights[item.id]) || 0;
+        if (!weight) return null;
+        const unit = buyingPrice(item);
+        return { name: item.itemName || '-', weight, unit, amount: weight * unit };
+    }).filter(Boolean);
+    const misc = miscChargesVal();
+    if (misc > 0.0001) {
+        out.push({ name: 'α╖Çα╖Öα╢▒α╢¡α╖è α╢àα╢║α╢Üα╖Æα╢╗α╖ôα╢╕α╖è', weight: null, unit: null, amount: misc, isMisc: true });
+    }
+    return out;
+}
+async function printA5Bill() {
+    let billTitle = 'DIGIBIZ Scrap';
+    let billSub = '';
+    try {
+        const s = await db.collection('scrap_sms_settings').doc(SCRAP_BUSINESS_ID).get();
+        if (s.exists) {
+            const d = s.data() || {};
+            billTitle = String(d.billPrintTitle || d.businessDisplayName || billTitle).trim() || billTitle;
+            billSub = String(d.billPrintSubtitle || d.billPrintPhone || '').trim();
+        }
+    } catch (_) {}
+    const supplier = String(document.getElementById('supplierName').value || '').trim().replace(/</g, '&lt;') || 'TEMPORARY WALK-IN';
+    const lines = getCurrentBillLines();
+    if (!lines.length) { alert('No bill lines to print.'); return; }
+    const itemsSub = lines.filter((x) => !x.isMisc).reduce((s, x) => s + x.amount, 0);
+    const miscPart = lines.filter((x) => x.isMisc).reduce((s, x) => s + x.amount, 0);
+    const total = itemsSub + miscPart;
+    const advBalText = String(document.getElementById('supplierAdvance')?.textContent || '').replace(/[^0-9.]/g,'');
+    const advBal = Number(advBalText || 0);
+    const requested = Number(document.getElementById('advanceApplyAmount')?.value || 0);
+    const applied = Math.min(Math.max(0, requested), Math.max(0, advBal), Math.max(0, total));
+    const la = allLoanApplies();
+    const loanDeductHand = la.HAND;
+    const advLoanDeduct = la.ADV_LN;
+    const loanDeductStd = la.STANDARD;
+    const loanDeductInv = la.INVESTOR_8;
+    const loanSum = totalLoanApply();
+    const cashDue = Math.max(0, total - applied - loanSum);
+    const billDtRaw = String(document.getElementById('billDateTime')?.value || '').trim();
+    const billDt = billDtRaw ? new Date(billDtRaw).toLocaleString() : new Date().toLocaleString();
+    const payMethod = String(document.getElementById('paymentMethod')?.value || 'CASH').toUpperCase();
+
+    const win = window.open('', '_blank');
+    if (!win) { alert('Popup blocked.'); return; }
+    win.document.write(`<!DOCTYPE html><html><head><title>A5 Bill</title>
+    <style>
+      @page { size: A5 portrait; margin: 8mm; }
+      body{font-family:Inter,Arial,sans-serif;color:#0f172a;}
+      h2{margin:0 0 6px;} .meta{font-size:12px;margin:2px 0;}
+      table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;}
+      th,td{border:1px solid #0f172a;padding:5px;}
+      .r{text-align:right;} .tot{margin-top:6px;font-size:12px;}
+      .copy{border:1px solid #0f172a;padding:6px;margin-bottom:8px;}
+      .headBar{display:flex;justify-content:space-between;align-items:center;}
+      .logo{font-weight:900;font-size:20px;letter-spacing:.8px;}
+      .signRow{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+      .sign{padding-top:18px;border-top:1px solid #111827;font-size:11px;text-align:center;}
+    </style></head><body id="a5PrintSheet">
+      ${['ORIGINAL COPY','OFFICE COPY'].map((copy)=>`
+      <div class="copy">
+        <div class="headBar">
+          <div class="logo">${billTitle.replace(/</g,'&lt;')}</div>
+          <div style="font-size:11px;font-weight:700;">${copy}</div>
+        </div>
+        ${billSub ? `<div class="meta">${billSub.replace(/</g,'&lt;')}</div>` : ''}
+        <div class="meta">Supplier: ${supplier.replace(/</g,'&lt;')}</div>
+        <div class="meta">Bill Date/Time: ${billDt}</div>
+        <div class="meta">Payment: ${payMethod}</div>
+        <table><thead><tr><th>Item</th><th class="r">Weight</th><th class="r">Rate</th><th class="r">Amount</th></tr></thead>
+        <tbody>${lines.map((l)=>`<tr><td>${String(l.name).replace(/</g,'&lt;')}</td><td class="r">${l.isMisc ? 'ΓÇö' : l.weight.toFixed(2)}</td><td class="r">${l.isMisc ? 'ΓÇö' : l.unit.toFixed(2)}</td><td class="r">${l.amount.toFixed(2)}</td></tr>`).join('')}</tbody></table>
+        <div class="tot">α╢╖α╖Åα╢½α╖èα╢⌐ α╢╕α╖öα╖àα╖öα╖Ç: <b>${fmt(itemsSub)}</b></div>
+        ${miscPart > 0.0001 ? `<div class="tot">α╖Çα╖Öα╢▒α╢¡α╖è α╢àα╢║α╢Üα╖Æα╢╗α╖ôα╢╕α╖è: <b>${fmt(miscPart)}</b></div>` : ''}
+        <div class="tot">Bill α╢£α╖Öα╖Çα╖Æα╢║ α╢║α╖öα╢¡α╖ö α╢╕α╖öα╖àα╖öα╖Ç: <b>${fmt(total)}</b></div>
+        <div class="tot">Advance Deduction: <b>${fmt(applied)}</b></div>
+        <div class="tot">Hand loan: <b>${fmt(loanDeductHand)}</b></div>
+        <div class="tot">No-interest (ADV-LN): <b>${fmt(advLoanDeduct)}</b></div>
+        <div class="tot">Interest (Standard): <b>${fmt(loanDeductStd)}</b></div>
+        <div class="tot">Investor (8%): <b>${fmt(loanDeductInv)}</b></div>
+        <div class="tot">Final Cash Due: <b>${fmt(cashDue)}</b></div>
+        <div class="signRow">
+          <div class="sign">Supplier Signature</div>
+          <div class="sign">Authorized Signature</div>
+        </div>
+      </div>`).join('')}
+    <\/body><\/html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+}
+
+document.getElementById('saveSessionBtn').addEventListener('click', saveBuyingSession);
+function scheduleSupplierRefresh(immediate) {
+    if (supplierRefreshTimer) {
+        clearTimeout(supplierRefreshTimer);
+        supplierRefreshTimer = null;
+    }
+    const run = () => {
+        supplierRefreshTimer = null;
+        refreshSupplierBalances().catch((e) => console.warn(e));
+    };
+    if (immediate) run();
+    else supplierRefreshTimer = setTimeout(run, 300);
+}
+function onSupplierNameChanged(ev) {
+    const a = document.getElementById('advanceApplyAmount');
+    if (a) delete a.dataset.userEdited;
+    const immediate = !!(ev && (ev.type === 'change' || ev.type === 'blur'));
+    scheduleSupplierRefresh(immediate);
+}
+document.getElementById('supplierName').addEventListener('input', onSupplierNameChanged);
+document.getElementById('supplierName').addEventListener('change', onSupplierNameChanged);
+document.getElementById('advanceApplyAmount').addEventListener('input', () => {
+    const a = document.getElementById('advanceApplyAmount');
+    if (a) a.dataset.userEdited = '1';
+    updateBillPreview();
+});
+document.getElementById('supplierName').addEventListener('focus', (e) => {
+    if (String(e.target.value || '').trim().toUpperCase() === 'TEMPORARY WALK-IN') {
+        e.target.value = '';
+    }
+});
+document.getElementById('supplierName').addEventListener('blur', (e) => {
+    if (!String(e.target.value || '').trim()) {
+        e.target.value = 'TEMPORARY WALK-IN';
+    }
+    onSupplierNameChanged({ type: 'blur' });
+});
+['apply_HAND', 'apply_ADV_LN', 'apply_STANDARD', 'apply_INVESTOR_8', 'miscChargesAmount'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', updateBillPreview);
+});
+document.getElementById('printA5Btn').addEventListener('click', () => { printA5Bill().catch((e) => alert(String(e && e.message || e))); });
+
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '../../auth/login.html'; return; }
+    /** Hand Loans α╢┤α╖Æα╢ºα╖öα╖Çα╢º α╖âα╢╕α╖Åα╢▒ businessId (getContext: users.businessId + storedBusinessId fallback). */
+    let businessId = user.uid;
+    if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+        const ctx = await window.dashboardCore.getContext(user);
+        businessId = String((ctx && ctx.businessId) || user.uid);
+    } else {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    }
+    const bizDoc = await db.collection('businesses').doc(businessId).get();
+    const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
+    if (businessType !== 'scrap_collection_center') {
+        window.location.href = '/modules/admin/dashboard.html';
+        return;
+    }
+    SCRAP_BUSINESS_ID = businessId;
+    await loadPeople();
+    if (!document.getElementById('supplierName').value) {
+        document.getElementById('supplierName').value = 'TEMPORARY WALK-IN';
+    }
+    if (document.getElementById('billDateTime')) {
+        const n = new Date();
+        n.setSeconds(0,0);
+        document.getElementById('billDateTime').value = new Date(n.getTime() - n.getTimezoneOffset()*60000).toISOString().slice(0,16);
+    }
+    await loadItems();
+    await refreshSupplierBalances();
+    updateBillPreview();
+    await loadBuyingHistory();
+});
+</script>
+</body>
+</html>
