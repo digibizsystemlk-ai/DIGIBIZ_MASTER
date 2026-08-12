@@ -231,6 +231,7 @@ const BUSINESS_TYPES = {
             { icon: "⚙️", name: "Settings", link: "/modules/company/settings.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER"] },
             { icon: "🔔", name: "Notifications", link: "/modules/company/notifications.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR", "WAREHOUSE_MANAGER", "DELIVERY_MANAGER", "REP"] },
             { icon: "📜", name: "Activity Log", link: "/modules/company/activity-log.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER"] },
+            { icon: "📖", name: "User Manual", link: "/modules/distributor/web/user-manual.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR", "WAREHOUSE_MANAGER", "DELIVERY_MANAGER", "REP", "ACCOUNTANT"] },
             { icon: "❓", name: "Help & Support", link: "/modules/company/help.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR", "WAREHOUSE_MANAGER", "DELIVERY_MANAGER", "REP"] }
         ],
         dashboardComponents: ["pendingOrders", "todayDeliveries", "activeReps", "recentOrders"],

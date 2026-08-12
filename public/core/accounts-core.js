@@ -69,6 +69,10 @@ class AccountsCore {
         this.eventBus.subscribe('FINANCE_TRANSACTION_RECORDED', (event) => {
             this.handleFinanceTransaction(event.data);
         }, 'AccountsCore');
+
+        this.eventBus.subscribe('PRODUCT_OPENING_STOCK_RECORDED', (event) => {
+            this.handleOpeningStock(event.data);
+        }, 'AccountsCore');
     }
 
     getManufacturingAccountMap() {
@@ -553,6 +557,37 @@ class AccountsCore {
 
         await this.saveJournalEntry(journalEntry);
         console.log(`📝 Journal entry created for Finance Payment: Rs. ${amount}`);
+    }
+
+    async handleOpeningStock(data) {
+        if (!data) return;
+        const qty = Math.max(0, Number(data.qty != null ? data.qty : (data.stock != null ? data.stock : data.currentStock)) || 0);
+        const costPrice = Math.max(0, Number(data.buyingPrice != null ? data.buyingPrice : (data.costPrice != null ? data.costPrice : data.unitPrice)) || 0);
+        const totalAmount = Number((qty * costPrice).toFixed(2));
+        if (totalAmount <= 0) return;
+
+        const businessId = data.businessId || await this.resolveBusinessId(data);
+        if (!businessId) return;
+
+        const pName = String(data.productName || data.name || 'Product').trim();
+        const pCode = String(data.productCode || data.code || '').trim();
+
+        const journalEntry = {
+            date: data.date ? new Date(data.date) : new Date(),
+            description: `Opening Stock Valuation - ${pName}${pCode ? ' (Code: ' + pCode + ')' : ''} (${qty} units @ Rs.${costPrice.toFixed(2)})`,
+            businessId: businessId,
+            entries: [
+                { accountCode: '1-1040-01', accountName: 'Inventory', debit: totalAmount, credit: 0 },
+                { accountCode: '3-3010-01', accountName: "Owner's Capital", debit: 0, credit: totalAmount }
+            ],
+            totalDebit: totalAmount,
+            totalCredit: totalAmount,
+            reference: data.productId || data.id || 'OPENING_STOCK',
+            referenceType: 'OPENING_STOCK'
+        };
+
+        await this.saveJournalEntry(journalEntry);
+        console.log(`📝 Journal entry created for Opening Stock: ${pName} = Rs. ${totalAmount}`);
     }
 
     async resolveBusinessId(entry = {}) {

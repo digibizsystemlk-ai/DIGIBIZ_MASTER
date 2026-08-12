@@ -419,16 +419,32 @@ class DashboardCore {
     async fetchUnifiedOrders(bid, userEmail) {
         if (!bid) return { docs: [] };
         try {
-            const flatSnapshot = await window.db.collection('orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] }));
-            const listSnapshot = await window.db.collection('orders').doc(bid).collection('list').get().catch(() => ({ docs: [] }));
-            let emailSnapshot = { docs: [] };
-            if (userEmail) {
-                emailSnapshot = await window.db.collection('orders').where('ownerEmail', '==', userEmail).get().catch(() => ({ docs: [] }));
+            const uEmail = String(userEmail || '').toLowerCase().trim();
+            const queries = [
+                window.db.collection('orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                window.db.collection('orders').doc(bid).collection('list').get().catch(() => ({ docs: [] })),
+                window.db.collection('businesses').doc(bid).collection('orders').get().catch(() => ({ docs: [] })),
+                window.db.collection('distributor_orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                window.db.collection('pendingOrders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                window.db.collection('pendingOrders').doc(bid).collection('list').get().catch(() => ({ docs: [] })),
+                window.db.collection('businesses').doc(bid).collection('pendingOrders').get().catch(() => ({ docs: [] }))
+            ];
+
+            if (uEmail) {
+                queries.push(window.db.collection('orders').where('ownerEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
+                queries.push(window.db.collection('orders').where('repEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
+                queries.push(window.db.collection('distributor_orders').where('ownerEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
+                queries.push(window.db.collection('distributor_orders').where('repEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
+                queries.push(window.db.collection('pendingOrders').where('ownerEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
+                queries.push(window.db.collection('pendingOrders').where('repEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
             }
-            
+
+            const snaps = await Promise.all(queries);
             const map = {};
-            [...flatSnapshot.docs, ...listSnapshot.docs, ...emailSnapshot.docs].forEach(doc => {
-                map[doc.id] = doc;
+            snaps.forEach(snap => {
+                (snap.docs || []).forEach(doc => {
+                    map[doc.id] = doc;
+                });
             });
             
             return { docs: Object.values(map) };
@@ -495,32 +511,41 @@ class DashboardCore {
                 window.db.collection('expenses').where('businessId', '==', bid).get().catch(() => ({ docs: [] }))
             ]);
 
-
-
             for (const doc of unifiedOrders.docs) {
                 const data = doc.data() || {};
-                const orderId = data.orderId || data.orderNumber || doc.id;
-                const refStr = `orders/${orderId}`;
-                const customId = `JE_${orderId}`;
+                const docId = doc.id;
+                const orderId = data.orderId || data.orderNumber || docId;
 
-                if (existingRefs.has(refStr) || existingIds.has(customId)) continue;
+                const refStr1 = `orders/${orderId}`;
+                const refStr2 = `orders/${docId}`;
+                const refStr3 = `pendingOrders/${orderId}`;
+                const refStr4 = `pendingOrders/${docId}`;
+
+                const customId1 = `JE_${orderId}`;
+                const customId2 = `JE_${docId}`;
+
+                if (existingRefs.has(refStr1) || existingRefs.has(refStr2) || existingRefs.has(refStr3) || existingRefs.has(refStr4) ||
+                    existingIds.has(customId1) || existingIds.has(customId2)) {
+                    continue;
+                }
+
                 const status = String(data.status || '').toLowerCase();
                 if (status === 'rejected' || status === 'cancelled') continue;
 
-                const total = Number(data.totalAmount || data.total || data.netTotal || 0);
+                const total = Number(data.totalAmount || data.total || data.netTotal || data.grandTotal || data.amount || 0);
                 if (total <= 0) continue;
 
-                const dt = this.parseDateAny(data.orderDate || data.createdAt) || new Date();
+                const dt = this.parseDateAny(data.orderDate || data.createdAt || data.timestamp) || new Date();
                 const pm = String(data.paymentMethod || 'CASH').toUpperCase();
                 const isCash = pm === 'CASH';
-                const customer = data.customerName || data.shopName || 'Customer';
+                const customer = data.customerName || data.shopName || data.shop || data.customer || 'Customer';
 
-                const jRef = window.db.collection('journal').doc(bid).collection('entries').doc(customId);
+                const jRef = window.db.collection('journal').doc(bid).collection('entries').doc(customId1);
                 const jObj = {
                     businessId: bid,
                     date: window.firebase.firestore.Timestamp.fromDate(dt),
                     description: `Sales Order #${orderId} - ${customer}`,
-                    ref: refStr,
+                    ref: refStr1,
                     referenceType: 'SALE',
                     totalDebit: total,
                     totalCredit: total,
@@ -530,8 +555,12 @@ class DashboardCore {
                     ]
                 };
                 batch.set(jRef, jObj, { merge: true });
-                existingRefs.add(refStr);
-                existingIds.add(customId);
+                existingRefs.add(refStr1);
+                existingRefs.add(refStr2);
+                existingRefs.add(refStr3);
+                existingRefs.add(refStr4);
+                existingIds.add(customId1);
+                existingIds.add(customId2);
                 newEntriesAdded++;
             }
 
@@ -568,6 +597,65 @@ class DashboardCore {
                 existingRefs.add(refStr);
                 existingIds.add(customId);
                 newEntriesAdded++;
+            }
+
+            // 3. Sync Un-journaled Opening Product Stock Assets
+            try {
+                const queries = [
+                    window.db.collection('products').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    window.db.collection('products').doc(bid).collection('list').get().catch(() => ({ docs: [] })),
+                    window.db.collection('businesses').doc(bid).collection('products').get().catch(() => ({ docs: [] }))
+                ];
+                if (userEmail) {
+                    queries.push(window.db.collection('products').where('ownerEmail', '==', String(userEmail).toLowerCase().trim()).get().catch(() => ({ docs: [] })));
+                }
+
+                const snaps = await Promise.all(queries);
+                const prodMap = {};
+                snaps.forEach(snap => {
+                    (snap.docs || []).forEach(d => { prodMap[d.id] = d; });
+                });
+                const allProdDocs = Object.values(prodMap);
+
+                for (const doc of allProdDocs) {
+                    const data = doc.data() || {};
+                    const pId = doc.id;
+                    const refStr = `products/${pId}`;
+                    const customId = `JE_STOCK_${pId}`;
+
+                    if (existingRefs.has(refStr) || existingIds.has(customId)) continue;
+
+                    const qty = Math.max(0, Number(data.currentStock != null ? data.currentStock : (data.stock != null ? data.stock : 0)) || 0);
+                    const cost = Math.max(0, Number(data.buyingPrice != null ? data.buyingPrice : (data.costPrice != null ? data.costPrice : data.unitPrice)) || 0);
+                    const totalVal = Number((qty * cost).toFixed(2));
+
+                    if (qty <= 0 || totalVal <= 0) continue;
+
+                    const dt = this.parseDateAny(data.createdAt || data.updatedAt) || new Date();
+                    const pName = String(data.name || data.productName || 'Product').trim();
+                    const pCode = String(data.productCode || data.code || '').trim();
+
+                    const jRef = window.db.collection('journal').doc(bid).collection('entries').doc(customId);
+                    const jObj = {
+                        businessId: bid,
+                        date: window.firebase.firestore.Timestamp.fromDate(dt),
+                        description: `Opening Stock - ${pName}${pCode ? ' (Code: ' + pCode + ')' : ''} (${qty} units @ Rs.${cost.toFixed(2)})`,
+                        ref: refStr,
+                        referenceType: 'OPENING_STOCK',
+                        totalDebit: totalVal,
+                        totalCredit: totalVal,
+                        entries: [
+                            { accountCode: '1-1040-01', accountName: 'Inventory', debit: totalVal, credit: 0 },
+                            { accountCode: '3-3010-01', accountName: "Owner's Capital", debit: 0, credit: totalVal }
+                        ]
+                    };
+                    batch.set(jRef, jObj, { merge: true });
+                    existingRefs.add(refStr);
+                    existingIds.add(customId);
+                    newEntriesAdded++;
+                }
+            } catch(prodSyncErr) {
+                console.warn('[DashboardCore] Product stock sync notice:', prodSyncErr);
             }
 
             if (newEntriesAdded > 0 || migratedCount > 0) {

@@ -177,7 +177,6 @@ const DISTRIBUTOR_MENU_POOL = [
     { id: 'warehouse', permissionId: 'canStockView', icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
     { id: 'deliveries', permissionId: 'canDeliveriesManage', icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
     { id: 'shops', permissionId: 'canCustomerView', icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
-    { id: 'customers', permissionId: 'canCustomerView', icon: '👥', name: 'Customers', link: '/modules/distributor/web/customers.html' },
     { id: 'reps', permissionId: 'canManageRepsWeb', icon: '👥', name: 'Reps', link: '/modules/distributor/web/reps.html' },
     { id: 'distributor_revenue', permissionId: 'canViewFinancialsProfit', icon: '📈', name: 'Revenue', link: '/modules/distributor/web/revenue.html' },
     { id: 'finance', permissionId: 'canViewFinancialsProfit', icon: '💳', name: 'Finance', link: '/modules/distributor/web/finance-ledger.html' },
@@ -1580,7 +1579,8 @@ class Sidebar {
             { icon: '📈', name: 'Revenue', link: '/modules/distributor/web/revenue.html' },
             { icon: '💳', name: 'Finance', link: '/modules/distributor/web/finance-ledger.html' },
             { icon: '📁', name: 'Accounting', link: '/modules/distributor/web/accounting.html' },
-            { icon: '📊', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' }
+            { icon: '📊', name: 'Distributor Reports', link: '/modules/distributor/web/reports.html' },
+            { icon: '📖', name: 'User Manual', link: '/modules/distributor/web/user-manual.html' }
         ];
         if (this.isWarehouseDisabledForCurrentTenant()) {
             return base.filter((item) => item.link !== '/modules/distributor/web/warehouse.html');
@@ -1867,6 +1867,10 @@ class Sidebar {
                 }
                 return true;
             });
+
+            if (!availableMenus.some(m => String(m.link || '').includes('user-manual.html'))) {
+                availableMenus.push({ icon: '📖', name: 'User Manual', link: '/modules/distributor/web/user-manual.html' });
+            }
 
             return availableMenus;
         }
@@ -2206,6 +2210,7 @@ class Sidebar {
                     window.__DIGIBIZ_VERSION_LOCK__ = config;
                     sessionStorage.setItem('digibiz_client_version_lock', JSON.stringify(config));
                     console.log(`[VersionControl] 🔒 Client "${email}" is locked to version tag: ${config.versionTag}`);
+                    this.applyVersionSuppression();
                 } else {
                     sessionStorage.removeItem('digibiz_client_version_lock');
                 }
@@ -2215,7 +2220,26 @@ class Sidebar {
         }
     }
 
+    applyVersionSuppression() {
+        if (!window.isClientVersionLocked || !window.isClientVersionLocked()) return;
+
+        // 1. Beta / Experimental Features
+        if (window.isFlagSuppressed && window.isFlagSuppressed('suppressBetaFeatures')) {
+            document.querySelectorAll('[data-feature="beta"], .beta-feature, .experimental-feature').forEach(el => {
+                el.style.display = 'none';
+            });
+        }
+
+        // 2. Auto-Updates & What's New Banners
+        if (window.isFlagSuppressed && window.isFlagSuppressed('suppressAutoUpdates')) {
+            document.querySelectorAll('[data-feature="auto-update-banner"], .update-banner, .whats-new-banner').forEach(el => {
+                el.style.display = 'none';
+            });
+        }
+    }
+
     render() {
+        this.applyVersionSuppression();
         ensureSidebarStyles();
         const pathname = window.location.pathname;
         const settingsItemsBase = [
@@ -2507,11 +2531,11 @@ class Sidebar {
 
                     const val = Math.floor(totalRevenue);
                     if (val >= 0) {
-                        el.textContent = `+Rs. ${val.toLocaleString()}`;
+                        el.textContent = `Sales: +Rs. ${val.toLocaleString()}`;
                         el.style.color = '#34d399';
                         el.style.background = 'rgba(16, 185, 129, 0.15)';
                     } else {
-                        el.textContent = `-Rs. ${Math.abs(val).toLocaleString()}`;
+                        el.textContent = `Sales: -Rs. ${Math.abs(val).toLocaleString()}`;
                         el.style.color = '#f87171';
                         el.style.background = 'rgba(239, 68, 68, 0.15)';
                     }
@@ -3047,7 +3071,7 @@ class Sidebar {
                 if (memo.includes('Supplier - ')) {
                     supplierName = memo.split('Supplier - ')[1].trim();
                 } else if (memo.includes('Purchase - Order PO-')) {
-                    if (memo.includes('(') && memo.includes(')')) {
+                if (memo.includes('(') && memo.includes(')')) {
                         supplierName = memo.split('(')[1].split(')')[0].trim();
                     }
                 }
@@ -3211,6 +3235,7 @@ class Sidebar {
                         if (row.type === 'credit') cr = Number(row.amount) || 0;
                     }
                     lines.push({
+                        entryId: entry.id,
                         date: entryDate,
                         ref: ref,
                         memo: memo,
@@ -3260,6 +3285,105 @@ class Sidebar {
         }).join('');
     }
 }
+
+window.reverseJournalEntrySystemWide = async function(entryId) {
+    if (!confirm('🗑️ Are you sure you want to REVERSE / DELETE this transaction?\n\nThis will safely mark the entry as reversed, update bank/cash balances, and void the linked sales/purchases/expenses across the system.')) return;
+    
+    try {
+        const fs = (typeof db !== 'undefined' && db) ? db : (window.db || (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore()));
+        if (!fs) throw new Error('Firestore not initialized.');
+        
+        const bid = window.currentBusinessId || localStorage.getItem('currentBusinessId');
+        if (!bid) throw new Error('Business ID not found.');
+        
+        const entryRef = fs.collection('journal').doc(bid).collection('entries').doc(entryId);
+        const entrySnap = await entryRef.get();
+        if (!entrySnap.exists) {
+            alert('Transaction not found or already deleted.');
+            return;
+        }
+        
+        const originalEntry = { id: entrySnap.id, ...entrySnap.data() };
+        const batch = fs.batch();
+        
+        // 1. Mark as reversed (do not delete for accounting compliance)
+        batch.update(entryRef, { isReversed: true, reversedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        
+        // 2. Process linked document reversals
+        const refRaw = originalEntry.ref || '';
+        const refType = originalEntry.refType || '';
+        const refId = refRaw.replace(/^purchases\//, '').replace(/^orders\//, '').replace(/^expenses\//, '').replace(/^banks\//, '');
+        
+        if (refId) {
+            // Purchases/GRN
+            if (refRaw.startsWith('purchases/') || refType === 'GRN') {
+                const poRef = fs.collection('purchases').doc(bid).collection('orders').doc(refId);
+                const poSnap = await poRef.get().catch(() => null);
+                if (poSnap && poSnap.exists) {
+                    batch.update(poRef, { status: 'cancelled', isReversed: true });
+                    const poData = poSnap.data();
+                    (poData.items || []).forEach(line => {
+                        const pId = line.productId || line.id;
+                        const qty = Number(line.receivedQty || line.qty) || 0;
+                        if (pId && qty > 0) {
+                            const pRef = fs.collection('products').doc(bid).collection('list').doc(pId);
+                            batch.update(pRef, { stock: firebase.firestore.FieldValue.increment(-qty) });
+                        }
+                    });
+                }
+            }
+            // Sales/Orders
+            else if (refRaw.startsWith('orders/') || refType === 'SALE') {
+                const orderRef = fs.collection('orders').doc(bid).collection('list').doc(refId);
+                const oSnap = await orderRef.get().catch(() => null);
+                if (oSnap && oSnap.exists) {
+                    batch.update(orderRef, { status: 'cancelled', isReversed: true });
+                    const oData = oSnap.data();
+                    (oData.items || []).forEach(line => {
+                        const pId = line.productId || line.id;
+                        const qty = Number(line.quantity || line.orderedQty || line.qty) || 0;
+                        if (pId && qty > 0) {
+                            const pRef = fs.collection('products').doc(bid).collection('list').doc(pId);
+                            batch.update(pRef, { stock: firebase.firestore.FieldValue.increment(qty) });
+                        }
+                    });
+                }
+            }
+            // Expenses
+            else if (refRaw.startsWith('expenses/') || refType === 'EXPENSE') {
+                const expRef = fs.collection('expenses').doc(bid).collection('list').doc(refId);
+                const eSnap = await expRef.get().catch(() => null);
+                if (eSnap && eSnap.exists) {
+                    batch.delete(expRef);
+                }
+            }
+        }
+        
+        await batch.commit();
+        alert('Transaction reversed successfully!');
+        
+        // Remove from UI immediately
+        if (window.sidebar && window.sidebar.cachedJournalEntries) {
+            window.sidebar.cachedJournalEntries = window.sidebar.cachedJournalEntries.filter(e => e.id !== entryId);
+            
+            // Re-render the modal using the exact arguments previously used (they are usually tied to UI state, 
+            // but we can simply hide the row in the DOM for an immediate feel).
+            const trs = document.querySelectorAll('#ledgerModalTableBody tr');
+            trs.forEach(tr => {
+                if (tr.innerHTML.includes(`'${entryId}'`)) {
+                    tr.style.opacity = '0.3';
+                    tr.style.textDecoration = 'line-through';
+                    const btn = tr.querySelector('button');
+                    if(btn) btn.style.display = 'none';
+                }
+            });
+        }
+        
+    } catch (err) {
+        console.error('Error reversing transaction:', err);
+        alert('Error reversing transaction: ' + err.message);
+    }
+};
 
 function runPageTranslation() {
     const isApp = sessionStorage.getItem('is_android_app') === 'true';

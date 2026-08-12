@@ -1713,6 +1713,22 @@
                     payload.buyingPrice = buyingRaw;
                 }
                 var newRef = await db.collection('products').add(payload);
+
+                try {
+                    var initQty = Math.max(0, Number(payload.currentStock != null ? payload.currentStock : payload.stock) || 0);
+                    var initCost = Math.max(0, Number(payload.buyingPrice != null ? payload.buyingPrice : payload.unitPrice) || 0);
+                    if (initQty > 0 && initCost > 0 && window.accountsCore && typeof window.accountsCore.handleOpeningStock === 'function') {
+                        await window.accountsCore.handleOpeningStock({
+                            businessId: currentBusinessId,
+                            productId: newRef.id,
+                            productName: name,
+                            productCode: payload.productCode || '',
+                            stock: initQty,
+                            buyingPrice: initCost
+                        });
+                    }
+                } catch(acctE) { console.warn('Accounting opening stock posting error:', acctE); }
+
                 try {
                     await db.collection('product_audit_log').doc().set({
                         businessId: currentBusinessId,
@@ -1724,7 +1740,7 @@
                         createdAt: new Date()
                     });
                 } catch (audE) { console.warn('Audit log write failed:', audE); }
-                showMessage('Product added!', 'success');
+                showMessage('Product added & Opening Stock Asset recorded in Accounting!', 'success');
                 document.getElementById('productName').value = '';
                 document.getElementById('productPrice').value = '';
                 if (buyingEl) buyingEl.value = '';

@@ -139,11 +139,12 @@
 
             // 2. Also mirror lock flag on matching users & businesses docs for instant client-side lookup
             try {
+                const isSchemaLocked = lockStatus === 'LOCKED' && flags.lockBusinessType === true;
                 const uSnap = await window.db.collection('users').where('email', '==', email).get();
                 uSnap.forEach(d => d.ref.set({ versionLock: lockStatus === 'LOCKED', lockedVersionTag: versionTag, freezeDate: freezeDate }, { merge: true }));
 
                 const bSnap = await window.db.collection('businesses').where('ownerEmail', '==', email).get();
-                bSnap.forEach(d => d.ref.set({ versionLock: lockStatus === 'LOCKED', lockedVersionTag: versionTag, freezeDate: freezeDate }, { merge: true }));
+                bSnap.forEach(d => d.ref.set({ versionLock: lockStatus === 'LOCKED', lockedVersionTag: versionTag, freezeDate: freezeDate, profileLocked: isSchemaLocked }, { merge: true }));
             } catch (eMirror) {
                 console.warn('Mirror update warn:', eMirror);
             }
@@ -185,7 +186,7 @@
                 uSnap.forEach(d => d.ref.set({ versionLock: false, lockedVersionTag: 'LATEST_DEV' }, { merge: true }));
 
                 const bSnap = await window.db.collection('businesses').where('ownerEmail', '==', email).get();
-                bSnap.forEach(d => d.ref.set({ versionLock: false, lockedVersionTag: 'LATEST_DEV' }, { merge: true }));
+                bSnap.forEach(d => d.ref.set({ versionLock: false, lockedVersionTag: 'LATEST_DEV', profileLocked: false }, { merge: true }));
             } catch (eMirror) {
                 console.warn('Mirror unlock warn:', eMirror);
             }

@@ -49,7 +49,8 @@
 
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
-            if ('caches' in window) {
+            // Only perform cache deletion for UNLOCKED clients so version-locked clients are not disturbed
+            if ('caches' in window && !(window.isClientVersionLocked && window.isClientVersionLocked())) {
                 caches.keys().then(function(names) {
                     names.forEach(function(name) {
                         caches.delete(name);
@@ -58,10 +59,41 @@
             }
             navigator.serviceWorker.register('/sw.js?v=3138').then(function(reg) {
                 if (reg && reg.update) reg.update();
+
+                // PWA update notification awareness
+                if (reg.waiting) onSWUpdateReady();
+                reg.addEventListener('updatefound', function() {
+                    const w = reg.installing;
+                    if (w) {
+                        w.addEventListener('statechange', function() {
+                            if (w.state === 'installed' && navigator.serviceWorker.controller) {
+                                onSWUpdateReady();
+                            }
+                        });
+                    }
+                });
+
+                function onSWUpdateReady() {
+                    if (window.isFlagSuppressed && window.isFlagSuppressed('bypassPwaPrompt')) return;
+                    showReloadToast();
+                }
             }).catch(function (err) {
                 console.warn('[PWA] Service worker registration error:', err);
             });
         });
+    }
+
+    function showReloadToast() {
+        if (document.getElementById('pwaReloadToast')) return;
+        const toast = document.createElement('div');
+        toast.id = 'pwaReloadToast';
+        toast.style.cssText = 'position:fixed; bottom:20px; right:20px; z-index:999999; background:#0f172a; color:#fff; padding:14px 20px; border-radius:12px; font-family:Inter,sans-serif; font-size:13px; font-weight:700; box-shadow:0 10px 25px rgba(0,0,0,0.3); border:1px solid #334155; display:flex; align-items:center; gap:12px;';
+        toast.innerHTML = `
+            <span>🔄 New system update available!</span>
+            <button type="button" onclick="window.location.reload()" style="background:#0284c7; color:#fff; border:none; padding:6px 14px; border-radius:8px; font-weight:800; font-size:12px; cursor:pointer;">Reload Now</button>
+            <button type="button" onclick="this.parentElement.remove()" style="background:transparent; color:#94a3b8; border:none; cursor:pointer; font-size:14px; font-weight:700;">✕</button>
+        `;
+        document.body.appendChild(toast);
     }
 
     // Global Client Version Lock Helper Guards
@@ -83,5 +115,11 @@
         } catch (e) {
             return null;
         }
+    };
+
+    window.isFlagSuppressed = function(flagName) {
+        const config = window.getClientVersionLockConfig && window.getClientVersionLockConfig();
+        if (!config || !config.flags) return false;
+        return config.flags[flagName] !== false;
     };
 })();

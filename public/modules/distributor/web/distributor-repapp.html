@@ -66,6 +66,7 @@
     <!-- Core App Config -->
     <script src="/core/pwa-init.js"></script>
     <script src="/core/firebase-init.js?v=200"></script>
+    <script src="/scripts/admin-impersonation.js?v=200"></script>
 
     <style>
         :root {
@@ -540,16 +541,23 @@
 
             <!-- New Shop Form -->
             <div id="newShopForm"
-                style="display:none; background:#f8fafc; padding:14px; border-radius:12px; border:1px solid #cbd5e1; margin-bottom:12px;">
-                <div style="font-weight:800; color:#064e3b; margin-bottom:8px; font-size:13px;">➕ Add New Shop</div>
-                <input type="text" id="newShopName" class="form-input" placeholder="Shop Name *"
-                    style="margin-bottom:8px;">
-                <input type="text" id="newShopAddress" class="form-input" placeholder="Address / Town"
-                    style="margin-bottom:8px;">
-                <input type="tel" id="newShopPhone" class="form-input" placeholder="Phone Number"
-                    style="margin-bottom:10px;">
-                <button type="button" onclick="saveNewShop()" class="form-submit"
-                    style="padding:10px; font-size:14px;">Save Shop</button>
+                style="display:none; background:#f8fafc; padding:16px; border-radius:14px; border:1px solid #cbd5e1; margin-bottom:14px;">
+                <div style="font-weight:900; color:#064e3b; margin-bottom:10px; font-size:14px;">➕ Add New Shop</div>
+                <input type="text" id="newShopName" class="form-input" placeholder="Shop / Establishment Name *" style="margin-bottom:8px;">
+                
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+                    <input type="text" id="newShopOwnerName" class="form-input" placeholder="Owner Name">
+                    <input type="tel" id="newShopPhone" class="form-input" placeholder="Owner Phone">
+                </div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+                    <input type="text" id="newShopManagerName" class="form-input" placeholder="Manager Name (Opt)">
+                    <input type="tel" id="newShopManagerPhone" class="form-input" placeholder="Manager Phone (Opt)">
+                </div>
+
+                <input type="text" id="newShopAddress" class="form-input" placeholder="Address / Town" style="margin-bottom:12px;">
+                
+                <button type="button" onclick="saveNewShop()" class="form-submit" style="padding:10px; font-size:14px;">Save Shop</button>
             </div>
 
             <!-- Shop Search Input -->
@@ -732,25 +740,35 @@
         }
 
         // --- DYNAMIC AUTH & INIT WITH PERSISTENT SESSION ---
+        let _repPortalLoadedOnce = false;
         async function initPortal() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const isExplicitLogout = urlParams.get('logout') === 'true' || urlParams.get('showLogin') === 'true';
-            const isLoggedOut = localStorage.getItem('digibiz_rep_logged_out') === 'true';
+            try {
+                await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
+            } catch(e) {}
 
-            if (isExplicitLogout || isLoggedOut || !firebase.auth().currentUser) {
-                document.getElementById('loginModal').style.display = 'flex';
-                document.getElementById('stickyCartBar').style.display = 'none';
-                return;
-            }
+            firebase.auth().onAuthStateChanged((user) => {
+                if (user) {
+                    localStorage.removeItem('digibiz_rep_logged_out');
+                    // Clean URL query string if showLogin or logout flag is present
+                    const urlParams = new URLSearchParams(window.location.search);
+                    if (urlParams.has('showLogin') || urlParams.has('logout')) {
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    }
 
-            document.getElementById('loginModal').style.display = 'none';
-            document.getElementById('stickyCartBar').style.display = 'flex';
+                    currentUser = user;
+                    document.getElementById('loginModal').style.display = 'none';
+                    document.getElementById('stickyCartBar').style.display = 'flex';
 
-            currentUser = firebase.auth().currentUser;
-            localStorage.removeItem('digibiz_rep_logged_out');
-
-            await loadBusinessPortalData();
-            loadSubmittedOrders();
+                    if (!_repPortalLoadedOnce) {
+                        _repPortalLoadedOnce = true;
+                        loadBusinessPortalData();
+                        loadSubmittedOrders();
+                    }
+                } else {
+                    document.getElementById('loginModal').style.display = 'flex';
+                    document.getElementById('stickyCartBar').style.display = 'none';
+                }
+            });
         }
 
         async function handleRepLogin(e) {
@@ -761,11 +779,25 @@
             errEl.textContent = 'Logging in...';
 
             try {
+                await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
                 localStorage.removeItem('digibiz_rep_logged_out');
+                localStorage.removeItem('currentBusinessId');
+                sessionStorage.removeItem('currentBusinessId');
                 localStorage.setItem('digibiz_rep_email', em);
                 sessionStorage.removeItem('force_show_login');
+
+                currentBusinessId = '';
+                currentBusinessData = {};
+                productsList = [];
+                shopsList = [];
+                selectedShopObj = null;
+
                 const cred = await firebase.auth().signInWithEmailAndPassword(em, pw);
                 currentUser = cred.user;
+
+                // Clean URL query string
+                window.history.replaceState({}, document.title, window.location.pathname);
+
                 document.getElementById('loginModal').style.display = 'none';
                 document.getElementById('stickyCartBar').style.display = 'flex';
                 errEl.textContent = '';
@@ -779,11 +811,17 @@
 
         function executeSignOut() {
             localStorage.setItem('digibiz_rep_logged_out', 'true');
+            localStorage.removeItem('currentBusinessId');
             sessionStorage.clear();
+            currentBusinessId = '';
+            currentBusinessData = {};
+            productsList = [];
+            shopsList = [];
+            selectedShopObj = null;
             document.getElementById('loginModal').style.display = 'flex';
             document.getElementById('stickyCartBar').style.display = 'none';
             firebase.auth().signOut().finally(() => {
-                window.location.replace('/distributor-refapp.html?showLogin=true');
+                window.location.replace('/modules/distributor/web/distributor-repapp.html?showLogin=true');
             });
         }
 
@@ -809,25 +847,124 @@
             if (!user) return;
 
             const userEmail = String(user.email || '').toLowerCase().trim();
-            currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '';
+            const userUid = user.uid;
 
-            // 1. Resolve user & business documents
-            let userData = {};
-            try {
-                const uDoc = await db.collection('users').doc(user.uid).get();
-                if (uDoc.exists) userData = uDoc.data() || {};
-                if (userData.businessId) currentBusinessId = userData.businessId;
-            } catch (e) { }
+            // 0) Check Super Admin Impersonation Mode or URL param
+            const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+            let resolvedBiz = isImpersonating
+                ? (localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || '').trim()
+                : '';
 
-            currentRepName = userData.name || userData.ownerName || userEmail;
+            let repNameFound = '';
+
+            const extractName = (d) => {
+                if (!d) return '';
+                return String(d.name || d.fullName || d.repName || d.displayName || d.userName || d.ownerName || '').trim();
+            };
+
+            const applyBiz = (u, hint) => {
+                const o = u || {};
+                const b = String(o.businessId || o.assignedBusiness || o.assignedBusinessId || o.business || hint || '').trim();
+                return (b && b !== userUid) ? b : String(hint || '').trim();
+            };
+
+            const checkSubUserDoc = async (bId) => {
+                if (!bId) return null;
+                try {
+                    const u1 = await db.collection('businesses').doc(bId).collection('users').doc(userUid).get().catch(() => null);
+                    if (u1 && u1.exists) return u1.data();
+                    const u2 = await db.collection('businesses').doc(bId).collection('users').doc(userEmail).get().catch(() => null);
+                    if (u2 && u2.exists) return u2.data();
+                } catch(e) {}
+                return null;
+            };
+
+            // 1) ALWAYS resolve true parent businessId from user profile documents
+            let userProfileBiz = '';
+
+            // Check top-level users doc by uid
             try {
-                const rSnap = await db.collection('reps').where('email', '==', userEmail).get();
-                if (!rSnap.empty) {
-                    const rData = rSnap.docs[0].data() || {};
-                    if (rData.businessId) currentBusinessId = rData.businessId;
-                    if (rData.name || rData.fullName) currentRepName = rData.name || rData.fullName;
+                const uDoc = await db.collection('users').doc(userUid).get().catch(() => null);
+                if (uDoc && uDoc.exists) {
+                    const u = uDoc.data() || {};
+                    userProfileBiz = applyBiz(u, '');
+                    if (!repNameFound) repNameFound = extractName(u);
                 }
             } catch (e) { }
+
+            // Check top-level users by email query
+            if (!userProfileBiz) {
+                try {
+                    const uSnap = await db.collection('users').where('email', '==', userEmail).get().catch(() => null);
+                    if (uSnap && !uSnap.empty) {
+                        const u = uSnap.docs[0].data() || {};
+                        userProfileBiz = applyBiz(u, '');
+                        if (!repNameFound) repNameFound = extractName(u);
+                    }
+                } catch (e) { }
+            }
+
+            // Check legacy reps collection (by email, then userId)
+            if (!userProfileBiz) {
+                try {
+                    let rSnap = await db.collection('reps').where('email', '==', userEmail).get().catch(() => null);
+                    if (!rSnap || rSnap.empty) rSnap = await db.collection('reps').where('repEmail', '==', userEmail).get().catch(() => null);
+                    if (!rSnap || rSnap.empty) rSnap = await db.collection('reps').where('userId', '==', userUid).get().catch(() => null);
+                    if (rSnap && !rSnap.empty) {
+                        const rData = rSnap.docs[0].data() || {};
+                        userProfileBiz = applyBiz(rData, '');
+                        if (!repNameFound) repNameFound = extractName(rData);
+                    }
+                } catch (e) { }
+            }
+
+            // Check business subcollection users scan
+            if (!userProfileBiz) {
+                try {
+                    const bizList = await db.collection('businesses').limit(300).get().catch(() => null);
+                    if (bizList && !bizList.empty) {
+                        for (const bDoc of bizList.docs) {
+                            const subData = await checkSubUserDoc(bDoc.id);
+                            if (subData) {
+                                userProfileBiz = applyBiz(subData, bDoc.id);
+                                if (!repNameFound) repNameFound = extractName(subData);
+                                break;
+                            }
+                        }
+                    }
+                } catch (e) { console.warn('[Portal] membership scan err:', e); }
+            }
+
+            // Check owner email match in businesses
+            if (!userProfileBiz) {
+                try {
+                    const bSnap = await db.collection('businesses').where('ownerEmail', '==', userEmail).limit(1).get().catch(() => null);
+                    if (bSnap && !bSnap.empty) {
+                        userProfileBiz = bSnap.docs[0].id;
+                        if (!repNameFound) repNameFound = extractName(bSnap.docs[0].data());
+                    }
+                } catch (e) { }
+            }
+
+            if (userProfileBiz && !isImpersonating) {
+                resolvedBiz = userProfileBiz;
+            }
+
+            if (!resolvedBiz) {
+                resolvedBiz = (localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || '').trim();
+            }
+
+            // If resolvedBiz looks like an email address, resolve the real business document ID
+            if (resolvedBiz && resolvedBiz.includes('@')) {
+                try {
+                    const bSnap = await db.collection('businesses').where('ownerEmail', '==', resolvedBiz.toLowerCase().trim()).limit(1).get().catch(() => null);
+                    if (bSnap && !bSnap.empty) {
+                        resolvedBiz = bSnap.docs[0].id;
+                    }
+                } catch(e) {}
+            }
+
+            currentBusinessId = resolvedBiz;
 
             if (currentBusinessId) {
                 localStorage.setItem('currentBusinessId', currentBusinessId);
@@ -836,14 +973,22 @@
 
             if (currentBusinessId) {
                 try {
-                    const bDoc = await db.collection('businesses').doc(currentBusinessId).get();
-                    if (bDoc.exists) currentBusinessData = bDoc.data() || {};
+                    const bDoc = await db.collection('businesses').doc(currentBusinessId).get().catch(() => null);
+                    if (bDoc && bDoc.exists) currentBusinessData = bDoc.data() || {};
                 } catch (e) { }
             }
 
-            const bizName = currentBusinessData.name || currentBusinessData.businessName || 'DISTRIBUTOR SALES PORTAL';
+            // If rep name not found yet, check subuser doc of resolvedBiz directly
+            if (currentBusinessId && !repNameFound) {
+                const subData = await checkSubUserDoc(currentBusinessId);
+                if (subData) repNameFound = extractName(subData);
+            }
+
+            const bizName = currentBusinessData.businessName || currentBusinessData.name || currentBusinessData.companyName || 'DISTRIBUTOR SALES PORTAL';
             const hdrTitle = document.getElementById('hdrBizTitle');
             if (hdrTitle) hdrTitle.textContent = '🏢 ' + bizName;
+
+            currentRepName = repNameFound || user.displayName || currentBusinessData.ownerName || currentBusinessData.name || userEmail;
             const hdrEmail = document.getElementById('hdrRepEmail');
             if (hdrEmail) hdrEmail.textContent = 'Rep: ' + currentRepName + ' (' + userEmail + ')';
 
@@ -854,7 +999,6 @@
             ]);
             if (currentBusinessData.ownerEmail) validKeys.add(String(currentBusinessData.ownerEmail).toLowerCase());
             if (currentBusinessData.ownerId) validKeys.add(String(currentBusinessData.ownerId).toLowerCase());
-
             const keyArr = Array.from(validKeys).filter(Boolean);
 
             // 2. FETCH PRODUCTS
@@ -874,6 +1018,13 @@
                     if (pSnap3) pDocs.push(...pSnap3.docs);
                 }
 
+                // Fallback by ownerEmail if pDocs empty
+                if (pDocs.length === 0 && currentBusinessData.ownerEmail) {
+                    const ownerEm = String(currentBusinessData.ownerEmail).toLowerCase().trim();
+                    const pSnap4 = await db.collection('products').where('ownerEmail', '==', ownerEm).get().catch(() => null);
+                    if (pSnap4) pDocs.push(...pSnap4.docs);
+                }
+
                 if (pDocs.length === 0) {
                     const topSnap = await db.collection('products').get().catch(() => null);
                     if (topSnap) {
@@ -889,21 +1040,22 @@
                 pDocs.forEach(d => {
                     const p = d.data() || {};
                     if (p.isActive !== false && p.archived !== true) {
-                        const pName = String(p.name || p.productName || p.title || '').trim();
+                        const pName = String(p.name || p.productName || p.title || p.itemName || '').trim();
                         if (pName) {
                             const code = String(p.productCode || p.code || p.sku || '').trim().toLowerCase();
                             const key = code ? (pName.toLowerCase() + '::' + code) : pName.toLowerCase();
-                            if (!pMap[key]) pMap[key] = { id: d.id, ...p };
+                            if (!pMap[key]) pMap[key] = { id: d.id, ...p, name: pName };
                         }
                     }
                 });
 
                 productsList = Object.values(pMap);
-                productsList.sort((a, b) => (a.name || a.productName || '').localeCompare(b.name || b.productName || ''));
+                productsList.sort((a, b) => (a.name || a.productName || a.title || '').localeCompare(b.name || b.productName || b.title || ''));
             } catch (e) {
                 console.error('[Portal] Products fetch error:', e);
             }
-            document.getElementById('lblCatalogCount').textContent = `${productsList.length} Items`;
+            const catalogCountEl = document.getElementById('lblCatalogCount');
+            if (catalogCountEl) catalogCountEl.textContent = `${productsList.length} Items`;
 
             // 3. FETCH SHOPS & CUSTOMERS
             shopsList = [];
@@ -928,6 +1080,17 @@
                     if (cSnap3) sDocs.push(...cSnap3.docs);
                 }
 
+                // Fallback by ownerEmail if sDocs empty
+                if (sDocs.length === 0 && currentBusinessData.ownerEmail) {
+                    const ownerEm = String(currentBusinessData.ownerEmail).toLowerCase().trim();
+                    const [sSnap4, cSnap4] = await Promise.all([
+                        db.collection('shops').where('ownerEmail', '==', ownerEm).get().catch(() => null),
+                        db.collection('customers').where('ownerEmail', '==', ownerEm).get().catch(() => null)
+                    ]);
+                    if (sSnap4) sDocs.push(...sSnap4.docs);
+                    if (cSnap4) sDocs.push(...cSnap4.docs);
+                }
+
                 if (sDocs.length === 0) {
                     const [topShops, topCusts] = await Promise.all([
                         db.collection('shops').get().catch(() => null),
@@ -949,11 +1112,11 @@
                 sDocs.forEach(d => {
                     const s = d.data() || {};
                     if (s.isActive !== false && s.archived !== true) {
-                        const name = String(s.name || s.shopName || s.customerName || s.fullName || '').trim();
+                        const name = String(s.name || s.shopName || s.customerName || s.fullName || s.businessName || s.title || s.shop || s.storeName || '').trim();
                         if (name) {
-                            const phone = String(s.phone || s.shopPhone || s.mobile || '').trim();
+                            const phone = String(s.phone || s.shopPhone || s.mobile || s.contact || s.telephone || '').trim();
                             const key = phone ? (name.toLowerCase() + '::' + phone) : name.toLowerCase();
-                            if (!sMap[key]) sMap[key] = { id: d.id, ...s };
+                            if (!sMap[key]) sMap[key] = { id: d.id, ...s, name: name };
                         }
                     }
                 });
@@ -974,6 +1137,17 @@
             const container = document.getElementById('shopResultsList');
             if (!container) return;
 
+            if (!selectedShopObj && !query) {
+                container.innerHTML = `
+                    <div style="text-align:center; padding:18px 12px; color:#64748b; font-size:13px; font-weight:600; background:#f8fafc; border-radius:12px; border:1px dashed #cbd5e1; margin-top:6px;">
+                        <div style="font-size:22px; margin-bottom:4px;">🏪</div>
+                        <div style="font-weight:700; color:#334155;">Search Shop / Customer</div>
+                        <div style="font-size:12px; color:#94a3b8; margin-top:2px;">Type shop name above to view matching results</div>
+                    </div>
+                `;
+                return;
+            }
+
             const filtered = shopsList.filter(s => {
                 const sName = (s.name || s.shopName || s.customerName || s.fullName || '').toLowerCase();
                 const addr = (s.address || s.shopAddress || s.location || s.city || '').toLowerCase();
@@ -989,11 +1163,17 @@
             });
 
             if (filtered.length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding:16px; color:#64748b; font-size:13px; font-weight:600;">No matching shops found for "' + escapeHtml(query) + '".</div>';
+                if (shopsList.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; padding:16px; color:#64748b; font-size:13px; font-weight:600;">No shops could be loaded for this account yet.<br><button type="button" onclick="loadBusinessPortalData()" style="margin-top:10px; background:#047857; color:#fff; border:none; padding:8px 14px; border-radius:8px; font-weight:800; font-size:12px; cursor:pointer;">🔄 Retry Loading</button></div>';
+                } else {
+                    container.innerHTML = '<div style="text-align:center; padding:16px; color:#64748b; font-size:13px; font-weight:600;">No matching shops found for "' + escapeHtml(query) + '".</div>';
+                }
                 return;
             }
 
-            container.innerHTML = filtered.map(s => {
+            const displayList = filtered.slice(0, 50);
+
+            container.innerHTML = displayList.map(s => {
                 const sName = s.name || s.shopName || s.customerName || s.fullName || 'Shop';
                 const sAddr = s.address || s.shopAddress || s.location || '';
                 const sPhone = s.phone || s.shopPhone || s.mobile || '';
@@ -1046,33 +1226,68 @@
 
         async function saveNewShop() {
             const name = document.getElementById('newShopName').value.trim();
-            const address = document.getElementById('newShopAddress').value.trim();
+            const ownerName = (document.getElementById('newShopOwnerName') ? document.getElementById('newShopOwnerName').value : '').trim();
             const phone = document.getElementById('newShopPhone').value.trim();
+            const managerName = (document.getElementById('newShopManagerName') ? document.getElementById('newShopManagerName').value : '').trim();
+            const managerPhone = (document.getElementById('newShopManagerPhone') ? document.getElementById('newShopManagerPhone').value : '').trim();
+            const address = document.getElementById('newShopAddress').value.trim();
 
             if (!name) { alert('Please enter shop name'); return; }
 
             const user = firebase.auth().currentUser || currentUser;
             const db = firebase.firestore();
+            const bid = currentBusinessId || (user && user.uid) || '';
             const newDoc = {
                 name: name,
-                address: address,
+                ownerName: ownerName,
                 phone: phone,
-                businessId: currentBusinessId,
+                ownerPhone: phone,
+                managerName: managerName,
+                managerPhone: managerPhone,
+                address: address,
+                businessId: bid,
                 ownerEmail: (currentBusinessData && currentBusinessData.ownerEmail) || (user && user.email) || '',
                 createdByRep: (user && user.email) || '',
-                createdAt: new Date().toISOString()
+                assignedRepId: (user && user.uid) || '',
+                isActive: true,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             };
 
             try {
                 const ref = await db.collection('shops').add(newDoc);
                 newDoc.id = ref.id;
+
+                const custDocId = bid + '_SHOP_' + ref.id;
+                await db.collection('customers').doc(custDocId).set({
+                    businessId: bid,
+                    businessType: 'distributor',
+                    fullName: name,
+                    ownerName: ownerName,
+                    mobile: phone,
+                    whatsapp: phone,
+                    managerName: managerName,
+                    managerPhone: managerPhone,
+                    address: address,
+                    type: 'customer',
+                    context: 'Customer',
+                    distributorShopId: ref.id,
+                    assignedRepId: (user && user.uid) || '',
+                    isActive: true,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+
                 shopsList.unshift(newDoc);
                 selectShop(ref.id);
                 document.getElementById('newShopForm').style.display = 'none';
                 document.getElementById('newShopName').value = '';
-                document.getElementById('newShopAddress').value = '';
+                if (document.getElementById('newShopOwnerName')) document.getElementById('newShopOwnerName').value = '';
                 document.getElementById('newShopPhone').value = '';
-                showToast('✅ New Shop Created');
+                if (document.getElementById('newShopManagerName')) document.getElementById('newShopManagerName').value = '';
+                if (document.getElementById('newShopManagerPhone')) document.getElementById('newShopManagerPhone').value = '';
+                document.getElementById('newShopAddress').value = '';
+                showToast('✅ New Shop Created & Synced to Directory!');
             } catch (e) {
                 alert('Error creating shop: ' + e.message);
             }
@@ -1084,6 +1299,17 @@
             const container = document.getElementById('productResultsList');
             if (!container) return;
 
+            if (!query) {
+                container.innerHTML = `
+                    <div style="text-align:center; padding:22px 14px; color:#64748b; font-size:13px; font-weight:600; background:#f8fafc; border-radius:12px; border:1px dashed #cbd5e1; margin-top:6px;">
+                        <div style="font-size:24px; margin-bottom:4px;">🔍</div>
+                        <div style="font-weight:700; color:#334155;">Type Product Name or Code</div>
+                        <div style="font-size:12px; color:#94a3b8; margin-top:2px;">Type above to search & add items to order</div>
+                    </div>
+                `;
+                return;
+            }
+
             const filtered = productsList.filter(p => {
                 const nm = (p.name || p.productName || p.title || '').toLowerCase();
                 const code = (p.productCode || p.code || p.sku || '').toLowerCase();
@@ -1091,15 +1317,22 @@
             });
 
             if (filtered.length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding:16px; color:#64748b; font-size:13px; font-weight:600;">No matching products found for "' + escapeHtml(query) + '".</div>';
+                if (productsList.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; padding:16px; color:#64748b; font-size:13px; font-weight:600;">No products could be loaded for this account yet.<br><button type="button" onclick="loadBusinessPortalData()" style="margin-top:10px; background:#047857; color:#fff; border:none; padding:8px 14px; border-radius:8px; font-weight:800; font-size:12px; cursor:pointer;">🔄 Retry Loading</button></div>';
+                } else {
+                    container.innerHTML = '<div style="text-align:center; padding:16px; color:#64748b; font-size:13px; font-weight:600;">No matching products found for "' + escapeHtml(query) + '".</div>';
+                }
                 return;
             }
 
-            container.innerHTML = filtered.map(p => {
+            const displayList = filtered.slice(0, 50);
+
+            container.innerHTML = displayList.map(p => {
                 const pName = p.name || p.productName || p.title || 'Item';
                 const pCode = p.productCode || p.code || p.sku || '';
                 const pPrice = Number(p.unitPrice || p.price || p.sellingPrice) || 0;
-                const pStock = Number(p.currentStock != null ? p.currentStock : p.stock) || 0;
+                const rawStock = p.currentStock != null ? p.currentStock : (p.stock != null ? p.stock : (p.qty != null ? p.qty : (p.quantity != null ? p.quantity : 0)));
+                const pStock = Number(rawStock) || 0;
 
                 const existing = orderItems.find(x => x.productId === p.id);
                 const currentQty = existing ? Number(existing.qty) || 0 : 0;
@@ -1109,12 +1342,17 @@
 
                 return `
                     <div class="product-card">
-                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
                             <div>
                                 <div class="p-title">${escapeHtml(pName)}</div>
-                                <div class="p-meta">${pCode ? 'Code: ' + escapeHtml(pCode) + ' • ' : ''}Stock: ${pStock}</div>
+                                <div class="p-meta" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:4px;">
+                                    ${pCode ? `<span style="font-size:11px; color:#64748b; font-weight:600;">Code: ${escapeHtml(pCode)}</span>` : ''}
+                                    <span style="font-size:11px; font-weight:800; padding:2px 8px; border-radius:12px; background:${pStock > 10 ? '#ecfdf5' : (pStock > 0 ? '#fef3c7' : '#fef2f2')}; color:${pStock > 10 ? '#047857' : (pStock > 0 ? '#b45309' : '#b91c1c')}; border:1px solid ${pStock > 10 ? '#a7f3d0' : (pStock > 0 ? '#fde68a' : '#fecaca')}; display:inline-flex; align-items:center; gap:3px;">
+                                        📦 Stock: ${pStock}
+                                    </span>
+                                </div>
                             </div>
-                            <div class="p-price">LKR ${pPrice.toFixed(2)}</div>
+                            <div class="p-price" style="white-space:nowrap;">LKR ${pPrice.toFixed(2)}</div>
                         </div>
 
                         <div class="qty-controls" style="margin-top:10px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
@@ -1422,6 +1660,77 @@
             });
         }
 
+        async function adjustRepAppStockForOrder(orderData, businessId) {
+            if (!orderData || !Array.isArray(orderData.items) || !orderData.items.length) return;
+            const bId = businessId || currentBusinessId;
+            if (!bId) return;
+
+            try {
+                const db = firebase.firestore();
+                const ownerEm = orderData.ownerEmail || (currentBusinessData && currentBusinessData.ownerEmail) || '';
+                const queries = [
+                    db.collection('products').where('businessId', '==', bId).get().catch(() => ({ docs: [] })),
+                    db.collection('products').doc(bId).collection('list').get().catch(() => ({ docs: [] })),
+                    db.collection('businesses').doc(bId).collection('products').get().catch(() => ({ docs: [] }))
+                ];
+                if (ownerEm) {
+                    queries.push(db.collection('products').where('ownerEmail', '==', String(ownerEm).toLowerCase().trim()).get().catch(() => ({ docs: [] })));
+                }
+
+                const snaps = await Promise.all(queries);
+                const byId = {};
+                const byName = {};
+
+                snaps.forEach(snap => {
+                    (snap.docs || []).forEach(doc => {
+                        byId[doc.id] = doc;
+                        const d = doc.data() || {};
+                        const nameKey = String(d.name || d.productName || '').toLowerCase().trim();
+                        if (nameKey) byName[nameKey] = doc;
+                    });
+                });
+
+                const batch = db.batch();
+                const agg = new Map();
+
+                orderData.items.forEach(item => {
+                    const pid = item.productId || item.id;
+                    const productDoc = pid ? byId[pid] : byName[String(item.productName || item.name || '').toLowerCase().trim()];
+                    if (!productDoc) return;
+
+                    const orderedQty = Number(item.orderedQty != null ? item.orderedQty : (item.qty != null ? item.qty : 0)) || 0;
+                    const freeQty = Number(item.freeQty || 0) || 0;
+                    const returnQty = Number(item.returnResellQty != null ? item.returnResellQty : (item.returnQty || 0)) || 0;
+                    const deductQty = Math.max(0, orderedQty + freeQty - returnQty);
+
+                    if (deductQty > 0) {
+                        const key = productDoc.ref.path;
+                        if (!agg.has(key)) {
+                            agg.set(key, { ref: productDoc.ref, doc: productDoc, deductQty: 0 });
+                        }
+                        agg.get(key).deductQty += deductQty;
+                    }
+                });
+
+                agg.forEach(row => {
+                    if (row.deductQty <= 0) return;
+                    const pData = row.doc.data() || {};
+                    const curStock = Number(pData.currentStock != null ? pData.currentStock : (pData.stock != null ? pData.stock : 0)) || 0;
+                    const nextStock = Math.max(0, curStock - row.deductQty);
+
+                    batch.update(row.ref, {
+                        stock: nextStock,
+                        currentStock: nextStock,
+                        updatedAt: new Date()
+                    });
+                });
+
+                await batch.commit();
+            } catch (err) {
+                console.error('[RepApp Stock Deduct Error]', err);
+            }
+        }
+
         // --- SUBMIT ORDER ---
         async function submitSalesOrder() {
             if (!selectedShopObj) {
@@ -1470,8 +1779,34 @@
             };
 
             try {
-                await db.collection('orders').add(orderDoc);
-                showToast('🚀 Sales Order Submitted Successfully!');
+                const docRef = await db.collection('orders').add(orderDoc);
+                orderDoc.id = docRef.id;
+
+                await adjustRepAppStockForOrder(orderDoc, currentBusinessId);
+
+                // Post Journal Entry to General Ledger (accounting.html)
+                const bid = currentBusinessId || orderDoc.businessId;
+                if (bid) {
+                    const orderNum = orderDoc.orderId || docRef.id;
+                    const jeRefId = 'JE_' + orderNum;
+                    const isCash = String(payMethod || '').toUpperCase() === 'CASH';
+
+                    await db.collection('journal').doc(bid).collection('entries').doc(jeRefId).set({
+                        businessId: bid,
+                        date: firebase.firestore.FieldValue.serverTimestamp(),
+                        description: `Sales Order #${orderNum} - ${shopName}`,
+                        ref: `orders/${orderNum}`,
+                        referenceType: 'SALE',
+                        totalDebit: grandTotal,
+                        totalCredit: grandTotal,
+                        entries: [
+                            { accountCode: isCash ? '1-1010-01' : '1-1030-01', accountName: isCash ? 'Cash in Drawer' : 'Accounts Receivable', debit: grandTotal, credit: 0 },
+                            { accountCode: '4-4010-01', accountName: 'Sales Revenue', debit: 0, credit: grandTotal }
+                        ]
+                    }, { merge: true }).catch(err => console.warn('[RepApp Journal Posting Notice]', err));
+                }
+
+                showToast('🚀 Sales Order Submitted, Stock Deducted & Posted to GL!');
 
                 renderReceiptView(orderDoc);
 

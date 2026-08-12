@@ -1712,26 +1712,26 @@
             let memo = `Sale to ${customer.name || 'customer'}. Invoice: ${invoiceNo}`;
             
             if (paymentMethod === 'cash') {
-                debitAccount = KUBUKA_ACCOUNTS.CASH;
+                debitAccount = '1-CASH_ON_HAND';
             } else if (paymentMethod === 'card' || paymentMethod === 'bank' || paymentMethod === 'cheque') {
-                debitAccount = KUBUKA_ACCOUNTS.BANK;
+                debitAccount = '1-BANK_ACCOUNT';
             } else if (paymentMethod === 'credit') {
-                debitAccount = KUBUKA_ACCOUNTS.ACCOUNTS_RECEIVABLE;
+                debitAccount = '1-ACCOUNTS_RECEIVABLE';
             }
             
             if (!debitAccount) return;
             
             const entries = [
-                { accountId: debitAccount, amount: safeTotal, type: 'debit' },
-                { accountId: KUBUKA_ACCOUNTS.SALES_REVENUE, amount: safeTotal, type: 'credit' }
+                { accountId: debitAccount, accountName: debitAccount.replace('1-', '').replace(/_/g, ' '), amount: safeTotal, type: 'debit' },
+                { accountId: '4-SALES_REVENUE', accountName: 'SALES REVENUE', amount: safeTotal, type: 'credit' }
             ];
 
             // Calculate cost of goods sold (COGS) based on actual items sold
             const items = orderData.items || cart || [];
             const totalCogs = items.reduce((sum, item) => sum + (parseFloat(item.cost || 0) * parseFloat(item.quantity || 0)), 0);
             if (totalCogs > 0) {
-                entries.push({ accountId: '5-5010-01', accountName: 'Cost of Goods Sold', amount: totalCogs, type: 'debit' });
-                entries.push({ accountId: '1-1040-01', accountName: 'Inventory', amount: totalCogs, type: 'credit' });
+                entries.push({ accountId: '5-COST_OF_GOODS_SOLD', accountName: 'Cost of Goods Sold', amount: totalCogs, type: 'debit' });
+                entries.push({ accountId: '1-INVENTORY_ASSET', accountName: 'Inventory Asset', amount: totalCogs, type: 'credit' });
             }
             
             const journalEntry = {
@@ -1831,9 +1831,9 @@
                             const qtySold = Number(item.quantity || 0);
                             
                             // 1. Decrement stock in Firestore
-                            batch.update(prodRef, {
+                            batch.set(prodRef, {
                                 stock: firebase.firestore.FieldValue.increment(-qtySold)
-                            });
+                            }, { merge: true });
 
                             // 2. Add Stock Movement History log
                             const histRef = db.collection('stock_history').doc(currentBusinessId).collection('list').doc();
@@ -1843,7 +1843,7 @@
                                 qtyChange: -qtySold,
                                 type: 'SALE',
                                 ref: invoiceNo,
-                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                                createdAt: saleDate
                             });
 
                             // Update local in-memory products array
@@ -1878,33 +1878,62 @@
         function printReceipt(order, invoiceNo) {
             const printDiv = document.getElementById('receiptPrintArea');
             const itemsHtml = order.items.map(i => {
-                const desc = i.sellType === 'weight' ? `${i.kg}kg ${i.grams}g` : `${i.quantity} pcs`;
-                return `${i.name.padEnd(20).slice(0, 20)} ${desc.padStart(8)} ${formatCurrency(i.price * i.quantity).padStart(12)}`;
-            }).join('\n');
+                const qty = i.sellType === 'weight' ? (i.kg + i.grams/1000).toFixed(3) : i.quantity;
+                return `
+                <div style="display:flex; justify-content:space-between; margin-bottom:2px; font-family:monospace; font-size:12px;">
+                    <div style="flex:1;">${i.name}</div>
+                    <div style="width:40px; text-align:right;">${qty}</div>
+                    <div style="width:75px; text-align:right;">${formatCurrency(i.price)}</div>
+                    <div style="width:85px; text-align:right; font-weight:bold;">${formatCurrency(i.price * i.quantity)}</div>
+                </div>`;
+            }).join('');
             
+            const bName = (window.currentBusinessData && window.currentBusinessData.businessName) || 'DIGIBIZ RETAIL';
+            const bAddr = (window.currentBusinessData && window.currentBusinessData.address) || '';
+            const bPhone = (window.currentBusinessData && window.currentBusinessData.phone) || '';
+            const cName = order.customer.name || 'Walk-in Customer';
+
             printDiv.innerHTML = `
-            <pre style="text-align:center; font-weight:bold; font-size:14px;">DIGIBIZ SUPERMARKET</pre>
-            <pre style="text-align:center;">Your Friendly Grocery Store</pre>
-            <pre>--------------------------------------------------</pre>
-            <pre>Invoice: ${invoiceNo}</pre>
-            <pre>Date: ${new Date().toLocaleString()}</pre>
-            <pre>Customer: ${order.customer.name}</pre>
-            <pre>--------------------------------------------------</pre>
-            <pre style="font-weight:bold;">Item Name                 Qty/Wt            Price</pre>
-            <pre>${itemsHtml}</pre>
-            <pre>--------------------------------------------------</pre>
-            <pre>Subtotal: ${formatCurrency(order.subtotal).padStart(38)}</pre>
-            <pre>Discount: -${formatCurrency(order.discountAmount).padStart(37)}</pre>
-            <pre style="font-weight:bold; font-size:13px;">GRAND TOTAL: ${formatCurrency(order.total).padStart(32)}</pre>
-            <pre>Amount Paid: ${formatCurrency(order.amountPaid).padStart(35)}</pre>
-            <pre>Balance: ${formatCurrency(order.balanceDue).padStart(39)}</pre>
-            <pre>--------------------------------------------------</pre>
-            <pre style="text-align:center; font-weight:bold;">THANK YOU, COME AGAIN!</pre>
+                <div style="text-align:center; margin-bottom:10px; font-family:monospace;">
+                    <div style="font-size:18px; font-weight:bold; color:#000;">${bName}</div>
+                    ${bAddr ? `<div style="font-size:11px; color:#000;">${bAddr}</div>` : ''}
+                    ${bPhone ? `<div style="font-size:11px; color:#000;">Tel: ${bPhone}</div>` : ''}
+                    <div style="font-size:12px; font-weight:bold; margin-top:4px; text-transform:uppercase;">SALES RECEIPT</div>
+                </div>
+
+                <div style="border-top:2px dashed #000; border-bottom:1px dashed #000; padding:6px 0; margin-bottom:6px; font-family:monospace; font-size:11px;">
+                    <div style="display:flex; justify-content:space-between;"><span>Invoice No:</span><strong>${invoiceNo}</strong></div>
+                    <div style="display:flex; justify-content:space-between;"><span>Date:</span><strong>${new Date().toLocaleString()}</strong></div>
+                    <div style="display:flex; justify-content:space-between;"><span>Customer:</span><strong>${cName}</strong></div>
+                    <div style="display:flex; justify-content:space-between;"><span>Payment:</span><strong style="text-transform:uppercase;">${order.paymentMethod || 'CASH'}</strong></div>
+                </div>
+
+                <div style="border-bottom:1px dashed #000; padding-bottom:4px; margin-bottom:6px; font-family:monospace; font-size:11px; font-weight:bold; display:flex; justify-content:space-between;">
+                    <span style="flex:1;">Item</span>
+                    <span style="width:40px; text-align:right;">Qty</span>
+                    <span style="width:75px; text-align:right;">Price</span>
+                    <span style="width:85px; text-align:right;">Amount</span>
+                </div>
+
+                <div style="border-bottom:1px dashed #000; padding-bottom:6px; margin-bottom:6px; font-family:monospace;">
+                    ${itemsHtml}
+                </div>
+
+                <div style="text-align:right; font-size:12px; margin-bottom:4px; font-family:monospace;">
+                    <div style="display:flex; justify-content:space-between;"><span>Subtotal:</span><span>${formatCurrency(order.subtotal)}</span></div>
+                    ${order.discountAmount ? `<div style="display:flex; justify-content:space-between;"><span>Discount:</span><span>-${formatCurrency(order.discountAmount)}</span></div>` : ''}
+                    <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:bold; margin:6px 0;"><span>TOTAL:</span><span>${formatCurrency(order.total)}</span></div>
+                    <div style="display:flex; justify-content:space-between;"><span>Amount Paid:</span><span>${formatCurrency(order.amountPaid || order.total)}</span></div>
+                    ${(order.total - (order.amountPaid || order.total)) > 0 ? `<div style="display:flex; justify-content:space-between; font-weight:bold;"><span>Balance Due:</span><span>${formatCurrency(order.total - (order.amountPaid || order.total))}</span></div>` : ''}
+                </div>
+
+                <div style="text-align:center; font-family:monospace; font-size:11px; border-top:2px dashed #000; padding-top:8px;">
+                    Thank You For Your Business!<br>
+                    <span style="font-size:10px;">(Software by DIGIBIZ - 0713446500)</span>
+                </div>
             `;
             
-            setTimeout(() => {
-                window.print();
-            }, 500);
+            setTimeout(() => window.print(), 300);
         }
         
         async function loadRecentSales() {

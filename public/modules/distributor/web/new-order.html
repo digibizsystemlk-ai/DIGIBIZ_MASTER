@@ -836,12 +836,10 @@
                             </span>
                         </div>
                         <div class="totals"><strong id="cartTotal">Total Rs 0.00</strong></div>
-                        <button type="button" class="btn-submit oe-submit" id="submitBtn">Submit to pending
-                            queue</button>
+                        <button type="button" class="btn-submit oe-submit" id="submitBtn">Submit Order</button>
                         <div id="mwPostSubmitBar" class="mw-post-submit-bar"
                             style="display:none;margin-top:14px;padding:14px 16px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;">
-                            <p style="margin:0 0 10px;font-size:0.9rem;font-weight:600;color:#065f46;">Order saved to
-                                pending queue.</p>
+                            <p style="margin:0 0 10px;font-size:0.9rem;font-weight:600;color:#065f46;">Sales Order Submitted & Approved Successfully!</p>
                             <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
                                 <button type="button" class="btn-submit oe-submit" id="mwPrintReceiptBtn"
                                     style="margin:0;width:auto;padding:10px 16px;font-size:0.88rem;">Print 80mm
@@ -2531,28 +2529,42 @@
 
         async function adjustMainInventoryForOrder(orderData, businessId) {
             if (!orderData || !Array.isArray(orderData.items) || !orderData.items.length) return;
-            var bId = businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            var bId = businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId') || currentBusinessId;
             if (!bId) return;
 
             try {
-                var batch = db.batch();
-                var productsSnap = await db.collection('products').where('businessId', '==', bId).get();
+                var ownerEm = orderData.ownerEmail || (currentBusinessData && currentBusinessData.ownerEmail) || '';
+                var queries = [
+                    db.collection('products').where('businessId', '==', bId).get().catch(function () { return { docs: [] }; }),
+                    db.collection('products').doc(bId).collection('list').get().catch(function () { return { docs: [] }; }),
+                    db.collection('businesses').doc(bId).collection('products').get().catch(function () { return { docs: [] }; })
+                ];
+                if (ownerEm) {
+                    queries.push(db.collection('products').where('ownerEmail', '==', String(ownerEm).toLowerCase().trim()).get().catch(function () { return { docs: [] }; }));
+                }
+
+                var snaps = await Promise.all(queries);
                 var byId = {};
                 var byName = {};
-                productsSnap.docs.forEach(function (doc) {
-                    byId[doc.id] = doc;
-                    var d = doc.data() || {};
-                    var nameKey = String(d.name || d.productName || '').toLowerCase().trim();
-                    if (nameKey) byName[nameKey] = doc;
+
+                snaps.forEach(function (snap) {
+                    (snap.docs || []).forEach(function (doc) {
+                        byId[doc.id] = doc;
+                        var d = doc.data() || {};
+                        var nameKey = String(d.name || d.productName || '').toLowerCase().trim();
+                        if (nameKey) byName[nameKey] = doc;
+                    });
                 });
 
+                var batch = db.batch();
                 var agg = new Map();
+
                 orderData.items.forEach(function (item) {
                     var pid = item.productId || item.id;
                     var productDoc = pid ? byId[pid] : byName[String(item.productName || item.name || '').toLowerCase().trim()];
                     if (!productDoc) return;
 
-                    var orderedQty = Number(item.orderedQty || item.qty || 0) || 0;
+                    var orderedQty = Number(item.orderedQty != null ? item.orderedQty : (item.qty != null ? item.qty : 0)) || 0;
                     var freeQty = Number(item.freeQty || 0) || 0;
                     var returnQty = Number(item.returnResellQty != null ? item.returnResellQty : (item.returnQty || 0)) || 0;
                     var deductQty = Math.max(0, orderedQty + freeQty - returnQty);
@@ -2569,7 +2581,7 @@
                 agg.forEach(function (row) {
                     if (row.deductQty <= 0) return;
                     var pData = row.doc.data() || {};
-                    var curStock = Number(pData.stock != null ? pData.stock : pData.currentStock) || 0;
+                    var curStock = Number(pData.currentStock != null ? pData.currentStock : (pData.stock != null ? pData.stock : 0)) || 0;
                     var nextStock = Math.max(0, curStock - row.deductQty);
 
                     var payload = {
@@ -2584,7 +2596,7 @@
                 });
 
                 await batch.commit();
-                console.log('[Inventory] Main stock deducted for order successfully.');
+                console.log('[Inventory] Main stock deducted for order successfully across all locations.');
             } catch (err) {
                 console.error('[Inventory] Error deducting main stock for order:', err);
             }
@@ -2697,12 +2709,13 @@
             }
             var orderData = {
                 businessId: currentBusinessId,
+                ownerEmail: (currentBusinessData && currentBusinessData.ownerEmail) || '',
                 repId: repId,
                 repName: repName || '',
                 shopId: shopId,
                 orderNumber: orderNumber,
                 orderDate: isMwDateScoped ? orderDate : new Date(),
-                status: 'pending',
+                status: 'approved',
                 items: activeLines.map(function (item) {
                     var pc = String(item.productCode || '').trim();
                     if (!pc) {
@@ -2766,12 +2779,13 @@
             btn.disabled = true;
             showFormMsg('Submitting…', '');
             try {
-                // Sequential ORD-0000001: canonical MW Trading businessId only (not timestamp). Id gate is robust if isMwTradingBiz fails to load.
                 if (isMwTradingSolutionsBusiness()) {
                     orderNumber = await getNextMwOrderNumber(currentBusinessId);
                     orderData.orderNumber = orderNumber;
                 }
-                var pendingOrderRef = db.collection('pendingOrders').doc();
+                var approvedOrderRef = db.collection('orders').doc(orderNumber);
+                var pendingOrderRef = db.collection('pendingOrders').doc(orderNumber);
+
                 if (isLorryPilotBiz && lorryId && window.DigiBizDistributorLorryStock) {
                     var cfg = window.DigiBizDistributorLorryStock;
                     var needByProduct = {};
@@ -2806,6 +2820,7 @@
                                 updatedBy: (firebase.auth().currentUser && firebase.auth().currentUser.uid) || ''
                             }, { merge: true });
                         });
+                        tx.set(approvedOrderRef, orderData);
                         tx.set(pendingOrderRef, orderData);
                     });
                 } else {
@@ -2839,16 +2854,18 @@
                                     updatedBy: (firebase.auth().currentUser && firebase.auth().currentUser.uid) || ''
                                 }, { merge: true });
                             });
+                            tx.set(approvedOrderRef, orderData);
                             tx.set(pendingOrderRef, orderData);
                         });
                     } else {
                         await adjustMainInventoryForOrder(orderData, currentBusinessId);
                         orderData.stockDeducted = true;
+                        await approvedOrderRef.set(orderData);
                         await pendingOrderRef.set(orderData);
                     }
                 }
-                await postMwReceivableSalesForOrder(orderData, pendingOrderRef.id, shopId);
-                showFormMsg('Saved to pending queue.', 'ok');
+                await postMwReceivableSalesForOrder(orderData, approvedOrderRef.id, shopId);
+                showFormMsg('✅ Order submitted & approved successfully!', 'ok');
                 var shopDisplayName = '';
                 try {
                     var ssEl = document.getElementById('shopSelect');

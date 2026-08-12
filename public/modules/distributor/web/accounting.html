@@ -61,6 +61,9 @@
                 <h1>Financial Accounting</h1>
                 <p>General Ledger | Trial Balance | Income Statement | Balance Sheet</p>
             </div>
+            <div>
+                <button onclick="manualSyncOpeningStock()" style="background:#0f3b2c;color:#fff;border:none;padding:10px 20px;border-radius:30px;font-size:13px;font-weight:600;cursor:pointer;"><i class="fa-solid fa-rotate"></i> Sync Stock Assets</button>
+            </div>
         </div>
         
         <div class="accounting-container">
@@ -106,10 +109,21 @@
         const formatLKR = (amount) => `LKR ${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         const showToast = (msg) => { const t = document.getElementById('toast'); if(t){ t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 3000); } };
         
+        function getEntryTime(entry) {
+            if (!entry) return 0;
+            const raw = entry.date || entry.createdAt || entry.timestamp || entry.updatedAt;
+            if (!raw) return 0;
+            if (typeof raw.toDate === 'function') return raw.toDate().getTime();
+            if (raw.seconds != null) return Number(raw.seconds) * 1000;
+            if (typeof raw === 'number') return raw;
+            const d = new Date(raw);
+            return isNaN(d.getTime()) ? 0 : d.getTime();
+        }
+
         function toJSDate(d) {
             if (!d) return new Date();
             if (typeof d.toDate === 'function') return d.toDate();
-            if (d.seconds) return new Date(d.seconds * 1000);
+            if (d.seconds != null) return new Date(d.seconds * 1000);
             const parsed = new Date(d);
             return isNaN(parsed.getTime()) ? new Date() : parsed;
         }
@@ -212,7 +226,7 @@
                 return;
             }
             
-            const sortedEntries = entriesToDisplay.sort((a, b) => toJSDate(b.date) - toJSDate(a.date));
+            const sortedEntries = entriesToDisplay.sort((a, b) => getEntryTime(b) - getEntryTime(a));
 
             let html = '';
             sortedEntries.forEach(entry => {
@@ -233,8 +247,12 @@
                     return val > 0 ? formatLKR(val) : '&nbsp;';
                 }).join('<br>');
 
+                const eMs = getEntryTime(entry);
+                const dObj = eMs ? new Date(eMs) : null;
+                const dStr = dObj && !isNaN(dObj.getTime()) ? dObj.toLocaleString() : '—';
+
                 html += `<tr>
-                    <td>${toJSDate(entry.date).toLocaleDateString()}</td>
+                    <td>${dStr}</td>
                     <td><strong>${entry.description || entry.memo || 'Journal Transaction'}</strong>${entry.ref ? `<br><small style="color:#64748b;">Ref: ${entry.ref}</small>` : ''}</td>
                     <td>${accountNamesHtml}</td>
                     <td class="text-right" style="color: #0f3b2c; font-weight: 600;">${debitHtml}</td>
@@ -405,6 +423,13 @@
             } catch (e) {
                 console.error('Core Sync error:', e);
             }
+        }
+
+        async function manualSyncOpeningStock() {
+            showToast('Syncing Opening Stock Assets to General Ledger...');
+            const userEmail = (auth.currentUser && auth.currentUser.email) || localStorage.getItem('digibiz_impersonate_email') || '';
+            await syncUnjournaledTransactions(userEmail);
+            showToast('✅ Stock Assets Sync Complete!');
         }
 
         function parseDateAny(v) {

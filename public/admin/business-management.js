@@ -375,8 +375,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('dd-sms-total').textContent = `${totalSms} SMS Credits`;
         document.getElementById('dd-sms-paid').textContent = `${paidSms} Paid Credits`;
-        document.getElementById('dd-sms-free').textContent = `${freeSms} Free Credits`;
-        document.getElementById('dd-client-ver').textContent = 'DIGIBIZ PWA v2017';
+        // Fetch dynamic version lock status for this client
+        let clientVerLabel = 'DIGIBIZ PWA (LATEST_DEV)';
+        try {
+            const targetEmail = userData.ownerEmail || userData.email || '';
+            const vcId = String(targetEmail).trim().toLowerCase().replace(/[^a-z0-9@]/g, '_');
+            if (vcId) {
+                const vcSnap = await window.db.collection('client_version_control').doc(vcId).get().catch(() => null);
+                if (vcSnap && vcSnap.exists) {
+                    const cfg = vcSnap.data() || {};
+                    if (cfg.isLocked || cfg.lockStatus === 'LOCKED') {
+                        clientVerLabel = `DIGIBIZ PWA ${cfg.versionTag || 'LOCKED'}` +
+                            (cfg.freezeDate && cfg.freezeDate !== 'N/A' ? ` (Frozen ${cfg.freezeDate})` : '');
+                    }
+                } else if (userData.versionLock || userData.lockedVersionTag) {
+                    clientVerLabel = `DIGIBIZ PWA ${userData.lockedVersionTag || 'LOCKED'}`;
+                }
+            }
+        } catch (eVer) {}
+        document.getElementById('dd-client-ver').textContent = clientVerLabel;
 
         // Real-Time System Usage & Database Counts
         try {

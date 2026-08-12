@@ -358,7 +358,9 @@
                     onclick="openSpoilageModal()"><i class="fas fa-biohazard"></i> Log Spoilage / Damage (හානි)</button>
                 <button class="btn-outline" style="border-color:#0f3b2c; color:#0f3b2c;"
                     onclick="openReconciliationModal()"><i class="fas fa-balance-scale"></i> Stock Reconciliation (තොග
-                    පරීක්ෂාව)</button>
+                    සැසඳීම)</button>
+                <button class="btn-outline" style="border-color:#d97706; color:#d97706;"
+                    onclick="syncPastSalesStock()"><i class="fas fa-sync-alt"></i> Sync Past Sales</button>
                 <button class="btn-primary" id="addProductBtn"><i class="fas fa-plus"></i> Add Product</button>
             </div>
         </div>
@@ -590,7 +592,7 @@
         <div class="modal-content" style="max-width:850px; width:95%;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                 <h3 style="color:#0f3b2c;"><i class="fas fa-balance-scale"></i> Automated Stock Reconciliation Tool (තොග
-                    පරීක්ෂාව)</h3>
+                    සැසඳීම)</h3>
                 <button onclick="closeReconciliationModal()"
                     style="background:none; border:none; font-size:18px; cursor:pointer;">✕</button>
             </div>
@@ -913,6 +915,27 @@
                         productData.createdAt = new Date();
                         await db.collection('products').doc(currentBusinessId).collection('list').doc(productId).set(productData);
                         showToast('Product added successfully!');
+                        
+                        if (stock > 0 && cost > 0) {
+                            const totalValue = stock * cost;
+                            const journalEntry = {
+                                date: new Date(),
+                                memo: `Initial Stock Setup: ${name}`,
+                                entries: [
+                                    { accountId: '1-INVENTORY_ASSET', accountName: 'Inventory Asset', amount: totalValue, type: 'debit' },
+                                    { accountId: '3-OPENING_BALANCE_EQUITY', accountName: 'Opening Balance Equity', amount: totalValue, type: 'credit' }
+                                ],
+                                ref: `products/${productId}`,
+                                refType: 'INITIAL_STOCK',
+                                businessId: currentBusinessId,
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            };
+                            try {
+                                await db.collection('journal').doc(currentBusinessId).collection('entries').add(journalEntry);
+                            } catch (e) {
+                                console.warn('Failed to log initial stock to journal', e);
+                            }
+                        }
                     }
                     document.getElementById('productModal').style.display = 'none';
                     await loadProducts();
@@ -971,6 +994,41 @@
                 }
 
                 await db.collection('products').doc(currentBusinessId).collection('list').doc(currentStockProduct.id).update({ stock: newStock });
+                
+                // Accounting integration
+                const unitCost = parseFloat(currentStockProduct.cost) || 0;
+                if (unitCost > 0 && Math.abs(adjustment) > 0) {
+                    const adjustmentValue = Math.abs(adjustment) * unitCost;
+                    let entries = [];
+                    if (adjustment > 0) {
+                        entries = [
+                            { accountId: '1-INVENTORY_ASSET', accountName: 'Inventory Asset', amount: adjustmentValue, type: 'debit' },
+                            { accountId: '3-EQUITY_ADJUSTMENT', accountName: 'Equity Adjustment', amount: adjustmentValue, type: 'credit' }
+                        ];
+                    } else {
+                        entries = [
+                            { accountId: '5-INVENTORY_LOSS', accountName: 'Inventory Loss', amount: adjustmentValue, type: 'debit' },
+                            { accountId: '1-INVENTORY_ASSET', accountName: 'Inventory Asset', amount: adjustmentValue, type: 'credit' }
+                        ];
+                    }
+                    
+                    const journalEntry = {
+                        date: new Date(),
+                        memo: `Stock Adjustment for ${currentStockProduct.name}: ${adjustment > 0 ? '+' : ''}${adjustment} (${reason})`,
+                        entries: entries,
+                        ref: `products/${currentStockProduct.id}`,
+                        refType: 'STOCK_ADJUSTMENT',
+                        businessId: currentBusinessId,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    try {
+                        await db.collection('journal').doc(currentBusinessId).collection('entries').add(journalEntry);
+                    } catch (e) {
+                        console.warn('Failed to log stock adjustment to journal', e);
+                    }
+                }
+
                 showToast(`Stock updated: ${adjustment > 0 ? '+' : ''}${adjustment} (${reason})`);
                 document.getElementById('stockModal').style.display = 'none';
                 await loadProducts();
@@ -1082,7 +1140,7 @@
                     await db.collection('products').doc(currentBusinessId).collection('list').doc(prodId).update({ stock: newStock });
 
                     // 2. Save Spoilage Expense Entry to Firestore
-                    await db.collection('spoilage_logs').doc(currentBusinessId).collection('list').add({
+                    const spoilageRef = await db.collection('spoilage_logs').doc(currentBusinessId).collection('list').add({
                         productId: prodId,
                         productName: p.name,
                         productCode: p.code || prodId,
@@ -1098,6 +1156,28 @@
                         isOperatingExpense: true,
                         timestamp: new Date()
                     });
+
+                    // 3. Accounting Integration (Journal Entry)
+                    if (totalLoss > 0) {
+                        const journalEntry = {
+                            date: new Date(),
+                            memo: `Spoilage / Damage Log for ${p.name} (Qty: ${qty}, GRN: ${grnNo})`,
+                            entries: [
+                                { accountId: '5-SPOILAGE_EXPENSE', accountName: 'Spoilage Expense', amount: totalLoss, type: 'debit' },
+                                { accountId: '1-INVENTORY_ASSET', accountName: 'Inventory Asset', amount: totalLoss, type: 'credit' }
+                            ],
+                            ref: `spoilage_logs/${spoilageRef.id}`,
+                            refType: 'SPOILAGE',
+                            businessId: currentBusinessId,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        
+                        try {
+                            await db.collection('journal').doc(currentBusinessId).collection('entries').add(journalEntry);
+                        } catch (e) {
+                            console.warn('Failed to log spoilage to journal', e);
+                        }
+                    }
 
                     closeSpoilageModal();
                     showToast(`Logged ${qty} ${p.unit || 'Pcs'} spoilage expense (Rs. ${totalLoss.toFixed(2)}). Stock updated!`);
@@ -1304,6 +1384,75 @@
                     }
                 });
             }
+
+            window.syncPastSalesStock = async () => {
+                if (!confirm('This will find past sales that failed to deduct stock and fix them. Proceed?')) return;
+                try {
+                    const btn = document.querySelector('[onclick="syncPastSalesStock()"]');
+                    if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+                    
+                    // 1. Fetch all stock_history of type 'SALE'
+                    const histSnap = await db.collection('stock_history').doc(currentBusinessId).collection('list').where('type', '==', 'SALE').get();
+                    const syncedInvoices = new Set();
+                    histSnap.forEach(doc => {
+                        const data = doc.data();
+                        if (data.ref) syncedInvoices.add(data.ref);
+                    });
+                    
+                    // 2. Fetch all orders
+                    const ordersSnap = await db.collection('orders').doc(currentBusinessId).collection('list').get();
+                    
+                    let fixedCount = 0;
+                    
+                    for (const orderDoc of ordersSnap.docs) {
+                        const order = orderDoc.data();
+                        if (!order.invoiceNo || order.status === 'cancelled' || order.status === 'refunded') continue;
+                        
+                        if (!syncedInvoices.has(order.invoiceNo)) {
+                            // This order's stock was not deducted!
+                            const items = order.items || [];
+                            if (items.length > 0) {
+                                const batch = db.batch();
+                                
+                                items.forEach(item => {
+                                    const targetId = item.docId || item.id;
+                                    if (targetId) {
+                                        const prodRef = db.collection('products').doc(currentBusinessId).collection('list').doc(targetId);
+                                        const qtySold = Number(item.quantity || 0);
+                                        
+                                        batch.set(prodRef, {
+                                            stock: firebase.firestore.FieldValue.increment(-qtySold)
+                                        }, { merge: true });
+                                        
+                                        const histRef = db.collection('stock_history').doc(currentBusinessId).collection('list').doc();
+                                        batch.set(histRef, {
+                                            productId: targetId,
+                                            productName: item.name || '',
+                                            qtyChange: -qtySold,
+                                            type: 'SALE',
+                                            ref: order.invoiceNo,
+                                            createdAt: order.createdAt || new Date()
+                                        });
+                                    }
+                                });
+                                
+                                await batch.commit();
+                                fixedCount++;
+                            }
+                        }
+                    }
+                    
+                    showToast(`Synced stock for ${fixedCount} past sales.`);
+                    await loadProducts(); // Refresh UI
+                    
+                    if (btn) btn.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Past Sales';
+                } catch (e) {
+                    console.error(e);
+                    alert('Error syncing: ' + e.message);
+                    const btn = document.querySelector('[onclick="syncPastSalesStock()"]');
+                    if (btn) btn.innerHTML = '<i class="fas fa-sync-alt"></i> Sync Past Sales';
+                }
+            };
 
             window.closeStockHistoryModal = function () {
                 const modal = document.getElementById('stockHistoryModal');

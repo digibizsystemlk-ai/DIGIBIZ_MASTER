@@ -2438,26 +2438,43 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
         async function loadOrders() {
             try {
                 let orders = [];
-                const targetBid = currentBusinessId || 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
-                
-                // Fetch orders using ALL matching criteria to ensure no order is missed
-                const [oSnap1, oSnap2, oSnap3, pSnap1, pSnap2] = await Promise.all([
-                    db.collection('orders').where('businessId', '==', targetBid).limit(300).get().catch(() => ({ docs: [] })),
-                    db.collection('orders').where('ownerEmail', '==', 'nadundealwis@gmail.com').limit(300).get().catch(() => ({ docs: [] })),
-                    db.collection('orders').where('repEmail', '==', 'chirathkavinda38@gmail.com').limit(300).get().catch(() => ({ docs: [] })),
-                    db.collection('pendingOrders').where('businessId', '==', targetBid).limit(150).get().catch(() => ({ docs: [] })),
-                    db.collection('pendingOrders').where('ownerEmail', '==', 'nadundealwis@gmail.com').limit(150).get().catch(() => ({ docs: [] }))
-                ]);
+                const targetBid = currentBusinessId || (firebase.auth().currentUser && firebase.auth().currentUser.uid) || '';
+                if (!targetBid) {
+                    allOrders = [];
+                    displayOrders();
+                    return;
+                }
 
+                const ownerEm = (currentBusinessData && currentBusinessData.ownerEmail) ? String(currentBusinessData.ownerEmail).toLowerCase().trim() : '';
+
+                const orderQueries = [
+                    db.collection('orders').where('businessId', '==', targetBid).limit(300).get().catch(() => ({ docs: [] })),
+                    db.collection('orders').doc(targetBid).collection('list').limit(300).get().catch(() => ({ docs: [] })),
+                    db.collection('pendingOrders').where('businessId', '==', targetBid).limit(150).get().catch(() => ({ docs: [] })),
+                    db.collection('pendingOrders').doc(targetBid).collection('list').limit(150).get().catch(() => ({ docs: [] }))
+                ];
+
+                if (ownerEm) {
+                    orderQueries.push(db.collection('orders').where('ownerEmail', '==', ownerEm).limit(300).get().catch(() => ({ docs: [] })));
+                    orderQueries.push(db.collection('pendingOrders').where('ownerEmail', '==', ownerEm).limit(150).get().catch(() => ({ docs: [] })));
+                }
+
+                const snaps = await Promise.all(orderQueries);
                 const map = new Map();
-                for (const doc of [...(pSnap1?.docs || []), ...(pSnap2?.docs || [])]) {
-                    const row = await enrichOrderRow(doc, 'pending');
-                    map.set(doc.id, row);
-                }
-                for (const doc of [...(oSnap1?.docs || []), ...(oSnap2?.docs || []), ...(oSnap3?.docs || [])]) {
-                    const row = await enrichOrderRow(doc, null);
-                    map.set(doc.id, row);
-                }
+
+                snaps.forEach(snap => {
+                    (snap.docs || []).forEach(doc => {
+                        const d = doc.data() || {};
+                        const st = String(d.status || 'approved').toLowerCase();
+                        map.set(doc.id, {
+                            id: doc.id,
+                            ...d,
+                            status: st,
+                            repName: d.repName || d.salesRepName || d.repId || 'Sales Rep',
+                            shopName: d.shopName || d.customerName || d.shopId || 'Shop'
+                        });
+                    });
+                });
 
                 const allFetched = Array.from(map.values());
 
