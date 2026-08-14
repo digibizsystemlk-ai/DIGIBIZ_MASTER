@@ -1,30 +1,45 @@
-const CACHE_NAME = "digibiz-retail-v2055";
+const CACHE_NAME = "digibiz-retail-v2056";
+const PRECACHE_URLS = [
+  "/assets/vendor/html2canvas.min.js",
+  "/assets/vendor/sweetalert2.all.min.js",
+  "/modules/distributor/web/distributor-repapp.html",
+  "/core/pwa-init.js",
+  "/core/firebase-init.js",
+  "/manifest.json"
+];
 
-// Force immediate activation and take over all clients
+// Force immediate activation and precache critical offline assets
 self.addEventListener("install", (event) => {
-  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.addAll(PRECACHE_URLS).catch((err) => console.warn('[SW] Precache warn:', err));
+    }).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    // Delete ALL old caches unconditionally
     caches.keys().then((keys) => {
-      return Promise.all(keys.map((key) => caches.delete(key)));
+      return Promise.all(keys.filter(k => k !== CACHE_NAME).map((key) => caches.delete(key)));
     }).then(() => self.clients.claim())
   );
 });
 
-// Network-First Strategy: ALWAYS fetch fresh content from network first
+// Network-First with full offline Cache Fallback Strategy
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const url = new URL(event.request.url);
 
-  // Bypass cache completely for HTML pages and API requests
-  if (event.request.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('.js')) {
+  // Network-First with automatic Cache Fallback for pages and scripts
+  if (event.request.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
     event.respondWith(
-      fetch(event.request, { cache: 'no-store' })
+      fetch(event.request)
         .then((response) => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
           return response;
         })
         .catch(() => {

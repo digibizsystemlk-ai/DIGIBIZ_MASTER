@@ -40,6 +40,15 @@ if (!firebase.apps.length) {
 }
 
 window.db = firebase.firestore();
+try {
+    window.db.enablePersistence({ synchronizeTabs: true }).catch(function (err) {
+        if (err.code === 'failed-precondition') {
+            console.warn('[Firestore] Multi-tab persistence: Multiple tabs open');
+        } else if (err.code === 'unimplemented') {
+            console.warn('[Firestore] Browser does not support offline persistence');
+        }
+    });
+} catch (ePersist) { }
 window.auth = firebase.auth();
 
 // Super Admin Direct Client Impersonation Auth Interceptor

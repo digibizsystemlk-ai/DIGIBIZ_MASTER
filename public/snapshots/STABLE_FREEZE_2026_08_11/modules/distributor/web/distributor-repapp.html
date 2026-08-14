@@ -56,11 +56,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap"
-        rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-
-    <!-- SweetAlert2 -->
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Local Self-Hosted Vendor Libraries for 100% Offline Capability -->
+    <script src="/assets/vendor/html2canvas.min.js"></script>
+    <script src="/assets/vendor/sweetalert2.all.min.js"></script>
 
     <!-- Firebase Compat SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
@@ -521,8 +519,10 @@
     <div class="app-header">
         <div class="header-row">
             <div>
-                <div class="biz-title" id="hdrBizTitle">🏢 DIGIBIZ DISTRIBUTOR REP APP <span
-                        style="font-size:10px; background:#10b981; color:#fff; padding:2px 6px; border-radius:6px; font-weight:800;">v2.0</span>
+                <div class="biz-title" id="hdrBizTitle" style="display:flex; align-items:center; gap:6px;">
+                    <span id="connStatusDot" style="display:inline-block; width:10px; height:10px; min-width:10px; background:#10b981; border-radius:50%; box-shadow:0 0 8px #10b981;" title="Online"></span>
+                    <span id="hdrBizNameText">DIGIBIZ DISTRIBUTOR REP APP</span>
+                    <span style="font-size:10px; background:rgba(255,255,255,0.2); color:#fff; padding:2px 6px; border-radius:6px; font-weight:800;">v2.0</span>
                 </div>
                 <div class="rep-subtitle" id="hdrRepEmail">Rep: Sales Rep</div>
             </div>
@@ -928,9 +928,52 @@
             return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
+        // --- LIVE NETWORK CONNECTIVITY BADGE (🟢 ONLINE / 🔴 OFFLINE) ---
+        function updateNetworkConnectivityBadge() {
+            const isOnline = navigator.onLine !== false;
+            const dot = document.getElementById('connStatusDot');
+            const txt = document.getElementById('hdrBizNameText');
+            const cachedName = localStorage.getItem('digibiz_cached_biz_name');
+            const bizName = (currentBusinessData && (currentBusinessData.businessName || currentBusinessData.name || currentBusinessData.companyName)) || cachedName || 'DISTRIBUTOR REP APP';
+
+            if (dot) {
+                if (isOnline) {
+                    dot.style.background = '#10b981';
+                    dot.style.boxShadow = '0 0 8px #10b981';
+                    dot.title = 'Online — Synchronized';
+                } else {
+                    dot.style.background = '#ef4444';
+                    dot.style.boxShadow = '0 0 8px #ef4444';
+                    dot.title = 'Offline — Local Persistence Active';
+                }
+            }
+            if (txt) {
+                txt.textContent = bizName;
+            }
+        }
+
+        window.addEventListener('online', function () {
+            updateNetworkConnectivityBadge();
+            showToast('🟢 Internet Connected — Online Synchronized!');
+            if (typeof loadBusinessPortalData === 'function') {
+                loadBusinessPortalData().catch(() => {});
+            }
+            if (typeof loadSubmittedOrders === 'function') {
+                loadSubmittedOrders();
+            }
+        });
+
+        window.addEventListener('offline', function () {
+            updateNetworkConnectivityBadge();
+            showToast('🔴 Working Offline — Local Persistence Active!');
+        });
+
+        document.addEventListener('DOMContentLoaded', updateNetworkConnectivityBadge);
+
         // --- DYNAMIC AUTH & INIT WITH PERSISTENT SESSION ---
         let _repPortalLoadedOnce = false;
         async function initPortal() {
+            updateNetworkConnectivityBadge();
             try {
                 await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => { });
             } catch (e) { }
@@ -1178,8 +1221,8 @@
             }
 
             const bizName = currentBusinessData.businessName || currentBusinessData.name || currentBusinessData.companyName || 'DISTRIBUTOR SALES PORTAL';
-            const hdrTitle = document.getElementById('hdrBizTitle');
-            if (hdrTitle) hdrTitle.textContent = '🏢 ' + bizName;
+            localStorage.setItem('digibiz_cached_biz_name', bizName);
+            updateNetworkConnectivityBadge();
 
             currentRepName = repNameFound || user.displayName || currentBusinessData.ownerName || currentBusinessData.name || userEmail;
             const hdrEmail = document.getElementById('hdrRepEmail');
