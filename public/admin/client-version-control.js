@@ -169,7 +169,8 @@
             return;
         }
 
-        const versionTag = customTag || document.getElementById('versionTagSelect').value || 'STABLE_FREEZE_2026_08_11';
+        let versionTag = customTag || document.getElementById('versionTagSelect').value || 'STABLE_FREEZE_2026_08_11';
+        if (versionTag === 'LATEST_DEV') versionTag = 'STABLE_FREEZE_2026_08_11';
         const freezeDate = new Date().toISOString().split('T')[0];
         const snapshotPath = `/snapshots/${versionTag}/`;
 
