@@ -204,6 +204,12 @@
                     const targetUrl = targetSnapshotPrefix + currentPath.replace(/^\//, '') + window.location.search + window.location.hash;
                     console.log(`[SandboxGate] 🔒 Routing locked client to frozen snapshot: ${targetUrl}`);
                     window.location.replace(targetUrl);
+                } else if (isAlreadyInSnapshot) {
+                    try {
+                        const cleanPath = currentPath.replace(/^\/snapshots\/[^\/]+\//, '/');
+                        const cleanUrl = cleanPath + window.location.search + window.location.hash;
+                        window.history.replaceState(null, '', cleanUrl);
+                    } catch(e) {}
                 }
             } else {
                 if (isAlreadyInSnapshot) {

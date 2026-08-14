@@ -65,5 +65,15 @@
         }
     };
 
-    console.log('✅ Snapshot Data Bridge Layer Active (Polyfill Engine Loaded)');
+    // Clean URL Masking: Keep address bar showing clean /modules/... path without showing /snapshots/...
+    if (window.location.pathname.includes('/snapshots/')) {
+        try {
+            const cleanPath = window.location.pathname.replace(/^\/snapshots\/[^\/]+\//, '/');
+            const cleanUrl = cleanPath + window.location.search + window.location.hash;
+            window.history.replaceState(null, '', cleanUrl);
+            console.log('[SnapshotBridge] 🛡️ Address bar URL masked to clean path:', cleanPath);
+        } catch(e) {}
+    }
+
+    console.log('✅ Snapshot Data Bridge Layer Active (Polyfill & URL Masking Engine Loaded)');
 })();
