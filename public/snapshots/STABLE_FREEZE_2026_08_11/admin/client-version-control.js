@@ -70,7 +70,6 @@
         }
 
         try {
-            // Check existing version lock doc
             const docId = sanitizeEmailForDocId(email);
             const vcDoc = await window.db.collection('client_version_control').doc(docId).get();
             if (vcDoc.exists) {
@@ -79,7 +78,6 @@
                 return;
             }
 
-            // Check users or businesses collection
             const uSnap = await window.db.collection('users').where('email', '==', email).limit(1).get();
             if (!uSnap.empty) {
                 const uData = uSnap.docs[0].data() || {};
@@ -95,7 +93,7 @@
     }
 
     async function handleSaveVersionConfig(e) {
-        e.preventDefault();
+        if (e) e.preventDefault();
         const emailInput = document.getElementById('targetEmailInput');
         const email = String(emailInput.value || '').trim().toLowerCase();
         if (!email) {
@@ -115,13 +113,13 @@
             bypassPwaPrompt: document.getElementById('flagBypassPwaPrompt').checked
         };
 
-        const snapshotPath = lockStatus === 'LOCKED' ? `/snapshots/${versionTag}/` : '';
+        const snapshotPath = `/snapshots/${versionTag}/`;
         const configPayload = {
             email: email,
             versionTag: versionTag,
             freezeDate: freezeDate,
             lockStatus: lockStatus,
-            isLocked: lockStatus === 'LOCKED',
+            isLocked: true,
             snapshotPath: snapshotPath,
             flags: flags,
             notes: notes,
@@ -133,32 +131,87 @@
         const btnSave = document.getElementById('btnSaveVersionConfig');
 
         try {
-            btnSave.disabled = true;
-            btnSave.textContent = '💾 Saving Config...';
+            if (btnSave) {
+                btnSave.disabled = true;
+                btnSave.textContent = '💾 Saving Config...';
+            }
 
-            // 1. Save to client_version_control collection
             await window.db.collection('client_version_control').doc(docId).set(configPayload, { merge: true });
 
-            // 2. Also mirror lock flag on matching users & businesses docs for instant client-side lookup
             try {
-                const isSchemaLocked = lockStatus === 'LOCKED' && flags.lockBusinessType === true;
+                const isSchemaLocked = flags.lockBusinessType === true;
                 const uSnap = await window.db.collection('users').where('email', '==', email).get();
-                uSnap.forEach(d => d.ref.set({ versionLock: lockStatus === 'LOCKED', lockedVersionTag: versionTag, freezeDate: freezeDate, snapshotPath: snapshotPath }, { merge: true }));
+                uSnap.forEach(d => d.ref.set({ versionLock: true, lockedVersionTag: versionTag, freezeDate: freezeDate, snapshotPath: snapshotPath }, { merge: true }));
 
                 const bSnap = await window.db.collection('businesses').where('ownerEmail', '==', email).get();
-                bSnap.forEach(d => d.ref.set({ versionLock: lockStatus === 'LOCKED', lockedVersionTag: versionTag, freezeDate: freezeDate, profileLocked: isSchemaLocked, snapshotPath: snapshotPath }, { merge: true }));
+                bSnap.forEach(d => d.ref.set({ versionLock: true, lockedVersionTag: versionTag, freezeDate: freezeDate, profileLocked: isSchemaLocked, snapshotPath: snapshotPath }, { merge: true }));
             } catch (eMirror) {
                 console.warn('Mirror update warn:', eMirror);
             }
 
-            alert(`✅ Client Version Lock & Snapshot Path successfully saved for ${email}!`);
+            alert(`🔒 Client Version Lock & Snapshot Path successfully saved for ${email}!`);
             loadAllVersionConfigs();
         } catch (e) {
             console.error('Save failed:', e);
             alert('Save failed: ' + e.message);
         } finally {
-            btnSave.disabled = false;
-            btnSave.textContent = '💾 Save Configuration / Isolate Client';
+            if (btnSave) {
+                btnSave.disabled = false;
+                btnSave.textContent = '💾 Save Configuration / Isolate Client';
+            }
+        }
+    }
+
+    async function performLockForEmail(targetEmail, customTag) {
+        const email = String(targetEmail || document.getElementById('targetEmailInput').value || '').trim().toLowerCase();
+        if (!email) {
+            alert('Please enter or select a target client email address.');
+            return;
+        }
+
+        const versionTag = customTag || document.getElementById('versionTagSelect').value || 'STABLE_FREEZE_2026_08_11';
+        const freezeDate = new Date().toISOString().split('T')[0];
+        const snapshotPath = `/snapshots/${versionTag}/`;
+
+        const flags = {
+            suppressAutoUpdates: true,
+            suppressBetaFeatures: true,
+            lockBusinessType: true,
+            bypassPwaPrompt: false
+        };
+
+        const configPayload = {
+            email: email,
+            versionTag: versionTag,
+            freezeDate: freezeDate,
+            lockStatus: 'LOCKED',
+            isLocked: true,
+            snapshotPath: snapshotPath,
+            flags: flags,
+            notes: 'Version lock enabled via Super Admin 1-Click action',
+            updatedBy: firebase.auth().currentUser ? firebase.auth().currentUser.email : 'SUPER_ADMIN',
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        const docId = sanitizeEmailForDocId(email);
+        try {
+            await window.db.collection('client_version_control').doc(docId).set(configPayload, { merge: true });
+
+            try {
+                const uSnap = await window.db.collection('users').where('email', '==', email).get();
+                uSnap.forEach(d => d.ref.set({ versionLock: true, lockedVersionTag: versionTag, freezeDate: freezeDate, snapshotPath: snapshotPath }, { merge: true }));
+
+                const bSnap = await window.db.collection('businesses').where('ownerEmail', '==', email).get();
+                bSnap.forEach(d => d.ref.set({ versionLock: true, lockedVersionTag: versionTag, freezeDate: freezeDate, profileLocked: true, snapshotPath: snapshotPath }, { merge: true }));
+            } catch (eMirror) {
+                console.warn('Mirror lock warn:', eMirror);
+            }
+
+            alert(`🔒 Version Lock & Snapshot Path successfully applied for ${email}!`);
+            loadAllVersionConfigs();
+        } catch (e) {
+            console.error('Lock failed:', e);
+            alert('Lock failed: ' + e.message);
         }
     }
 
@@ -183,7 +236,6 @@
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
 
-            // Remove mirror lock flags from matching users and businesses documents
             try {
                 const uSnap = await window.db.collection('users').where('email', '==', email).get();
                 uSnap.forEach(d => d.ref.set({ versionLock: false, lockedVersionTag: 'LATEST_DEV', snapshotPath: '' }, { merge: true }));
@@ -214,7 +266,7 @@
                 allVersionConfigs.push({
                     id: doc.id,
                     email: d.email || doc.id.replace(/_/g, '.'),
-                    versionTag: d.versionTag || 'v2000_STABLE',
+                    versionTag: d.versionTag || 'STABLE_FREEZE_2026_08_11',
                     freezeDate: d.freezeDate || 'N/A',
                     lockStatus: d.lockStatus || (d.isLocked ? 'LOCKED' : 'UNLOCKED'),
                     flags: d.flags || {},
@@ -278,8 +330,9 @@
                     <td><span style="font-size:11.5px; color:#94a3b8;">${escapeHtml(item.updatedAt)}</span></td>
                     <td style="text-align:right; white-space:nowrap;">
                         ${isLocked ? 
-                            `<button class="btn-unlock-vc" data-email="${escapeHtml(item.email)}" style="background:#059669; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer; margin-right:4px;" type="button">🔓 Unlock</button>` :
-                            `<button class="btn-lock-vc" data-email="${escapeHtml(item.email)}" style="background:#dc2626; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer; margin-right:4px;" type="button">🔒 Lock</button>`
+                            `<button class="btn-lock-vc" data-email="${escapeHtml(item.email)}" data-version="${escapeHtml(item.versionTag)}" style="background:#dc2626; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer; margin-right:4px;" type="button">🔒 Re-Lock</button>
+                             <button class="btn-unlock-vc" data-email="${escapeHtml(item.email)}" style="background:#059669; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer; margin-right:4px;" type="button">🔓 Unlock</button>` :
+                            `<button class="btn-lock-vc" data-email="${escapeHtml(item.email)}" data-version="${escapeHtml(item.versionTag)}" style="background:#dc2626; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer; margin-right:4px;" type="button">🔒 Lock Account</button>`
                         }
                         <button class="btn-edit-vc" data-email="${escapeHtml(item.email)}" style="background:#0284c7; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer; margin-right:4px;" type="button">✏️ Edit</button>
                         <button class="btn-impersonate-vc" data-email="${escapeHtml(item.email)}" style="background:#d97706; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; font-size:11.5px; cursor:pointer;" type="button">🔑 Inspect</button>
@@ -298,16 +351,12 @@
         });
 
         tbody.querySelectorAll('.btn-lock-vc').forEach(btn => {
-            btn.onclick = () => {
+            btn.onclick = async () => {
                 const email = btn.dataset.email;
-                const match = configs.find(c => c.email === email);
-                if (match) {
-                    populateFormWithConfig(match);
-                } else {
-                    document.getElementById('targetEmailInput').value = email;
-                    document.getElementById('versionTagSelect').value = 'STABLE_FREEZE_2026_08_11';
+                const vTag = btn.dataset.version || 'STABLE_FREEZE_2026_08_11';
+                if (email) {
+                    await performLockForEmail(email, vTag);
                 }
-                window.scrollTo({ top: 300, behavior: 'smooth' });
             };
         });
 
