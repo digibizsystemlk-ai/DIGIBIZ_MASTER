@@ -93,16 +93,8 @@
     }
 
     function showReloadToast() {
-        if (document.getElementById('pwaReloadToast')) return;
-        const toast = document.createElement('div');
-        toast.id = 'pwaReloadToast';
-        toast.style.cssText = 'position:fixed; bottom:20px; right:20px; z-index:999999; background:#0f172a; color:#fff; padding:14px 20px; border-radius:12px; font-family:Inter,sans-serif; font-size:13px; font-weight:700; box-shadow:0 10px 25px rgba(0,0,0,0.3); border:1px solid #334155; display:flex; align-items:center; gap:12px;';
-        toast.innerHTML = `
-            <span>🔄 New system update available!</span>
-            <button type="button" onclick="window.location.reload()" style="background:#0284c7; color:#fff; border:none; padding:6px 14px; border-radius:8px; font-weight:800; font-size:12px; cursor:pointer;">Reload Now</button>
-            <button type="button" onclick="this.parentElement.remove()" style="background:transparent; color:#94a3b8; border:none; cursor:pointer; font-size:14px; font-weight:700;">✕</button>
-        `;
-        document.body.appendChild(toast);
+        // Disabled per system directive — no PWA reload toasts shown to users
+        return;
     }
 
     // Global Client Version Lock Helper Guards
@@ -184,11 +176,11 @@
         try {
             const config = window.getClientVersionLockConfig && window.getClientVersionLockConfig();
             const currentPath = window.location.pathname;
-            const isAlreadyInSnapshot = currentPath.includes('/snapshots/');
+            const isAlreadyInSnapshot = currentPath.includes('/snapshots/') || currentPath.includes('/v2026_08_11/') || currentPath.includes('/v_2026_08_11/');
 
             if (!config) {
                 if (isAlreadyInSnapshot) {
-                    const livePath = currentPath.replace(/^\/snapshots\/[^\/]+\//, '/');
+                    const livePath = currentPath.replace(/^\/(snapshots\/[^\/]+|v2026_08_11|v_2026_08_11)\//, '/');
                     console.log(`[SandboxGate] 🔓 Routing unlocked client back to live codebase: ${livePath}`);
                     window.location.replace(livePath + window.location.search + window.location.hash);
                 }
@@ -199,7 +191,7 @@
             const versionTag = config.versionTag || 'STABLE_FREEZE_2026_08_11';
 
             if (isLocked && versionTag !== 'LATEST_DEV') {
-                const targetSnapshotPrefix = `/snapshots/${versionTag}/`;
+                const targetSnapshotPrefix = (versionTag === 'STABLE_FREEZE_2026_08_11') ? '/v2026_08_11/' : `/snapshots/${versionTag}/`;
                 if (!isAlreadyInSnapshot && (currentPath.startsWith('/modules/') || currentPath.startsWith('/admin/') || currentPath.endsWith('.html'))) {
                     const targetUrl = targetSnapshotPrefix + currentPath.replace(/^\//, '') + window.location.search + window.location.hash;
                     console.log(`[SandboxGate] 🔒 Routing locked client to frozen snapshot: ${targetUrl}`);
@@ -207,7 +199,7 @@
                 }
             } else {
                 if (isAlreadyInSnapshot) {
-                    const livePath = currentPath.replace(/^\/snapshots\/[^\/]+\//, '/');
+                    const livePath = currentPath.replace(/^\/(snapshots\/[^\/]+|v2026_08_11|v_2026_08_11)\//, '/');
                     console.log(`[SandboxGate] 🔓 Routing unlocked client back to live codebase: ${livePath}`);
                     window.location.replace(livePath + window.location.search + window.location.hash);
                 }
