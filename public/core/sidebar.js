@@ -1256,6 +1256,9 @@ class Sidebar {
         const user = firebase.auth().currentUser;
         const userEmail = String(user && user.email || '').toLowerCase();
         console.log('[Sidebar Debug] Resolved Email:', userEmail);
+        if (window.syncClientVersionLockWithFirestore && user) {
+            window.syncClientVersionLockWithFirestore(user);
+        }
 
         const isStaging = window.location.hostname.includes('digibiz-test');
         const currentBid = localStorage.getItem('currentBusinessId');

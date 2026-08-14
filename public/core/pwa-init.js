@@ -132,6 +132,53 @@
         return config.flags[flagName] !== false;
     };
 
+    window.syncClientVersionLockWithFirestore = async function(user) {
+        const activeEmail = (window.getEffectiveUserEmail && window.getEffectiveUserEmail(user)) || (user && user.email) || localStorage.getItem('digibiz_impersonate_email') || '';
+        if (!activeEmail) return;
+        const email = String(activeEmail).trim().toLowerCase();
+        const docId = email.replace(/[^a-z0-9@]/g, '_');
+
+        try {
+            if (window.db) {
+                let vcDoc = await window.db.collection('client_version_control').doc(docId).get();
+                let data = vcDoc.exists ? vcDoc.data() : null;
+
+                if (!data) {
+                    const uSnap = await window.db.collection('users').where('email', '==', email).limit(1).get();
+                    if (!uSnap.empty) {
+                        const uData = uSnap.docs[0].data() || {};
+                        if (uData.versionLock) {
+                            data = {
+                                isLocked: true,
+                                lockStatus: 'LOCKED',
+                                versionTag: uData.lockedVersionTag || 'STABLE_FREEZE_2026_08_11',
+                                flags: { suppressAutoUpdates: true, suppressBetaFeatures: true, lockBusinessType: true }
+                            };
+                        }
+                    }
+                }
+
+                if (data && (data.isLocked || data.lockStatus === 'LOCKED')) {
+                    const lockConfig = {
+                        isLocked: true,
+                        lockStatus: 'LOCKED',
+                        versionTag: data.versionTag || 'STABLE_FREEZE_2026_08_11',
+                        flags: data.flags || { suppressAutoUpdates: true, suppressBetaFeatures: true, lockBusinessType: true }
+                    };
+                    localStorage.setItem('digibiz_client_version_lock', JSON.stringify(lockConfig));
+                    sessionStorage.setItem('digibiz_client_version_lock', JSON.stringify(lockConfig));
+                } else {
+                    localStorage.removeItem('digibiz_client_version_lock');
+                    sessionStorage.removeItem('digibiz_client_version_lock');
+                }
+
+                window.evaluateSandboxRouting();
+            }
+        } catch (e) {
+            console.warn('[SandboxGate] Firestore lock sync warn:', e);
+        }
+    };
+
     window.evaluateSandboxRouting = function() {
         try {
             const config = window.getClientVersionLockConfig && window.getClientVersionLockConfig();
@@ -166,5 +213,14 @@
         setTimeout(window.evaluateSandboxRouting, 10);
     } else {
         document.addEventListener('DOMContentLoaded', window.evaluateSandboxRouting);
+    }
+
+    // Auto-listen to Auth state changes to fetch version lock status
+    if (window.firebase && firebase.auth) {
+        firebase.auth().onAuthStateChanged((user) => {
+            if (user) {
+                window.syncClientVersionLockWithFirestore(user);
+            }
+        });
     }
 })();
