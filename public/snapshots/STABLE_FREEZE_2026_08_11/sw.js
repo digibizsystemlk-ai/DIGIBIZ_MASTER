@@ -1,7 +1,10 @@
-const CACHE_NAME = "digibiz-retail-v2056";
+const CACHE_NAME = "digibiz-retail-v2057";
 const PRECACHE_URLS = [
   "/assets/vendor/html2canvas.min.js",
   "/assets/vendor/sweetalert2.all.min.js",
+  "/assets/vendor/firebase-app-compat.js",
+  "/assets/vendor/firebase-auth-compat.js",
+  "/assets/vendor/firebase-firestore-compat.js",
   "/modules/distributor/web/distributor-repapp.html",
   "/core/pwa-init.js",
   "/core/firebase-init.js",

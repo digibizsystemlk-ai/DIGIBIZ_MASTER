@@ -19,6 +19,18 @@ const assets = [
     {
         url: 'https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js',
         dest: path.join(vendorDir, 'sweetalert2.all.min.js')
+    },
+    {
+        url: 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js',
+        dest: path.join(vendorDir, 'firebase-app-compat.js')
+    },
+    {
+        url: 'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js',
+        dest: path.join(vendorDir, 'firebase-auth-compat.js')
+    },
+    {
+        url: 'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js',
+        dest: path.join(vendorDir, 'firebase-firestore-compat.js')
     }
 ];
 

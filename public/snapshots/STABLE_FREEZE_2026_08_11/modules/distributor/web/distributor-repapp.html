@@ -55,15 +55,16 @@
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
     <!-- Local Self-Hosted Vendor Libraries for 100% Offline Capability -->
     <script src="/assets/vendor/html2canvas.min.js"></script>
     <script src="/assets/vendor/sweetalert2.all.min.js"></script>
 
-    <!-- Firebase Compat SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <!-- Local Self-Hosted Firebase Compat SDKs -->
+    <script src="/assets/vendor/firebase-app-compat.js"></script>
+    <script src="/assets/vendor/firebase-auth-compat.js"></script>
+    <script src="/assets/vendor/firebase-firestore-compat.js"></script>
 
     <!-- Core App Config -->
     <script src="/core/pwa-init.js"></script>
@@ -1078,6 +1079,25 @@
 
         // --- LOAD SHOPS & PRODUCTS DYNAMICALLY FOR THE LOGGED-IN REP/BUSINESS ---
         async function loadBusinessPortalData() {
+            // 0.1) Instant Offline Hydration from LocalStorage for 0ms Reload
+            try {
+                const cachedBizData = localStorage.getItem('digibiz_rep_cached_biz_data');
+                if (cachedBizData) currentBusinessData = JSON.parse(cachedBizData);
+                const cachedShops = localStorage.getItem('digibiz_rep_cached_shops');
+                if (cachedShops) shopsList = JSON.parse(cachedShops);
+                const cachedProds = localStorage.getItem('digibiz_rep_cached_products');
+                if (cachedProds) productsList = JSON.parse(cachedProds);
+                const cachedRepName = localStorage.getItem('digibiz_rep_cached_rep_name');
+                if (cachedRepName) currentRepName = cachedRepName;
+
+                if (shopsList.length > 0 || productsList.length > 0) {
+                    renderShopsList();
+                    renderProductsList();
+                    renderReturnProductsList();
+                    updateNetworkConnectivityBadge();
+                }
+            } catch (eHydrate) { console.warn('[OfflineHydrate] warn:', eHydrate); }
+
             const db = firebase.firestore();
             const user = firebase.auth().currentUser || currentUser;
             if (!user) return;
@@ -1359,6 +1379,16 @@
 
                 shopsList = Object.values(sMap);
                 shopsList.sort((a, b) => (a.name || a.shopName || a.customerName || '').localeCompare(b.name || b.shopName || b.customerName || ''));
+
+                if (shopsList.length > 0) {
+                    try { localStorage.setItem('digibiz_rep_cached_shops', JSON.stringify(shopsList)); } catch (e) { }
+                }
+                if (productsList.length > 0) {
+                    try { localStorage.setItem('digibiz_rep_cached_products', JSON.stringify(productsList)); } catch (e) { }
+                }
+                if (currentBusinessData && (currentBusinessData.name || currentBusinessData.businessName)) {
+                    try { localStorage.setItem('digibiz_rep_cached_biz_data', JSON.stringify(currentBusinessData)); } catch (e) { }
+                }
             } catch (e) {
                 console.error('[Portal] Shops fetch error:', e);
             }
@@ -2345,6 +2375,16 @@
                 }
 
                 showToast('🚀 Sales Order Submitted, Stock Deducted & Posted to GL!');
+
+                // Instant Offline History update
+                submittedOrdersCache.unshift({
+                    ...orderDoc,
+                    id: orderDoc.id || ('ORD-' + Date.now()),
+                    _docType: 'ORDER',
+                    createdAt: new Date().toISOString()
+                });
+                try { localStorage.setItem('digibiz_rep_cached_orders', JSON.stringify(submittedOrdersCache)); } catch (e) { }
+                renderSubmittedOrdersHtml();
 
                 renderReceiptView(orderDoc);
 
@@ -3646,14 +3686,79 @@
         // --- SUBMITTED ORDERS HISTORY ---
         let submittedOrdersCache = [];
 
-        async function loadSubmittedOrders() {
-            const db = firebase.firestore();
+        function renderSubmittedOrdersHtml() {
             const container = document.getElementById('submittedOrdersList');
             if (!container) return;
 
+            if (!submittedOrdersCache || submittedOrdersCache.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:16px; color:#94a3b8; font-weight:600;">No previous orders or returns found.</div>';
+                return;
+            }
+
+            container.innerHTML = submittedOrdersCache.map((o, idx) => {
+                const shopN = o.shopName || o.customerName || 'Shop';
+                const isReturn = o._docType === 'RETURN' || Boolean(o.returnId);
+                const amtVal = Number(isReturn ? (o.totalValue || o.refundAmount || 0) : (o.totalAmount || o.grandTotal || 0));
+                const amt = amtVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                let dateStr = '';
+                if (o.createdAt) {
+                    const dObj = (typeof o.createdAt === 'string') ? new Date(o.createdAt) : (o.createdAt.toDate ? o.createdAt.toDate() : new Date(o.createdAt));
+                    dateStr = dObj.toLocaleDateString('en-GB') + ' ' + dObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                }
+
+                let statusBadge = '';
+                if (isReturn) {
+                    let catName = o.shipment === 'COMPANY' ? 'CAT 1 (CO)' : (o.shipment === 'DESTROY' ? 'CAT 3 (LOSS)' : 'CAT 2 (STOCK)');
+                    statusBadge = `<span style="background:#fee2e2; color:#991b1b; font-size:10px; font-weight:800; padding:2px 6px; border-radius:6px; margin-left:4px;">RETURN • ${catName}</span>`;
+                } else if (o.status === 'approved') {
+                    statusBadge = '<span style="background:#dcfce7; color:#15803d; font-size:10px; font-weight:800; padding:2px 6px; border-radius:6px; margin-left:4px;">APPROVED</span>';
+                } else {
+                    statusBadge = '<span style="background:#fef3c7; color:#b45309; font-size:10px; font-weight:800; padding:2px 6px; border-radius:6px; margin-left:4px;">PENDING</span>';
+                }
+
+                const borderColor = isReturn ? '#dc2626' : '#0f766e';
+                const amtColor = isReturn ? '#dc2626' : '#047857';
+
+                return `
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid #f1f5f9; background:#fff; border-radius:10px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05); border-left:4px solid ${borderColor};">
+                        <div>
+                            <div style="font-weight:800; font-size:13px; color:#064e3b; display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
+                                <span>🏪 ${escapeHtml(shopN)}</span>
+                                ${statusBadge}
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">📅 ${dateStr} • ${escapeHtml(isReturn ? ('Mode: ' + (o.compMode || 'CREDIT')) : (o.paymentMethod || 'CASH'))}</div>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <div style="font-weight:900; font-size:13px; color:${amtColor};">${isReturn ? '-' : ''}LKR ${amt}</div>
+                            <button type="button" onclick="viewSubmittedOrderDetailsByIndex(${idx})" style="background:#0284c7; color:#fff; border:none; padding:6px 12px; border-radius:8px; font-size:11px; font-weight:800; cursor:pointer; box-shadow:0 2px 4px rgba(2,132,199,0.2);">🖨️ View/Print</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function loadSubmittedOrders() {
+            const container = document.getElementById('submittedOrdersList');
+            if (!container) return;
+
+            // 1. Instant Offline Hydration from LocalStorage
+            try {
+                const cachedOrders = localStorage.getItem('digibiz_rep_cached_orders');
+                if (cachedOrders) {
+                    submittedOrdersCache = JSON.parse(cachedOrders);
+                    if (submittedOrdersCache && submittedOrdersCache.length > 0) {
+                        renderSubmittedOrdersHtml();
+                    }
+                }
+            } catch (eHydrateOrd) { console.warn('[OrdersHydrate] warn:', eHydrateOrd); }
+
+            const db = firebase.firestore();
             const user = firebase.auth().currentUser || currentUser;
             if (!user || !user.email) {
-                container.innerHTML = '<div style="text-align:center; padding:12px; color:#94a3b8;">Please sign in to view orders.</div>';
+                if (!submittedOrdersCache || submittedOrdersCache.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; padding:12px; color:#94a3b8;">Please sign in to view orders.</div>';
+                }
                 return;
             }
 
@@ -3690,67 +3795,28 @@
 
                 let allOrders = Array.from(mapByDocId.values());
 
-                if (allOrders.length === 0) {
+                if (allOrders.length > 0) {
+                    allOrders.sort((a, b) => {
+                        const getT = (x) => {
+                            if (!x || !x.createdAt) return 0;
+                            if (typeof x.createdAt === 'string') return new Date(x.createdAt).getTime();
+                            if (x.createdAt.toDate) return x.createdAt.toDate().getTime();
+                            return new Date(x.createdAt).getTime();
+                        };
+                        return getT(b) - getT(a);
+                    });
+
+                    submittedOrdersCache = allOrders.slice(0, 50);
+                    try { localStorage.setItem('digibiz_rep_cached_orders', JSON.stringify(submittedOrdersCache)); } catch (e) { }
+                    renderSubmittedOrdersHtml();
+                } else if (!submittedOrdersCache || submittedOrdersCache.length === 0) {
                     container.innerHTML = '<div style="text-align:center; padding:16px; color:#94a3b8; font-weight:600;">No previous orders or returns found.</div>';
-                    return;
                 }
-
-                allOrders.sort((a, b) => {
-                    const getT = (x) => {
-                        if (!x || !x.createdAt) return 0;
-                        if (typeof x.createdAt === 'string') return new Date(x.createdAt).getTime();
-                        if (x.createdAt.toDate) return x.createdAt.toDate().getTime();
-                        return new Date(x.createdAt).getTime();
-                    };
-                    return getT(b) - getT(a);
-                });
-
-                submittedOrdersCache = allOrders.slice(0, 30);
-
-                container.innerHTML = submittedOrdersCache.map((o, idx) => {
-                    const shopN = o.shopName || o.customerName || 'Shop';
-                    const isReturn = o._docType === 'RETURN' || Boolean(o.returnId);
-                    const amtVal = Number(isReturn ? (o.totalValue || o.refundAmount || 0) : (o.totalAmount || 0));
-                    const amt = amtVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-                    let dateStr = '';
-                    if (o.createdAt) {
-                        const dObj = (typeof o.createdAt === 'string') ? new Date(o.createdAt) : (o.createdAt.toDate ? o.createdAt.toDate() : new Date(o.createdAt));
-                        dateStr = dObj.toLocaleDateString('en-GB') + ' ' + dObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    }
-
-                    let statusBadge = '';
-                    if (isReturn) {
-                        let catName = o.shipment === 'COMPANY' ? 'CAT 1 (CO)' : (o.shipment === 'DESTROY' ? 'CAT 3 (LOSS)' : 'CAT 2 (STOCK)');
-                        statusBadge = `<span style="background:#fee2e2; color:#991b1b; font-size:10px; font-weight:800; padding:2px 6px; border-radius:6px; margin-left:4px;">RETURN • ${catName}</span>`;
-                    } else if (o.status === 'approved') {
-                        statusBadge = '<span style="background:#dcfce7; color:#15803d; font-size:10px; font-weight:800; padding:2px 6px; border-radius:6px; margin-left:4px;">APPROVED</span>';
-                    } else {
-                        statusBadge = '<span style="background:#fef3c7; color:#b45309; font-size:10px; font-weight:800; padding:2px 6px; border-radius:6px; margin-left:4px;">PENDING</span>';
-                    }
-
-                    const borderColor = isReturn ? '#dc2626' : '#0f766e';
-                    const amtColor = isReturn ? '#dc2626' : '#047857';
-
-                    return `
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid #f1f5f9; background:#fff; border-radius:10px; margin-bottom:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05); border-left:4px solid ${borderColor};">
-                            <div>
-                                <div style="font-weight:800; font-size:13px; color:#064e3b; display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
-                                    <span>🏪 ${escapeHtml(shopN)}</span>
-                                    ${statusBadge}
-                                </div>
-                                <div style="font-size:11px; color:#64748b; margin-top:3px;">📅 ${dateStr} • ${escapeHtml(isReturn ? ('Mode: ' + (o.compMode || 'CREDIT')) : (o.paymentMethod || 'CASH'))}</div>
-                            </div>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <div style="font-weight:900; font-size:13px; color:${amtColor};">${isReturn ? '-' : ''}LKR ${amt}</div>
-                                <button type="button" onclick="viewSubmittedOrderDetailsByIndex(${idx})" style="background:#0284c7; color:#fff; border:none; padding:6px 12px; border-radius:8px; font-size:11px; font-weight:800; cursor:pointer; box-shadow:0 2px 4px rgba(2,132,199,0.2);">🖨️ View/Print</button>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
             } catch (e) {
-                console.error("Error loading submitted orders:", e);
-                container.innerHTML = '<div style="text-align:center; padding:16px; color:#ef4444;">Orders history unavailable.</div>';
+                console.error("Error loading submitted orders from Firestore:", e);
+                if (!submittedOrdersCache || submittedOrdersCache.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; padding:16px; color:#ef4444;">Orders history unavailable offline.</div>';
+                }
             }
         }
 
