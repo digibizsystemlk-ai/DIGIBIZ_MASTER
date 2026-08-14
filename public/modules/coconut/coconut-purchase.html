@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coconut Purchase — Procurement & Inflow</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="coconut.css">
+    <script src="coconut-common.js"></script>
+</head>
+<body>
+
+    <main class="c-container">
+        <div class="c-header">
+            <div class="c-header-left">
+                <h1>🥥 Fresh Coconut Purchase (අමු පොල් මිලදී ගැනීම්)</h1>
+                <p>Record raw coconut procurement by count, grade/rate, transport costs, and automatic inventory & ledger updates.</p>
+            </div>
+            <div class="c-header-actions">
+                <a href="coconut-stock.html" class="c-btn c-btn-secondary">📦 View Coconut Stock</a>
+                <a href="coconut-grading.html" class="c-btn c-btn-secondary">🏷️ Manage Grades</a>
+            </div>
+        </div>
+
+        <div class="c-grid-2">
+            <!-- Purchase Entry Form -->
+            <div class="c-card">
+                <div class="c-card-header">
+                    <div class="c-card-title">📝 New Purchase Entry</div>
+                    <span class="c-badge c-badge-info">Auto Inventory Sync</span>
+                </div>
+
+                <form id="purchaseForm">
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Purchase Date *</label>
+                            <input type="date" id="pDate" class="c-input" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Supplier (සැපයුම්කරු) *</label>
+                            <div style="display:flex; gap:8px;">
+                                <select id="pSupplier" class="c-select" required style="flex:1;">
+                                    <option value="">Select Supplier...</option>
+                                </select>
+                                <button type="button" class="c-btn c-btn-accent c-btn-sm" id="btnQuickAddSupplier">+ Add</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Grade / Category (වර්ගය) *</label>
+                            <select id="pCategory" class="c-select" required>
+                                <option value="GOOD">Good / Large (A Grade - ලොකු ගෙඩි)</option>
+                                <option value="MEDIUM">Medium (B Grade - මධ්‍යම)</option>
+                                <option value="LOW">Low / Small (C Grade - පොඩි/වැටුණු)</option>
+                                <option value="UNGRADED">Ungraded Whole Batch</option>
+                            </select>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Coconut Count / Quantity (ගෙඩි ගණන) *</label>
+                            <input type="number" id="pQty" class="c-input" min="1" step="1" placeholder="e.g. 5000" required>
+                        </div>
+                    </div>
+
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Rate / Unit Cost (ගෙඩියක මිල) *</label>
+                            <input type="number" id="pUnitCost" class="c-input" min="0" step="0.5" placeholder="e.g. 85.00" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Transport Cost (ප්‍රවාහන වියදම)</label>
+                            <input type="number" id="pTransport" class="c-input" min="0" step="10" placeholder="0.00" value="0">
+                        </div>
+                    </div>
+
+                    <!-- Cost Breakdown Preview -->
+                    <div class="c-cart-total-box" style="margin-bottom:16px;">
+                        <div class="c-cart-row">
+                            <span>Base Coconut Cost:</span>
+                            <strong id="prevBaseCost">Rs. 0.00</strong>
+                        </div>
+                        <div class="c-cart-row">
+                            <span>Transport & Freight:</span>
+                            <strong id="prevTransport">Rs. 0.00</strong>
+                        </div>
+                        <div class="c-cart-row grand-total">
+                            <span>Total Landed Cost:</span>
+                            <span id="prevTotalCost">Rs. 0.00</span>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--c-text-muted); margin-top:6px;">
+                            Effective Landed Rate: <strong id="prevEffectiveRate" style="color:var(--c-primary);">Rs. 0.00</strong> per coconut
+                        </div>
+                    </div>
+
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Payment Mode (ගෙවීම් ක්‍රමය) *</label>
+                            <select id="pPaymentMode" class="c-select" required>
+                                <option value="CASH">Cash (අත්පිට මුදල්)</option>
+                                <option value="CREDIT">Credit / Payable (ණයට)</option>
+                                <option value="BANK">Bank Transfer (බැංකු මාරු)</option>
+                                <option value="CHEQUE">Cheque (චෙක්පත්)</option>
+                            </select>
+                        </div>
+                        <div class="c-form-group" id="chequeFields" style="display:none;">
+                            <label>Cheque No / Date</label>
+                            <input type="text" id="pChequeDetails" class="c-input" placeholder="Cheque # / Clearance Date">
+                        </div>
+                        <div class="c-form-group" id="creditFields" style="display:none;">
+                            <label>Due Date for Settlement</label>
+                            <input type="date" id="pDueDate" class="c-input">
+                        </div>
+                    </div>
+
+                    <div class="c-form-group" style="margin-bottom:16px;">
+                        <label>Notes / Vehicle / Estate Reference</label>
+                        <input type="text" id="pNotes" class="c-input" placeholder="e.g. Lorry WP-GA-1234 / Kurunegala Estate">
+                    </div>
+
+                    <button type="submit" class="c-btn c-btn-primary c-btn-lg" style="width:100%;" id="btnSavePurchase">
+                        💾 Save Purchase & Update Stock
+                    </button>
+                </form>
+            </div>
+
+            <!-- Current Stock Summary Card -->
+            <div>
+                <div class="c-card">
+                    <div class="c-card-header">
+                        <div class="c-card-title">🥥 Current Coconut Stock Summary</div>
+                        <a href="coconut-stock.html" class="c-btn c-btn-secondary c-btn-sm">Adjust Stock</a>
+                    </div>
+                    <div class="c-table-wrapper">
+                        <table class="c-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th class="text-right">Stock Qty</th>
+                                    <th class="text-right">Avg Cost</th>
+                                    <th class="text-right">Total Value</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stockSummaryBody">
+                                <tr><td colspan="4" class="text-center">Loading stock...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="c-card" style="background:#f0fdf4; border-color:#bbf7d0;">
+                    <div style="font-weight:700; font-size:13px; color:#166534; margin-bottom:6px;">💡 Multi-Rate & Transport Allocation</div>
+                    <p style="font-size:12.5px; color:#14532d; line-height:1.6;">
+                        When you enter transport charges, DigiBiz automatically distributes the freight cost across the purchased coconut count to calculate the real <strong>Weighted Average Landed Cost</strong>. This ensures accurate COGS when coconuts are sold or processed.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Purchases History Table -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">📜 Coconut Purchase Records (මිලදී ගැනීම් ලැයිස්තුව)</div>
+                <div style="display:flex; gap:10px;">
+                    <input type="text" id="searchPurchase" class="c-input" placeholder="Search supplier / category..." style="width:240px; padding:6px 12px; font-size:12.5px;">
+                </div>
+            </div>
+
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Supplier</th>
+                            <th>Category</th>
+                            <th class="text-right">Qty (Nuts)</th>
+                            <th class="text-right">Rate (Rs)</th>
+                            <th class="text-right">Transport</th>
+                            <th class="text-right">Total Cost</th>
+                            <th>Payment</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="purchaseHistoryBody">
+                        <tr><td colspan="9" class="text-center" style="padding:20px;">Loading purchases...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Quick Add Supplier Modal -->
+    <div class="c-modal-overlay" id="supplierModal">
+        <div class="c-modal">
+            <div class="c-modal-header">
+                <h3>➕ Add New Coconut Supplier</h3>
+                <button type="button" class="c-modal-close" id="btnCloseSupplierModal">×</button>
+            </div>
+            <form id="quickSupplierForm">
+                <div class="c-form-group" style="margin-bottom:12px;">
+                    <label>Supplier Name (නම) *</label>
+                    <input type="text" id="supName" class="c-input" placeholder="e.g. Sunil Perera" required>
+                </div>
+                <div class="c-form-row">
+                    <div class="c-form-group">
+                        <label>Phone Number (දුරකථන)</label>
+                        <input type="tel" id="supPhone" class="c-input" placeholder="07X-XXXXXXX">
+                    </div>
+                    <div class="c-form-group">
+                        <label>Area / Estate Location (ප්‍රදේශය)</label>
+                        <input type="text" id="supArea" class="c-input" placeholder="e.g. Kuliyapitiya">
+                    </div>
+                </div>
+                <div class="c-form-group" style="margin-bottom:12px;">
+                    <label>Address</label>
+                    <input type="text" id="supAddress" class="c-input" placeholder="Street Address">
+                </div>
+                <div class="c-modal-footer">
+                    <button type="button" class="c-btn c-btn-secondary" id="btnCancelSupplier">Cancel</button>
+                    <button type="submit" class="c-btn c-btn-primary">Save Supplier</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="coconut-purchase.js"></script>
+</body>
+</html>

@@ -189,7 +189,7 @@ const DISTRIBUTOR_MENU_POOL = [
     { id: 'order_history', permissionId: 'canSalesView', icon: '📜', name: 'Order history', link: '/modules/distributor/mobile/history.html' },
     { id: 'products', permissionId: 'canProductView', icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
     { id: 'free_issues', permissionId: 'canStockView', icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
-    { id: 'returns', permissionId: 'canStockView', icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
+    { id: 'returns', permissionId: 'canStockView', icon: '🔄', name: 'Returns & Claims', link: '/modules/distributor/web/returns.html' },
     { id: 'warehouse', permissionId: 'canStockView', icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
     { id: 'deliveries', permissionId: 'canDeliveriesManage', icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
     { id: 'shops', permissionId: 'canCustomerView', icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
@@ -416,6 +416,7 @@ class Sidebar {
         if (compact === 'service') return 'service';
         if (compact === 'attendancepayroll' || compact === 'attendance_payroll') return 'attendance_payroll';
         if (compact === 'retail') return 'retail';
+        if (compact === 'coconut' || compact === 'coconutwholesale') return 'coconut';
         if (compact === 'autocare' || compact === 'vehiclerepair' || compact === 'auto_care') return 'auto_care';
         return raw;
     }
@@ -1587,7 +1588,7 @@ class Sidebar {
             { icon: '🧾', name: 'Invoices', link: '/modules/distributor/web/invoices.html' },
             { icon: '📦', name: 'Products', link: '/modules/distributor/web/products.html' },
             { icon: '🎁', name: 'Free issues log', link: '/modules/distributor/web/free-items.html' },
-            { icon: '🔄', name: 'Returns log', link: '/modules/distributor/web/returns.html' },
+            { icon: '🔄', name: 'Returns & Claims', link: '/modules/distributor/web/returns.html' },
             { icon: '🏭', name: 'Warehouse', link: '/modules/distributor/web/warehouse.html' },
             { icon: '🚚', name: 'Deliveries', link: '/modules/distributor/web/deliveries.html' },
             { icon: '🏪', name: 'Shops', link: '/modules/distributor/web/my-shops.html' },
@@ -1665,10 +1666,10 @@ class Sidebar {
         const ledgersLink = `${verticalPrefix}/ledgers.html`;
         const financeLink = `${verticalPrefix}/finance-ledger.html`;
         const loansLink = `${verticalPrefix}/loans.html`;
-        const expensesLink = this.businessType === 'tire_centre' ? '/modules/tire_centre/expenses.html' : (this.businessType === 'manufacturer' ? '/modules/manufacturer/expenses.html' : '/modules/retail/expenses.html');
-        const revenueLink = this.businessType === 'tire_centre' ? '/modules/tire_centre/revenue.html' : (this.businessType === 'manufacturer' ? '/modules/manufacturer/sales.html' : '/modules/retail/revenue.html');
-        const workbenchLink = this.businessType === 'tire_centre' ? '/modules/tire_centre/workbench.html' : (this.businessType === 'manufacturer' ? '/modules/manufacturer/history.html' : '/modules/retail/workbench.html');
-        const isCoreBusinessWithFullSuite = this.businessType === 'retail' || this.businessType === 'tire_centre' || this.businessType === 'manufacturer';
+        const expensesLink = this.businessType === 'tire_centre' ? '/modules/tire_centre/expenses.html' : (this.businessType === 'manufacturer' ? '/modules/manufacturer/expenses.html' : (this.businessType === 'coconut' ? '/modules/coconut/expenses.html' : '/modules/retail/expenses.html'));
+        const revenueLink = this.businessType === 'tire_centre' ? '/modules/tire_centre/revenue.html' : (this.businessType === 'manufacturer' ? '/modules/manufacturer/sales.html' : (this.businessType === 'coconut' ? '/modules/coconut/sales.html' : '/modules/retail/revenue.html'));
+        const workbenchLink = this.businessType === 'tire_centre' ? '/modules/tire_centre/workbench.html' : (this.businessType === 'manufacturer' ? '/modules/manufacturer/history.html' : (this.businessType === 'coconut' ? '/modules/coconut/history.html' : '/modules/retail/workbench.html'));
+        const isCoreBusinessWithFullSuite = this.businessType === 'retail' || this.businessType === 'tire_centre' || this.businessType === 'manufacturer' || this.businessType === 'coconut';
         
         const menus = [
             { icon: '👥', name: 'Customers', link: customersLink },
@@ -1766,10 +1767,11 @@ class Sidebar {
         const onAutoCareModule = pathLower.includes('/modules/auto_care/');
         const onTireCentreModule = pathLower.includes('/modules/tire_centre/');
         const onPharmacyModule = pathLower.includes('/modules/pharmacy/');
+        const onCoconutModule = pathLower.includes('/modules/coconut/');
         const normalizedBusinessType = this.normalizeBusinessType(this.businessType || '');
         const menuBusinessType = (onManufacturerModule && this.businessType !== 'scrap_collection_center')
             ? 'manufacturer'
-            : (onAutoCareModule ? 'auto_care' : (onTireCentreModule ? 'tire_centre' : (onPharmacyModule ? 'pharmacy' : normalizedBusinessType)));
+            : (onAutoCareModule ? 'auto_care' : (onTireCentreModule ? 'tire_centre' : (onPharmacyModule ? 'pharmacy' : (onCoconutModule ? 'coconut' : normalizedBusinessType))));
 
         if (this.isScrapSuiteContext()) {
             const verticalPrefix = '/modules/core';

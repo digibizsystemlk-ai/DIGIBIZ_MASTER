@@ -21,7 +21,7 @@ const BUSINESS_TYPES = {
         demoEmail: "test@retail.com",
         isReady: true
     },
-    
+
     tire_centre: {
         id: "tire_centre",
         name: "Tire Center",
@@ -48,7 +48,7 @@ const BUSINESS_TYPES = {
         demoEmail: "test@tyrecentre.com",
         isReady: true
     },
-    
+
     auto_care: {
         id: "auto_care",
         name: "Auto Care & Vehicle Repair Center",
@@ -87,7 +87,7 @@ const BUSINESS_TYPES = {
         demoEmail: "test@autocare.com",
         isReady: true
     },
-    
+
     pharmacy: {
         id: "pharmacy",
         name: "Pharmacy",
@@ -113,7 +113,7 @@ const BUSINESS_TYPES = {
         demoEmail: "test@pharmacy.com",
         isReady: true
     },
-    
+
     restaurant: {
         id: "restaurant",
         name: "Restaurant / Cafe",
@@ -132,7 +132,7 @@ const BUSINESS_TYPES = {
         dashboardComponents: ["todayOrders", "tableStatus", "topItems", "sales"],
         demoEmail: "test@restaurant.com"
     },
-    
+
     garment: {
         id: "garment",
         name: "Garment / Fashion",
@@ -151,7 +151,7 @@ const BUSINESS_TYPES = {
         dashboardComponents: ["sales", "inventory", "topVariants", "recentSales"],
         demoEmail: "test@garment.com"
     },
-    
+
     hardware: {
         id: "hardware",
         name: "Hardware / Construction",
@@ -177,7 +177,7 @@ const BUSINESS_TYPES = {
         },
         demoEmail: "test@hardware.com"
     },
-    
+
     service: {
         id: "service",
         name: "Service / Salon",
@@ -222,10 +222,10 @@ const BUSINESS_TYPES = {
             { icon: "📋", name: "Reports", link: "/modules/distributor/web/reports.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR", "ACCOUNTANT"] },
             { icon: "💰", name: "Sales", link: "/modules/distributor/web/sales.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR", "ACCOUNTANT", "WAREHOUSE_MANAGER"] },
             { icon: "💳", name: "Finance", link: "/modules/core/finance-ledger.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "REP_SUPERVISOR", "ACCOUNTANT"] },
-            
+
             // Mobile App Menus (for Reps)
             { icon: "📱", name: "Rep Order Form", link: "/modules/distributor/mobile/order.html", role: ["REP"], mobileOnly: true },
-            
+
             // Common Menus
             { icon: "🏢", name: "Business Profile", link: "/modules/company/profile.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER"] },
             { icon: "📁", name: "Accounting", link: "/modules/accounts/advanced-accounting-dashboard.html", role: ["SUPER_ADMIN", "DISTRIBUTOR_OWNER", "ACCOUNTANT"] },
@@ -315,6 +315,54 @@ const BUSINESS_TYPES = {
         demoEmail: "test@scrap.com"
     },
 
+    coconut: {
+        id: "coconut",
+        name: "Coconut Wholesale & Husk Products",
+        icon: "🥥",
+        description: "Coconut procurement, grading, husk-based production, stock and sales",
+        isReady: true,
+        demoEmail: "test@coconut.com",
+        menus: [
+            { icon: "📊", name: "Dashboard", link: "/modules/coconut/dashboard.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🥥", name: "Coconut Purchase", link: "/modules/coconut/coconut-purchase.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🏷️", name: "Grading", link: "/modules/coconut/coconut-grading.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📦", name: "Coconut Stock", link: "/modules/coconut/coconut-stock.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🟤", name: "Husk Purchase", link: "/modules/coconut/husk-purchase.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🏭", name: "Production", link: "/modules/coconut/production.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "📦", name: "Products / Stock", link: "/modules/coconut/products.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "🛒", name: "Sales", link: "/modules/coconut/sales.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "STORE_KEEPER", "VIEWER", "USER"] },
+            { icon: "💸", name: "Procurement Costs", link: "/modules/coconut/procurement-costs.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER", "USER"] },
+            { icon: "🧾", name: "Expenses", link: "/modules/coconut/expenses.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "VIEWER"] },
+            { icon: "👥", name: "Customers", link: "/modules/coconut/customers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "VIEWER"] },
+            { icon: "🚚", name: "Suppliers", link: "/modules/coconut/suppliers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "CASHIER", "VIEWER"] },
+            { icon: "📁", name: "Accounting", link: "/modules/coconut/accounting.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] },
+            { icon: "💰", name: "Finance", link: "/modules/coconut/finance-ledger.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] },
+            { icon: "📚", name: "Ledgers", link: "/modules/coconut/ledgers.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] },
+            { icon: "💳", name: "Payments", link: "/modules/coconut/payments.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] },
+            { icon: "🏦", name: "Loans", link: "/modules/coconut/loans.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] },
+            { icon: "📖", name: "History", link: "/modules/coconut/history.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] },
+            { icon: "📈", name: "Reports", link: "/modules/coconut/reports.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] },
+            { icon: "👥", name: "Staff", link: "/modules/coconut/staff.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER"] },
+            { icon: "🏢", name: "Profile", link: "/modules/coconut/profile.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] },
+            { icon: "⚙️", name: "Settings", link: "/modules/coconut/settings.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN"] },
+            { icon: "🔔", name: "Notifications", link: "/modules/company/notifications.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] },
+            { icon: "❓", name: "Help", link: "/modules/coconut/help.html", role: ["SUPER_ADMIN", "BUSINESS_OWNER", "ADMIN", "MANAGER", "ACCOUNTANT", "VIEWER"] }
+        ],
+        dashboardComponents: [
+            "todayCoconutPurchaseCount", "monthCoconutPurchaseCount", "monthPurchaseCost",
+            "coconutStockQty", "huskStockQty", "todaySales", "monthSales",
+            "fgStockValue", "rmStockValue", "todayProductionCount", "monthProductionCount"
+        ],
+        features: {
+            multiPriceCoconutPurchase: true,
+            coconutGrading: true,
+            separateHuskPurchase: true,
+            huskBasedProduction: true,
+            transportCostTracking: true,
+            categoryWiseStock: true
+        }
+    },
+
     attendance_payroll: {
         id: "attendance_payroll",
         name: "Attendance & Payroll",
@@ -360,20 +408,20 @@ const COMMON_MENUS = [
 function getMenusForBusinessType(businessType, userRole, isMobile = false) {
     const business = BUSINESS_TYPES[businessType];
     if (!business) return [];
-    
+
     let menus = [];
-    
+
     // Add business specific menus
     for (const menu of business.menus) {
         // Skip mobile-only menus for web
         if (menu.mobileOnly && !isMobile) continue;
-        
+
         // Check role access
         if (menu.role && menu.role.includes(userRole)) {
             menus.push(menu);
         }
     }
-    
+
     // Add common menus (for web only)
     if (!isMobile) {
         for (const menu of COMMON_MENUS) {
@@ -382,7 +430,7 @@ function getMenusForBusinessType(businessType, userRole, isMobile = false) {
             }
         }
     }
-    
+
     return menus;
 }
 

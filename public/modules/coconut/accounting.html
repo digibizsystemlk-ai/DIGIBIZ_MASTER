@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Coconut Financial Accounting & General Ledger</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:900px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=58"></script>
+    <script src="/core/event-bus.js?v=58"></script>
+    <script src="/core/accounts-core.js?v=58"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=58"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter',sans-serif;background:#f4f6fa;color:#1e293b;min-height:100vh;}
+        .main-content{min-height:100vh;background:#f4f6fa;}
+        .top-bar{background:#fff;padding:16px 32px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e9edf2;}
+        .page-title h1{font-size:24px;font-weight:700;color:#0f3b2c;display:flex;align-items:center;gap:10px;}
+        .page-title p{font-size:13px;color:#5b6e8c;margin-top:4px;}
+        .accounting-container{max-width:1400px;margin:0 auto;padding:28px 32px 60px 32px;}
+        
+        .finance-hero{
+            background: linear-gradient(135deg, #0f3b2c 0%, #165b44 60%, #09241b 100%);
+            border-radius: 24px; padding: 32px 40px; margin-bottom: 24px; color: #fff;
+            box-shadow: 0 12px 30px -8px rgba(15, 59, 44, 0.35);
+            position: relative; overflow: hidden;
+        }
+        .finance-hero::after {
+            content: '🥥';
+            position: absolute; right: 30px; top: 10px; font-size: 110px;
+            opacity: 0.12; pointer-events: none;
+        }
+        .finance-hero h2{font-size:24px;font-weight:800;letter-spacing:-0.5px;}
+        .finance-hero p{font-size:14px;color:#a7f3d0;margin-top:6px;max-width:700px;line-height:1.5;}
+
+        .finance-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:24px;}
+        .finance-card{background:#fff;border-radius:20px;padding:22px 24px;border:1px solid #e2e8f0;box-shadow:0 4px 12px rgba(0,0,0,0.03);transition:transform 0.2s;}
+        .finance-card:hover{transform:translateY(-2px);}
+        .card-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;margin-bottom:6px;}
+        .card-value{font-size:26px;font-weight:800;color:#0f3b2c;}
+        
+        .finance-tabs{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;}
+        .tab-btn{padding:10px 24px;background:#fff;border:1px solid #cbd5e1;border-radius:50px;font-size:13.5px;font-weight:600;cursor:pointer;color:#475569;transition:all 0.2s;}
+        .tab-btn:hover{background:#f1f5f9;color:#0f3b2c;}
+        .tab-btn.active{background:#0f3b2c;color:#fff;border-color:#0f3b2c;box-shadow:0 4px 12px rgba(15,59,44,0.25);}
+        
+        .ledger-table{background:#fff;border-radius:20px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 12px rgba(0,0,0,0.03);}
+        table{width:100%;border-collapse:collapse;}
+        th{text-align:left;padding:14px 18px;background:#f8fafc;font-weight:700;font-size:12px;text-transform:uppercase;color:#475569;border-bottom:1px solid #e2e8f0;letter-spacing:0.4px;}
+        td{padding:13px 18px;border-bottom:1px solid #f1f5f9;font-size:13.5px;color:#1e293b;}
+        tr:hover td{background:#fafcff;}
+        .text-right{text-align:right;}
+        
+        .trial-card,.statement-card{background:#fff;border-radius:20px;padding:26px;border:1px solid #e2e8f0;box-shadow:0 4px 12px rgba(0,0,0,0.03);}
+        .balance-status{margin-top:20px;padding:14px 18px;border-radius:14px;text-align:center;font-weight:700;font-size:14px;}
+        .balanced{background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;}
+        .not-balanced{background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;}
+        
+        .statement-row{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#334155;}
+        .statement-row span:last-child{font-weight:600;}
+        .statement-total{display:flex;justify-content:space-between;font-size:17px;font-weight:800;padding-top:16px;margin-top:10px;border-top:2px solid #0f3b2c;color:#0f3b2c;}
+        
+        .toast{position:fixed;bottom:30px;right:30px;background:#0f3b2c;color:#fff;padding:12px 24px;border-radius:40px;z-index:3000;display:none;box-shadow:0 10px 25px rgba(0,0,0,0.2);font-weight:600;font-size:13.5px;}
+        .toast.show{display:block;}
+
+        @media (max-width: 900px) {
+            .accounting-container{padding:18px;}
+            .finance-stats{grid-template-columns:1fr 1fr;}
+            .top-bar{padding:14px 18px;}
+            .finance-hero{padding:24px 20px;}
+        }
+        @media (max-width: 600px) {
+            .finance-stats{grid-template-columns:1fr;}
+        }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="page-title">
+                <h1><span>🥥</span> Financial Accounting & Statements</h1>
+                <p>General Ledger | Trial Balance | Income Statement | Balance Sheet (ද්විත්ව සටහන් ගිණුම්කරණය)</p>
+            </div>
+        </div>
+        
+        <div class="accounting-container">
+            <div class="finance-hero">
+                <h2>Coconut Operations General Ledger</h2>
+                <p>Double-entry accounting engine automatically integrated with coconut purchasing, husk processing, inventory valuation & live financial statements.</p>
+            </div>
+        
+            <div class="finance-stats">
+                <div class="finance-card">
+                    <div class="card-label">Total Revenue</div>
+                    <div class="card-value" id="totalRevenue" style="color:#059669;">Rs. 0.00</div>
+                </div>
+                <div class="finance-card">
+                    <div class="card-label">Total Expenses & COGS</div>
+                    <div class="card-value" id="totalExpenses" style="color:#dc2626;">Rs. 0.00</div>
+                </div>
+                <div class="finance-card">
+                    <div class="card-label">Net Profit (ශුද්ධ ලාභය)</div>
+                    <div class="card-value" id="netProfit" style="color:#0f3b2c;">Rs. 0.00</div>
+                </div>
+                <div class="finance-card">
+                    <div class="card-label">Cash & Bank Balance</div>
+                    <div class="card-value" id="cashBalance" style="color:#0284c7;">Rs. 0.00</div>
+                </div>
+            </div>
+        
+            <div class="finance-tabs">
+                <button id="btn-journal" class="tab-btn active" onclick="showTab('journal')">📖 Journal Entries</button>
+                <button id="btn-ledger" class="tab-btn" onclick="showTab('ledger')">📚 Account Ledger</button>
+                <button id="btn-trial" class="tab-btn" onclick="showTab('trial')">⚖️ Trial Balance</button>
+                <button id="btn-income" class="tab-btn" onclick="showTab('income')">📈 Income Statement (P&L)</button>
+                <button id="btn-balance" class="tab-btn" onclick="showTab('balance')">🏛️ Balance Sheet</button>
+            </div>
+
+            <!-- 1. Journal Tab -->
+            <div id="tab-journal">
+                <div class="ledger-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:120px;">Date</th>
+                                <th>Description / Memo</th>
+                                <th>Account Code & Title</th>
+                                <th class="text-right" style="width:140px;">Debit (Dr)</th>
+                                <th class="text-right" style="width:140px;">Credit (Cr)</th>
+                                <th style="width:100px; text-align:center;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="entriesBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 2. Ledger Tab -->
+            <div id="tab-ledger" style="display:none;">
+                <div class="trial-card">
+                    <div id="ledgerBody"></div>
+                </div>
+            </div>
+
+            <!-- 3. Trial Balance Tab -->
+            <div id="tab-trial" style="display:none;">
+                <div class="trial-card">
+                    <div id="trialBody"></div>
+                    <div id="balanceMsg" class="balance-status"></div>
+                </div>
+            </div>
+
+            <!-- 4. Income Statement Tab -->
+            <div id="tab-income" style="display:none;">
+                <div class="statement-card" id="incomeContent"></div>
+            </div>
+
+            <!-- 5. Balance Sheet Tab -->
+            <div id="tab-balance" style="display:none;">
+                <div class="statement-card" id="balanceContent"></div>
+            </div>
+        </div>
+    </div>
+    <div id="toast" class="toast"></div>
+
+    <script>
+        let state = { context: null, role: 'BUSINESS_OWNER', isAdmin: true, journalEntries: [], ledger: {}, businessId: null };
+        
+        const formatLKR = (amount) => `Rs. ${Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        
+        const showToast = (msg) => { 
+            const t = document.getElementById('toast'); 
+            if(t){ 
+                t.textContent = msg; 
+                t.classList.add('show'); 
+                setTimeout(() => t.classList.remove('show'), 3000); 
+            } 
+        };
+        
+        function toJSDate(d) {
+            if (!d) return new Date();
+            if (typeof d.toDate === 'function') return d.toDate();
+            if (d.seconds) return new Date(d.seconds * 1000);
+            const parsed = new Date(d);
+            return isNaN(parsed.getTime()) ? new Date() : parsed;
+        }
+        
+        function hasAccountingAccess() {
+            return true;
+        }
+
+        function showTab(tab) {
+            ['journal', 'ledger', 'trial', 'income', 'balance'].forEach(name => {
+                const el = document.getElementById(`tab-${name}`);
+                if (el) el.style.display = (name === tab ? 'block' : 'none');
+                const btn = document.getElementById(`btn-${name}`);
+                if (btn) btn.classList.toggle('active', name === tab);
+            });
+        }
+
+        function normalizeAccountType(accountId, accountName = '') {
+            const str = (String(accountId || '') + ' ' + String(accountName || '')).toUpperCase().trim();
+            const code = str.startsWith('AC-') ? str.substring(3) : str;
+            
+            if (code.includes('CASH') || code.includes('BANK') || code.includes('RECEIVABLE') || code.includes('AR') || code.includes('INVENTORY') || code.includes('STOCK') || code.includes('ASSET') || code.startsWith('1')) return 'ASSET';
+            if (code.includes('PAYABLE') || code.includes('AP') || code.includes('LIABILITY') || code.includes('LOAN') || code.includes('TAX') || code.includes('DUE') || code.startsWith('2')) return 'LIABILITY';
+            if (code.includes('EQUITY') || code.includes('CAPITAL') || code.includes('DRAWING') || code.startsWith('3')) return 'EQUITY';
+            if (code.includes('REVENUE') || code.includes('SALE') || code.includes('INCOME') || code.includes('EARNING') || code.startsWith('4')) return 'REVENUE';
+            if (code.includes('EXPENSE') || code.includes('COGS') || code.includes('COST') || code.includes('PURCHASE') || code.includes('SALARY') || code.includes('RENT') || code.includes('UTILITY') || code.includes('DISCOUNT') || code.startsWith('5')) return 'EXPENSE';
+            return 'ASSET';
+        }
+
+        function buildLedger(entries) {
+            const ledger = {};
+            entries.forEach(entry => {
+                if (entry.isReversed || entry.reversalOf) return;
+                const lines = Array.isArray(entry.entries) ? entry.entries : (Array.isArray(entry.lines) ? entry.lines : []);
+                lines.forEach(line => {
+                    const accCode = line.accountCode || line.accountId || line.account || '1-1040-01';
+                    const accName = line.accountName || line.name || accCode;
+                    if (!ledger[accCode]) {
+                        ledger[accCode] = { id: accCode, name: accName, debit: 0, credit: 0, balance: 0, type: normalizeAccountType(accCode, accName) };
+                    }
+                    
+                    const dVal = Number(line.debit || (line.type === 'debit' ? line.amount : 0) || 0);
+                    const cVal = Number(line.credit || (line.type === 'credit' ? line.amount : 0) || 0);
+                    
+                    ledger[accCode].debit += dVal;
+                    ledger[accCode].credit += cVal;
+                });
+            });
+
+            for (const accId in ledger) {
+                const acc = ledger[accId];
+                if (acc.type === 'ASSET' || acc.type === 'EXPENSE') {
+                    acc.balance = acc.debit - acc.credit;
+                } else {
+                    acc.balance = acc.credit - acc.debit;
+                }
+            }
+            return ledger;
+        }
+
+        function updateUI() {
+            state.ledger = buildLedger(state.journalEntries);
+            renderJournal();
+            renderLedger();
+            renderTrial();
+            renderIncome();
+            renderBalance();
+            updateStats();
+        }
+
+        function renderJournal() {
+            const body = document.getElementById('entriesBody');
+            if (!body) return;
+
+            const reversedEntryIds = new Set();
+            state.journalEntries.forEach(entry => {
+                if (entry.reversalOf) reversedEntryIds.add(entry.reversalOf);
+            });
+
+            const entriesToDisplay = state.journalEntries.filter(entry => {
+                return !entry.isReversed && !entry.isReversal && !entry.reversalOf && !reversedEntryIds.has(entry.id);
+            });
+
+            if (entriesToDisplay.length === 0) {
+                body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#64748b;"><i class="fa-solid fa-folder-open" style="font-size:28px;margin-bottom:10px;display:block;color:#94a3b8;"></i>No journal entries recorded yet. Financial statements will update automatically as coconut purchases, production runs, and sales occur.</td></tr>';
+                return;
+            }
+            
+            const sortedEntries = entriesToDisplay.sort((a, b) => toJSDate(b.date) - toJSDate(a.date));
+
+            let html = '';
+            sortedEntries.forEach(entry => {
+                const lines = Array.isArray(entry.entries) ? entry.entries : (Array.isArray(entry.lines) ? entry.lines : []);
+                const accountNamesHtml = lines.map(l => {
+                    const code = l.accountCode || l.accountId || '1-1040-01';
+                    const name = l.accountName ? ` - ${l.accountName}` : '';
+                    return `<span style="font-size:13px; font-weight:600;">${code}${name}</span>`;
+                }).join('<br>');
+                
+                const debitHtml = lines.map(l => {
+                    const val = Number(l.debit || (l.type === 'debit' ? l.amount : 0) || 0);
+                    return val > 0 ? formatLKR(val) : '&nbsp;';
+                }).join('<br>');
+
+                const creditHtml = lines.map(l => {
+                    const val = Number(l.credit || (l.type === 'credit' ? l.amount : 0) || 0);
+                    return val > 0 ? formatLKR(val) : '&nbsp;';
+                }).join('<br>');
+
+                html += `<tr>
+                    <td style="font-weight:600; color:#475569;">${toJSDate(entry.date).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })}</td>
+                    <td>
+                        <strong style="color:#0f3b2c;">${entry.description || entry.memo || 'Coconut Operation Entry'}</strong>
+                        ${entry.ref ? `<br><small style="color:#64748b; font-size:11.5px;">Ref: ${entry.ref} (${entry.referenceType || entry.refType || 'OP'})</small>` : ''}
+                    </td>
+                    <td>${accountNamesHtml}</td>
+                    <td class="text-right" style="color: #0f3b2c; font-weight: 700;">${debitHtml}</td>
+                    <td class="text-right" style="color: #64748b; font-weight: 700;">${creditHtml}</td>
+                    <td style="text-align:center;">
+                        <button onclick="deleteJournalEntry('${entry.id}')" style="background:#fee2e2;color:#dc2626;border:none;padding:5px 10px;border-radius:8px;cursor:pointer;font-weight:700;font-size:12px;transition:0.2s;" title="Delete Entry"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+            body.innerHTML = html;
+        }
+
+        async function deleteJournalEntry(entryId) {
+            if (!confirm('⚠️ Are you sure you want to DELETE this journal entry?\n\nThis will permanently remove this entry from the General Ledger and reverse linked balances.')) return;
+            
+            try {
+                const bid = state.businessId;
+                const db = window.db || firebase.firestore();
+                const entryRef = db.collection('journal').doc(bid).collection('entries').doc(entryId);
+                await entryRef.delete();
+                showToast('✅ Journal entry deleted successfully.');
+                state.journalEntries = state.journalEntries.filter(e => e.id !== entryId);
+                updateUI();
+            } catch (error) {
+                console.error('Error deleting journal entry:', error);
+                showToast('Error: Could not delete journal entry - ' + error.message);
+            }
+        }
+
+        function renderLedger() {
+             const body = document.getElementById('ledgerBody');
+             if (!body) return;
+             const entries = Object.entries(state.ledger);
+             if (entries.length === 0) {
+                 body.innerHTML = '<p style="text-align:center;padding:30px;color:#64748b;">No ledger records found.</p>';
+                 return;
+             }
+             body.innerHTML = `<table><thead><tr><th>Account Code / Name</th><th>Account Category</th><th class="text-right">Total Debit</th><th class="text-right">Total Credit</th><th class="text-right">Net Balance</th></tr></thead><tbody>
+             ${entries.map(([id, {name, type, debit, credit, balance}]) => `<tr><td><strong>${id}</strong>${name && name !== id ? `<br><small style="color:#64748b;">${name}</small>` : ''}</td><td><span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:10px;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;">${type}</span></td><td class="text-right" style="color:#0f3b2c;font-weight:600;">${formatLKR(debit)}</td><td class="text-right" style="color:#64748b;font-weight:600;">${formatLKR(credit)}</td><td class="text-right" style="font-weight:800;color:${balance >= 0 ? '#0f3b2c' : '#dc2626'};">${formatLKR(balance)}</td></tr>`).join('')}
+             </tbody></table>`;
+        }
+        
+        function renderTrial() {
+            let totalDebit = 0, totalCredit = 0;
+            const body = document.getElementById('trialBody');
+            if (!body) return;
+            let rows = '';
+            for (const [id, {name, debit, credit}] of Object.entries(state.ledger)) {
+                rows += `<tr><td><strong>${id}</strong>${name ? ` - ${name}` : ''}</td><td class="text-right" style="color:#0f3b2c;font-weight:600;">${formatLKR(debit)}</td><td class="text-right" style="color:#64748b;font-weight:600;">${formatLKR(credit)}</td></tr>`;
+                totalDebit += debit;
+                totalCredit += credit;
+            }
+            body.innerHTML = `<table><thead><tr><th>Account Title</th><th class="text-right">Debit Balance</th><th class="text-right">Credit Balance</th></tr></thead><tbody>${rows || '<tr><td colspan="3" style="text-align:center;padding:20px;color:#64748b;">No trial balance entries.</td></tr>'}</tbody><tfoot><tr style="background:#f8fafc;font-size:15px;"><td><strong>Total (සමස්ත එකතුව)</strong></td><td class="text-right" style="color:#0f3b2c;"><strong>${formatLKR(totalDebit)}</strong></td><td class="text-right" style="color:#0f3b2c;"><strong>${formatLKR(totalCredit)}</strong></td></tr></tfoot></table>`;
+            const msg = document.getElementById('balanceMsg');
+            if (msg) {
+                const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
+                msg.textContent = isBalanced ? '✓ Trial Balance is perfectly balanced (හර සහ බැර ශේෂයන් සමතුලිතයි).' : `⚠️ Trial Balance is not balanced (Difference: ${formatLKR(Math.abs(totalDebit - totalCredit))}).`;
+                msg.className = `balance-status ${isBalanced ? 'balanced' : 'not-balanced'}`;
+            }
+        }
+
+        function renderIncome() {
+            const revenue = Object.values(state.ledger).filter(a => a.type === 'REVENUE').reduce((sum, a) => sum + a.balance, 0);
+            const expenses = Object.values(state.ledger).filter(a => a.type === 'EXPENSE').reduce((sum, a) => sum + a.balance, 0);
+            const netProfit = revenue - expenses;
+            const content = document.getElementById('incomeContent');
+            if (content) {
+                content.innerHTML = `
+                    <div style="font-size:16px; font-weight:800; color:#0f3b2c; margin-bottom:14px; border-bottom:1.5px solid #e2e8f0; padding-bottom:8px;">📈 Coconut Vertical Statement of Profit or Loss (P&L)</div>
+                    <div class="statement-row"><span>Gross Coconut & Husk Sales Revenue</span><span style="color:#059669;">${formatLKR(revenue)}</span></div>
+                    <div class="statement-row"><span>Total Procurement, COGS & Operating Expenses</span><span style="color:#dc2626;">${formatLKR(expenses)}</span></div>
+                    <div class="statement-total"><span>Net Operating Profit / Loss (ශුද්ධ ලාභය)</span><span style="color:${netProfit >= 0 ? '#059669' : '#dc2626'};">${formatLKR(netProfit)}</span></div>
+                `;
+            }
+            const npEl = document.getElementById('netProfit');
+            if (npEl) npEl.textContent = formatLKR(netProfit);
+        }
+
+        function renderBalance() {
+            const assets = Object.values(state.ledger).filter(a => a.type === 'ASSET').reduce((sum, a) => sum + a.balance, 0);
+            const liabilities = Object.values(state.ledger).filter(a => a.type === 'LIABILITY').reduce((sum, a) => sum + a.balance, 0);
+            const equity = Object.values(state.ledger).filter(a => a.type === 'EQUITY').reduce((sum, a) => sum + a.balance, 0);
+            const revenue = Object.values(state.ledger).filter(a => a.type === 'REVENUE').reduce((sum, a) => sum + a.balance, 0);
+            const expenses = Object.values(state.ledger).filter(a => a.type === 'EXPENSE').reduce((sum, a) => sum + a.balance, 0);
+            const netProfit = revenue - expenses;
+            const totalEquity = equity + netProfit;
+
+            const content = document.getElementById('balanceContent');
+            if (content) {
+                content.innerHTML = `
+                    <div style="font-size:16px; font-weight:800; color:#0f3b2c; margin-bottom:14px; border-bottom:1.5px solid #e2e8f0; padding-bottom:8px;">🏛️ Statement of Financial Position (Balance Sheet)</div>
+                    <div class="statement-row"><span>Total Assets (Cash, Bank, Coconut & Husk Stock, Receivables)</span><span style="color:#059669;">${formatLKR(assets)}</span></div>
+                    <div class="statement-row"><span>Total Liabilities (Supplier Payables & Borrowings)</span><span style="color:#d97706;">${formatLKR(liabilities)}</span></div>
+                    <div class="statement-row"><span>Owner's Contributed Equity / Capital</span><span>${formatLKR(equity)}</span></div>
+                    <div class="statement-row"><span>Current Retained Earnings (Net Profit)</span><span style="color:${netProfit >= 0 ? '#059669' : '#dc2626'};">${formatLKR(netProfit)}</span></div>
+                    <div class="statement-total"><span>Total Liabilities & Equity</span><span style="color:#0f3b2c;">${formatLKR(liabilities + totalEquity)}</span></div>
+                `;
+            }
+        }
+
+        function updateStats() {
+            const ledgerArr = Object.values(state.ledger);
+            const revenue = ledgerArr.filter(a => a.type === 'REVENUE').reduce((sum, a) => sum + a.balance, 0);
+            const expenses = ledgerArr.filter(a => a.type === 'EXPENSE').reduce((sum, a) => sum + a.balance, 0);
+            
+            const cash = ledgerArr.filter(a => a.type === 'ASSET' && (a.id.includes('CASH') || a.id.includes('BANK') || a.id.includes('1010') || a.id.includes('1020') || a.id.startsWith('1-101') || a.id.startsWith('1-102'))).reduce((sum, a) => sum + a.balance, 0);
+            
+            const trEl = document.getElementById('totalRevenue');
+            if (trEl) trEl.textContent = formatLKR(revenue);
+            const teEl = document.getElementById('totalExpenses');
+            if (teEl) teEl.textContent = formatLKR(expenses);
+            const cbEl = document.getElementById('cashBalance');
+            if (cbEl) cbEl.textContent = formatLKR(cash);
+            const npEl = document.getElementById('netProfit');
+            if (npEl) npEl.textContent = formatLKR(revenue - expenses);
+        }
+
+        firebase.auth().onAuthStateChanged(async (user) => {
+            const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true' || window.location.search.includes('impersonate=true');
+            if (!user && !isImpersonating) { window.location.href = '/auth/login.html'; return; }
+            
+            let resolvedBid = null;
+            if (isImpersonating) {
+                resolvedBid = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            }
+            if (!resolvedBid && user) {
+                resolvedBid = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+                if (!resolvedBid) {
+                    try {
+                        state.context = await window.dashboardCore.getContext(user);
+                        resolvedBid = state.context?.businessId;
+                    } catch(e) {}
+                }
+            }
+            state.businessId = resolvedBid || (user && user.uid);
+            console.log("[Coconut Accounting] Resolved Business ID:", state.businessId);
+
+            const db = window.db || firebase.firestore();
+            if (state.businessId) {
+                db.collection('journal').doc(state.businessId).collection('entries').onSnapshot(snapshot => {
+                    state.journalEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    console.log("[Coconut Accounting] Journal Entries Fetched:", state.journalEntries.length);
+                    updateUI();
+                }, error => {
+                    console.warn("[Coconut Accounting] Journal listener notice:", error);
+                    updateUI();
+                });
+            } else {
+                updateUI();
+            }
+        });
+
+        window.deleteJournalEntry = deleteJournalEntry;
+    </script>
+</body>
+</html>

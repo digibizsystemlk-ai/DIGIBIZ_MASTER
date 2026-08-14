@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales & Wholesale Invoicing</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="coconut.css">
+    <script src="coconut-common.js"></script>
+</head>
+<body>
+
+    <main class="c-container">
+        <div class="c-header">
+            <div class="c-header-left">
+                <h1>🛒 Sales & Wholesale Invoicing (විකුණුම් සහ ඉන්වොයිස්)</h1>
+                <p>Sell raw graded coconuts and manufactured husk products with live COGS, gross margin, and customer ledger tracking.</p>
+            </div>
+            <div class="c-header-actions">
+                <a href="customers.html" class="c-btn c-btn-secondary">👥 Customers List</a>
+                <a href="history.html" class="c-btn c-btn-secondary">📜 Sales History</a>
+            </div>
+        </div>
+
+        <div class="c-grid-2">
+            <!-- Sales Cart & Invoicing Form -->
+            <div class="c-card">
+                <div class="c-card-header">
+                    <div class="c-card-title">🧾 New Invoice / Point of Sale</div>
+                    <span class="c-badge c-badge-success" id="invNumberBadge">Invoice: NEW</span>
+                </div>
+
+                <form id="saleForm">
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Invoice Date *</label>
+                            <input type="date" id="sDate" class="c-input" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Customer (ගැනුම්කරු) *</label>
+                            <div style="display:flex; gap:8px;">
+                                <select id="sCustomer" class="c-select" required style="flex:1;">
+                                    <option value="">Select Customer...</option>
+                                </select>
+                                <button type="button" class="c-btn c-btn-accent c-btn-sm" id="btnQuickAddCustomer">+ Add</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Add Item To Cart Line -->
+                    <div style="background:#f8fafc; border:1px solid var(--c-border); border-radius:var(--c-radius-sm); padding:12px; margin-bottom:14px;">
+                        <div style="font-weight:700; font-size:12px; color:var(--c-primary); margin-bottom:8px; text-transform:uppercase;">
+                            ➕ Add Line Item to Bill:
+                        </div>
+                        <div class="c-form-row" style="margin-bottom:8px;">
+                            <div class="c-form-group">
+                                <label>Item Stream</label>
+                                <select id="cartItemType" class="c-select">
+                                    <option value="COCONUT">🥥 Whole Coconuts (by Count)</option>
+                                    <option value="PRODUCT">✨ Finished Goods (by Unit)</option>
+                                </select>
+                            </div>
+                            <div class="c-form-group">
+                                <label>Select Product / Grade</label>
+                                <select id="cartItemSelect" class="c-select">
+                                    <!-- populated dynamically -->
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="c-form-row">
+                            <div class="c-form-group">
+                                <label>Quantity</label>
+                                <input type="number" id="cartQty" class="c-input" min="1" step="1" placeholder="Qty">
+                                <div style="font-size:11px; color:var(--c-text-muted); margin-top:2px;">In Stock: <span id="cartStockAvail" style="font-weight:700;">0</span></div>
+                            </div>
+                            <div class="c-form-group">
+                                <label>Selling Price (Rs)</label>
+                                <input type="number" id="cartUnitPrice" class="c-input" min="0" step="0.5" placeholder="Rate">
+                            </div>
+                            <div class="c-form-group" style="justify-content:flex-end;">
+                                <button type="button" class="c-btn c-btn-primary" id="btnAddToCart" style="width:100%;">
+                                    + Add Item
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cart Table -->
+                    <div class="c-table-wrapper" style="margin-bottom:14px;">
+                        <table class="c-table">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th class="text-right">Qty</th>
+                                    <th class="text-right">Rate</th>
+                                    <th class="text-right">Total</th>
+                                    <th class="text-center">Del</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cartTableBody">
+                                <tr><td colspan="5" class="text-center" style="padding:16px; color:var(--c-text-muted);">Cart is empty. Add items above.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Bill Totals -->
+                    <div class="c-cart-total-box" style="margin-bottom:16px;">
+                        <div class="c-cart-row">
+                            <span>Total Items / Qty:</span>
+                            <strong id="cartSummaryQty">0 items</strong>
+                        </div>
+                        <div class="c-cart-row">
+                            <span>Cost of Goods Sold (COGS):</span>
+                            <strong id="cartSummaryCogs" style="color:var(--c-text-muted);">Rs. 0.00</strong>
+                        </div>
+                        <div class="c-cart-row">
+                            <span>Estimated Gross Profit:</span>
+                            <strong id="cartSummaryMargin" style="color:#059669;">Rs. 0.00 (0%)</strong>
+                        </div>
+                        <div class="c-cart-row grand-total">
+                            <span>Grand Total:</span>
+                            <span id="cartSummaryGrandTotal">Rs. 0.00</span>
+                        </div>
+                    </div>
+
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Payment Mode *</label>
+                            <select id="sPaymentMode" class="c-select" required>
+                                <option value="CASH">Cash (අත්පිට මුදල්)</option>
+                                <option value="CREDIT">Credit (ණයට)</option>
+                                <option value="BANK">Bank Transfer (බැංකු)</option>
+                                <option value="CHEQUE">Cheque (චෙක්පත්)</option>
+                            </select>
+                        </div>
+                        <div class="c-form-group" id="sDueDateGroup" style="display:none;">
+                            <label>Credit Payment Due Date</label>
+                            <input type="date" id="sDueDate" class="c-input">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="c-btn c-btn-primary c-btn-lg" style="width:100%;" id="btnSaveSale">
+                        💾 Confirm Sale & Generate Invoice
+                    </button>
+                </form>
+            </div>
+
+            <!-- Recent Invoices & Sales Performance -->
+            <div>
+                <div class="c-card">
+                    <div class="c-card-header">
+                        <div class="c-card-title">📜 Today's Issued Invoices</div>
+                    </div>
+                    <div class="c-table-wrapper">
+                        <table class="c-table">
+                            <thead>
+                                <tr>
+                                    <th>Inv #</th>
+                                    <th>Customer</th>
+                                    <th class="text-right">Amount (LKR)</th>
+                                    <th class="text-right">Profit</th>
+                                    <th>Mode</th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="todayInvoicesBody">
+                                <tr><td colspan="6" class="text-center" style="padding:20px;">Loading today's invoices...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="c-card" style="background:#f0fdf4; border-color:#bbf7d0;">
+                    <div style="font-weight:700; font-size:13px; color:#166534; margin-bottom:6px;">📊 Real-time COGS Tracking</div>
+                    <p style="font-size:12.5px; color:#14532d; line-height:1.6;">
+                        Every sale automatically looks up the current weighted average cost of the coconuts and finished goods sold, posting Revenue to Account <code>4-4010-01</code> and COGS directly to <code>5-5020-01</code>.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Full Sales History Table -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">📜 Comprehensive Sales Invoices (විකුණුම් ඉතිහාසය)</div>
+                <input type="text" id="searchSalesInput" class="c-input" placeholder="Search customer, invoice #..." style="width:240px; padding:6px 12px; font-size:12.5px;">
+            </div>
+
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Invoice #</th>
+                            <th>Customer</th>
+                            <th>Items Summary</th>
+                            <th class="text-right">Total (LKR)</th>
+                            <th class="text-right">COGS (LKR)</th>
+                            <th class="text-right">Profit (LKR)</th>
+                            <th>Payment</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="salesHistoryTableBody">
+                        <tr><td colspan="9" class="text-center" style="padding:20px;">Loading sales records...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Quick Add Customer Modal -->
+    <div class="c-modal-overlay" id="customerModal">
+        <div class="c-modal">
+            <div class="c-modal-header">
+                <h3>➕ Add New Customer</h3>
+                <button type="button" class="c-modal-close" id="btnCloseCustomerModal">×</button>
+            </div>
+            <form id="quickCustomerForm">
+                <div class="c-form-group" style="margin-bottom:12px;">
+                    <label>Customer / Business Name *</label>
+                    <input type="text" id="cName" class="c-input" required>
+                </div>
+                <div class="c-form-row">
+                    <div class="c-form-group"><label>Phone</label><input type="tel" id="cPhone" class="c-input"></div>
+                    <div class="c-form-group"><label>Area / Market</label><input type="text" id="cArea" class="c-input"></div>
+                </div>
+                <div class="c-form-group" style="margin-bottom:12px;">
+                    <label>Address</label>
+                    <input type="text" id="cAddress" class="c-input">
+                </div>
+                <div class="c-modal-footer">
+                    <button type="button" class="c-btn c-btn-secondary" id="btnCancelCustomer">Cancel</button>
+                    <button type="submit" class="c-btn c-btn-primary">Save Customer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Invoice Print/View Modal -->
+    <div class="c-modal-overlay" id="invoiceReceiptModal">
+        <div class="c-modal c-modal-lg">
+            <div class="c-modal-header">
+                <h3>🧾 Invoice Receipt</h3>
+                <button type="button" class="c-modal-close" id="btnCloseReceiptModal">×</button>
+            </div>
+            <div id="receiptContent" style="padding:10px;"></div>
+            <div class="c-modal-footer">
+                <button type="button" class="c-btn c-btn-secondary" onclick="window.print()">🖨️ Print Invoice</button>
+                <button type="button" class="c-btn c-btn-primary" id="btnDoneReceipt">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="sales.js"></script>
+</body>
+</html>

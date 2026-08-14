@@ -2651,7 +2651,7 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                 } else if (dRaw instanceof Date) {
                     dText = dRaw.toLocaleString('en-LK', { dateStyle: 'short', timeStyle: 'short', hour12: true });
                 }
-                const itemCount = order.items?.reduce((sum, i) => sum + (i.orderedQty || 0) + (i.freeQty || 0), 0) || 0;
+                const itemCount = (order.items || order.orderItems || []).reduce((sum, i) => sum + (Number(i.orderedQty != null ? i.orderedQty : (i.quantity != null ? i.quantity : i.qty)) || 0) + (Number(i.freeQty) || 0), 0);
                 const mwLine = isMwTradingBusiness()
                     ? `<div style="font-size:11px;color:#475569;margin-top:2px;">Free: ${Number(order.mwFreeIssuesQty || 0)} | Returns: ${Number(order.mwReturnsQty || 0)}</div>`
                     : '';
@@ -3012,14 +3012,15 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
             const returnsSummary = [];
 
             const prodMap = await ensureDistributorProductsLoaded();
-            const items = Array.isArray(order.items) ? order.items : [];
+            const items = Array.isArray(order.items) ? order.items : (Array.isArray(order.orderItems) ? order.orderItems : []);
             items.forEach((item, idx) => {
-                const qty = Number(item.orderedQty) || 0;
+                const qty = Number(item.orderedQty != null ? item.orderedQty : (item.quantity != null ? item.quantity : item.qty)) || 0;
                 const free = Number(item.freeQty) || 0;
-                const price = Number(item.unitPrice) || 0;
+                const price = Number(item.unitPrice != null ? item.unitPrice : item.price) || 0;
+                const pName = item.productName || item.name || 'Item';
                 const pRef = prodMap[item.productId] || prodMap[item.productCode] || prodMap[item.id];
                 const cost = getProductCost(pRef, item);
-                const total = Number(item.totalPrice) || 0;
+                const total = Number(item.totalPrice != null ? item.totalPrice : (item.total != null ? item.total : (qty * price))) || 0;
                 subtotal += total;
                 freeQtyTotal += free;
 
@@ -3029,16 +3030,16 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                 const leg = Number(item.returnQty) || 0;
 
                 if (free > 0) {
-                    freeIssuesSummary.push({ name: item.productName, qty: free, price: price, cost: cost, reason: item.freeReason || '-' });
+                    freeIssuesSummary.push({ name: pName, qty: free, price: price, cost: cost, reason: item.freeReason || '-' });
                 }
                 if (rc > 0) {
-                    returnsSummary.push({ name: item.productName, qty: rc, price: price, type: 'To Company (Non-sellable)', reason: item.returnReason || '-' });
+                    returnsSummary.push({ name: pName, qty: rc, price: price, type: 'To Company (Non-sellable)', reason: item.returnReason || '-' });
                 }
                 if (rr > 0) {
-                    returnsSummary.push({ name: item.productName, qty: rr, price: price, type: 'To Stock (Resell)', reason: item.returnReason || '-' });
+                    returnsSummary.push({ name: pName, qty: rr, price: price, type: 'To Stock (Resell)', reason: item.returnReason || '-' });
                 }
                 if (!rc && !rr && leg > 0) {
-                    returnsSummary.push({ name: item.productName, qty: leg, price: price, type: 'General Return', reason: item.returnReason || '-' });
+                    returnsSummary.push({ name: pName, qty: leg, price: price, type: 'General Return', reason: item.returnReason || '-' });
                 }
 
                 let extra = '';
@@ -3050,8 +3051,8 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                     <tr>
                         <td>${idx + 1}</td>
                         <td>
-                            <div class="item-name">${item.productName}</div>
-                            ${pb ? `<div class="item-meta">${pb}</div>` : ''}
+                            <div class="item-name">${escapeBillHtml(pName)}</div>
+                            ${pb ? `<div class="item-meta">${escapeBillHtml(pb)}</div>` : ''}
                             ${extra}
                         </td>
                         <td class="num">${qty}</td>

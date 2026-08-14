@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Operational Expenses — Coconut Module</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="coconut.css">
+    <script src="coconut-common.js"></script>
+</head>
+<body>
+
+    <main class="c-container">
+        <div class="c-header">
+            <div class="c-header-left">
+                <h1>🧾 Operational Expenses (මෙහෙයුම් වියදම් කළමනාකරණය)</h1>
+                <p>Record daily operational overheads (wages, machine power, yard rent, transport repairs) with automated GL accounting.</p>
+            </div>
+            <div class="c-header-actions">
+                <a href="accounting.html" class="c-btn c-btn-secondary">📁 General Ledger View</a>
+            </div>
+        </div>
+
+        <div class="c-grid-2">
+            <!-- Expense Form -->
+            <div class="c-card">
+                <div class="c-card-header">
+                    <div class="c-card-title">📝 Record Business Expense</div>
+                    <span class="c-badge c-badge-danger">Expense Outflow</span>
+                </div>
+
+                <form id="expenseForm">
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Expense Date *</label>
+                            <input type="date" id="expDate" class="c-input" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Expense Category (වියදම් වර්ගය) *</label>
+                            <select id="expCategory" class="c-select" required>
+                                <option value="WAGES_LABOR">Labor & Daily Wages (කුලී / වැටුප්)</option>
+                                <option value="FUEL_ELECTRICITY">Electricity, Fuel & Generator (ඉන්ධන/විදුලිය)</option>
+                                <option value="TRANSPORT_FREIGHT">Vehicle & Delivery Maintenance (වාහන නඩත්තුව)</option>
+                                <option value="YARD_RENT">Yard & Warehouse Rent (ගබඩා කුලී)</option>
+                                <option value="PACKAGING_BAGS">Packaging & Strapping Material (මලු/පැකින්)</option>
+                                <option value="ADMIN_OFFICE">Admin & Office Utilities (කාර්යාල වියදම්)</option>
+                                <option value="OTHER_OPERATIONAL">Other Miscellaneous (වෙනත්)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Expense Amount (මුදල - LKR) *</label>
+                            <input type="number" id="expAmount" class="c-input" min="1" step="10" placeholder="e.g. 12500.00" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Paid From (ගෙවූ ආකාරය) *</label>
+                            <select id="expPaymentMode" class="c-select" required>
+                                <option value="CASH">Cash in Drawer (පෙට්ටියේ මුදල්)</option>
+                                <option value="BANK">Bank Account / Transfer (බැංකුවෙන්)</option>
+                                <option value="CHEQUE">Company Cheque (චෙක්පතක්)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="c-form-group" style="margin-bottom:16px;">
+                        <label>Description / Voucher / Recipient Details *</label>
+                        <input type="text" id="expDescription" class="c-input" placeholder="e.g. Daily coconut sorting labor for 4 workers" required>
+                    </div>
+
+                    <button type="submit" class="c-btn c-btn-primary c-btn-lg" style="width:100%;" id="btnSaveExpense">
+                        💾 Save Expense & Post to GL
+                    </button>
+                </form>
+            </div>
+
+            <!-- Expense Category Breakdown Card -->
+            <div>
+                <div class="c-card">
+                    <div class="c-card-header">
+                        <div class="c-card-title">📊 Expense Breakdown (This Month)</div>
+                        <strong id="monthTotalExpenseVal" style="color:var(--c-danger); font-size:16px;">Rs. 0.00</strong>
+                    </div>
+                    <div class="c-table-wrapper">
+                        <table class="c-table">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th class="text-right">Total (LKR)</th>
+                                    <th class="text-right">Share (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expenseCategorySummaryBody">
+                                <tr><td colspan="3" class="text-center" style="padding:16px;">Calculating category totals...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Table -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">📜 Operational Expense History (වියදම් ලැයිස්තුව)</div>
+                <input type="text" id="searchExpenseInput" class="c-input" placeholder="Search description, category..." style="width:240px; padding:6px 12px; font-size:12.5px;">
+            </div>
+
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Category</th>
+                            <th>Description</th>
+                            <th>Paid Via</th>
+                            <th class="text-right">Amount (LKR)</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="expenseHistoryTableBody">
+                        <tr><td colspan="6" class="text-center" style="padding:20px;">Loading expenses...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="expenses.js"></script>
+</body>
+</html>

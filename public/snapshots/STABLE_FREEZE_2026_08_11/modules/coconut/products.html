@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finished Products & Goods Stock</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="coconut.css">
+    <script src="coconut-common.js"></script>
+</head>
+<body>
+
+    <main class="c-container">
+        <div class="c-header">
+            <div class="c-header-left">
+                <h1>✨ Finished Products & Goods Catalog (නිමි භාණ්ඩ නාමාවලිය)</h1>
+                <p>Manage manufactured husk products (chips, coir fibre, bales, grow bags) and track inventory valuation.</p>
+            </div>
+            <div class="c-header-actions">
+                <button type="button" class="c-btn c-btn-primary" id="btnOpenNewProduct">➕ Add New Product</button>
+                <a href="production.html" class="c-btn c-btn-accent">🏭 Go to Production Runs</a>
+            </div>
+        </div>
+
+        <!-- Valuation Banner -->
+        <div class="c-hero-banner">
+            <div>
+                <div class="c-hero-stat-label">Total Finished Product SKUs</div>
+                <div class="c-hero-stat-val" id="totalSkuCount">0 Items</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:2px;">Active catalog lines</div>
+            </div>
+            <div>
+                <div class="c-hero-stat-label">Finished Goods Asset Valuation</div>
+                <div class="c-hero-stat-val" id="totalFgAssetVal" style="color:#34d399;">Rs. 0.00</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:2px;">Based on weighted average unit production costs</div>
+            </div>
+            <div>
+                <div class="c-hero-stat-label">Low Stock Alerts</div>
+                <div class="c-hero-stat-val" id="lowStockAlertCount" style="color:#f87171;">0 Alerts</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:2px;">Items below re-order threshold</div>
+            </div>
+        </div>
+
+        <!-- Products List -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">📦 Finished Products Directory</div>
+                <input type="text" id="searchProductInput" class="c-input" placeholder="Search product name or SKU..." style="width:260px; padding:6px 12px; font-size:12.5px;">
+            </div>
+
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Product Name</th>
+                            <th>SKU / Code</th>
+                            <th>Unit</th>
+                            <th class="text-right">Stock Qty</th>
+                            <th class="text-right">Unit Cost (Landed)</th>
+                            <th class="text-right">Selling Price</th>
+                            <th class="text-right">Total Asset (LKR)</th>
+                            <th class="text-center">Status</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productsTableBody">
+                        <tr><td colspan="9" class="text-center" style="padding:24px;">Loading products...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Add / Edit Product Modal -->
+    <div class="c-modal-overlay" id="productModal">
+        <div class="c-modal">
+            <div class="c-modal-header">
+                <h3 id="productModalTitle">➕ Add Finished Product</h3>
+                <button type="button" class="c-modal-close" id="btnCloseProductModal">×</button>
+            </div>
+            <form id="productForm">
+                <input type="hidden" id="pEditId">
+                <div class="c-form-group" style="margin-bottom:12px;">
+                    <label>Product Name (නිෂ්පාදනයේ නම) *</label>
+                    <input type="text" id="prodName" class="c-input" placeholder="e.g. 5kg Washed Husk Chips Block" required>
+                </div>
+
+                <div class="c-form-row">
+                    <div class="c-form-group">
+                        <label>SKU / Product Code</label>
+                        <input type="text" id="prodSku" class="c-input" placeholder="e.g. HC-5KG-01">
+                    </div>
+                    <div class="c-form-group">
+                        <label>Selling Unit (ඒකකය) *</label>
+                        <select id="prodUnitName" class="c-select" required>
+                            <option value="Bag">Bag (මලු / බෑග්)</option>
+                            <option value="Bale">Bale (බේල්)</option>
+                            <option value="Block">Block (බ්ලොක්)</option>
+                            <option value="Kg">Kg (කිලෝග්‍රෑම්)</option>
+                            <option value="Piece">Piece (කෑලි)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="c-form-row">
+                    <div class="c-form-group">
+                        <label>Selling Price (විකුණුම් මිල - LKR) *</label>
+                        <input type="number" id="prodPrice" class="c-input" min="0" step="0.5" placeholder="e.g. 650.00" required>
+                    </div>
+                    <div class="c-form-group">
+                        <label>Low Stock Alert Level</label>
+                        <input type="number" id="prodLowStock" class="c-input" min="0" step="1" value="10">
+                    </div>
+                </div>
+
+                <div class="c-form-row" id="initialStockRow">
+                    <div class="c-form-group">
+                        <label>Opening Stock Qty (ආරම්භක තොගය)</label>
+                        <input type="number" id="prodInitQty" class="c-input" min="0" step="1" value="0">
+                    </div>
+                    <div class="c-form-group">
+                        <label>Opening Unit Cost (Rs)</label>
+                        <input type="number" id="prodInitCost" class="c-input" min="0" step="0.5" value="0">
+                    </div>
+                </div>
+
+                <div class="c-modal-footer">
+                    <button type="button" class="c-btn c-btn-secondary" id="btnCancelProduct">Cancel</button>
+                    <button type="submit" class="c-btn c-btn-primary" id="btnSaveProduct">Save Product</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="products.js"></script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finance & Banking Ledger</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="coconut.css">
+    <script src="coconut-common.js"></script>
+</head>
+<body>
+
+    <main class="c-container">
+        <div class="c-header">
+            <div class="c-header-left">
+                <h1>💰 Cash & Bank Finance Ledger (මුදල් සහ බැංකු ගිණුම්)</h1>
+                <p>Track cash in drawer, bank deposits, ATM withdrawals, capital contributions, and owner drawings.</p>
+            </div>
+            <div class="c-header-actions">
+                <button type="button" class="c-btn c-btn-primary" id="btnOpenNewTx">➕ Record Cash / Bank Transfer</button>
+                <a href="loans.html" class="c-btn c-btn-secondary">🏦 Loans & Borrowings</a>
+                <a href="accounting.html" class="c-btn c-btn-accent">📁 General Ledger</a>
+            </div>
+        </div>
+
+        <!-- Cash & Bank Live Balances -->
+        <div class="c-hero-banner">
+            <div>
+                <div class="c-hero-stat-label">Cash in Drawer Balance</div>
+                <div class="c-hero-stat-val" id="liveCashBalance">Rs. 0.00</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:2px;">GL Account 1-1010-01</div>
+            </div>
+            <div>
+                <div class="c-hero-stat-label">Bank Account Balance</div>
+                <div class="c-hero-stat-val" id="liveBankBalance" style="color:#38bdf8;">Rs. 0.00</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:2px;">GL Account 1-1020-01</div>
+            </div>
+            <div>
+                <div class="c-hero-stat-label">Total Liquid Cash Flow</div>
+                <div class="c-hero-stat-val" id="liveTotalLiquid" style="color:#34d399;">Rs. 0.00</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:2px;">Total accessible liquid funds</div>
+            </div>
+        </div>
+
+        <!-- Transactions History -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">📜 Banking & Cash Movement History</div>
+            </div>
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Date / Time</th>
+                            <th>Transfer / Transaction Type</th>
+                            <th>Description / Reference</th>
+                            <th class="text-right">Cash Impact</th>
+                            <th class="text-right">Bank Impact</th>
+                            <th class="text-right">Amount (LKR)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bankTxTableBody">
+                        <tr><td colspan="6" class="text-center" style="padding:20px;">Loading finance transactions...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Transfer / Banking Modal -->
+    <div class="c-modal-overlay" id="transferModal">
+        <div class="c-modal">
+            <div class="c-modal-header">
+                <h3>➕ Record Cash / Bank Transaction</h3>
+                <button type="button" class="c-modal-close" id="btnCloseTxModal">×</button>
+            </div>
+            <form id="transferForm">
+                <div class="c-form-row">
+                    <div class="c-form-group">
+                        <label>Transaction Date *</label>
+                        <input type="date" id="txDate" class="c-input" required>
+                    </div>
+                    <div class="c-form-group">
+                        <label>Transaction Type *</label>
+                        <select id="txType" class="c-select" required>
+                            <option value="CASH_DEPOSIT">Cash Deposit (Drawer → Bank)</option>
+                            <option value="CASH_WITHDRAWAL">Cash Withdrawal (Bank → Drawer)</option>
+                            <option value="CAPITAL_INJECTION">Owner Capital Injection (නව ප්‍රාග්ධනය)</option>
+                            <option value="OWNER_DRAWING">Owner Drawing / Personal (හිමිකරු ලබාගැනීම්)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="c-form-group" style="margin-bottom:12px;">
+                    <label>Amount (මුදල - LKR) *</label>
+                    <input type="number" id="txAmount" class="c-input" min="1" step="10" placeholder="e.g. 50000.00" required>
+                </div>
+
+                <div class="c-form-group" style="margin-bottom:16px;">
+                    <label>Bank Slip # / Description *</label>
+                    <input type="text" id="txNotes" class="c-input" placeholder="e.g. BOC Deposit Slip #9182" required>
+                </div>
+
+                <div class="c-modal-footer">
+                    <button type="button" class="c-btn c-btn-secondary" id="btnCancelTx">Cancel</button>
+                    <button type="submit" class="c-btn c-btn-primary" id="btnSaveTx">Post Transaction</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="finance-ledger.js"></script>
+</body>
+</html>

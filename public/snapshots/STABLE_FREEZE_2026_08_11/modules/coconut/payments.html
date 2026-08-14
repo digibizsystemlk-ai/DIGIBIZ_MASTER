@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payments & Settlements</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="coconut.css">
+    <script src="coconut-common.js"></script>
+</head>
+<body>
+
+    <main class="c-container">
+        <div class="c-header">
+            <div class="c-header-left">
+                <h1>💳 Payments & Settlements (ගෙවීම් සහ ලැබීම් පියවීම්)</h1>
+                <p>Record customer cash/bank receipts and supplier disbursements with automated GL ledger balancing.</p>
+            </div>
+            <div class="c-header-actions">
+                <a href="finance-ledger.html" class="c-btn c-btn-primary">💰 Finance Ledger</a>
+                <a href="accounting.html" class="c-btn c-btn-secondary">📁 General Ledger</a>
+            </div>
+        </div>
+
+        <div class="c-grid-2">
+            <!-- 1. Customer Payment Receipt Form -->
+            <div class="c-card">
+                <div class="c-card-header">
+                    <div class="c-card-title">📥 Customer Payment Receipt (මුදල් ලැබීම්)</div>
+                    <span class="c-badge c-badge-success">Reduces AR</span>
+                </div>
+
+                <form id="customerPaymentForm">
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Receipt Date *</label>
+                            <input type="date" id="cpDate" class="c-input" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Customer (ගැනුම්කරු) *</label>
+                            <select id="cpCustomer" class="c-select" required>
+                                <option value="">Select Customer...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="c-cart-total-box" style="margin-bottom:14px; background:#fffbeb; border-color:#fde68a;">
+                        <div style="font-size:12px; color:#92400e;">
+                            Current Outstanding Receivable: <strong id="cpCurBalance" style="color:var(--c-danger);">Rs. 0.00</strong>
+                        </div>
+                    </div>
+
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Payment Amount Received (LKR) *</label>
+                            <input type="number" id="cpAmount" class="c-input" min="1" step="10" placeholder="e.g. 50000.00" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Payment Method *</label>
+                            <select id="cpPaymentMode" class="c-select" required>
+                                <option value="CASH">Cash in Drawer (පෙට්ටියට)</option>
+                                <option value="BANK">Bank Deposit / Transfer (බැංකුවට)</option>
+                                <option value="CHEQUE">Cheque Received (චෙක්පත්)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="c-form-group" style="margin-bottom:16px;">
+                        <label>Receipt Reference / Notes</label>
+                        <input type="text" id="cpNotes" class="c-input" placeholder="e.g. Settled for Invoice #INV-12345 / Cheque #8912">
+                    </div>
+
+                    <button type="submit" class="c-btn c-btn-primary c-btn-lg" style="width:100%;" id="btnSaveCustPayment">
+                        📥 Record Customer Receipt & Update Ledger
+                    </button>
+                </form>
+            </div>
+
+            <!-- 2. Supplier Disbursement Form -->
+            <div class="c-card">
+                <div class="c-card-header">
+                    <div class="c-card-title">📤 Pay Coconut / Husk Supplier (ගෙවීම් කිරීම්)</div>
+                    <span class="c-badge c-badge-danger">Reduces AP</span>
+                </div>
+
+                <form id="supplierPaymentForm">
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Payment Date *</label>
+                            <input type="date" id="spDate" class="c-input" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Supplier (සැපයුම්කරු) *</label>
+                            <select id="spSupplier" class="c-select" required>
+                                <option value="">Select Supplier...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="c-cart-total-box" style="margin-bottom:14px; background:#fef2f2; border-color:#fecaca;">
+                        <div style="font-size:12px; color:#991b1b;">
+                            Current Payable to Supplier: <strong id="spCurBalance" style="color:var(--c-danger);">Rs. 0.00</strong>
+                        </div>
+                    </div>
+
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Payment Amount Disbursed (LKR) *</label>
+                            <input type="number" id="spAmount" class="c-input" min="1" step="10" placeholder="e.g. 75000.00" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Paid From *</label>
+                            <select id="spPaymentMode" class="c-select" required>
+                                <option value="CASH">Cash in Drawer (පෙට්ටියෙන්)</option>
+                                <option value="BANK">Bank Account / Transfer (බැංකුවෙන්)</option>
+                                <option value="CHEQUE">Company Cheque (චෙක්පතක්)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="c-form-group" style="margin-bottom:16px;">
+                        <label>Voucher Reference / Notes</label>
+                        <input type="text" id="spNotes" class="c-input" placeholder="e.g. Settlement for truckload #4819">
+                    </div>
+
+                    <button type="submit" class="c-btn c-btn-danger c-btn-lg" style="width:100%;" id="btnSaveSupPayment">
+                        📤 Record Supplier Payment & Update Ledger
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Recent Settlements History -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">📜 Settlement & Payment Activity Log</div>
+            </div>
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>Party Name</th>
+                            <th>Method</th>
+                            <th class="text-right">Amount (LKR)</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="paymentHistoryTableBody">
+                        <tr><td colspan="6" class="text-center" style="padding:20px;">Loading settlement history...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="payments.js"></script>
+</body>
+</html>

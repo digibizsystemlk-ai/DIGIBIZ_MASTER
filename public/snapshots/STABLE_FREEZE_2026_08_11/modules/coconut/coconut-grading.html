@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coconut Grading & Sorting</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="coconut.css">
+    <script src="coconut-common.js"></script>
+</head>
+<body>
+
+    <main class="c-container">
+        <div class="c-header">
+            <div class="c-header-left">
+                <h1>🏷️ Coconut Grading & Quality Sorting (පොල් වර්ගීකරණය)</h1>
+                <p>Sort ungraded bulk coconut batches into specific quality grades (A, B, C) and allocate stock accurately.</p>
+            </div>
+            <div class="c-header-actions">
+                <a href="coconut-stock.html" class="c-btn c-btn-secondary">📦 Current Stock View</a>
+                <a href="sales.html" class="c-btn c-btn-primary">🛒 Sell Graded Coconuts</a>
+            </div>
+        </div>
+
+        <div class="c-grid-2">
+            <!-- Grading Execution Form -->
+            <div class="c-card">
+                <div class="c-card-header">
+                    <div class="c-card-title">⚖️ Execute Stock Sorting / Grading Run</div>
+                    <span class="c-badge c-badge-primary">Batch Sorting</span>
+                </div>
+
+                <form id="gradingRunForm">
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Grading Date *</label>
+                            <input type="date" id="gDate" class="c-input" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Source Batch / Category to Sort *</label>
+                            <select id="gSourceCategory" class="c-select" required>
+                                <option value="UNGRADED">Ungraded Whole Batch</option>
+                                <option value="GOOD">Good / Large (A Grade)</option>
+                                <option value="MEDIUM">Medium (B Grade)</option>
+                                <option value="LOW">Low / Small (C Grade)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="c-cart-total-box" style="margin-bottom:14px; background:#f0f9ff; border-color:#bae6fd;">
+                        <div style="font-size:12px; color:#0369a1;">
+                            Available Source Stock: <strong id="sourceStockDisplay">0 nuts</strong> (Avg Cost: <strong id="sourceAvgCostDisplay">Rs. 0.00</strong>)
+                        </div>
+                    </div>
+
+                    <div style="font-weight:700; font-size:13px; color:var(--c-primary); margin-bottom:10px;">
+                        Output Grade Distribution (ගෙඩි බෙදීයාම):
+                    </div>
+
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Good / Large (A Grade) Nuts</label>
+                            <input type="number" id="outGoodQty" class="c-input" min="0" step="1" value="0">
+                        </div>
+                        <div class="c-form-group">
+                            <label>Medium (B Grade) Nuts</label>
+                            <input type="number" id="outMediumQty" class="c-input" min="0" step="1" value="0">
+                        </div>
+                    </div>
+
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Low / Small (C Grade) Nuts</label>
+                            <input type="number" id="outLowQty" class="c-input" min="0" step="1" value="0">
+                        </div>
+                        <div class="c-form-group">
+                            <label>Discarded / Rotten Discovered (Spoilage)</label>
+                            <input type="number" id="outSpoiledQty" class="c-input" min="0" step="1" value="0">
+                        </div>
+                    </div>
+
+                    <!-- Grading Balance Check -->
+                    <div class="c-cart-total-box" style="margin-bottom:16px;">
+                        <div class="c-cart-row">
+                            <span>Total Nuts Sorted:</span>
+                            <strong id="totalSortedNutsDisplay">0 nuts</strong>
+                        </div>
+                        <div class="c-cart-row">
+                            <span>Sorting Discrepancy:</span>
+                            <strong id="gradingDiscrepancyDisplay" style="color:var(--c-accent);">0 nuts</strong>
+                        </div>
+                    </div>
+
+                    <div class="c-form-group" style="margin-bottom:16px;">
+                        <label>Sorting Operator / Team Notes</label>
+                        <input type="text" id="gNotes" class="c-input" placeholder="e.g. Sorter: Kamal / Evening batch">
+                    </div>
+
+                    <button type="submit" class="c-btn c-btn-primary c-btn-lg" style="width:100%;" id="btnSaveGrading">
+                        ✨ Save Grading Run & Re-allocate Stock
+                    </button>
+                </form>
+            </div>
+
+            <!-- Grade Profiles & Descriptions -->
+            <div>
+                <div class="c-card">
+                    <div class="c-card-header">
+                        <div class="c-card-title">📋 Active Quality Categories & Selling Benchmarks</div>
+                    </div>
+                    <div class="c-table-wrapper">
+                        <table class="c-table">
+                            <thead>
+                                <tr>
+                                    <th>Grade</th>
+                                    <th>Specifications</th>
+                                    <th class="text-right">Recommended Selling Price</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="c-badge c-badge-success">GOOD (A)</span></td>
+                                    <td>Large circumferences (>13"), heavy water, thick kernel. Ideal for retail/export.</td>
+                                    <td class="text-right" style="font-weight:700; color:#166534;">Rs. 110 - 130</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="c-badge c-badge-info">MEDIUM (B)</span></td>
+                                    <td>Standard commercial size (11-13"). General domestic market.</td>
+                                    <td class="text-right" style="font-weight:700; color:#0369a1;">Rs. 95 - 105</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="c-badge c-badge-warning">LOW (C)</span></td>
+                                    <td>Small size (<11"), light water, dry fallen nuts. Catering / oil mill processing.</td>
+                                    <td class="text-right" style="font-weight:700; color:#b45309;">Rs. 75 - 85</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="c-badge c-badge-neutral">UNGRADED</span></td>
+                                    <td>Direct whole truckload purchases awaiting grading.</td>
+                                    <td class="text-right" style="font-weight:700; color:var(--c-text-muted);">At Cost</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="c-card" style="background:#f0fdf4; border-color:#bbf7d0;">
+                    <div style="font-weight:700; font-size:13px; color:#166534; margin-bottom:6px;">📈 Value Addition Through Grading</div>
+                    <p style="font-size:12.5px; color:#14532d; line-height:1.6;">
+                        Separating whole farm purchases into quality tiers allows you to command higher margins for Grade A nuts while directing smaller nuts to industrial extraction, maximizing total revenue per harvested lot.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Grading Run History -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">📜 Grading History Log (වර්ගීකරණ ඉතිහාසය)</div>
+            </div>
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Source Category</th>
+                            <th class="text-right">Total Sorted</th>
+                            <th class="text-right">Good (A)</th>
+                            <th class="text-right">Medium (B)</th>
+                            <th class="text-right">Low (C)</th>
+                            <th class="text-right">Spoiled</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gradingHistoryBody">
+                        <tr><td colspan="8" class="text-center" style="padding:20px;">Loading grading logs...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="coconut-grading.js"></script>
+</body>
+</html>

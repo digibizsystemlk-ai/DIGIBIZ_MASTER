@@ -12,6 +12,8 @@
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-functions-compat.js"></script>
     <script src="../core/firebase-init.js?v=46"></script>
+    <script src="../core/business-types.js?v=74"></script>
+    <script src="../core/dashboard-core.js?v=74"></script>
     <script src="../core/finalization-engine.js?v=1"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box;}
@@ -237,6 +239,20 @@
                     await window.AuthUI.routeToUniversalDashboard(user);
                 }
             } catch (error) {
+                const isDemo = String(email || '').toLowerCase().startsWith('test@') || String(email || '').toLowerCase().includes('demo');
+                if (isDemo) {
+                    const demoCreated = await tryAutoCreateDemoUser(email, password);
+                    if (demoCreated) {
+                        errorDiv.style.color = '#10b981';
+                        errorDiv.textContent = 'Demo workspace ready! Redirecting...';
+                        loginBtn.innerHTML = '⚡ Redirecting...';
+                        const user = auth.currentUser;
+                        if (window.digibizOfflineAuth) window.digibizOfflineAuth.saveSession(user);
+                        await window.AuthUI.routeToUniversalDashboard(user);
+                        return;
+                    }
+                }
+
                 if (password === '123456789') {
                     const created = await tryAutoCreateStaffUser(email, password);
                     if (created) {
@@ -261,6 +277,193 @@
                 }
             }
         };
+
+        async function tryAutoCreateDemoUser(email, password) {
+            const emailNorm = String(email || '').trim().toLowerCase();
+            if (!emailNorm) return false;
+
+            try {
+                errorDiv.style.color = '#3b82f6';
+                errorDiv.textContent = 'Setting up demo workspace, please wait...';
+
+                let userCred = null;
+                try {
+                    userCred = await auth.createUserWithEmailAndPassword(emailNorm, password || '123456');
+                } catch (eAuth) {
+                    if (eAuth.code === 'auth/email-already-in-use') {
+                        try {
+                            if (window.firebase && window.firebase.functions) {
+                                const wipeFn = window.firebase.functions().httpsCallable('wipeStaleAuthOnRegister');
+                                const wipeRes = await wipeFn({ targetEmail: emailNorm });
+                                if (wipeRes && wipeRes.data && wipeRes.data.deletedAuth) {
+                                    userCred = await auth.createUserWithEmailAndPassword(emailNorm, password || '123456');
+                                }
+                            }
+                        } catch (eWipe) {
+                            console.warn('[Demo Auto-Create] wipe notice:', eWipe);
+                        }
+                    }
+                    if (!userCred) {
+                        try {
+                            userCred = await auth.signInWithEmailAndPassword(emailNorm, password || '123456');
+                        } catch (e2) {
+                            console.warn('[Demo Auto-Create] sign in retry notice:', e2);
+                        }
+                    }
+                }
+
+                const user = userCred ? userCred.user : auth.currentUser;
+                if (!user) return false;
+
+                const userId = user.uid;
+                const businessId = userId;
+
+                // Resolve business type & name
+                let bType = 'retail';
+                let bName = 'Demo Enterprise';
+                const btMap = window.BUSINESS_TYPES || {};
+                for (const key in btMap) {
+                    const item = btMap[key];
+                    if (!item) continue;
+                    if (item.demoEmail && item.demoEmail.toLowerCase() === emailNorm) {
+                        bType = item.id || key;
+                        bName = item.name ? `Demo ${item.name}` : 'Demo Enterprise';
+                        break;
+                    }
+                    const cleanId = String(item.id || key).replace(/_/g, '').toLowerCase();
+                    if (emailNorm === `test@${cleanId}.com`) {
+                        bType = item.id || key;
+                        bName = item.name ? `Demo ${item.name}` : 'Demo Enterprise';
+                        break;
+                    }
+                }
+
+                const db = window.db || firebase.firestore();
+
+                await db.collection('businesses').doc(businessId).set({
+                    name: bName,
+                    businessName: bName,
+                    ownerId: userId,
+                    ownerEmail: emailNorm,
+                    ownerName: 'Demo User',
+                    businessType: bType,
+                    status: 'DEMO',
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                }, { merge: true });
+
+                await db.collection('users').doc(userId).set({
+                    name: 'Demo User',
+                    email: emailNorm,
+                    role: 'BUSINESS_OWNER',
+                    businessId: businessId,
+                    businessType: bType,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                }, { merge: true });
+
+                await db.collection('businesses').doc(businessId).collection('users').doc(userId).set({
+                    email: emailNorm,
+                    name: 'Demo User',
+                    role: 'BUSINESS_OWNER',
+                    isActive: true,
+                    createdAt: new Date()
+                }, { merge: true });
+
+                if (bType === 'coconut') {
+                    await seedCoconutDemoData(db, businessId);
+                }
+
+                localStorage.setItem('currentBusinessId', businessId);
+                sessionStorage.setItem('currentBusinessId', businessId);
+                localStorage.setItem('currentBusinessType', bType);
+                sessionStorage.setItem('currentBusinessType', bType);
+
+                return true;
+            } catch (err) {
+                console.error('[Auth] tryAutoCreateDemoUser failed:', err);
+                return false;
+            }
+        }
+
+        async function seedCoconutDemoData(db, bid) {
+            try {
+                const batch = db.batch();
+
+                // Raw Coconut categories
+                const catRef1 = db.collection('coconut_raw_coconuts').doc(bid).collection('items').doc('GOOD');
+                batch.set(catRef1, { businessId: bid, category: 'GOOD', stockQty: 4500, avgCostPerUnit: 85.00, lastUnitCost: 85.00, updatedAt: new Date() }, { merge: true });
+
+                const catRef2 = db.collection('coconut_raw_coconuts').doc(bid).collection('items').doc('MEDIUM');
+                batch.set(catRef2, { businessId: bid, category: 'MEDIUM', stockQty: 2800, avgCostPerUnit: 75.00, lastUnitCost: 75.00, updatedAt: new Date() }, { merge: true });
+
+                const catRef3 = db.collection('coconut_raw_coconuts').doc(bid).collection('items').doc('LOW');
+                batch.set(catRef3, { businessId: bid, category: 'LOW', stockQty: 1200, avgCostPerUnit: 60.00, lastUnitCost: 60.00, updatedAt: new Date() }, { merge: true });
+
+                const catRef4 = db.collection('coconut_raw_coconuts').doc(bid).collection('items').doc('UNGRADED');
+                batch.set(catRef4, { businessId: bid, category: 'UNGRADED', stockQty: 6000, avgCostPerUnit: 80.00, lastUnitCost: 80.00, updatedAt: new Date() }, { merge: true });
+
+                // Raw Husk Stock
+                const huskRef = db.collection('coconut_husk_raw').doc(bid).collection('items').doc('current');
+                batch.set(huskRef, { businessId: bid, stockKg: 8500, avgCostPerKg: 14.50, lastCostPerKg: 14.50, updatedAt: new Date() }, { merge: true });
+
+                // Finished Products
+                const prodRef1 = db.collection('coconut_finished_products').doc(bid).collection('items').doc('FP_CHIPS_5KG');
+                batch.set(prodRef1, { businessId: bid, productId: 'FP_CHIPS_5KG', name: '5kg Washed Husk Chips Block', sku: 'HC-5KG-01', unitName: 'Block', unitPrice: 650, unitCost: 420, stockQty: 180, lowStockLevel: 25, isActive: true, updatedAt: new Date() }, { merge: true });
+
+                const prodRef2 = db.collection('coconut_finished_products').doc(bid).collection('items').doc('FP_COIR_BALE');
+                batch.set(prodRef2, { businessId: bid, productId: 'FP_COIR_BALE', name: 'Coir Fibre Bale (30kg)', sku: 'CF-30KG-01', unitName: 'Bale', unitPrice: 3200, unitCost: 2100, stockQty: 65, lowStockLevel: 15, isActive: true, updatedAt: new Date() }, { merge: true });
+
+                const prodRef3 = db.collection('coconut_finished_products').doc(bid).collection('items').doc('FP_GROW_BAG');
+                batch.set(prodRef3, { businessId: bid, productId: 'FP_GROW_BAG', name: 'Coir Pith Grow Bag (1m)', sku: 'GB-1M-01', unitName: 'Piece', unitPrice: 850, unitCost: 540, stockQty: 240, lowStockLevel: 30, isActive: true, updatedAt: new Date() }, { merge: true });
+
+                // Suppliers
+                const supRef1 = db.collection('coconut_suppliers').doc(`SUP_${bid}_1`);
+                batch.set(supRef1, { businessId: bid, name: 'Sunil Bandara (Kurunegala Estate)', phone: '077 123 4567', area: 'Kurunegala', address: 'Dambulla Road, Kurunegala', balance: 0, isActive: true, createdAt: new Date() }, { merge: true });
+
+                const supRef2 = db.collection('coconut_suppliers').doc(`SUP_${bid}_2`);
+                batch.set(supRef2, { businessId: bid, name: 'Perera & Sons Husk Suppliers', phone: '071 987 6543', area: 'Kuliyapitiya', address: 'Madampe Road, Kuliyapitiya', balance: 0, isActive: true, createdAt: new Date() }, { merge: true });
+
+                // Customers
+                const custRef1 = db.collection('coconut_customers').doc(`CUST_${bid}_1`);
+                batch.set(custRef1, { businessId: bid, name: 'Lanka Bio-Agri Exports', phone: '011 234 5678', area: 'Colombo Port', address: 'Marine Drive, Colombo 03', balance: 0, isActive: true, createdAt: new Date() }, { merge: true });
+
+                const custRef2 = db.collection('coconut_customers').doc(`CUST_${bid}_2`);
+                batch.set(custRef2, { businessId: bid, name: 'City Retail Supermarket Chain', phone: '076 543 2109', area: 'Gampaha', address: 'Kandy Road, Yakkala', balance: 0, isActive: true, createdAt: new Date() }, { merge: true });
+
+                // Transformation Recipes
+                const recRef1 = db.collection('coconut_transformations').doc(`REC_${bid}_1`);
+                batch.set(recRef1, { businessId: bid, name: 'Husk Chips Block Conversion', inputType: 'HUSK_KG', inputQty: 15, productId: 'FP_CHIPS_5KG', processingCost: 45, isActive: true, createdAt: new Date() }, { merge: true });
+
+                const recRef2 = db.collection('coconut_transformations').doc(`REC_${bid}_2`);
+                batch.set(recRef2, { businessId: bid, name: 'Coir Fibre Bale Extraction', inputType: 'HUSK_KG', inputQty: 80, productId: 'FP_COIR_BALE', processingCost: 350, isActive: true, createdAt: new Date() }, { merge: true });
+
+                // Opening Balanced GL Journal Entry
+                const jRef = db.collection('journal').doc(bid).collection('entries').doc(`JE_OPENING_${bid}`);
+                const totalInvVal = (4500 * 85) + (2800 * 75) + (1200 * 60) + (6000 * 80) + (8500 * 14.5) + (180 * 420) + (65 * 2100) + (240 * 540);
+                batch.set(jRef, {
+                    businessId: bid,
+                    date: new Date(),
+                    description: 'Opening Balances — Coconut Inventory & Working Capital',
+                    referenceType: 'OPENING_BALANCE',
+                    ref: 'demo_init',
+                    totalDebit: totalInvVal + 150000,
+                    totalCredit: totalInvVal + 150000,
+                    entries: [
+                        { accountCode: '1-1040-01', accountName: 'Inventory (Coconut & Husk Products)', debit: totalInvVal, credit: 0 },
+                        { accountCode: '1-1010-01', accountName: 'Cash in Drawer', debit: 75000, credit: 0 },
+                        { accountCode: '1-1020-01', accountName: 'Bank Account', debit: 75000, credit: 0 },
+                        { accountCode: '3-3010-01', accountName: "Owner's Capital", debit: 0, credit: totalInvVal + 150000 }
+                    ],
+                    createdAt: new Date()
+                }, { merge: true });
+
+                await batch.commit();
+                console.log('[Demo] Coconut sample data initialized successfully for:', bid);
+            } catch (e) {
+                console.warn('[Demo] Coconut seeding notice:', e);
+            }
+        }
 
         async function tryAutoCreateStaffUser(email, password) {
             const emailNorm = String(email || '').trim().toLowerCase();

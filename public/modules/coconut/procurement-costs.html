@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procurement Costs & Price History</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="coconut.css">
+    <script src="coconut-common.js"></script>
+</head>
+<body>
+
+    <main class="c-container">
+        <div class="c-header">
+            <div class="c-header-left">
+                <h1>💸 Procurement Cost Analytics & Price History (මිලදී ගැනීමේ පිරිවැය විශ්ලේෂණය)</h1>
+                <p>Track historical raw coconut buying rates, husk prices, freight/transport cost shares, and configure standard pricing benchmarks.</p>
+            </div>
+            <div class="c-header-actions">
+                <a href="coconut-purchase.html" class="c-btn c-btn-primary">🥥 Buy Coconuts</a>
+                <a href="husk-purchase.html" class="c-btn c-btn-secondary">🟤 Buy Husks</a>
+            </div>
+        </div>
+
+        <!-- Metric KPI Cards -->
+        <div class="c-kpi-grid">
+            <div class="c-kpi-card">
+                <div class="c-kpi-head">
+                    <span class="c-kpi-label">Avg Coconut Rate (This Month)</span>
+                    <span class="c-kpi-icon">🥥</span>
+                </div>
+                <div class="c-kpi-value" id="kpiAvgCoconutRate">Rs. 0.00</div>
+                <div class="c-kpi-sub" id="kpiMinMaxCoconut">Min: Rs. 0 / Max: Rs. 0</div>
+            </div>
+
+            <div class="c-kpi-card">
+                <div class="c-kpi-head">
+                    <span class="c-kpi-label">Avg Husk Cost / Kg</span>
+                    <span class="c-kpi-icon">🟤</span>
+                </div>
+                <div class="c-kpi-value" id="kpiAvgHuskRate">Rs. 0.00 / kg</div>
+                <div class="c-kpi-sub" id="kpiMinMaxHusk">Min: Rs. 0 / Max: Rs. 0</div>
+            </div>
+
+            <div class="c-kpi-card">
+                <div class="c-kpi-head">
+                    <span class="c-kpi-label">Total Freight & Transport</span>
+                    <span class="c-kpi-icon">🚚</span>
+                </div>
+                <div class="c-kpi-value" id="kpiTotalTransportCost" style="color:var(--c-warning);">Rs. 0.00</div>
+                <div class="c-kpi-sub" id="kpiTransportShare">0% of landed procurement</div>
+            </div>
+
+            <div class="c-kpi-card">
+                <div class="c-kpi-head">
+                    <span class="c-kpi-label">Month Total Procurement Spend</span>
+                    <span class="c-kpi-icon">💰</span>
+                </div>
+                <div class="c-kpi-value" id="kpiTotalProcurementSpend" style="color:var(--c-primary);">Rs. 0.00</div>
+                <div class="c-kpi-sub" id="kpiProcurementBatches">0 batches recorded</div>
+            </div>
+        </div>
+
+        <!-- Supplier Price Comparison Table -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">🚚 Supplier Price & Volume Performance</div>
+            </div>
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Supplier Name</th>
+                            <th>Area / Location</th>
+                            <th class="text-right">Total Coconuts</th>
+                            <th class="text-right">Avg Rate / Nut</th>
+                            <th class="text-right">Total Husk (Kg)</th>
+                            <th class="text-right">Avg Husk / Kg</th>
+                            <th class="text-right">Total Spend (LKR)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="supplierCostTableBody">
+                        <tr><td colspan="7" class="text-center" style="padding:20px;">Analyzing supplier performance...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Benchmark Settings -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">⚙️ Benchmark Buying Rates Guide</div>
+            </div>
+            <form id="benchmarkForm">
+                <div class="c-form-row">
+                    <div class="c-form-group">
+                        <label>Target Grade A Coconut Rate (Rs)</label>
+                        <input type="number" id="targetGradeA" class="c-input" step="0.5" placeholder="e.g. 85.00">
+                    </div>
+                    <div class="c-form-group">
+                        <label>Target Grade B Coconut Rate (Rs)</label>
+                        <input type="number" id="targetGradeB" class="c-input" step="0.5" placeholder="e.g. 75.00">
+                    </div>
+                    <div class="c-form-group">
+                        <label>Target Raw Husk Rate / Kg (Rs)</label>
+                        <input type="number" id="targetHuskKg" class="c-input" step="0.5" placeholder="e.g. 14.00">
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+                    <button type="submit" class="c-btn c-btn-primary">💾 Update Benchmark Rates</button>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <script src="procurement-costs.js"></script>
+</body>
+</html>

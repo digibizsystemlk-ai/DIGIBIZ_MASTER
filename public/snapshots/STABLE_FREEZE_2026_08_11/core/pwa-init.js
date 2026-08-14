@@ -36,7 +36,16 @@
         appendHead(l);
     }
 
+    function ensureScript(src) {
+        if (document.querySelector('script[src="' + src + '"]')) return;
+        var s = document.createElement('script');
+        s.src = src;
+        s.async = false;
+        appendHead(s);
+    }
+
     ensureManifest();
+    ensureScript('/core/snapshot-data-bridge.js');
     ensureMeta('theme-color', '#0f3b2c');
     ensureMeta('mobile-web-app-capable', 'yes');
     ensureMeta('apple-mobile-web-app-capable', 'yes');

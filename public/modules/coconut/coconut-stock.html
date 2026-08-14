@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coconut & Husk Stock Management</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="coconut.css">
+    <script src="coconut-common.js"></script>
+</head>
+<body>
+
+    <main class="c-container">
+        <div class="c-header">
+            <div class="c-header-left">
+                <h1>📦 Raw Stock Inventory (අමුද්‍රව්‍ය තොග කළමනාකරණය)</h1>
+                <p>Monitor raw coconut grade counts, husk inventory, valuation, and record damage/spoilage adjustments.</p>
+            </div>
+            <div class="c-header-actions">
+                <button type="button" class="c-btn c-btn-danger" id="btnOpenAdjustment">🗑️ Record Spoilage / Damage</button>
+                <a href="coconut-grading.html" class="c-btn c-btn-primary">🏷️ Re-grade Stock</a>
+            </div>
+        </div>
+
+        <!-- Inventory Value Summary Cards -->
+        <div class="c-hero-banner">
+            <div>
+                <div class="c-hero-stat-label">Whole Coconut Stock Count</div>
+                <div class="c-hero-stat-val" id="totalCoconutCount">0 nuts</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:2px;">Value: <strong id="totalCoconutVal" style="color:#38bdf8;">Rs. 0.00</strong></div>
+            </div>
+            <div>
+                <div class="c-hero-stat-label">Raw Husk Weight on Yard</div>
+                <div class="c-hero-stat-val" id="totalHuskKg" style="color:#facc15;">0.0 kg</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:2px;">Value: <strong id="totalHuskVal" style="color:#facc15;">Rs. 0.00</strong></div>
+            </div>
+            <div>
+                <div class="c-hero-stat-label">Combined Raw Stock Asset</div>
+                <div class="c-hero-stat-val" id="combinedRawVal" style="color:#34d399;">Rs. 0.00</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:2px;">GL Account 1-1040-01 (Raw Inventory)</div>
+            </div>
+        </div>
+
+        <!-- 1. Coconut Categories Breakdown -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">🥥 Whole Coconut Stock by Quality Grade</div>
+                <a href="coconut-purchase.html" class="c-btn c-btn-primary c-btn-sm">+ Purchase Coconuts</a>
+            </div>
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Category / Grade</th>
+                            <th class="text-right">Stock (Nuts)</th>
+                            <th class="text-right">Avg Landed Cost</th>
+                            <th class="text-right">Last Purchase Rate</th>
+                            <th class="text-right">Asset Valuation (LKR)</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="coconutStockTableBody">
+                        <tr><td colspan="6" class="text-center" style="padding:20px;">Loading stock categories...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 2. Raw Husk Stock -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">🟤 Raw Husk Stock (Fibre / Chip Input)</div>
+                <a href="husk-purchase.html" class="c-btn c-btn-secondary c-btn-sm">+ Purchase Husks</a>
+            </div>
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Raw Material</th>
+                            <th class="text-right">Weight (Kg)</th>
+                            <th class="text-right">Avg Cost / Kg</th>
+                            <th class="text-right">Last Rate / Kg</th>
+                            <th class="text-right">Total Asset Value (LKR)</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="huskStockTableBody">
+                        <tr><td colspan="6" class="text-center" style="padding:20px;">Loading husk stock...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 3. Stock Adjustment Audit Log -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">📜 Stock Adjustments & Damage History</div>
+            </div>
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Item Adjusted</th>
+                            <th class="text-right">Quantity / Weight</th>
+                            <th class="text-right">Cost Value</th>
+                            <th>Reason / Type</th>
+                            <th>Operator / Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="adjustmentLogBody">
+                        <tr><td colspan="6" class="text-center" style="padding:20px;">No adjustments recorded.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Adjustment Modal -->
+    <div class="c-modal-overlay" id="adjustmentModal">
+        <div class="c-modal">
+            <div class="c-modal-header">
+                <h3>🗑️ Record Spoilage / Damage / Loss</h3>
+                <button type="button" class="c-modal-close" id="btnCloseAdjModal">×</button>
+            </div>
+            <form id="adjustmentForm">
+                <div class="c-form-group" style="margin-bottom:12px;">
+                    <label>Select Item to Adjust *</label>
+                    <select id="adjItemType" class="c-select" required>
+                        <option value="COCONUT_GOOD">Coconut — Good (A Grade)</option>
+                        <option value="COCONUT_MEDIUM">Coconut — Medium (B Grade)</option>
+                        <option value="COCONUT_LOW">Coconut — Low (C Grade)</option>
+                        <option value="COCONUT_UNGRADED">Coconut — Ungraded</option>
+                        <option value="HUSK_RAW">Raw Husk (Kg)</option>
+                    </select>
+                </div>
+
+                <div class="c-form-row">
+                    <div class="c-form-group">
+                        <label>Quantity / Weight to Deduct *</label>
+                        <input type="number" id="adjQty" class="c-input" min="0.1" step="0.1" placeholder="e.g. 50" required>
+                    </div>
+                    <div class="c-form-group">
+                        <label>Adjustment Reason *</label>
+                        <select id="adjReason" class="c-select" required>
+                            <option value="ROTTEN_SPOILED">Rotten / Spoiled (කුණු වූ / නරක් වූ)</option>
+                            <option value="CRACKED_DAMAGED">Cracked / Broken (පළුදු වූ / කැඩුනු)</option>
+                            <option value="WEIGHT_LOSS_DRYING">Drying Weight Loss (ලෙලි වේලීමේ අඩුව)</option>
+                            <option value="STOCKTAKE_DIFFERENCE">Stocktake Audit Count Discrepancy</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="c-form-group" style="margin-bottom:16px;">
+                    <label>Notes / Inspector Details</label>
+                    <input type="text" id="adjNotes" class="c-input" placeholder="e.g. Yard inspection by Manager">
+                </div>
+
+                <div class="c-modal-footer">
+                    <button type="button" class="c-btn c-btn-secondary" id="btnCancelAdj">Cancel</button>
+                    <button type="submit" class="c-btn c-btn-danger">Confirm Stock Deduction</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="coconut-stock.js"></script>
+</body>
+</html>

@@ -7,6 +7,8 @@ class DashboardCore {
         const compact = raw.replace(/[\s\-_]+/g, '');
         if (compact === 'teafactory') return 'manufacturer';
         if (compact === 'scrapcollectioncenter') return 'scrap_collection_center';
+        if (compact === 'coconut') return 'coconut';
+        if (compact === 'coconutwholesale') return 'coconut';
         if (compact === 'distributor') return 'distributor';
         if (compact === 'manufacturer') return 'manufacturer';
         if (compact === 'pharmacy') return 'pharmacy';
@@ -26,6 +28,7 @@ class DashboardCore {
         if (norm === 'hardware') return '/modules/hardware/dashboard.html';
         if (norm === 'tire_centre') return '/modules/tire_centre/dashboard.html';
         if (norm === 'scrap_collection_center') return '/modules/scrap_collection_center/dashboard.html';
+        if (norm === 'coconut') return '/modules/coconut/dashboard.html';
         return `/modules/${norm}/dashboard.html`;
     }
 
@@ -82,7 +85,7 @@ class DashboardCore {
         try {
             const bizUserDoc = await window.db.collection('businesses').doc(bid).collection('users').doc(user.uid).get();
             if (bizUserDoc.exists) return true;
-            
+
             // 2. Fallback: Check by Email (for new staff)
             const email = String(user.email || '').trim().toLowerCase();
             if (email) {
@@ -144,7 +147,7 @@ class DashboardCore {
                         .where('email', '==', emailNorm)
                         .limit(1)
                         .get();
-                    
+
                     if (memberSnap.empty) {
                         memberSnap = await window.db.collectionGroup('users')
                             .where(firebase.firestore.FieldPath.documentId(), '==', emailNorm)
@@ -175,9 +178,9 @@ class DashboardCore {
 
     async getContext(user) {
         if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
-            const impBizId = localStorage.getItem('digibiz_impersonate_biz_id') || 
-                             localStorage.getItem('currentBusinessId') || 
-                             localStorage.getItem('businessId');
+            const impBizId = localStorage.getItem('digibiz_impersonate_biz_id') ||
+                localStorage.getItem('currentBusinessId') ||
+                localStorage.getItem('businessId');
             const impType = this.normalizeBusinessType(localStorage.getItem('digibiz_impersonate_type') || localStorage.getItem('currentBusinessType') || 'retail');
             const impEmail = String(localStorage.getItem('digibiz_impersonate_email') || localStorage.getItem('userEmail') || '').toLowerCase().trim();
             const impBizName = localStorage.getItem('digibiz_impersonate_biz_name') || localStorage.getItem('currentBusinessName') || '';
@@ -211,12 +214,12 @@ class DashboardCore {
         const userDoc = await window.db.collection('users').doc(user.uid).get();
         const userDocData = userDoc.exists ? (userDoc.data() || {}) : {};
         const storedBusinessId = this.getStoredBusinessId();
-        
+
         let businessId = '';
-        
+
         // 1. ALWAYS try to resolve staff/fallback membership first (Priority over self-owned new biz)
         const fallbackBusinessId = await this.resolveFallbackBusinessId(user, userDocData);
-        
+
         if (fallbackBusinessId) {
             businessId = fallbackBusinessId;
         } else if (storedBusinessId && await this.canAccessBusiness(user, storedBusinessId, userDocData)) {
@@ -238,7 +241,7 @@ class DashboardCore {
         let businessType = shouldPreferManufacturer ? 'manufacturer' : 'retail';
 
         const userEmail = String(user.email || '').trim().toLowerCase();
-        
+
         const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
         if (isImpersonating) {
             businessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || businessId;
@@ -278,7 +281,7 @@ class DashboardCore {
         // Final safety check for Sirimal
         const email = String(user.email || '').toLowerCase();
         const isAdminEmail = (email === 'biz.sirimal@gmail.com' || email === '2biz.sirimal@gmail.com' || email === 'scrap@chinthaka.com');
-        
+
         if (isAdminEmail && (businessId === 'oDhSDYHQ2dV1DP33koysmZAqaY13' || businessId === 'STAGING_TEST_SCRAP_BIZ' || businessId === '8KlnS39HmqYwtcNzM0NZMkq6om63')) {
             businessType = 'scrap_collection_center';
         }
@@ -302,7 +305,7 @@ class DashboardCore {
         } catch (eBud) { /* ignore */ }
 
         const context = { userId: user.uid, businessId, businessType, businessName, userRole, logoUrl, userEmail: user.email };
-        
+
         // Pre-fetch permission overrides if applicable
         if (businessId && window.DigibizDistributorPermissions && typeof window.DigibizDistributorPermissions.fetchAndCachePermissions === 'function') {
             await window.DigibizDistributorPermissions.fetchAndCachePermissions(businessId);
@@ -362,15 +365,15 @@ class DashboardCore {
             return sum + entry.entries.reduce((entrySum, row) => {
                 const code = String(row.accountCode || row.accountId || '');
                 if (!code.startsWith('1-1010') && !code.startsWith('1-1020') && code !== 'AC-10100' && code !== 'AC-10200') return entrySum;
-                
+
                 let dr = Number(row.debit) || 0;
                 let cr = Number(row.credit) || 0;
-                
+
                 if (row.amount !== undefined && row.type !== undefined) {
                     if (row.type === 'debit') dr = Number(row.amount) || 0;
                     if (row.type === 'credit') cr = Number(row.amount) || 0;
                 }
-                
+
                 return entrySum + dr - cr;
             }, 0);
         }, 0);
@@ -466,7 +469,7 @@ class DashboardCore {
                     map[doc.id] = doc;
                 });
             });
-            
+
             return { docs: Object.values(map) };
         } catch (e) {
             console.error('[DashboardCore] fetchUnifiedOrders failed', e);
@@ -487,7 +490,7 @@ class DashboardCore {
             const existingEntries = await window.db.collection('journal').doc(bid).collection('entries').get();
             const existingRefs = new Set();
             const existingIds = new Set();
-            
+
             const batch = window.db.batch();
             let newEntriesAdded = 0;
             let migratedCount = 0;
@@ -496,7 +499,7 @@ class DashboardCore {
                 const data = d.data();
                 if (data.ref) existingRefs.add(data.ref);
                 existingIds.add(d.id);
-                
+
                 // On-the-fly migration for old AC-XXXX codes to legacy formats
                 let needsUpdate = false;
                 const newEntries = (data.entries || []).map(entry => {
@@ -508,7 +511,7 @@ class DashboardCore {
                     if (ac === 'AC-50100') { ac = '5-5010-01'; needsUpdate = true; }
                     return { ...entry, accountCode: ac };
                 });
-                
+
                 let updates = {};
                 if (needsUpdate) updates.entries = newEntries;
                 if (data.referenceType === undefined && data.description && data.description.includes('Sales Order')) {
@@ -519,7 +522,7 @@ class DashboardCore {
                     updates.referenceType = 'EXPENSE';
                     needsUpdate = true;
                 }
-                
+
                 if (needsUpdate) {
                     batch.update(d.ref, updates);
                     migratedCount++;
@@ -684,7 +687,7 @@ class DashboardCore {
                     existingIds.add(customId);
                     newEntriesAdded++;
                 }
-            } catch(prodSyncErr) {
+            } catch (prodSyncErr) {
                 console.warn('[DashboardCore] Product stock sync notice:', prodSyncErr);
             }
 
@@ -806,7 +809,7 @@ class DashboardCore {
         const bid = context.businessId;
         const uEmail = String(context.userEmail || context.email || context.ownerEmail || (localStorage.getItem('digibiz_impersonate_active') === 'true' ? localStorage.getItem('digibiz_impersonate_email') : '') || localStorage.getItem('userEmail') || '').toLowerCase().trim();
         await this.syncUnjournaledTransactions(bid, uEmail);
-        const [snapshot, pendingSnap, pFlat, pNest, pBiz, repsSnap, shopsSnap, journalSnap] = await Promise.all([
+        const [snapshot, pendingSnap, pFlat, pNest, pBiz, repsSnap, shopsSnap, journalSnap, returnsSnap] = await Promise.all([
             this.fetchUnifiedOrders(bid, uEmail),
             window.db.collection('pendingOrders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
             window.db.collection('products').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
@@ -814,7 +817,8 @@ class DashboardCore {
             window.db.collection('businesses').doc(bid).collection('products').get().catch(() => ({ docs: [] })),
             window.db.collection('reps').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
             window.db.collection('shops').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
-            window.db.collection('journal').doc(bid).collection('entries').get().catch(() => ({ docs: [] }))
+            window.db.collection('journal').doc(bid).collection('entries').get().catch(() => ({ docs: [] })),
+            window.db.collection('returns').where('businessId', '==', bid).get().catch(() => ({ docs: [] }))
         ]);
 
         const prodMapDocs = {};
@@ -827,7 +831,7 @@ class DashboardCore {
         const startMonth = new Date(startToday.getFullYear(), startToday.getMonth(), 1);
 
         // --- ACCOUNTING & OPERATIONAL SALES METRICS (Strictly Synchronized with Orders) ---
-        
+
         // 1. Sales Calculation (Income from approved revenue orders and journal adjustments)
         let todaySales = 0;
         let monthSales = 0;
@@ -873,7 +877,7 @@ class DashboardCore {
                 }
             });
         });
-             todaySales = Math.max(0, Number(todaySales.toFixed(2)));
+        todaySales = Math.max(0, Number(todaySales.toFixed(2)));
         monthSales = Math.max(0, Number(monthSales.toFixed(2)));
 
         // 2. Outstanding Balance & Cash Inflows from Orders
@@ -900,7 +904,7 @@ class DashboardCore {
         journalEntries.forEach(entry => {
             const ref = String(entry.ref || entry.reference || entry.description || '');
             const isSyntheticOrder = ref.startsWith('orders/') || ref.startsWith('pendingOrders/') || String(entry.referenceType) === 'SALE';
-            
+
             (entry.entries || []).forEach(line => {
                 const code = String(line.accountCode || '');
                 const dr = Number(line.debit) || 0;
@@ -933,8 +937,23 @@ class DashboardCore {
         let monthOrderCount = 0;
         let returnsCat1Units = 0;
         let returnsCat2Units = 0;
+        let returnsCat3Units = 0;
         let freeIssueUnits = 0;
         let freeIssueValueEst = 0;
+
+        // Process standalone returns from 'returns' collection
+        returnsSnap.docs.forEach(doc => {
+            const d = doc.data() || {};
+            const dt = d.createdAt?.toDate ? d.createdAt.toDate() : (d.timestamp ? new Date(d.timestamp) : null);
+            if (dt && dt >= startMonth) {
+                const items = Array.isArray(d.items) ? d.items : (Array.isArray(d.returnItems) ? d.returnItems : []);
+                const ship = String(d.shipment || 'STOCK').toUpperCase();
+                const qSum = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
+                if (ship === 'COMPANY' || d.categoryNumber === 1) returnsCat1Units += qSum;
+                else if (ship === 'DESTROY' || d.categoryNumber === 3) returnsCat3Units += qSum;
+                else returnsCat2Units += qSum;
+            }
+        });
         const repMap = {};
         const brandMonth = {};
         const trendDayKeyToIndex = {};
@@ -1061,6 +1080,7 @@ class DashboardCore {
             lowStockAlertCount,
             returnsCat1Units,
             returnsCat2Units,
+            returnsCat3Units,
             freeIssueUnits,
             freeIssueValueEst,
             outstandingBalance,
@@ -1204,7 +1224,7 @@ class DashboardCore {
             (entry.entries || []).forEach(row => {
                 const code = row.accountCode || row.accountId || '';
                 if (!code) return;
-                
+
                 let dr = Number(row.debit) || 0;
                 let cr = Number(row.credit) || 0;
                 if (row.amount !== undefined && row.type !== undefined) {
@@ -1289,7 +1309,7 @@ class DashboardCore {
             orderSnapshot.docs.forEach(doc => {
                 const order = doc.data() || {};
                 if (order.isReversed === true || order.status === 'cancelled') return;
-                
+
                 let lineTotal = 0;
                 if (Array.isArray(order.items)) {
                     order.items.forEach(item => {
@@ -1307,18 +1327,23 @@ class DashboardCore {
                     if (oDateStr === todayStr) todaySales += amt;
                 }
 
-                const pm = String(order.paymentMethod || 'cash').toLowerCase();
-                if (order.status !== 'credit' && order.paymentStatus !== 'UNPAID') {
-                    if (pm === 'bank' || pm === 'card' || pm === 'online' || pm === 'cheque') {
+                const pm = String(order.paymentMethod || 'cash').toLowerCase().trim();
+                const pStatus = String(order.paymentStatus || order.status || '').toLowerCase().trim();
+                const isCreditOrder = order.status === 'credit' || pStatus === 'unpaid' || pStatus === 'credit' || pStatus === 'pending' || pm === 'credit';
+
+                if (!isCreditOrder) {
+                    if (pm === 'bank' || pm === 'card' || pm === 'online' || pm === 'bank_transfer') {
                         bankSales += amt;
+                    } else if (pm === 'cheque') {
+                        // Cheque sales: uncleared until deposited
                     } else {
                         cashSales += amt;
                     }
                 }
 
-                if (['pending', 'hold', 'credit', 'UNPAID'].includes(order.status) || order.paymentStatus === 'UNPAID') {
+                if (isCreditOrder || ['pending', 'hold', 'credit', 'unpaid'].includes(pStatus)) {
                     pendingOrdersCount++;
-                    if (order.status === 'credit' || order.paymentStatus === 'UNPAID') {
+                    if (isCreditOrder) {
                         creditOrdersSum += amt;
                     }
                 } else {
@@ -1344,7 +1369,7 @@ class DashboardCore {
                     if (eDateStr === todayStr && todaySales === 0) todaySales += amt;
                 }
             });
-        } catch (e) {}
+        } catch (e) { }
 
         // 2. Fetch Products / Inventory
         let lowStock = 0;
@@ -1469,17 +1494,32 @@ class DashboardCore {
         try {
             const poSnapshot = await window.db.collection('purchases').doc(context.businessId).collection('orders').get();
             poSnapshot.docs.forEach(doc => {
-                const po = doc.data();
+                const po = doc.data() || {};
+                if (po.isDeleted === true || po.isReversed === true) return;
                 const amt = Number(po.netTotal || po.total || po.amount) || 0;
-                const payMethod = String(po.paymentMethod || 'cash').toLowerCase();
-                if (po.paymentStatus === 'UNPAID') {
+                if (amt <= 0) return;
+
+                const payMethod = String(po.paymentMethod || 'credit').toUpperCase().trim();
+                const payStatus = String(po.paymentStatus || 'unpaid').toLowerCase().trim();
+
+                const isCredit = payMethod === 'CREDIT' || payStatus === 'unpaid' || payStatus === 'credit' || payStatus === 'pending';
+                const isCheque = payMethod === 'CHEQUE' || payStatus === 'paid_by_cheque';
+                const isBank = payMethod === 'BANK' || payMethod === 'BANK_TRANSFER' || payMethod === 'CARD' || payMethod === 'ONLINE';
+                const isCash = payMethod === 'CASH' || (payStatus === 'paid' && !isBank && !isCheque && !isCredit);
+
+                if (isCredit) {
                     unpaidPurchasesSum += amt;
-                } else {
-                    if (payMethod === 'bank' || payMethod === 'cheque') bankPurchases += amt;
-                    else cashPurchases += amt;
+                } else if (isCheque) {
+                    // Outbound Cheque payable liability; not deducted from bank until cleared
+                } else if (isBank) {
+                    bankPurchases += amt;
+                } else if (isCash) {
+                    cashPurchases += amt;
                 }
             });
-        } catch (e) {}
+        } catch (e) {
+            console.warn('[Dashboard] Purchases fetch error:', e);
+        }
 
         // 7. Bank Transactions for Cash Deposits, Withdrawals, Cheques, Loans
 
@@ -1509,7 +1549,7 @@ class DashboardCore {
                     bankLoanRepayments += amt;
                 }
             });
-        } catch (e) {}
+        } catch (e) { }
 
         const cashInflows = cashSales + cashWithdrawalsTotal;
         const cashOutflows = cashExpenses + cashPurchases + cashDepositsTotal;
@@ -1528,14 +1568,14 @@ class DashboardCore {
             custSnap.docs.forEach(doc => {
                 customerListSum += (Number(doc.data().balance || doc.data().outstanding) || 0);
             });
-        } catch (e) {}
+        } catch (e) { }
 
         try {
             const supSnap = await window.db.collection('suppliers').doc(context.businessId).collection('list').get();
             supSnap.docs.forEach(doc => {
                 supplierListSum += (Number(doc.data().balance || doc.data().outstanding) || 0);
             });
-        } catch (e) {}
+        } catch (e) { }
 
         let glCustomerOutstanding = 0;
         let glSupplierOutstanding = 0;
@@ -1564,7 +1604,7 @@ class DashboardCore {
             if (glBalances['1-1030-01']) glCustomerOutstanding = Math.max(0, glBalances['1-1030-01'].debit - glBalances['1-1030-01'].credit);
             if (glBalances['2-2010-01']) glSupplierOutstanding = Math.max(0, glBalances['2-2010-01'].credit - glBalances['2-2010-01'].debit);
             if (glBalances['1-1040-01']) glStockValue = Math.max(0, glBalances['1-1040-01'].debit - glBalances['1-1040-01'].credit);
-        } catch (e) {}
+        } catch (e) { }
 
         const customerOutstanding = Math.max(customerListSum, creditOrdersSum, glCustomerOutstanding);
         const supplierOutstanding = Math.max(supplierListSum, unpaidPurchasesSum, glSupplierOutstanding);
@@ -1911,7 +1951,7 @@ class DashboardCore {
                 todayBuying += amount;
                 todayStockIn += weight;
             }
-            
+
             // Aggregation for 365 Days Charts
             const k = getDayKey(r);
             if (dateKeys365.includes(k)) {
@@ -1964,7 +2004,7 @@ class DashboardCore {
                 todaySales += amount;
                 todayStockOut += qty;
             }
-            
+
             const k = getDayKey(r);
             if (dateKeys365.includes(k)) {
                 if (sell365Map[k] !== undefined) {
@@ -2018,72 +2058,29 @@ class DashboardCore {
             if (ref !== 'SCRAP_BUYING') return sum;
             return sum + (Number(entry.totalDebit) || 0);
         }, 0);
-        /* 1-1030-01 is shared in GL between AR and Scrap Inventory — ledger stores one bucket; cannot split. */
-        const scrapGlNet1030 = mergedSynthetic.length
-            ? this.accountBalance(allEntries, (code) => String(code || '').trim() === '1-1030-01')
-            : 0;
-        const scrapGlNet1060 = mergedSynthetic.length
-            ? this.accountBalance(allEntries, (code) => String(code || '').trim() === '1-1060-01')
-            : 0;
-        /* Stock value KPI: operational (qty×cost). If no cost data but GL inventory leg exists, fall back to GL net on 1-1030 (combined AR+inventory — approximate). */
-        const stockValueReported = stockValue > 0.01
-            ? stockValue
-            : (mergedSynthetic.length && Math.abs(scrapGlNet1030) > 0.01 ? scrapGlNet1030 : stockValue);
-        const effectiveMonthSales = (accountingMonthSales || monthSales);
-        const effectiveMonthBuying = (accountingMonthBuying || monthBuying);
-        /* Scrap no longer posts dated rows to journal/entries — MTD margin from ops (buy/sell history), aligned with KPI sales/buying. */
-        const monthProfit = effectiveMonthSales - effectiveMonthBuying;
-        const scrapGlRevenue = mergedSynthetic.length
-            ? -this.accountBalance(allEntries, (code) => String(code || '').startsWith('4-4010'))
-            : 0;
-        const scrapGlCogs = mergedSynthetic.length
-            ? this.accountBalance(allEntries, (code) => String(code || '').startsWith('5-5010'))
-            : 0;
-        const scrapGlLoansGiven = mergedSynthetic.length
-            ? this.accountBalance(allEntries, (code) => String(code || '').startsWith('1-1050'))
-            : 0;
-        const scrapGlInterestIncome = mergedSynthetic.length
-            ? -this.accountBalance(allEntries, (code) => String(code || '').startsWith('4-4020'))
-            : 0;
-
-        const cashBalance = mergedSynthetic.length
-            ? this.accountBalance(allEntries, (code) => String(code || '').startsWith('1-1010'))
-            : this.accountBalance(legacyEntries, (code) => String(code || '').startsWith('1-1010'));
-        const bankBalance = mergedSynthetic.length
-            ? this.accountBalance(allEntries, (code) => String(code || '').startsWith('1-1020'))
-            : this.accountBalance(legacyEntries, (code) => String(code || '').startsWith('1-1020'));
 
         return {
-            todaySales: accountingTodaySales || todaySales,
-            monthSales: accountingMonthSales || monthSales,
-            todayBuying: accountingTodayBuying || todayBuying,
-            monthBuying: accountingMonthBuying || monthBuying,
-            cashFlow,
-            cashBalance,
-            bankBalance,
-            stockValue: stockValueReported,
-
-            lowStock,
-            outstandingLoans,
-            monthProfit,
+            todaySales: todaySales || accountingTodaySales,
+            monthSales: monthSales || accountingMonthSales,
+            todayBuying: todayBuying || accountingTodayBuying,
+            monthBuying: monthBuying || accountingMonthBuying,
             todayStockIn,
-            todayStockOut,
             monthStockIn,
+            todayStockOut,
             monthStockOut,
+            stockValue,
+            lowStock,
+            cashFlow,
+            outstandingLoans,
             externalSettlementNet,
             advanceOutstanding,
-            scrapGlRevenue,
-            scrapGlCogs,
-            scrapGlLoansGiven,
-            scrapGlInterestIncome,
-            scrapGlNet1030,
-            scrapGlNet1060,
-            
-            // 365 Days Historical Data
-            dateLabels365,
-            buy365Data: dateKeys365.map(k => buy365Map[k]),
-            sell365Data: dateKeys365.map(k => sell365Map[k]),
-            profit365Data: dateKeys365.map(k => profit365Map[k])
+            chart365: {
+                labels: dateLabels365,
+                buy: dateKeys365.map(k => buy365Map[k] || 0),
+                sell: dateKeys365.map(k => sell365Map[k] || 0),
+                profit: dateKeys365.map(k => profit365Map[k] || 0)
+            },
+            dashboardStructure: ['todayBuying', 'todaySales', 'stockValue', 'cashFlow', 'monthBuying', 'monthSales', 'outstandingLoans', 'advanceOutstanding']
         };
     }
 
@@ -2349,6 +2346,27 @@ class DashboardCore {
         };
     }
 
+    async getCoconutMetrics(context) {
+        if (window.CoconutModule && typeof window.CoconutModule.getMetrics === 'function') {
+            return await window.CoconutModule.getMetrics(context);
+        }
+        return {
+            todayPurchases: 0,
+            monthPurchases: 0,
+            todaySales: 0,
+            monthSales: 0,
+            grossProfit: 0,
+            netProfit: 0,
+            cashFlow: 0,
+            rawStockValue: 0,
+            finishedStockValue: 0,
+            totalStockValue: 0,
+            totalReceivables: 0,
+            totalPayables: 0,
+            dashboardStructure: ['todayPurchases', 'monthPurchases', 'todaySales', 'monthSales', 'grossProfit', 'netProfit', 'totalStockValue', 'cashFlow']
+        };
+    }
+
     getDashboardStructure(businessType) {
         businessType = this.normalizeBusinessType(businessType);
         const structures = {
@@ -2364,7 +2382,8 @@ class DashboardCore {
             service: ['todayAppointments', 'upcomingAppointments', 'todaySales', 'serviceBills', 'utilization', 'clients', 'cashFlow'],
             manufacturer: ['todaySales', 'todayProfit', 'rmStockValue', 'fgStockValue', 'productionRuns', 'productionStatus', 'materialEfficiencyYield', 'pendingSettlements', 'rmPurchaseMonth', 'productionCostMonth', 'operationalCostMonth', 'sideIncomeMonth', 'monthSales', 'monthProfit', 'cashFlow'],
             tire_centre: ['todaySales', 'monthSales', 'todayAppointments', 'lowStock', 'cashFlow', 'stockValue', 'customerOutstanding', 'supplierOutstanding'],
-            scrap_collection_center: ['cashBalance', 'bankBalance', 'todaySales', 'todayBuying', 'todayStockIn', 'todayStockOut', 'monthSales', 'monthBuying', 'monthStockIn', 'monthStockOut', 'monthProfit', 'stockValue', 'cashFlow', 'scrapGlRevenue', 'scrapGlCogs', 'scrapGlLoansGiven', 'scrapGlInterestIncome', 'scrapGlNet1030', 'scrapGlNet1060', 'outstandingLoans', 'advanceOutstanding', 'externalSettlementNet', 'lowStock']
+            scrap_collection_center: ['cashBalance', 'bankBalance', 'todaySales', 'todayBuying', 'todayStockIn', 'todayStockOut', 'monthSales', 'monthBuying', 'monthStockIn', 'monthStockOut', 'monthProfit', 'stockValue', 'cashFlow', 'scrapGlRevenue', 'scrapGlCogs', 'scrapGlLoansGiven', 'scrapGlInterestIncome', 'scrapGlNet1030', 'scrapGlNet1060', 'outstandingLoans', 'advanceOutstanding', 'externalSettlementNet', 'lowStock'],
+            coconut: ['todayPurchases', 'monthPurchases', 'todaySales', 'monthSales', 'grossProfit', 'netProfit', 'totalStockValue', 'cashFlow']
         };
         return structures[businessType] || structures.retail;
     }
@@ -2380,8 +2399,10 @@ class DashboardCore {
         if (context.businessType === 'service') return this.getServiceMetrics(context);
         if (context.businessType === 'manufacturer') return this.getManufacturerMetrics(context);
         if (context.businessType === 'scrap_collection_center') return this.getScrapMetrics(context);
+        if (context.businessType === 'coconut') return this.getCoconutMetrics(context);
         return this.getRetailMetrics(context);
     }
+
     showDemoSystemNotice() {
         const modalId = 'demoSystemNoticeModal';
         if (document.getElementById(modalId)) return;
