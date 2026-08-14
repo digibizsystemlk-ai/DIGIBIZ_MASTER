@@ -37,17 +37,33 @@ window.i18n = function(key) {
             "Purchases / GRN": "Purchases / GRN (මිලදී ගැනීම්)",
             "Stock purchases": "Stock purchases (මිලදී ගැනීම්)",
             "Purchases": "Purchases (මිලදී ගැනීම්)",
-            "GRN": "GRN (මිලදී ගැනීම් / Goods Received Note)",
+            "GRN": "Purchases / GRN (මිලදී ගැනීම්)",
             "Suppliers": "Suppliers (සැපයුම්කරුවන්)",
             "Sales History": "Sales History (විකුණුම් ඉතිහාසය)",
             "Stock": "Stock (තොගය)",
+            "Services": "Services (සේවා)",
             "Spoil / Damage": "Spoil / Damage (නරක වූ / හානි වූ තොග)",
+            "Banking": "Banking (බැංකු සහ මුදල්)",
             "Banking & Cash": "Banking & Cash (බැංකු සහ අතැති මුදල්)",
             "Customers": "Customers (පාරිභෝගිකයින්)",
             "Finance": "Finance (මූල්‍ය)",
+            "Receivables": "Receivables (අපිට එන්න තියන ණය)",
+            "Payables": "Payables (අපි ගෙවන්න තියන ණය)",
+            "Credit Aging": "Credit Aging (ණය කාල සීමා)",
+            "Expenses": "Expenses (වියදම්)",
+            "EXPENSES": "Expenses (වියදම්)",
+            "Ledger": "Ledger (ලෙජර් ගිණුම)",
+            "Revenue": "Revenue (ආදායම් විශ්ලේෂණය)",
+            "REVENUE": "Revenue (ආදායම් විශ්ලේෂණය)",
+            "Daily Transactions": "Daily Transactions (දෛනික ගනුදෙනු)",
             "Accounting": "Accounting (ගිණුම්කරණය)",
+            "Accounting Dashboard": "Accounting (ගිණුම්කරණය)",
             "Reports": "Reports (වාර්තා)",
             "Settings": "Settings (සැකසුම්)",
+            "General Settings": "General Settings (පද්ධති සැකසුම්)",
+            "Loans": "Loans (ණය කළමනාකරණය)",
+            "Super Admin": "Super Admin (ප්‍රධාන පරිපාලක)",
+            "User Management": "User Management (පරිශීලක කළමනාකරණය)",
             "අපිට එන්න තියන ණය": "අපිට එන්න තියන ණය",
             "අපි ගෙවන්න තියන ණය": "අපි ගෙවන්න තියන ණය",
             
@@ -1896,6 +1912,17 @@ class Sidebar {
                 { icon: '🧾', name: 'POS / Quotation', link: '/modules/hardware/pos.html' },
                 { icon: '🔧', name: 'Inventory', link: '/modules/hardware/inventory.html' }
             ];
+        } else if (menuBusinessType === 'tire_centre') {
+            menus = [
+                { icon: '🛒', name: 'Point of Sale', link: '/modules/tire_centre/pos.html' },
+                { icon: '📜', name: 'Sales History', link: '/modules/tire_centre/sales-history.html' },
+                { icon: '📦', name: 'Stock', link: '/modules/tire_centre/inventory.html' },
+                { icon: '🛠️', name: 'Services', link: '/modules/tire_centre/services.html' },
+                { icon: '📅', name: 'Appointments', link: '/modules/tire_centre/appointments.html' },
+                { icon: '📥', name: 'Purchases / GRN', link: '/modules/tire_centre/grn.html' },
+                { icon: '🚚', name: 'Suppliers', link: '/modules/tire_centre/suppliers.html' },
+                { icon: '🏛️', name: 'Banking', link: '/modules/tire_centre/banking.html' }
+            ];
         } else if (menuBusinessType === 'manufacturer') {
             if (this.businessId === this.kduTeaBusinessId) {
                 const roleNorm = String(this.businessNavRole || this.currentRole || '')
@@ -2878,11 +2905,18 @@ class Sidebar {
         const logoutBtn = document.getElementById('sidebarLogoutBtn');
         if (logoutBtn) {
             logoutBtn.onclick = () => {
+                try {
+                    localStorage.removeItem('currentBusinessId');
+                    localStorage.removeItem('activeBusinessId');
+                    localStorage.removeItem('selectedBusinessId');
+                    localStorage.removeItem('digibiz_impersonate_biz_id');
+                    localStorage.removeItem('digibiz_impersonate_active');
+                    sessionStorage.clear();
+                } catch(e) {}
                 if (typeof window.signOutUser === 'function') {
                     window.signOutUser();
                 } else {
                     firebase.auth().signOut().then(() => {
-                        sessionStorage.clear();
                         window.location.href = '/auth/login.html';
                     });
                 }
@@ -3421,10 +3455,12 @@ function runPageTranslation() {
             "General Settings": "General Settings (පද්ධති සැකසුම්)",
             "Debts to be received by us": "අපිට එන්න තියන ණය",
             "Debts to be paid by us": "අපි ගෙවන්න තියන ණය",
-            "Expenses": "වියදම් (Expenses)",
-            "Ledger": "ලෙජර් ගිණුම් (Ledger)",
-            "Revenue": "ආදායම් විශ්ලේෂණය (Revenue)",
-            "Daily Transactions": "දෛනික ගනුදෙනු (Transactions)",
+            "Expenses": "Expenses (වියදම්)",
+            "EXPENSES": "Expenses (වියදම්)",
+            "Ledger": "Ledger (ලෙජර් ගිණුම)",
+            "Revenue": "Revenue (ආදායම් විශ්ලේෂණය)",
+            "REVENUE": "Revenue (ආදායම් විශ්ලේෂණය)",
+            "Daily Transactions": "Daily Transactions (දෛනික ගනුදෙනු)",
             
             // POS Page
             "Cart": "මිලදී ගන්නා භාණ්ඩ ලැයිස්තුව (Cart)",

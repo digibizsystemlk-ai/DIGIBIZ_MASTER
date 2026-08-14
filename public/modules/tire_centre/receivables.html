@@ -245,7 +245,7 @@
         const ACCOUNT_CODES = {
             CASH: 'AC-10100',
             BANK: 'AC-10200',
-            ACCOUNTS_RECEIVABLE: 'AC-10500'
+            ACCOUNTS_RECEIVABLE: 'AC-12000'
         };
         
         function translatePage() {
@@ -326,13 +326,15 @@
                     }
                     
                     const actionBtnText = window.i18n('Receive Payment Button');
+                    const itemsArr = Array.isArray(data.items) ? data.items : [];
+                    const itemsTotal = itemsArr.length > 0 ? itemsArr.reduce((s,i) => s + ((Number(i.price)||0)*(Number(i.quantity)||0)), 0) : Number(data.total || 0);
                     
                     html += `<tr>
                         <td style="font-family:monospace;font-weight:700;">${data.invoiceNo || 'N/A'}</td>
                         <td>${data.customer ? (data.customer.name || 'Walk-in Customer') : 'Walk-in Customer'}</td>
                         <td>${data.customer ? (data.customer.phone || '-') : '-'}</td>
-                        <td class="numeric">${formatCurrency(data.items.reduce((s,i) => s + (i.price*i.quantity), 0))}</td>
-                        <td class="numeric">${formatCurrency(data.amountPaid)}</td>
+                        <td class="numeric">${formatCurrency(itemsTotal)}</td>
+                        <td class="numeric">${formatCurrency(Number(data.amountPaid) || 0)}</td>
                         <td class="numeric" style="color:#ef4444;">${formatCurrency(outstanding)}</td>
                         <td>${data.dueDate || '-'}</td>
                         <td style="text-align:center;">
@@ -437,6 +439,30 @@
                 };
                 
                 await db.collection('journal').doc(currentBusinessId).collection('entries').add(journalEntry);
+
+                // If paid via BANK, log bank transaction and update bank balance
+                if (method === 'BANK') {
+                    try {
+                        const accountsSnap = await db.collection('banks').doc(currentBusinessId).collection('accounts').get();
+                        if (!accountsSnap.empty) {
+                            const accDoc = accountsSnap.docs[0];
+                            const accData = accDoc.data() || {};
+                            const batch = db.batch();
+                            const trId = 'TR-' + Date.now();
+                            batch.set(db.collection('banks').doc(currentBusinessId).collection('transactions').doc(trId), {
+                                bankAccountId: accDoc.id,
+                                type: 'DEBT_RECEIPT',
+                                amount: amountReceived,
+                                ref: `Debt payment received for invoice ${orderData.invoiceNo || orderId}`,
+                                createdAt: new Date()
+                            });
+                            batch.update(accDoc.ref, { balance: (Number(accData.balance) || 0) + amountReceived });
+                            await batch.commit();
+                        }
+                    } catch (bankErr) {
+                        console.error('Bank receipt logging failed:', bankErr);
+                    }
+                }
                 
                 closeModal('paymentModal');
                 showToast('Payment saved successfully!');

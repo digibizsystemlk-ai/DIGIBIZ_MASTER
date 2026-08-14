@@ -1,4 +1,8 @@
 // DIGIBIZ Super Admin Direct Client Impersonation & Debug Suite
+window.isImpersonating = function() {
+    return localStorage.getItem('digibiz_impersonate_active') === 'true';
+};
+
 window.getEffectiveBusinessId = function(userDoc, fallbackUid) {
     if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
         const impBizId = localStorage.getItem('digibiz_impersonate_biz_id') || 
@@ -15,6 +19,24 @@ window.getEffectiveBusinessId = function(userDoc, fallbackUid) {
         }
     }
     return fallbackUid || (userDoc && userDoc.uid ? userDoc.uid : null);
+};
+
+window.getEffectiveUserEmail = function(currentUser) {
+    if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+        const impEmail = localStorage.getItem('digibiz_impersonate_email') ||
+                         localStorage.getItem('userEmail') ||
+                         localStorage.getItem('activeUserEmail');
+        if (impEmail) return impEmail;
+    }
+    if (currentUser && currentUser.email) return currentUser.email;
+    return localStorage.getItem('userEmail') || '';
+};
+
+window.getEffectiveBusinessType = function() {
+    if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+        return localStorage.getItem('digibiz_impersonate_type') || localStorage.getItem('currentBusinessType') || 'retail';
+    }
+    return localStorage.getItem('currentBusinessType') || sessionStorage.getItem('currentBusinessType') || 'retail';
 };
 
 (function initSuperAdminImpersonation() {
@@ -38,6 +60,8 @@ window.getEffectiveBusinessId = function(userDoc, fallbackUid) {
             localStorage.setItem('currentBusinessId', paramBizId);
             sessionStorage.setItem('currentBusinessId', paramBizId);
             localStorage.setItem('activeBusinessId', paramBizId);
+            localStorage.setItem('selectedBusinessId', paramBizId);
+            sessionStorage.setItem('selectedBusinessId', paramBizId);
         }
         if (paramBizType) {
             localStorage.setItem('digibiz_impersonate_type', paramBizType);
@@ -49,9 +73,9 @@ window.getEffectiveBusinessId = function(userDoc, fallbackUid) {
     const isActive = localStorage.getItem('digibiz_impersonate_active') === 'true';
     if (!isActive) return;
 
-    const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'Client Business';
-    const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || 'CLIENT_BIZ';
-    const targetType = String(localStorage.getItem('digibiz_impersonate_type') || 'retail').toLowerCase();
+    let targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'Client Business';
+    let targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || 'CLIENT_BIZ';
+    let targetType = String(localStorage.getItem('digibiz_impersonate_type') || 'retail').toLowerCase();
 
     // Force business context keys in Local and Session storage
     localStorage.setItem('digibiz_impersonate_active', 'true');
@@ -64,6 +88,8 @@ window.getEffectiveBusinessId = function(userDoc, fallbackUid) {
     sessionStorage.setItem('currentBusinessId', targetBizId);
     localStorage.setItem('businessId', targetBizId);
     sessionStorage.setItem('businessId', targetBizId);
+    localStorage.setItem('selectedBusinessId', targetBizId);
+    sessionStorage.setItem('selectedBusinessId', targetBizId);
 
     localStorage.setItem('currentBusinessType', targetType);
     sessionStorage.setItem('currentBusinessType', targetType);
@@ -105,9 +131,12 @@ window.getEffectiveBusinessId = function(userDoc, fallbackUid) {
                 const url = new URL(a.href);
                 if (!url.searchParams.get('impersonate')) {
                     url.searchParams.set('impersonate', 'true');
-                    if (targetEmail) url.searchParams.set('email', targetEmail);
-                    if (targetBizId) url.searchParams.set('bizId', targetBizId);
-                    if (targetType) url.searchParams.set('bizType', targetType);
+                    const cEmail = localStorage.getItem('digibiz_impersonate_email') || targetEmail;
+                    const cBizId = localStorage.getItem('digibiz_impersonate_biz_id') || targetBizId;
+                    const cType = localStorage.getItem('digibiz_impersonate_type') || targetType;
+                    if (cEmail) url.searchParams.set('email', cEmail);
+                    if (cBizId) url.searchParams.set('bizId', cBizId);
+                    if (cType) url.searchParams.set('bizType', cType);
                     a.href = url.toString();
                 }
             } catch (_err) {}
@@ -126,20 +155,77 @@ window.getEffectiveBusinessId = function(userDoc, fallbackUid) {
     let resolvedOwnerName = localStorage.getItem('digibiz_impersonate_owner_name') || '';
 
     const fetchLiveTenantProfile = async () => {
-        if (window.db && targetBizId && (!resolvedBizName || resolvedBizName === 'Client Business')) {
+        if (window.db) {
             try {
-                const bDoc = await window.db.collection('businesses').doc(targetBizId).get();
-                if (bDoc.exists) {
-                    const bd = bDoc.data() || {};
+                let foundBizDoc = null;
+                // 1. Try targetBizId direct lookup
+                if (targetBizId && targetBizId !== 'CLIENT_BIZ') {
+                    const directDoc = await window.db.collection('businesses').doc(targetBizId).get().catch(() => null);
+                    if (directDoc && directDoc.exists) {
+                        foundBizDoc = directDoc;
+                    }
+                }
+
+                // 2. If not found or targetEmail provided, query users & businesses by email
+                if (!foundBizDoc && targetEmail && targetEmail !== 'Client Business') {
+                    const uSnap = await window.db.collection('users').where('email', '==', targetEmail).limit(1).get().catch(() => null);
+                    if (uSnap && !uSnap.empty) {
+                        const uData = uSnap.docs[0].data() || {};
+                        const realBizId = uData.businessId || uSnap.docs[0].id;
+                        if (realBizId) {
+                            targetBizId = realBizId;
+                            localStorage.setItem('digibiz_impersonate_biz_id', realBizId);
+                            localStorage.setItem('currentBusinessId', realBizId);
+                            sessionStorage.setItem('currentBusinessId', realBizId);
+                            localStorage.setItem('businessId', realBizId);
+                            localStorage.setItem('selectedBusinessId', realBizId);
+                            sessionStorage.setItem('selectedBusinessId', realBizId);
+                        }
+                        if (uData.businessType) {
+                            targetType = String(uData.businessType).toLowerCase();
+                            localStorage.setItem('digibiz_impersonate_type', targetType);
+                            localStorage.setItem('currentBusinessType', targetType);
+                        }
+                        if (uData.ownerName || uData.name) resolvedOwnerName = uData.ownerName || uData.name;
+                        if (uData.businessName) resolvedBizName = uData.businessName;
+
+                        foundBizDoc = await window.db.collection('businesses').doc(realBizId).get().catch(() => null);
+                    }
+
+                    if (!foundBizDoc) {
+                        const bSnapEmail = await window.db.collection('businesses').where('email', '==', targetEmail).limit(1).get().catch(() => null);
+                        if (bSnapEmail && !bSnapEmail.empty) {
+                            foundBizDoc = bSnapEmail.docs[0];
+                            targetBizId = foundBizDoc.id;
+                            localStorage.setItem('digibiz_impersonate_biz_id', targetBizId);
+                            localStorage.setItem('currentBusinessId', targetBizId);
+                            sessionStorage.setItem('currentBusinessId', targetBizId);
+                            localStorage.setItem('businessId', targetBizId);
+                        }
+                    }
+                }
+
+                if (foundBizDoc && foundBizDoc.exists) {
+                    const bd = foundBizDoc.data() || {};
                     resolvedBizName = bd.businessName || bd.name || bd.companyName || bd.title || resolvedBizName;
                     resolvedOwnerName = bd.ownerName || bd.name || resolvedOwnerName;
+                    if (bd.businessType || bd.type) {
+                        targetType = String(bd.businessType || bd.type).toLowerCase();
+                        localStorage.setItem('digibiz_impersonate_type', targetType);
+                        localStorage.setItem('currentBusinessType', targetType);
+                    }
                     if (resolvedBizName) {
                         localStorage.setItem('digibiz_impersonate_biz_name', resolvedBizName);
                         localStorage.setItem('currentBusinessName', resolvedBizName);
                         sessionStorage.setItem('currentBusinessName', resolvedBizName);
                     }
+                    if (resolvedOwnerName) {
+                        localStorage.setItem('digibiz_impersonate_owner_name', resolvedOwnerName);
+                    }
                 }
-            } catch (e) {}
+            } catch (e) {
+                console.warn('[Impersonation] Live Profile Fetch Failed', e);
+            }
         }
         if (!resolvedBizName || resolvedBizName === 'Client Business') {
             const handle = targetEmail.split('@')[0].toUpperCase();

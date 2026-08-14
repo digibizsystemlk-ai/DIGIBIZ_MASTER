@@ -338,7 +338,7 @@
             todaySales: { label: 'Today Sales', currency: true },
             monthSales: { label: 'Month Sales', currency: true },
             pendingOrders: { label: 'Pending Orders' },
-            cashFlow: { label: 'Cash Flow', currency: true },
+            cashFlow: { label: 'Cash & Bank', currency: true },
             lowStock: { label: 'Low Stock' },
             expiringSoon: { label: 'Expiring Soon' },
             expiredCount: { label: 'Expired Items' },
@@ -936,6 +936,8 @@
             });
 
             // Special handling for cashFlow split details on top row KPI Card
+            // Removed as per user request to avoid confusion
+            /*
             const cashFlowEl = document.getElementById('kpi-cashFlow');
             if (cashFlowEl) {
                 const cashBalance = metrics.cashBalance ?? 0;
@@ -955,6 +957,7 @@
                     splitEl.textContent = `Cash: ${formatLKR(cashBalance)} | Bank: ${formatLKR(bankBalance)}`;
                 }
             }
+            */
 
             // Special Hero KPI Handling for Scrap
             const heroGrid = document.getElementById('heroKpiGrid');
@@ -983,19 +986,6 @@
             const cashFlowCount = document.getElementById('cashFlowCount');
             if (cashFlowCount) {
                 cashFlowCount.textContent = formatLKR(metrics.cashFlow || 0);
-                const parent = cashFlowCount.parentElement;
-                if (parent) {
-                    let splitEl = parent.querySelector('.kpi-split-details');
-                    if (!splitEl) {
-                        splitEl = document.createElement('div');
-                        splitEl.className = 'kpi-split-details';
-                        splitEl.style.fontSize = '11px';
-                        splitEl.style.color = '#64748b';
-                        splitEl.style.marginTop = '4px';
-                        parent.appendChild(splitEl);
-                    }
-                    splitEl.textContent = `Cash: ${formatLKR(metrics.cashBalance || 0)} | Bank: ${formatLKR(metrics.bankBalance || 0)}`;
-                }
             }
             
             document.getElementById('overdueCount').textContent = recentEntries.filter((e) => e.referenceType === 'LOAN').length;
@@ -1251,29 +1241,46 @@
                 const db = firebase.firestore();
                 const opt = navigator.onLine ? {} : { source: 'cache' };
 
-                const [pFlat, pNested, oFlat, oPending, oNested, eFlat, eNested] = await Promise.all([
+                const userEmail = (dashboardContext && (dashboardContext.userEmail || dashboardContext.email || dashboardContext.ownerEmail)) ||
+                                  (localStorage.getItem('digibiz_impersonate_active') === 'true' ? localStorage.getItem('digibiz_impersonate_email') : '') ||
+                                  localStorage.getItem('userEmail') ||
+                                  (u && u.email ? String(u.email).trim().toLowerCase() : null);
+
+                const oOwnerPromise = userEmail ? db.collection('orders').where('ownerEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+                const oUserPromise = userEmail ? db.collection('orders').where('userEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+                const pOwnerPromise = userEmail ? db.collection('products').where('ownerEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+                const eOwnerPromise = userEmail ? db.collection('expenses').where('ownerEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+
+                const [pFlat, pNested, pBiz, oFlat, oPending, oNested, oBiz, eFlat, eNested, eBiz, oOwner, oUser, pOwner, eOwner] = await Promise.all([
                     db.collection('products').where('businessId', '==', bid).get(opt).catch(() => ({ docs: [] })),
                     db.collection('products').doc(bid).collection('list').get(opt).catch(() => ({ docs: [] })),
+                    db.collection('businesses').doc(bid).collection('products').get(opt).catch(() => ({ docs: [] })),
                     db.collection('orders').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
                     db.collection('pendingOrders').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
                     db.collection('orders').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('businesses').doc(bid).collection('orders').limit(1000).get(opt).catch(() => ({ docs: [] })),
                     db.collection('expenses').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
-                    db.collection('expenses').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] }))
+                    db.collection('expenses').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('businesses').doc(bid).collection('expenses').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    oOwnerPromise,
+                    oUserPromise,
+                    pOwnerPromise,
+                    eOwnerPromise
                 ]);
 
                 const prodMap = {};
-                [...pFlat.docs, ...pNested.docs].forEach(d => {
+                [...pFlat.docs, ...pNested.docs, ...pBiz.docs, ...pOwner.docs].forEach(d => {
                     const data = d.data() || {};
                     prodMap[d.id] = data;
                     if (data.productCode) prodMap[String(data.productCode).trim()] = data;
                 });
 
                 const orderDocsMap = {};
-                [...oFlat.docs, ...oPending.docs, ...oNested.docs].forEach(d => { orderDocsMap[d.id] = d; });
+                [...oFlat.docs, ...oPending.docs, ...oNested.docs, ...oBiz.docs, ...oOwner.docs, ...oUser.docs].forEach(d => { orderDocsMap[d.id] = d; });
                 const allOrderDocs = Object.values(orderDocsMap);
 
                 const expDocsMap = {};
-                [...eFlat.docs, ...eNested.docs].forEach(d => { expDocsMap[d.id] = d; });
+                [...eFlat.docs, ...eNested.docs, ...eBiz.docs, ...eOwner.docs].forEach(d => { expDocsMap[d.id] = d; });
                 const allExpDocs = Object.values(expDocsMap);
 
                 const now = new Date();

@@ -24,8 +24,10 @@
     <script src="/core/dashboard-core.js?v=3"></script>
     <script src="/core/subscription-manager.js?v=3"></script>
     <script src="/core/sidebar.js?v=2000"></script>
+    <script src="/modules/retail/js/location-stock-core.js?v=1"></script>
     
     <style>
+        .badge-reversed { background: #fee2e2; color: #ef4444; font-weight: 600; }
         *{margin:0;padding:0;box-sizing:border-box;}
         body{font-family:'Inter',sans-serif;background:#f5f6fa;color:#1a1a2e;}
         
@@ -115,6 +117,7 @@
                     <option value="all">All GRN Status</option>
                     <option value="pending">Pending Receipt</option>
                     <option value="received">Received / Completed</option>
+                    <option value="reversed">Reversed / Corrected</option>
                     <option value="cancelled">Cancelled</option>
                 </select>
                 <input type="date" id="startDate">
@@ -126,69 +129,106 @@
             <div class="card">
                 <div class="card-header"><h3><i class="fas fa-file-invoice"></i> Goods Received Notes</h3><span id="poCount"></span></div>
                 <div class="card-body">
-                    <table class="data-table" id="poTable">
+                    <table class="data-table">
                         <thead>
-                            <tr><th>GRN No</th><th>Date</th><th>Supplier</th><th>Items</th><th>Total</th><th>Status</th><th>Actions</th></tr>
+                            <tr>
+                                <th>GRN #</th>
+                                <th>Date</th>
+                                <th>Supplier</th>
+                                <th>Location</th>
+                                <th>Items</th>
+                                <th>Total</th>
+                                <th>Status / Mode</th>
+                                <th>Actions</th>
+                            </tr>
                         </thead>
-                        <tbody id="poList"><tr><td colspan="7" style="text-align:center;padding:40px;">Loading...</tbody>
+                        <tbody id="poList"></tbody>
                     </table>
                 </div>
             </div>
         </div>
         
-        <footer><p>© 2026 DIGIBIZ Retail - Goods Received Note (GRN) System</p></footer>
+        <!-- Global Datalists for Product and Location Type-to-Search -->
+        <datalist id="poGlobalProductsDatalist"></datalist>
+        <datalist id="poGlobalLocationsDatalist"></datalist>
+
+        <footer>
+            DIGIBIZ Retail Management System © 2026. Location-aware Stock & Accounting Sync Active.
+        </footer>
     </div>
     
-    <!-- New GRN Modal -->
+    <!-- New Purchase / GRN Modal -->
     <div id="purchaseModal" class="modal">
-        <div class="modal-content" style="max-width:700px;">
-            <h3>New Goods Received Note (GRN)</h3>
+        <div class="modal-content" style="max-width: 920px; width: 96%; max-height: 90vh; overflow-y: auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <h3 id="purchaseModalTitle" style="margin:0; font-size:18px; font-weight:800; color:#0f172a;"><i class="fas fa-file-import" style="color:#3b82f6;"></i> Create New Goods Received Note (GRN)</h3>
+                <button type="button" onclick="document.getElementById('purchaseModal').style.display='none'" style="background:none; border:none; font-size:20px; cursor:pointer; color:#64748b;">✕</button>
+            </div>
             
-            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                <div style="flex: 1;">
-                    <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:4px; text-align: left;">Select Supplier</label>
-                    <select id="poSupplierSelect" style="width: 100%; padding: 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px;"></select>
+            <!-- Top Controls Grid -->
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 15px;">
+                <div>
+                    <label style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px; text-align: left;">Supplier (සැපයුම්කරු)</label>
+                    <select id="poSupplierSelect" style="width: 100%; padding: 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px;"></select>
                 </div>
-                <div style="flex: 1;">
-                    <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:4px; text-align: left;">Invoice / GRN No</label>
-                    <input type="text" id="poGrnNo" placeholder="e.g. GRN-1001" style="width: 100%; padding: 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px; margin-bottom: 0;">
+                <div>
+                    <label style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px; text-align: left;">Invoice / GRN No</label>
+                    <input type="text" id="poGrnNo" placeholder="e.g. GRN-1001" style="width: 100%; padding: 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; margin-bottom: 0;">
                 </div>
-                <div style="flex: 1;">
-                    <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:4px; text-align: left;">Bill Date</label>
-                    <input type="date" id="poBillDate" style="width: 100%; padding: 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px; margin-bottom: 0;">
+                <div>
+                    <label style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px; text-align: left;">Bill Date</label>
+                    <input type="date" id="poBillDate" style="width: 100%; padding: 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; margin-bottom: 0;">
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px; text-align: left;">Payment Mode</label>
+                    <select id="poPaymentMode" style="width: 100%; padding: 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px;">
+                        <option value="CASH">💵 Cash (අතින්)</option>
+                        <option value="BANK">🏦 Bank / Card</option>
+                        <option value="CHEQUE">📄 Cheque (චෙක්)</option>
+                    </select>
                 </div>
             </div>
 
-            <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; font-size:12px; font-weight:700; color:#475569; background:#f1f5f9; padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1;">
-                <div style="flex:2;">Product Name (නිෂ්පාදනය)</div>
-                <div style="width:80px; text-align:center;">Qty / Wt</div>
-                <div style="width:75px; text-align:center;">Unit</div>
-                <div style="width:100px; text-align:center;">Unit Price</div>
-                <div style="width:90px; text-align:center;">Restock Lvl</div>
-                <div style="width:32px;"></div>
-            </div>
-
-            <div id="poItemsList">
-                <div class="purchase-item" style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
-                    <select class="po-product-select" style="flex:2; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
-                        <option value="">Select Product</option>
-                    </select>
-                    <input type="number" class="po-qty" placeholder="Qty / Wt" value="1" step="any" style="width:80px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
-                    <select class="po-unit-select" style="width:75px; padding:8px; border:1px solid #cbd5e1; border-radius:8px; font-size:12px;">
-                        <option value="Pcs">Pcs</option>
-                        <option value="kg">kg</option>
-                        <option value="g">g</option>
-                        <option value="Pack">Pack</option>
-                        <option value="Box">Box</option>
-                    </select>
-                    <input type="number" class="po-price" placeholder="Unit Price" step="any" style="width:100px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
-                    <input type="number" class="po-restock" placeholder="Restock Lvl" style="width:90px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
-                    <button class="remove-item-btn" disabled>✕</button>
+            <!-- Cheque Details -->
+            <div id="chequeDetails" style="display:none; margin-bottom:15px; padding:12px 15px; background:#f8fafc; border:1.5px dashed #cbd5e1; border-radius:10px;">
+                <strong style="font-size:13px; color:#334155; display:block; margin-bottom:8px;"><i class="fas fa-money-check" style="color:#6366f1;"></i> Cheque Details</strong>
+                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
+                    <div>
+                        <label style="display:block; font-size:11.5px; font-weight:600; color:#64748b; margin-bottom:4px;">Cheque No</label>
+                        <input type="text" id="poChequeNo" placeholder="Cheque Number" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:8px; margin-bottom:0; font-size:13px;">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:11.5px; font-weight:600; color:#64748b; margin-bottom:4px;">Bank Name</label>
+                        <input type="text" id="poChequeBank" placeholder="Bank Name (e.g. BOC)" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:8px; margin-bottom:0; font-size:13px;">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:11.5px; font-weight:600; color:#64748b; margin-bottom:4px;">Cheque Date</label>
+                        <input type="date" id="poChequeDate" style="width:100%; padding:8px; border:1px solid #cbd5e1; border-radius:8px; margin-bottom:0; font-size:13px;">
+                    </div>
                 </div>
             </div>
-            <button id="addItemBtn" class="btn-outline" style="width:100%;margin-bottom:15px;"><i class="fas fa-plus"></i> Add Item</button>
-            <div style="text-align:right;margin-bottom:15px;"><strong>Total: <span id="poTotal">Rs. 0</span></strong></div>
-            <textarea id="poNotes" placeholder="Notes (optional)"></textarea>
+
+            <!-- Items Table Header -->
+            <div style="display:grid; grid-template-columns: 2.8fr 1.6fr 90px 75px 110px 95px 36px; gap:8px; align-items:center; margin-bottom:8px; font-size:12px; font-weight:700; color:#475569; background:#f1f5f9; padding:10px 12px; border-radius:8px; border:1px solid #cbd5e1;">
+                <div>Product Name (භාණ්ඩය)</div>
+                <div>Location (ස්ථානය)</div>
+                <div style="text-align:right;">Qty / Wt</div>
+                <div>Unit</div>
+                <div style="text-align:right;">Unit Cost</div>
+                <div style="text-align:center;">Restock Lvl</div>
+                <div></div>
+            </div>
+
+            <div id="poItemsList" style="max-height:280px; overflow-y:auto; margin-bottom:12px;"></div>
+            <button id="addItemBtn" class="btn-outline" style="width:100%;margin-bottom:15px; padding:9px; font-weight:700;"><i class="fas fa-plus"></i> Add Item</button>
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; padding:10px 14px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0;">
+                <span style="font-size:13px; font-weight:600; color:#475569;">Total GRN Bill Amount:</span>
+                <strong style="font-size:16px; color:#10b981;"><span id="poTotal">Rs. 0</span></strong>
+            </div>
+            
+            <textarea id="poNotes" placeholder="Notes (optional)" rows="2" style="width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:8px; font-family:inherit; margin-bottom:15px;"></textarea>
+            
             <div class="modal-buttons">
                 <button class="btn-outline" id="closePOModal">Cancel</button>
                 <button class="btn-primary" id="savePOBtn">Create GRN Receipt</button>
@@ -198,13 +238,44 @@
     
     <!-- Receive Stock Modal -->
     <div id="receiveModal" class="modal">
-        <div class="modal-content">
-            <h3>Receive & Complete GRN</h3>
-            <p id="receivePONo"></p>
-            <div id="receiveItems"></div>
+        <div class="modal-content" style="max-width: 650px;">
+            <h3><i class="fas fa-boxes" style="color:#10b981;"></i> Receive & Complete GRN</h3>
+            <p id="receivePONo" style="margin-bottom:15px; font-size:13px; color:#475569; line-height:1.5;"></p>
+            <div id="receiveItems" style="max-height:350px; overflow-y:auto; margin-bottom:15px;"></div>
             <div class="modal-buttons">
                 <button class="btn-outline" id="closeReceiveModal">Cancel</button>
                 <button class="btn-primary" id="confirmReceiveBtn">Confirm Receipt & Update Stock</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reversal Modal -->
+    <div id="reversalModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <h3 style="color:#ef4444;"><i class="fas fa-undo"></i> Reverse GRN Transaction</h3>
+            <p id="reversalPONo" style="font-size:13px; color:#64748b; margin-bottom:12px;"></p>
+            <div style="background:#fee2e2; border-left:4px solid #ef4444; padding:10px; border-radius:6px; font-size:12px; color:#991b1b; margin-bottom:15px; line-height:1.4;">
+                <strong>අවවාදයයි (Audited Reversal):</strong> මෙම GRN එක Reversal කිරීමෙන්, අදාළ Location Stock ස්වයංක්‍රීයව අඩු වන අතර ගිණුම්කරණ පද්ධතියේ ප්‍රතිවිරුද්ධ සටහනක් (Reversal Journal Entry) ලියවේ.
+            </div>
+            <label style="display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:4px;">Reversal Reason (හේතුව - අනිවාර්යයි):</label>
+            <textarea id="reversalReasonInput" placeholder="හේතුව ඇතුළත් කරන්න (උදා: බඩු ආපසු යැවීම, වැරදි බිල්පතක් වීම)..." rows="3" style="width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:10px; font-family:inherit;"></textarea>
+            <div class="modal-buttons">
+                <button class="btn-outline" id="closeReversalModalBtn">Cancel</button>
+                <button class="btn-primary" id="confirmReversalBtn" style="background:#ef4444;"><i class="fas fa-undo"></i> Confirm Reversal</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View GRN Modal -->
+    <div id="viewPOModal" class="modal">
+        <div class="modal-content" style="max-width: 680px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <h3 id="viewPOTitle"><i class="fas fa-file-invoice"></i> GRN Details</h3>
+                <span id="viewPOStatusBadge" class="badge"></span>
+            </div>
+            <div id="viewPOContent" style="font-size:13px; line-height:1.6; max-height:450px; overflow-y:auto;"></div>
+            <div class="modal-buttons" style="margin-top:15px;">
+                <button class="btn-outline" id="closeViewPOModalBtn">Close</button>
             </div>
         </div>
     </div>
@@ -259,12 +330,18 @@
 
     <script>
         let currentBusinessId = null;
-        const KUBUKA_BID = '0Uled5estVeQVN8cChmMTNRDNIE3';
+        let currentUser = null;
+        let currentUserProfile = null;
+        let userPreferredLocation = 'MAIN';
+        let businessLocations = [];
         let products = [];
         let suppliers = [];
         let purchaseOrders = [];
+        let activeSelectElement = null;
+        window.currentReceivingPO = null;
+        window.currentReversingPOId = null;
         
-        function formatCurrency(amt){ return 'Rs. ' + (amt||0).toLocaleString('en-LK'); }
+        function formatCurrency(amt){ return 'Rs. ' + (Number(amt)||0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
         
         function showToast(msg, isError=false){
             const toast = document.getElementById('toast');
@@ -287,30 +364,42 @@
             }
         }
 
+        function populateGlobalDatalists(){
+            const pListEl = document.getElementById('poGlobalProductsDatalist');
+            if(pListEl) {
+                pListEl.innerHTML = products.map(p => {
+                    const brandModelStr = (p.brand || p.model) ? ` [${p.brand || ''}${p.brand && p.model ? ' - ' : ''}${p.model || ''}]` : '';
+                    const codeStr = p.code ? ` (${p.code})` : '';
+                    const barcodeStr = p.barcode ? ` [Barcode: ${p.barcode}]` : '';
+                    const unitStr = p.unit || (p.sellType === 'weight' ? 'kg' : 'Pcs');
+                    return `<option value="${p.name}${brandModelStr}${codeStr}${barcodeStr}" data-id="${p.id}" data-price="${p.cost || p.price || 0}" data-unit="${unitStr}" data-restock="${p.restockLevel || ''}">${p.name} - ${unitStr}</option>`;
+                }).join('');
+            }
+
+            const lListEl = document.getElementById('poGlobalLocationsDatalist');
+            if(lListEl) {
+                const locs = (businessLocations && businessLocations.length > 0) ? businessLocations : [{ id: 'MAIN', name: 'Main Store / Head Office', code: 'MAIN' }];
+                lListEl.innerHTML = locs.map(l => {
+                    return `<option value="${l.name || l.code || l.id} (${l.code || l.id})" data-id="${l.id}">${l.code || l.id}</option>`;
+                }).join('');
+            }
+        }
+
+        function getLocationOptionsHTML(selectedLocId){
+            if(!businessLocations || businessLocations.length === 0){
+                return `<option value="MAIN" selected>Main Store (MAIN)</option>`;
+            }
+            const target = selectedLocId || userPreferredLocation || 'MAIN';
+            return businessLocations.map(l => `<option value="${l.id}" ${l.id === target ? 'selected' : ''}>${l.name || l.code || l.id}</option>`).join('');
+        }
+
         // Load products
         async function loadProducts(){
             const snapshot = await db.collection('products').doc(currentBusinessId).collection('list').get();
             products = [];
             snapshot.forEach(doc => products.push({id: doc.id, ...doc.data()}));
             populateCategoryDatalist();
-            updateProductSelects();
-        }
-        
-        function updateProductSelects(){
-            const selects = document.querySelectorAll('.po-product-select');
-            const options = '<option value="">Select Product</option>' + 
-                            '<option value="ADD_NEW_PRODUCT" style="font-weight:bold;color:#10b981;">+ Add New Product...</option>' + 
-                            products.map(p => {
-                                const brandModelStr = (p.brand || p.model) ? ` [${p.brand || ''}${p.brand && p.model ? ' - ' : ''}${p.model || ''}]` : '';
-                                return `<option value="${p.id}" data-price="${p.cost || p.price}">${p.name}${brandModelStr} (${p.code || p.id})</option>`;
-                            }).join('');
-            selects.forEach(select => { 
-                const prevValue = select.value;
-                select.innerHTML = options; 
-                if (prevValue && select.querySelector(`option[value="${prevValue}"]`)) {
-                    select.value = prevValue;
-                }
-            });
+            populateGlobalDatalists();
         }
         
         // Load suppliers
@@ -321,32 +410,18 @@
                 const subSnap = await db.collection('suppliers').doc(currentBusinessId).collection('list').get();
                 subSnap.forEach(doc => {
                     const d = doc.data();
-                    suppMap.set(doc.id, { id: doc.id, name: d.name || d.supplierName || d.companyName || d.fullName || doc.id, ...d });
-                });
-
-                const rootSnap1 = await db.collection('suppliers').where('businessId', '==', currentBusinessId).get();
-                rootSnap1.forEach(doc => {
-                    const d = doc.data();
-                    if (!suppMap.has(doc.id)) {
-                        suppMap.set(doc.id, { id: doc.id, name: d.name || d.supplierName || d.companyName || d.fullName || doc.id, ...d });
+                    if (d.name) {
+                        suppMap.set(doc.id, { id: doc.id, name: d.name, phone: d.phone || d.mobile || '' });
                     }
                 });
 
-                const rootSnap2 = await db.collection('suppliers').where('ownerUid', '==', currentBusinessId).get();
-                rootSnap2.forEach(doc => {
+                const ordSnap = await db.collection('purchases').doc(currentBusinessId).collection('orders').limit(100).get();
+                ordSnap.forEach(doc => {
                     const d = doc.data();
-                    if (!suppMap.has(doc.id)) {
-                        suppMap.set(doc.id, { id: doc.id, name: d.name || d.supplierName || d.companyName || d.fullName || doc.id, ...d });
-                    }
-                });
-
-                const custSnap = await db.collection('customers').where('businessId', '==', currentBusinessId).get();
-                custSnap.forEach(doc => {
-                    const d = doc.data() || {};
-                    const typeStr = String(d.type || d.context || '').toLowerCase();
-                    if (typeStr.includes('supplier') || currentBusinessId === KUBUKA_BID) {
-                        if (!suppMap.has(doc.id)) {
-                            suppMap.set(doc.id, { id: doc.id, name: d.fullName || d.name || d.supplierName || d.companyName || doc.id, ...d });
+                    if (d.supplierName && d.supplierName !== 'General Supplier') {
+                        const sid = d.supplierId || d.supplierName;
+                        if (!suppMap.has(sid)) {
+                            suppMap.set(sid, { id: sid, name: d.supplierName, phone: '' });
                         }
                     }
                 });
@@ -368,43 +443,108 @@
         
         // Load purchase orders
         async function loadPurchaseOrders(){
-            const snapshot = await db.collection('purchases').doc(currentBusinessId).collection('orders').orderBy('createdAt', 'desc').get();
-            purchaseOrders = [];
-            snapshot.forEach(doc => purchaseOrders.push({id: doc.id, ...doc.data()}));
-            renderPurchaseOrders();
-            updateStats();
+            try {
+                const snapshot = await db.collection('purchases').doc(currentBusinessId).collection('orders').orderBy('createdAt', 'desc').get();
+                purchaseOrders = [];
+                snapshot.forEach(doc => purchaseOrders.push({id: doc.id, ...doc.data()}));
+                renderPurchaseOrders();
+                updateStats();
+            } catch (err) {
+                console.error('[GRN] Error loading purchase orders:', err);
+                showToast('Failed to load GRN orders', true);
+            }
         }
         
         function renderPurchaseOrders(){
             const tbody = document.getElementById('poList');
-            if(purchaseOrders.length === 0){
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;">No GRN records found</td></tr>';
+            const filterStatus = document.getElementById('poStatusFilter')?.value || 'all';
+            const searchVal = document.getElementById('searchPO')?.value?.toLowerCase().trim() || '';
+            const startDate = document.getElementById('startDate')?.value;
+            const endDate = document.getElementById('endDate')?.value;
+
+            let filtered = purchaseOrders.filter(po => {
+                if (filterStatus !== 'all' && po.status !== filterStatus) return false;
+                if (searchVal) {
+                    const poNo = (po.poNo || po.id || '').toLowerCase();
+                    const supp = (po.supplierName || '').toLowerCase();
+                    if (!poNo.includes(searchVal) && !supp.includes(searchVal)) return false;
+                }
+                if (startDate || endDate) {
+                    const poDate = po.createdAt?.toDate?.() || new Date(po.date || po.billDate || 0);
+                    if (startDate && poDate < new Date(startDate)) return false;
+                    if (endDate) {
+                        const eD = new Date(endDate);
+                        eD.setHours(23, 59, 59, 999);
+                        if (poDate > eD) return false;
+                    }
+                }
+                return true;
+            });
+
+            if(filtered.length === 0){
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#64748b;">No GRN records found</td></tr>';
                 document.getElementById('poCount').innerHTML = '0 records';
                 return;
             }
-            tbody.innerHTML = purchaseOrders.map(po => {
-                const statusClass = po.status === 'received' ? 'badge-received' : (po.status === 'cancelled' ? 'badge-cancelled' : 'badge-pending');
-                const statusText = po.status === 'received' ? 'Received' : (po.status === 'cancelled' ? 'Cancelled' : 'Pending');
+
+            const canManageStock = LocationStockCore.canUserManageStock(currentUserProfile, currentUser?.role);
+
+            tbody.innerHTML = filtered.map(po => {
+                let statusClass = 'badge-pending';
+                let statusText = 'Pending';
+                if (po.status === 'received') {
+                    statusClass = 'badge-received';
+                    statusText = 'Received';
+                } else if (po.status === 'reversed') {
+                    statusClass = 'badge-reversed';
+                    statusText = 'Reversed';
+                } else if (po.status === 'cancelled') {
+                    statusClass = 'badge-cancelled';
+                    statusText = 'Cancelled';
+                }
+
+                const modeLabel = { 'CASH': '💵 Cash', 'BANK': '🏦 Bank', 'CHEQUE': '📄 Cheque' }[po.paymentMode] || '💵 Cash';
+                const isCheque = po.paymentMode === 'CHEQUE' && po.chequeNo;
+
+                // Determine Location(s) display
+                const itemLocations = [...new Set((po.items || []).map(it => it.locationId || 'MAIN'))];
+                const locLabels = itemLocations.map(lid => {
+                    const lObj = (businessLocations || []).find(l => l.id === lid);
+                    return lObj ? (lObj.name || lObj.code || lid) : lid;
+                });
+                const locDisplay = locLabels.length > 0 ? locLabels.join(', ') : 'MAIN';
+
                 return `<tr>
-                    <td><strong>${po.poNo}</strong></td>
-                    <td>${po.date || po.createdAt?.toDate?.().toLocaleDateString() || '-'}</td>
+                    <td><strong>${po.poNo || po.id}</strong></td>
+                    <td>${po.billDate || po.date || po.createdAt?.toDate?.().toLocaleDateString() || '-'}</td>
                     <td>${po.supplierName || '-'}</td>
+                    <td>
+                        <span class="badge" style="background:#eff6ff; color:#1e40af; font-size:11.5px; font-weight:700;"><i class="fas fa-map-marker-alt" style="color:#3b82f6;"></i> ${locDisplay}</span>
+                    </td>
                     <td>${po.items?.length || 0}</td>
                     <td>${formatCurrency(po.total)}</td>
-                    <td><span class="badge ${statusClass}">${statusText}</span></td>
                     <td>
-                        ${po.status === 'pending' ? `<button class="btn-primary" onclick="receiveStock('${po.id}')" style="padding:5px 10px;"><i class="fas fa-boxes"></i> Receive</button>` : ''}
-                        <button class="btn-outline" onclick="viewPO('${po.id}')" style="padding:5px 10px;"><i class="fas fa-eye"></i></button>
+                        <span class="badge ${statusClass}">${statusText}</span>
+                        ${isCheque ? `<br><span style="font-size:11px; color:#64748b;">${modeLabel} (${po.chequeNo})</span>` : `<br><span style="font-size:11px; color:#64748b;">${modeLabel}</span>`}
+                    </td>
+                    <td>
+                        <div style="display:flex; gap:5px; align-items:center; flex-wrap:wrap;">
+                            ${po.status === 'pending' ? `<button class="btn-primary" onclick="receiveStock('${po.id}')" style="padding:4px 8px; font-size:11.5px;" title="Receive Stock"><i class="fas fa-boxes"></i> Receive</button>` : ''}
+                            <button class="btn-outline" onclick="window.editGRN('${po.id}')" style="padding:4px 8px; font-size:11.5px; color:#2563eb; border-color:#93c5fd;" title="Edit GRN"><i class="fas fa-edit"></i> Edit</button>
+                            ${(po.status === 'received' && canManageStock) ? `<button class="btn-outline" onclick="window.deleteOrReverseGRN('${po.id}')" style="padding:4px 8px; font-size:11.5px; color:#ef4444; border-color:#fca5a5;" title="Reverse GRN Transaction"><i class="fas fa-undo"></i> Reverse</button>` : (po.status === 'pending' || po.status === 'cancelled' ? `<button class="btn-outline" onclick="window.deleteOrReverseGRN('${po.id}')" style="padding:4px 8px; font-size:11.5px; color:#dc2626; border-color:#fca5a5;" title="Delete GRN"><i class="fas fa-trash"></i> Delete</button>` : '')}
+                            <button class="btn-outline" onclick="viewPO('${po.id}')" style="padding:4px 8px; font-size:11.5px;" title="View Details"><i class="fas fa-eye"></i></button>
+                        </div>
                      </td>
                  </tr>`;
             }).join('');
-            document.getElementById('poCount').innerHTML = `${purchaseOrders.length} records`;
+            document.getElementById('poCount').innerHTML = `${filtered.length} records`;
         }
         
         function updateStats(){
-            const total = purchaseOrders.reduce((sum, po) => sum + (po.total || 0), 0);
+            const total = purchaseOrders.filter(po => po.status !== 'reversed' && po.status !== 'cancelled').reduce((sum, po) => sum + (po.total || 0), 0);
             const monthTotal = purchaseOrders.filter(po => {
-                const date = po.createdAt?.toDate?.() || new Date(po.date);
+                if (po.status === 'reversed' || po.status === 'cancelled') return false;
+                const date = po.createdAt?.toDate?.() || new Date(po.date || po.billDate || 0);
                 const now = new Date();
                 return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
             }).reduce((sum, po) => sum + (po.total || 0), 0);
@@ -432,10 +572,10 @@
         function updatePOTotal(){
             let total = 0;
             document.querySelectorAll('.purchase-item').forEach(item => {
-                const qty = parseFloat(item.querySelector('.po-qty').value) || 0;
+                const qty = parseFloat(item.querySelector('.po-qty')?.value) || 0;
                 const unit = item.querySelector('.po-unit-select')?.value || 'Pcs';
-                const price = parseFloat(item.querySelector('.po-price').value) || 0;
-                const productId = item.querySelector('.po-product-select')?.value;
+                const price = parseFloat(item.querySelector('.po-price')?.value) || 0;
+                const productId = item.querySelector('.po-product-id')?.value;
                 const product = products.find(p => p.id === productId);
                 const prodUnit = product?.unit || (product?.sellType === 'weight' ? 'kg' : 'Pcs');
                 
@@ -447,37 +587,72 @@
             });
             document.getElementById('poTotal').innerHTML = formatCurrency(total);
         }
-        
-        let activeSelectElement = null;
 
-        function getProductOptionsHTML(){
-            return '<option value="">Select Product</option>' + 
-                   '<option value="ADD_NEW_PRODUCT" style="font-weight:bold;color:#10b981;">+ Add New Product...</option>' + 
-                   products.map(p => {
-                       const brandModelStr = (p.brand || p.model) ? ` [${p.brand || ''}${p.brand && p.model ? ' - ' : ''}${p.model || ''}]` : '';
-                       const unitStr = p.unit || (p.sellType === 'weight' ? 'kg' : 'Pcs');
-                       return `<option value="${p.id}" data-price="${p.cost || p.price}" data-unit="${unitStr}">${p.name}${brandModelStr} (${p.code || p.id}) - ${unitStr}</option>`;
-                   }).join('');
-        }
-
-        function addPurchaseItem(){
+        function addPurchaseItem(itemData = {}){
             const container = document.getElementById('poItemsList');
             const newItem = document.createElement('div');
             newItem.className = 'purchase-item';
-            newItem.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:10px;';
+            newItem.style.cssText = 'display:grid; grid-template-columns: 2.8fr 1.6fr 90px 75px 110px 95px 36px; gap:8px; align-items:center; margin-bottom:8px; padding:0 12px; box-sizing:border-box;';
+
+            // Find initial product and location text
+            let initialProdText = '';
+            let initialProdId = itemData.productId || '';
+            if (initialProdId) {
+                const p = products.find(prod => String(prod.id) === String(initialProdId) || String(prod.code) === String(initialProdId));
+                if (p) {
+                    const brandModelStr = (p.brand || p.model) ? ` [${p.brand || ''}${p.brand && p.model ? ' - ' : ''}${p.model || ''}]` : '';
+                    const codeStr = p.code ? ` (${p.code})` : '';
+                    initialProdText = `${p.name}${brandModelStr}${codeStr}`;
+                } else if (itemData.productName) {
+                    initialProdText = itemData.productName;
+                }
+            }
+
+            let initialLocId = itemData.locationId || userPreferredLocation || 'MAIN';
+            let initialLocText = initialLocId;
+            const lObj = (businessLocations || []).find(l => l.id === initialLocId);
+            if (lObj) {
+                initialLocText = `${lObj.name || lObj.code || lObj.id} (${lObj.code || lObj.id})`;
+            } else {
+                initialLocText = `${initialLocId} (Main Store)`;
+            }
+
             newItem.innerHTML = `
-                <select class="po-product-select" style="flex:2; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">${getProductOptionsHTML()}</select>
-                <input type="number" class="po-qty" placeholder="Qty / Wt" value="1" step="any" style="width:80px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
-                <select class="po-unit-select" style="width:75px; padding:8px; border:1px solid #cbd5e1; border-radius:8px; font-size:12px;">
-                    <option value="Pcs">Pcs</option>
-                    <option value="kg">kg</option>
-                    <option value="g">g</option>
-                    <option value="Pack">Pack</option>
-                    <option value="Box">Box</option>
-                </select>
-                <input type="number" class="po-price" placeholder="Unit Price" step="any" style="width:100px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
-                <input type="number" class="po-restock" placeholder="Restock Lvl" style="width:90px; padding:8px; border:1px solid #cbd5e1; border-radius:8px;">
-                <button class="remove-item-btn">✕</button>
+                <div style="width:100%;">
+                    <input type="text" class="po-product-search" list="poGlobalProductsDatalist" placeholder="🔍 Type or select product..." value="${initialProdText}" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;" autocomplete="off">
+                    <input type="hidden" class="po-product-id" value="${initialProdId}">
+                </div>
+
+                <div style="width:100%;">
+                    <input type="text" class="po-location-search" list="poGlobalLocationsDatalist" placeholder="Location..." value="${initialLocText}" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:12.5px;" autocomplete="off">
+                    <input type="hidden" class="po-location-id" value="${initialLocId}">
+                </div>
+
+                <div style="width:100%;">
+                    <input type="number" class="po-qty" placeholder="Qty" value="${itemData.inputQty || itemData.quantity || itemData.qty || 1}" step="any" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px; text-align:right;">
+                </div>
+
+                <div style="width:100%;">
+                    <select class="po-unit-select" style="width:100%; box-sizing:border-box; padding:8px 4px; border:1px solid #cbd5e1; border-radius:8px; font-size:12px;">
+                        <option value="Pcs" ${itemData.unit === 'Pcs' ? 'selected' : ''}>Pcs</option>
+                        <option value="kg" ${itemData.unit === 'kg' ? 'selected' : ''}>kg</option>
+                        <option value="g" ${itemData.unit === 'g' ? 'selected' : ''}>g</option>
+                        <option value="Pack" ${itemData.unit === 'Pack' ? 'selected' : ''}>Pack</option>
+                        <option value="Box" ${itemData.unit === 'Box' ? 'selected' : ''}>Box</option>
+                    </select>
+                </div>
+
+                <div style="width:100%;">
+                    <input type="number" class="po-price" placeholder="Cost" step="any" value="${itemData.unitPrice || itemData.price || ''}" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px; text-align:right;">
+                </div>
+
+                <div style="width:100%;">
+                    <input type="number" class="po-restock" placeholder="Restock" value="${itemData.restockLevel !== undefined && itemData.restockLevel !== null ? itemData.restockLevel : ''}" style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px; text-align:center;">
+                </div>
+
+                <div style="text-align:center; width:100%;">
+                    <button type="button" class="remove-item-btn" style="width:34px; height:34px; border:none; background:#fee2e2; color:#ef4444; border-radius:8px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;" title="Remove item">✕</button>
+                </div>
             `;
             container.appendChild(newItem);
             attachItemEvents(newItem);
@@ -485,37 +660,81 @@
         }
         
         function attachItemEvents(item){
-            const select = item.querySelector('.po-product-select');
+            const prodInput = item.querySelector('.po-product-search');
+            const prodIdHidden = item.querySelector('.po-product-id');
+            const locInput = item.querySelector('.po-location-search');
+            const locIdHidden = item.querySelector('.po-location-id');
             const qtyInput = item.querySelector('.po-qty');
             const unitSelect = item.querySelector('.po-unit-select');
             const priceInput = item.querySelector('.po-price');
             const restockInput = item.querySelector('.po-restock');
             const removeBtn = item.querySelector('.remove-item-btn');
             
-            select.onchange = () => {
-                if (select.value === 'ADD_NEW_PRODUCT') {
-                    activeSelectElement = select;
-                    openAddNewProductModal();
-                    select.value = '';
+            const matchProduct = () => {
+                const val = prodInput.value.trim().toLowerCase();
+                if (!val) {
+                    prodIdHidden.value = '';
                     return;
                 }
-                const selected = select.options[select.selectedIndex];
-                const price = selected.dataset.price;
-                if(price) priceInput.value = price;
-                
-                const product = products.find(p => p.id === select.value);
-                if (product) {
+
+                if (val === '+ add new product' || val === '+ add new product...' || val === '+ new') {
+                    window.activeProductSearchInput = prodInput;
+                    window.activeProductHiddenId = prodIdHidden;
+                    openAddNewProductModal();
+                    return;
+                }
+
+                // Match exact, code, barcode, or name
+                let matched = products.find(p => {
+                    const fullName = `${p.name} ${p.brand || ''} ${p.model || ''} (${p.code || p.id})`.toLowerCase();
+                    return fullName === val || (p.code && p.code.toLowerCase() === val) || (p.barcode && p.barcode.toLowerCase() === val) || p.name.toLowerCase() === val || (p.id && p.id.toLowerCase() === val);
+                });
+
+                if (!matched) {
+                    matched = products.find(p => {
+                        const searchStr = `${p.name} ${p.code || ''} ${p.barcode || ''} ${p.brand || ''}`.toLowerCase();
+                        return searchStr.includes(val);
+                    });
+                }
+
+                if (matched) {
+                    prodIdHidden.value = matched.id;
+                    if (!priceInput.value || Number(priceInput.value) === 0) {
+                        priceInput.value = matched.cost || matched.price || '';
+                    }
                     if (unitSelect) {
-                        unitSelect.value = product.unit || (product.sellType === 'weight' ? 'kg' : 'Pcs');
+                        unitSelect.value = matched.unit || (matched.sellType === 'weight' ? 'kg' : 'Pcs');
                     }
-                    if (product.restockLevel !== undefined && product.restockLevel !== null) {
-                        restockInput.value = product.restockLevel;
-                    } else {
-                        restockInput.value = '';
+                    if (matched.restockLevel !== undefined && matched.restockLevel !== null) {
+                        restockInput.value = matched.restockLevel;
                     }
+                } else {
+                    prodIdHidden.value = val;
                 }
                 updatePOTotal();
             };
+
+            const matchLocation = () => {
+                const val = locInput.value.trim().toLowerCase();
+                if (!val) {
+                    locIdHidden.value = userPreferredLocation || 'MAIN';
+                    return;
+                }
+                const matchedLoc = (businessLocations || []).find(l => {
+                    return l.id.toLowerCase() === val || (l.code && l.code.toLowerCase() === val) || (l.name && l.name.toLowerCase() === val) || `${l.name || ''} (${l.code || l.id})`.toLowerCase() === val;
+                });
+                if (matchedLoc) {
+                    locIdHidden.value = matchedLoc.id;
+                } else {
+                    locIdHidden.value = val.toUpperCase();
+                }
+            };
+
+            prodInput.oninput = matchProduct;
+            prodInput.onchange = matchProduct;
+            locInput.oninput = matchLocation;
+            locInput.onchange = matchLocation;
+
             qtyInput.oninput = () => updatePOTotal();
             if(unitSelect) unitSelect.onchange = () => updatePOTotal();
             priceInput.oninput = () => updatePOTotal();
@@ -549,7 +768,7 @@
             const name = document.getElementById('newProductName').value.trim();
             const category = document.getElementById('newProductCategory').value.trim();
             const sellType = document.getElementById('newProductSellType').value;
-            const unit = document.getElementById('newProductUnit').value;
+            const unit = sellType === 'weight' ? 'kg' : document.getElementById('newProductUnit').value;
             const price = parseFloat(document.getElementById('newProductPrice').value);
             const normalPrice = parseFloat(document.getElementById('newProductNormalPrice').value) || null;
             const cost = parseFloat(document.getElementById('newProductCost').value || 0);
@@ -562,7 +781,6 @@
                 return;
             }
 
-            // Generate a 100% unique Firestore document ID for new products
             const autoDocRef = db.collection('products').doc(currentBusinessId).collection('list').doc();
             const productId = autoDocRef.id;
             const productData = {
@@ -591,11 +809,12 @@
                 
                 products.push(productData);
                 populateCategoryDatalist();
-                updateProductSelects();
+                populateGlobalDatalists();
 
-                if (activeSelectElement) {
-                    activeSelectElement.value = productId;
-                    const container = activeSelectElement.closest('.purchase-item');
+                if (window.activeProductSearchInput) {
+                    window.activeProductSearchInput.value = `${name} (${code || productId})`;
+                    if (window.activeProductHiddenId) window.activeProductHiddenId.value = productId;
+                    const container = window.activeProductSearchInput.closest('.purchase-item');
                     const priceInput = container.querySelector('.po-price');
                     const restockInput = container.querySelector('.po-restock');
                     const unitSelect = container.querySelector('.po-unit-select');
@@ -611,6 +830,71 @@
                 showToast('Failed to save product!', true);
             }
         }
+
+        // Edit GRN handler
+        window.editGRN = async (poId) => {
+            const po = purchaseOrders.find(p => p.id === poId);
+            if(!po) return;
+
+            if (po.status === 'received') {
+                const proceed = confirm(
+                    `⚠️ අවවාදයයි (Transactional Edit):\n\nමෙම GRN එක (${po.poNo || po.id}) දැනටමත් Receive කර ඇත.\nEdit කිරීමේදී පැරණි Stock සහ Accounting Journal Transaction එක සම්පූර්ණයෙන්ම Reversal වී නව සංශෝධිත GRN එක ලියවෙනු ඇත.\n\nඉදිරියට යාමට අවශ්‍යද?`
+                );
+                if (!proceed) return;
+            }
+
+            window.editingPOId = poId;
+            window.editingOldPOStatus = po.status;
+
+            document.getElementById('purchaseModalTitle').innerHTML = `<i class="fas fa-edit" style="color:#3b82f6;"></i> Edit Goods Received Note: ${po.poNo || po.id}`;
+            document.getElementById('savePOBtn').innerHTML = `<i class="fas fa-save"></i> Save & Update GRN`;
+
+            document.getElementById('poSupplierSelect').value = po.supplierId || '';
+            document.getElementById('poGrnNo').value = po.grnNo || po.poNo || po.id;
+            document.getElementById('poBillDate').value = po.billDate || (po.createdAt?.toDate?.() ? po.createdAt.toDate().toISOString().split('T')[0] : '');
+            document.getElementById('poPaymentMode').value = po.paymentMode || 'CASH';
+            
+            const chequeEl = document.getElementById('chequeDetails');
+            if (po.paymentMode === 'CHEQUE') {
+                chequeEl.style.display = 'block';
+                document.getElementById('poChequeNo').value = po.chequeNo || '';
+                document.getElementById('poChequeBank').value = po.chequeBank || '';
+                document.getElementById('poChequeDate').value = po.chequeDate || '';
+            } else {
+                chequeEl.style.display = 'none';
+            }
+
+            document.getElementById('poNotes').value = po.notes || '';
+
+            const listEl = document.getElementById('poItemsList');
+            listEl.innerHTML = '';
+            (po.items || []).forEach(item => {
+                addPurchaseItem(item);
+            });
+
+            document.getElementById('purchaseModal').style.display = 'flex';
+        };
+
+        // Delete / Reverse GRN handler
+        window.deleteOrReverseGRN = async (poId) => {
+            const po = purchaseOrders.find(p => p.id === poId);
+            if(!po) return;
+
+            if (po.status === 'received') {
+                window.openReversalModal(poId);
+            } else {
+                if (confirm(`Are you sure you want to permanently delete GRN: ${po.poNo || po.id}?`)) {
+                    try {
+                        await db.collection('purchases').doc(currentBusinessId).collection('orders').doc(poId).delete();
+                        showToast(`GRN ${po.poNo || po.id} deleted successfully!`);
+                        await loadPurchaseOrders();
+                    } catch (err) {
+                        console.error('[GRN] Delete error:', err);
+                        showToast('Error deleting GRN: ' + err.message, true);
+                    }
+                }
+            }
+        };
         
         async function createPurchaseOrder(){
             const supplierSelect = document.getElementById('poSupplierSelect');
@@ -622,12 +906,13 @@
             
             const items = [];
             document.querySelectorAll('.purchase-item').forEach(item => {
-                const productId = item.querySelector('.po-product-select').value;
+                const productId = item.querySelector('.po-product-id')?.value || item.querySelector('.po-product-search')?.value;
+                const locationId = item.querySelector('.po-location-id')?.value || item.querySelector('.po-location-search')?.value || userPreferredLocation || 'MAIN';
                 const product = products.find(p => p.id === productId);
-                const qty = parseFloat(item.querySelector('.po-qty').value) || 0;
+                const qty = parseFloat(item.querySelector('.po-qty')?.value) || 0;
                 const unit = item.querySelector('.po-unit-select')?.value || 'Pcs';
-                const price = parseFloat(item.querySelector('.po-price').value) || 0;
-                const restockLevelVal = item.querySelector('.po-restock').value;
+                const price = parseFloat(item.querySelector('.po-price')?.value) || 0;
+                const restockLevelVal = item.querySelector('.po-restock')?.value;
                 const restockLevel = restockLevelVal !== '' ? parseInt(restockLevelVal) : null;
                 const prodUnit = product?.unit || (product?.sellType === 'weight' ? 'kg' : 'Pcs');
                 
@@ -639,7 +924,8 @@
                 if(productId && qty > 0){
                     items.push({ 
                         productId, 
-                        productName: product.name, 
+                        productName: product ? product.name : (item.querySelector('.po-product-search')?.value || 'Item'), 
+                        locationId: locationId,
                         quantity: actualQty, 
                         inputQty: qty,
                         unit: unit,
@@ -653,9 +939,17 @@
             if(items.length === 0){ showToast('Add at least one item', true); return; }
             
             const total = items.reduce((sum, i) => sum + i.total, 0);
-            const poNo = grnNo || 'PO-' + Date.now();
+            const poNo = grnNo || (window.editingPOId ? window.editingPOId : 'PO-' + Date.now());
             const notes = document.getElementById('poNotes').value;
             
+            const paymentMode = document.getElementById('poPaymentMode').value || 'CASH';
+            const chequeNo = document.getElementById('poChequeNo').value.trim() || null;
+            const chequeBank = document.getElementById('poChequeBank').value.trim() || null;
+            const chequeDate = document.getElementById('poChequeDate').value || null;
+            
+            const isEditing = Boolean(window.editingPOId);
+            const isPrevReceived = isEditing && window.editingOldPOStatus === 'received';
+
             const poData = {
                 poNo: poNo,
                 supplierId: supplierId,
@@ -665,33 +959,102 @@
                 items: items,
                 total: total,
                 notes: notes,
-                status: 'pending',
+                status: isPrevReceived ? 'pending' : (window.editingOldPOStatus || 'pending'),
                 paymentStatus: 'unpaid',
-                createdAt: new Date()
+                paymentMode: paymentMode,
+                chequeNo: paymentMode === 'CHEQUE' ? chequeNo : null,
+                chequeBank: paymentMode === 'CHEQUE' ? chequeBank : null,
+                chequeDate: paymentMode === 'CHEQUE' ? chequeDate : null,
+                updatedAt: new Date(),
+                createdBy: currentUser?.email || currentUser?.uid || 'user'
             };
+
+            const saveBtn = document.getElementById('savePOBtn');
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
             
-            await db.collection('purchases').doc(currentBusinessId).collection('orders').doc(poNo).set(poData);
-            showToast(`GRN Receipt ${poNo} created!`);
-            
-            // Clear fields
-            document.getElementById('poGrnNo').value = '';
-            document.getElementById('poBillDate').value = '';
-            supplierSelect.value = '';
-            
-            document.getElementById('purchaseModal').style.display = 'none';
-            loadPurchaseOrders();
+            try {
+                // If this was an edit of a previously received GRN, atomically reverse the previous version first!
+                if (isPrevReceived) {
+                    showToast('Reversing previous stock & journal transaction before updating...');
+                    await LocationStockCore.reverseGRNTransactional({
+                        businessId: currentBusinessId,
+                        poId: window.editingPOId,
+                        reversalReason: `GRN edited & re-issued by ${currentUser?.email || 'user'}`,
+                        currentUser: currentUser,
+                        userProfile: currentUserProfile
+                    });
+                }
+
+                await db.collection('purchases').doc(currentBusinessId).collection('orders').doc(poNo).set(poData, { merge: true });
+                showToast(`GRN Receipt ${poNo} ${isEditing ? 'updated' : 'created'}!`);
+                
+                window.editingPOId = null;
+                window.editingOldPOStatus = null;
+
+                document.getElementById('poGrnNo').value = '';
+                document.getElementById('poBillDate').value = '';
+                document.getElementById('poPaymentMode').value = 'CASH';
+                document.getElementById('poChequeNo').value = '';
+                document.getElementById('poChequeBank').value = '';
+                document.getElementById('poChequeDate').value = '';
+                document.getElementById('chequeDetails').style.display = 'none';
+                supplierSelect.value = '';
+                document.getElementById('purchaseModalTitle').innerHTML = `<i class="fas fa-file-import" style="color:#3b82f6;"></i> Create New Goods Received Note (GRN)`;
+                document.getElementById('savePOBtn').innerHTML = 'Create GRN Receipt';
+                
+                document.getElementById('purchaseModal').style.display = 'none';
+                await loadPurchaseOrders();
+                await loadProducts();
+            } catch (err) {
+                console.error('[GRN] Error creating/updating PO:', err);
+                showToast('Failed to save GRN: ' + err.message, true);
+            } finally {
+                saveBtn.disabled = false;
+            }
         }
         
-        // Receive stock
+        // Receive stock UI trigger
         window.receiveStock = async (poId) => {
             const po = purchaseOrders.find(p => p.id === poId);
             if(!po) return;
-            document.getElementById('receivePONo').innerHTML = `<strong>GRN: ${po.poNo}</strong><br>Supplier: ${po.supplierName}`;
-            let itemsHtml = '';
-            po.items.forEach(item => {
+            const modeLabel = { 'CASH': '💵 අතින් (Cash)', 'BANK': '🏦 බැංකුවෙන් (Bank)', 'CHEQUE': '📄 චෙක් පතකින් (Cheque)' }[po.paymentMode] || '💵 අතින් (Cash)';
+            const chequeInfo = po.paymentMode === 'CHEQUE' && po.chequeNo ? `<br>Cheque: ${po.chequeNo} (${po.chequeBank || ''}) ${po.chequeDate ? ' - ' + po.chequeDate : ''}` : '';
+            document.getElementById('receivePONo').innerHTML = `<strong>GRN: ${po.poNo || po.id}</strong> | Supplier: <strong>${po.supplierName || 'General Supplier'}</strong><br>Payment: ${modeLabel}${chequeInfo}`;
+            
+            let itemsHtml = `
+                <table style="width:100%; border-collapse:collapse; font-size:13px; margin-top:10px;">
+                    <thead>
+                        <tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left;">
+                            <th style="padding:8px;">Product</th>
+                            <th style="padding:8px; width:140px;">Location</th>
+                            <th style="padding:8px; width:90px; text-align:right;">Receive Qty</th>
+                            <th style="padding:8px; width:60px;">Unit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            po.items.forEach((item, idx) => {
                 const labelQty = item.unit === 'g' && item.inputQty ? `${item.inputQty} g` : `${item.quantity} ${item.unit || 'Pcs'}`;
-                itemsHtml += `<div class="purchase-item" style="display:flex; align-items:center; gap:10px; margin-bottom:10px;"><span style="flex:2;">${item.productName} (${labelQty})</span><input type="number" step="any" class="receive-qty" data-product="${item.productId}" value="${item.inputQty || item.quantity}" style="width:100px;"><span style="font-size:12px; font-weight:600;">${item.unit || 'Pcs'}</span></div>`;
+                const defaultLoc = item.locationId || userPreferredLocation || 'MAIN';
+                itemsHtml += `
+                    <tr style="border-bottom:1px solid #f1f5f9;">
+                        <td style="padding:8px;"><strong>${item.productName}</strong><br><span style="font-size:11px; color:#64748b;">Ordered: ${labelQty}</span></td>
+                        <td style="padding:8px;">
+                            <select class="receive-loc-select" data-index="${idx}" style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px;">
+                                ${getLocationOptionsHTML(defaultLoc)}
+                            </select>
+                        </td>
+                        <td style="padding:8px; text-align:right;">
+                            <input type="number" step="any" class="receive-qty" data-index="${idx}" value="${item.inputQty || item.quantity}" style="width:80px; padding:6px; border:1px solid #cbd5e1; border-radius:6px; text-align:right;">
+                        </td>
+                        <td style="padding:8px; font-weight:600; font-size:12px;">${item.unit || 'Pcs'}</td>
+                    </tr>
+                `;
             });
+            itemsHtml += `</tbody></table>`;
+
             document.getElementById('receiveItems').innerHTML = itemsHtml;
             document.getElementById('receiveModal').style.display = 'flex';
             window.currentReceivingPO = po;
@@ -701,64 +1064,192 @@
             const po = window.currentReceivingPO;
             if(!po) return;
             
-            // Update stock, cost and restock level for each product
             const receiveQtys = document.querySelectorAll('.receive-qty');
+            const receiveLocs = document.querySelectorAll('.receive-loc-select');
+            const receiveItems = [];
+
             for(let i = 0; i < po.items.length; i++){
                 const item = po.items[i];
                 const receivedQtyInput = parseFloat(receiveQtys[i]?.value) || 0;
+                const selectedLocation = receiveLocs[i]?.value || item.locationId || userPreferredLocation || 'MAIN';
+                
                 let actualReceivedQty = receivedQtyInput;
                 if (item.unit === 'g' && (item.prodUnit === 'kg' || item.quantity !== item.inputQty)) {
                     actualReceivedQty = receivedQtyInput / 1000;
                 }
+
                 if(actualReceivedQty > 0){
-                    const productRef = db.collection('products').doc(currentBusinessId).collection('list').doc(item.productId);
-                    const productDoc = await productRef.get();
-                    if(productDoc.exists){
-                        const currentStock = productDoc.data().stock || 0;
-                        const updateData = { 
-                            stock: currentStock + actualReceivedQty,
-                            cost: item.unitPrice
-                        };
-                        if (item.restockLevel !== undefined && item.restockLevel !== null && item.restockLevel !== '') {
-                            updateData.restockLevel = Number(item.restockLevel);
-                        }
-                        await productRef.update(updateData);
-                        
-                        // Log stock history
-                        try {
-                            await db.collection('stock_history').doc(currentBusinessId).collection('list').add({
-                                productId: item.productId,
-                                productName: item.productName || item.name || '',
-                                qtyChange: actualReceivedQty,
-                                type: 'GRN',
-                                ref: `GRN #${po.poNo || po.id}`,
-                                resultingStock: currentStock + actualReceivedQty,
-                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                            });
-                        } catch (eHist) {
-                            console.warn('[GRN] Stock history write warning:', eHist);
-                        }
-                    }
+                    receiveItems.push({
+                        productId: item.productId,
+                        productName: item.productName || '',
+                        locationId: selectedLocation,
+                        receivedQty: actualReceivedQty,
+                        costPrice: item.unitPrice,
+                        unit: item.unit || 'Pcs'
+                    });
                 }
             }
-            
-            // Update PO status
-            await db.collection('purchases').doc(currentBusinessId).collection('orders').doc(po.id).update({ status: 'received', receivedAt: new Date() });
-            
-            // Publish event for accounting
-            window.eventBus.publish('PURCHASE_MADE', {
-                orderNo: po.poNo,
-                amount: po.total,
-                supplierName: po.supplierName,
-                paymentStatus: po.paymentStatus || 'unpaid',
-                businessId: currentBusinessId,
-                items: po.items
+
+            if(receiveItems.length === 0){
+                showToast('No items with quantity > 0 to receive', true);
+                return;
+            }
+
+            const btn = document.getElementById('confirmReceiveBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Receiving...';
+
+            try {
+                await LocationStockCore.receiveGRNTransactional({
+                    businessId: currentBusinessId,
+                    po: po,
+                    receiveItems: receiveItems,
+                    currentUser: currentUser
+                });
+
+                showToast(`Stock received & Journal Entry posted for GRN: ${po.poNo || po.id}`);
+                document.getElementById('receiveModal').style.display = 'none';
+                await loadPurchaseOrders();
+                await loadProducts();
+            } catch (err) {
+                console.error('[GRN] Receive transaction error:', err);
+                showToast(err.message || 'Error receiving GRN stock', true);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'Confirm Receipt & Update Stock';
+            }
+        };
+
+        // Reversal Handlers
+        window.openReversalModal = (poId) => {
+            const po = purchaseOrders.find(p => p.id === poId);
+            if(!po) return;
+            window.currentReversingPOId = poId;
+            document.getElementById('reversalPONo').innerHTML = `GRN: <strong>${po.poNo || po.id}</strong> | Supplier: <strong>${po.supplierName || 'General Supplier'}</strong> | Amount: <strong>${formatCurrency(po.total)}</strong>`;
+            document.getElementById('reversalReasonInput').value = '';
+            document.getElementById('reversalModal').style.display = 'flex';
+        };
+
+        document.getElementById('closeReversalModalBtn').onclick = () => {
+            document.getElementById('reversalModal').style.display = 'none';
+            window.currentReversingPOId = null;
+        };
+
+        document.getElementById('confirmReversalBtn').onclick = async () => {
+            const poId = window.currentReversingPOId;
+            if(!poId) return;
+
+            const reason = document.getElementById('reversalReasonInput').value.trim();
+            if(!reason) {
+                showToast('Please enter a reversal reason (හේතුව අනිවාර්යයි)', true);
+                return;
+            }
+
+            const btn = document.getElementById('confirmReversalBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reversing...';
+
+            try {
+                await LocationStockCore.reverseGRNTransactional({
+                    businessId: currentBusinessId,
+                    poId: poId,
+                    reversalReason: reason,
+                    currentUser: currentUser,
+                    userProfile: currentUserProfile
+                });
+
+                showToast('GRN transaction reversed successfully!');
+                document.getElementById('reversalModal').style.display = 'none';
+                await loadPurchaseOrders();
+                await loadProducts();
+            } catch (err) {
+                console.error('[GRN] Reversal error:', err);
+                showToast(err.message || 'Error reversing GRN', true);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-undo"></i> Confirm Reversal';
+            }
+        };
+
+        // View PO Details Modal
+        window.viewPO = (id) => {
+            const po = purchaseOrders.find(p => p.id === id);
+            if (!po) return;
+
+            document.getElementById('viewPOTitle').innerHTML = `<i class="fas fa-file-invoice"></i> GRN: ${po.poNo || po.id}`;
+            const badgeEl = document.getElementById('viewPOStatusBadge');
+            badgeEl.className = `badge ${po.status === 'received' ? 'badge-received' : (po.status === 'reversed' ? 'badge-reversed' : 'badge-pending')}`;
+            badgeEl.textContent = (po.status || 'pending').toUpperCase();
+
+            const isCheque = po.paymentMode === 'CHEQUE';
+            let html = `
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:15px; margin-bottom:15px;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                        <div><strong>Supplier:</strong> ${po.supplierName || 'General Supplier'}</div>
+                        <div><strong>Bill Date:</strong> ${po.billDate || po.date || '-'}</div>
+                        <div><strong>Payment Mode:</strong> ${po.paymentMode || 'CASH'}</div>
+                        <div><strong>Total Amount:</strong> <span style="font-size:15px; font-weight:700; color:#10b981;">${formatCurrency(po.total)}</span></div>
+                        ${isCheque ? `<div><strong>Cheque No:</strong> ${po.chequeNo || '-'}</div><div><strong>Bank/Date:</strong> ${po.chequeBank || ''} ${po.chequeDate || ''}</div>` : ''}
+                        <div><strong>Created By:</strong> ${po.createdBy || '-'}</div>
+                        <div><strong>Created At:</strong> ${po.createdAt?.toDate?.().toLocaleString() || '-'}</div>
+                    </div>
+                </div>
+            `;
+
+            if (po.status === 'reversed') {
+                html += `
+                    <div style="background:#fee2e2; border-left:4px solid #ef4444; padding:12px; border-radius:8px; margin-bottom:15px; font-size:12px; color:#991b1b;">
+                        <strong>⚠️ REVERSED TRANSACTION</strong><br>
+                        <strong>Reversed At:</strong> ${po.reversedAt?.toDate?.().toLocaleString() || '-'}<br>
+                        <strong>Reversed By:</strong> ${po.reversedBy || '-'}<br>
+                        <strong>Reason:</strong> ${po.reversalReason || 'No reason specified'}
+                    </div>
+                `;
+            }
+
+            html += `
+                <h4 style="margin-bottom:8px; font-size:13px;">Items Breakdown (තොග විස්තර)</h4>
+                <table style="width:100%; border-collapse:collapse; font-size:12px; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">
+                    <thead>
+                        <tr style="background:#f1f5f9; text-align:left;">
+                            <th style="padding:8px;">Product</th>
+                            <th style="padding:8px;">Location</th>
+                            <th style="padding:8px; text-align:right;">Qty</th>
+                            <th style="padding:8px; text-align:right;">Unit Price</th>
+                            <th style="padding:8px; text-align:right;">Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            const displayItems = po.receivedItemsSummary || po.items || [];
+            displayItems.forEach(it => {
+                const locObj = businessLocations.find(l => l.id === it.locationId);
+                const locName = locObj ? (locObj.name || locObj.code) : (it.locationId || 'MAIN');
+                const qtyStr = `${it.receivedQty !== undefined ? it.receivedQty : (it.quantity || it.inputQty)} ${it.unit || 'Pcs'}`;
+                const sub = (it.receivedQty !== undefined ? it.receivedQty : it.quantity) * (it.costPrice || it.unitPrice || 0);
+                html += `
+                    <tr style="border-bottom:1px solid #f1f5f9;">
+                        <td style="padding:8px;"><strong>${it.productName || it.name || it.productId}</strong></td>
+                        <td style="padding:8px;"><span class="badge" style="background:#e0f2fe; color:#0369a1;">${locName}</span></td>
+                        <td style="padding:8px; text-align:right;">${qtyStr}</td>
+                        <td style="padding:8px; text-align:right;">${formatCurrency(it.costPrice || it.unitPrice || 0)}</td>
+                        <td style="padding:8px; text-align:right;">${formatCurrency(sub)}</td>
+                    </tr>
+                `;
             });
-            
-            showToast(`Stock received and completed for GRN: ${po.poNo}`);
-            document.getElementById('receiveModal').style.display = 'none';
-            loadPurchaseOrders();
-            loadProducts();
+
+            html += `</tbody></table>`;
+            if (po.notes) {
+                html += `<div style="margin-top:10px; font-size:12px; color:#64748b;"><strong>Notes:</strong> ${po.notes}</div>`;
+            }
+
+            document.getElementById('viewPOContent').innerHTML = html;
+            document.getElementById('viewPOModal').style.display = 'flex';
+        };
+
+        document.getElementById('closeViewPOModalBtn').onclick = () => {
+            document.getElementById('viewPOModal').style.display = 'none';
         };
         
         // Tab switching
@@ -771,39 +1262,123 @@
             };
         });
         
-        // Event listeners
-        document.getElementById('newPurchaseBtn').onclick = () => {
-            document.getElementById('poItemsList').innerHTML = '';
+        // Safe Event listeners binder
+        const bindClick = (id, fn) => { const el = document.getElementById(id); if(el) el.onclick = fn; };
+        
+        bindClick('newPurchaseBtn', () => {
+            const listEl = document.getElementById('poItemsList');
+            if (listEl) listEl.innerHTML = '';
             addPurchaseItem();
-            document.getElementById('poNotes').value = '';
-            document.getElementById('purchaseModal').style.display = 'flex';
-        };
-        document.getElementById('addItemBtn').onclick = addPurchaseItem;
-        document.getElementById('closePOModal').onclick = () => document.getElementById('purchaseModal').style.display = 'none';
-        document.getElementById('savePOBtn').onclick = createPurchaseOrder;
-        document.getElementById('closeReceiveModal').onclick = () => document.getElementById('receiveModal').style.display = 'none';
-        document.getElementById('filterPOBtn').onclick = () => loadPurchaseOrders();
-        document.getElementById('exportPOBtn').onclick = () => showToast('Export feature coming soon');
+            const notesEl = document.getElementById('poNotes'); if(notesEl) notesEl.value = '';
+            const modeEl = document.getElementById('poPaymentMode'); if(modeEl) modeEl.value = 'CASH';
+            const chqDetails = document.getElementById('chequeDetails'); if(chqDetails) chqDetails.style.display = 'none';
+            const chqNo = document.getElementById('poChequeNo'); if(chqNo) chqNo.value = '';
+            const chqBank = document.getElementById('poChequeBank'); if(chqBank) chqBank.value = '';
+            const chqDate = document.getElementById('poChequeDate'); if(chqDate) chqDate.value = '';
+            const pModal = document.getElementById('purchaseModal'); if(pModal) pModal.style.display = 'flex';
+        });
         
-        document.getElementById('closeNewProductModalBtn').onclick = () => document.getElementById('newProductModal').style.display = 'none';
-        document.getElementById('saveNewProductBtn').onclick = saveNewProduct;
+        const payModeEl = document.getElementById('poPaymentMode');
+        if (payModeEl) {
+            payModeEl.addEventListener('change', function(){
+                const chequeEl = document.getElementById('chequeDetails');
+                if (!chequeEl) return;
+                if (this.value === 'CHEQUE') {
+                    chequeEl.style.display = 'block';
+                } else {
+                    chequeEl.style.display = 'none';
+                    const chqNo = document.getElementById('poChequeNo'); if(chqNo) chqNo.value = '';
+                    const chqBank = document.getElementById('poChequeBank'); if(chqBank) chqBank.value = '';
+                    const chqDate = document.getElementById('poChequeDate'); if(chqDate) chqDate.value = '';
+                }
+            });
+        }
+
+        bindClick('addItemBtn', () => addPurchaseItem());
+        bindClick('closePOModal', () => { const el = document.getElementById('purchaseModal'); if(el) el.style.display = 'none'; });
+        bindClick('savePOBtn', createPurchaseOrder);
+        bindClick('closeReceiveModal', () => { const el = document.getElementById('receiveModal'); if(el) el.style.display = 'none'; });
+        bindClick('filterPOBtn', () => renderPurchaseOrders());
+        bindClick('exportPOBtn', () => showToast('Export feature coming soon'));
+        bindClick('closeNewProductModalBtn', () => { const el = document.getElementById('newProductModal'); if(el) el.style.display = 'none'; });
+        bindClick('saveNewProductBtn', saveNewProduct);
+        bindClick('closeReversalModalBtn', () => { const el = document.getElementById('reversalModal'); if(el) el.style.display = 'none'; window.currentReversingPOId = null; });
+        bindClick('confirmReversalBtn', () => {
+            const poId = window.currentReversingPOId;
+            if(!poId) return;
+            const reason = document.getElementById('reversalReasonInput')?.value?.trim();
+            if(!reason) {
+                showToast('Please enter a reversal reason (හේතුව අනිවාර්යයි)', true);
+                return;
+            }
+            const btn = document.getElementById('confirmReversalBtn');
+            if(btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reversing...'; }
+            LocationStockCore.reverseGRNTransactional({
+                businessId: currentBusinessId,
+                poId: poId,
+                reversalReason: reason,
+                currentUser: currentUser,
+                userProfile: currentUserProfile
+            }).then(() => {
+                showToast('GRN transaction reversed successfully!');
+                const revModal = document.getElementById('reversalModal');
+                if(revModal) revModal.style.display = 'none';
+                loadPurchaseOrders();
+                loadProducts();
+            }).catch(err => {
+                console.error('[GRN] Reversal error:', err);
+                showToast(err.message || 'Error reversing GRN', true);
+            }).finally(() => {
+                if(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-undo"></i> Confirm Reversal'; }
+            });
+        });
+        bindClick('closeViewPOModalBtn', () => { const el = document.getElementById('viewPOModal'); if(el) el.style.display = 'none'; });
+
+        const searchEl = document.getElementById('searchPO'); if(searchEl) searchEl.oninput = () => renderPurchaseOrders();
+        const statusFilterEl = document.getElementById('poStatusFilter'); if(statusFilterEl) statusFilterEl.onchange = () => renderPurchaseOrders();
         
-        window.viewPO = (id) => { showToast(`View PO: ${id}`); };
-        
-        auth.onAuthStateChanged(async(user)=>{
-            if(!user){ window.location.href='/'; return; }
-            let businessId = user.uid;
-            try {
-                const userDoc = await db.collection('users').doc(user.uid).get();
-                businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(userDoc, user.uid) : (userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid);
-            } catch(e) {
-                businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(null, user.uid) : user.uid;
+        async function initGRNPage(user) {
+            const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+            if (!user && !isImpersonating) { window.location.href = '/'; return; }
+            currentUser = user;
+            
+            let businessId = user ? user.uid : null;
+            if (isImpersonating) {
+                businessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || (user && user.uid);
+            } else if (user) {
+                try {
+                    const userDoc = await db.collection('users').doc(user.uid).get();
+                    if(userDoc.exists){
+                        currentUserProfile = userDoc.data();
+                    }
+                    businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(userDoc, user.uid) : (userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid);
+                } catch(e) {
+                    businessId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(null, user.uid) : user.uid;
+                }
             }
             currentBusinessId = businessId;
+
+            // Load locations & user preferred location
+            try {
+                businessLocations = await LocationStockCore.getLocations(currentBusinessId);
+                userPreferredLocation = await LocationStockCore.getUserPreferredLocation(user?.uid);
+            } catch(eLoc) {
+                console.warn('[GRN] Locations load error:', eLoc);
+            }
+
             await loadProducts();
             await loadSuppliers();
             await loadPurchaseOrders();
-        });
+        }
+
+        if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+            currentBusinessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId');
+            loadProducts();
+            loadSuppliers();
+            loadPurchaseOrders();
+        }
+
+        auth.onAuthStateChanged(initGRNPage);
     </script>
 </body>
 </html>

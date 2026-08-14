@@ -823,9 +823,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     resolvedBizId = uData.businessId || uData.assignedBusiness || uData.companyId || resolvedBizId || uSnap.docs[0].id;
                     if (uData.businessType) resolvedBizType = String(uData.businessType).toLowerCase();
                     if (uData.name || uData.ownerName) resolvedOwnerName = uData.ownerName || uData.name;
+                    if (uData.businessName) resolvedBizName = uData.businessName;
                 }
 
-                const bSnap = await window.db.collection('businesses').where('ownerEmail', '==', targetEmail).get().catch(() => null);
+                // Query businesses by email OR ownerEmail
+                let bSnap = await window.db.collection('businesses').where('email', '==', targetEmail).get().catch(() => null);
+                if (!bSnap || bSnap.empty) {
+                    bSnap = await window.db.collection('businesses').where('ownerEmail', '==', targetEmail).get().catch(() => null);
+                }
+
                 if (bSnap && !bSnap.empty) {
                     const bData = bSnap.docs[0].data() || {};
                     resolvedBizId = bSnap.docs[0].id || resolvedBizId;
@@ -840,7 +846,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const bd = bDoc.data() || {};
                         resolvedBizName = bd.businessName || bd.name || bd.companyName || resolvedBizName;
                         if (bd.ownerName) resolvedOwnerName = bd.ownerName;
-                        if (bd.businessType) resolvedBizType = String(bd.businessType).toLowerCase();
+                        if (bd.businessType || bd.type) resolvedBizType = String(bd.businessType || bd.type).toLowerCase();
                     }
                 }
             }
@@ -864,6 +870,8 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('currentBusinessId', resolvedBizId);
             sessionStorage.setItem('currentBusinessId', resolvedBizId);
             localStorage.setItem('activeBusinessId', resolvedBizId);
+            localStorage.setItem('selectedBusinessId', resolvedBizId);
+            sessionStorage.setItem('selectedBusinessId', resolvedBizId);
         }
         if (targetEmail) {
             localStorage.setItem('userEmail', targetEmail);
@@ -910,6 +918,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let destUrl = '/modules/core/dashboard.html';
+        if (resolvedBizType === 'distributor') destUrl = '/modules/distributor/web/dashboard.html';
+        else if (resolvedBizType === 'retail') destUrl = '/modules/retail/dashboard.html';
+        else if (resolvedBizType === 'manufacturer') destUrl = '/modules/manufacturer/dashboard.html';
+        else if (resolvedBizType === 'hardware') destUrl = '/modules/hardware/dashboard.html';
+        else if (resolvedBizType === 'pharmacy') destUrl = '/modules/pharmacy/dashboard.html';
+        else if (resolvedBizType === 'scrap_collection_center') destUrl = '/modules/scrap_collection_center/dashboard.html';
+        else if (resolvedBizType === 'tire_centre') destUrl = '/modules/tire_centre/dashboard.html';
 
         const queryParams = new URLSearchParams({
             impersonate: 'true',
@@ -980,15 +995,30 @@ document.addEventListener('DOMContentLoaded', () => {
             let resolvedBizId = targetBizId || '';
             let resolvedBizType = String(targetBizType || '').toLowerCase();
             try {
-                if (window.db && !resolvedBizId && targetEmail) {
+                if (window.db && targetEmail) {
                     const uSnap = await window.db.collection('users').where('email', '==', targetEmail).get();
                     if (!uSnap.empty) {
                         resolvedBizId = uSnap.docs[0].data().businessId || uSnap.docs[0].id;
+                        if (uSnap.docs[0].data().businessType) resolvedBizType = String(uSnap.docs[0].data().businessType).toLowerCase();
+                    }
+                    if (!resolvedBizId) {
+                        const bSnap = await window.db.collection('businesses').where('email', '==', targetEmail).get();
+                        if (!bSnap.empty) {
+                            resolvedBizId = bSnap.docs[0].id;
+                            if (bSnap.docs[0].data().businessType) resolvedBizType = String(bSnap.docs[0].data().businessType).toLowerCase();
+                        }
                     }
                 }
             } catch (e) {}
 
             let destUrl = '/modules/core/dashboard.html';
+            if (resolvedBizType === 'distributor') destUrl = '/modules/distributor/web/dashboard.html';
+            else if (resolvedBizType === 'retail') destUrl = '/modules/retail/dashboard.html';
+            else if (resolvedBizType === 'manufacturer') destUrl = '/modules/manufacturer/dashboard.html';
+            else if (resolvedBizType === 'hardware') destUrl = '/modules/hardware/dashboard.html';
+            else if (resolvedBizType === 'pharmacy') destUrl = '/modules/pharmacy/dashboard.html';
+            else if (resolvedBizType === 'scrap_collection_center') destUrl = '/modules/scrap_collection_center/dashboard.html';
+            else if (resolvedBizType === 'tire_centre') destUrl = '/modules/tire_centre/dashboard.html';
 
             const queryParams = new URLSearchParams({
                 impersonate: 'true',

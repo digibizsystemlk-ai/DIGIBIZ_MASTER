@@ -103,6 +103,7 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="suppliers"><i class="fas fa-truck"></i> <span data-i18n="Supplier Debts Tab">Supplier Debts</span></button>
             <button class="tab-btn" data-tab="loans"><i class="fas fa-handshake"></i> <span data-i18n="Hand Loans Received Tab">Hand Loans Received</span></button>
+            <button class="tab-btn" data-tab="upcomingCheques"><i class="fas fa-money-check-dollar" style="color: #f59e0b;"></i> <span data-i18n="Upcoming Cheques Tab">ඉදිරියට ඇති චෙක්</span></button>
         </div>
         
         <!-- Suppliers Tab -->
@@ -170,6 +171,33 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Upcoming Issued Cheques Tab -->
+        <div id="tab-upcomingCheques" class="tab-pane">
+            <div class="card">
+                <div class="card-header">
+                    <h3>ඉදිරියට ඇති චෙක් (Issued/Pending Cheques)</h3>
+                    <div id="upcomingChequesTotal" style="font-size:18px; font-weight:800; color:#f59e0b;">Rs. 0.00</div>
+                </div>
+                <div class="card-body">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Cheque No</th>
+                                <th>Supplier</th>
+                                <th>Bank</th>
+                                <th class="numeric">Amount</th>
+                                <th>Cheque Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="upcomingChequesList">
+                            <tr><td colspan="6" style="text-align:center;padding:30px;">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
     
     <!-- Pay Supplier Modal -->
@@ -191,7 +219,19 @@
                     <select id="payMethod" required>
                         <option value="CASH">Cash</option>
                         <option value="BANK">Bank</option>
+                        <option value="CHEQUE">Cheque (චෙක්පත)</option>
                     </select>
+                </div>
+                <div id="chequeFields" style="display:none; margin-bottom: 12px; padding: 14px; background:#fff8e1; border:1.5px solid #f59e0b; border-radius:10px;">
+                    <label style="display:block; font-size:12px; font-weight:600; color:#92400e; margin-bottom:4px;">Cheque Number (චෙක් අංකය)</label>
+                    <input type="text" id="payChequeNo" placeholder="e.g. 004587" style="margin-bottom:10px;">
+                    <label style="display:block; font-size:12px; font-weight:600; color:#92400e; margin-bottom:4px;">Cheque Date (චෙක් දිනය)</label>
+                    <input type="date" id="payChequeDate" style="margin-bottom:10px;">
+                    <label style="display:block; font-size:12px; font-weight:600; color:#92400e; margin-bottom:4px;">Drawer Bank (චෙක් නිකුත් කරන බැංකුව)</label>
+                    <input type="text" id="payChequeBank" placeholder="e.g. Commercial Bank">
+                    <div style="font-size:11.5px; font-weight:600; color:#92400e; margin-top:6px;">
+                        චෙක්පතක් ලෙස ගෙවන විට මුදල බැංකු ගිණුමෙන් අඩු නොවේ. එය "ඉදිරියට ඇති චෙක්" ලෙස වගකීමක් ලෙස ගණනය වේ.
+                    </div>
                 </div>
                 <div class="modal-buttons">
                     <button type="button" class="btn-cancel" onclick="closeModal('payModal')" data-i18n="Cancel">Cancel</button>
@@ -244,7 +284,8 @@
         const ACCOUNT_CODES = {
             CASH: 'AC-10100',
             BANK: 'AC-10200',
-            ACCOUNTS_PAYABLE: 'AC-20100'
+            ACCOUNTS_PAYABLE: 'AC-21000',
+            ISSUED_CHEQUES: 'AC-21100'
         };
         
         function translatePage() {
@@ -385,6 +426,55 @@
             document.getElementById('statSupplierCredit').textContent = formatCurrency(supplierTotal);
             document.getElementById('statHandLoans').textContent = formatCurrency(loansTotal);
             document.getElementById('statTotalPayables').textContent = formatCurrency(supplierTotal + loansTotal);
+
+            // 3. Fetch upcoming issued cheques (outbound, not yet cleared)
+            const upcomingChequesTotalEl = document.getElementById('upcomingChequesTotal');
+            const upcomingList = document.getElementById('upcomingChequesList');
+            try {
+                const chqSnap = await db.collection('cheques').doc(currentBusinessId).collection('list')
+                    .where('direction', '==', 'OUTBOUND')
+                    .where('cleared', '==', false)
+                    .get();
+                if (chqSnap.empty) {
+                    upcomingList.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;">ඉදිරියට ඇති චෙක් නොමැත.</td></tr>';
+                    upcomingChequesTotalEl.textContent = formatCurrency(0);
+                } else {
+                    let chqTotal = 0;
+                    let chqHtml = '';
+                    chqSnap.forEach(doc => {
+                        const c = doc.data();
+                        const amt = Number(c.amount || 0);
+                        chqTotal += amt;
+                        const chqDate = c.dueDate ? (c.dueDate.seconds ? new Date(c.dueDate.seconds * 1000).toISOString().slice(0,10) : new Date(c.dueDate).toISOString().slice(0,10)) : (c.chequeDate || '-');
+                        chqHtml += `<tr>
+                            <td style="font-family:monospace;font-weight:700;">${c.chequeNo || c.id}</td>
+                            <td>${c.supplierName || '-'}</td>
+                            <td>${c.bankName || '-'}</td>
+                            <td class="numeric" style="color:#f59e0b;">${formatCurrency(amt)}</td>
+                            <td>${chqDate}</td>
+                            <td><span class="badge badge-unpaid">Pending</span></td>
+                        </tr>`;
+                    });
+                    upcomingList.innerHTML = chqHtml;
+                    upcomingChequesTotalEl.textContent = formatCurrency(chqTotal);
+                }
+            } catch (e) {
+                upcomingList.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;">Error loading cheques</td></tr>';
+                console.error(e);
+            }
+        }
+        
+        // Toggle cheque detail fields
+        const payMethodEl = document.getElementById('payMethod');
+        if (payMethodEl) {
+            document.getElementById('chequeFields').style.display = 'none';
+            payMethodEl.addEventListener('change', function () {
+                const showCheque = this.value === 'CHEQUE';
+                document.getElementById('chequeFields').style.display = showCheque ? 'block' : 'none';
+                if (!showCheque) {
+                    document.getElementById('payChequeDate').value = '';
+                }
+            });
         }
         
         window.triggerPaySupplier = (poId, outstanding) => {
@@ -403,7 +493,72 @@
             if (isNaN(amountPaid) || amountPaid <= 0) return;
             
             try {
-                // Update purchase status in DB
+                // ---- CHEQUE method handling ----
+                if (method === 'CHEQUE') {
+                    const chqNo = document.getElementById('payChequeNo').value.trim();
+                    const chqDate = document.getElementById('payChequeDate').value || new Date().toISOString().slice(0, 10);
+                    const chqBank = document.getElementById('payChequeBank').value.trim();
+
+                    if (!chqNo) { showToast('Cheque number is required for cheque payments!'); return; }
+
+                    const poRef = db.collection('purchases').doc(currentBusinessId).collection('orders').doc(poId);
+                    const poSnap = await poRef.get();
+                    const supplierName = poSnap.exists ? (poSnap.data().supplierName || 'Supplier') : 'Supplier';
+
+                    // 1. Update purchase order status -> paid by cheque (outstanding cheque)
+                    await poRef.update({
+                        status: 'received',
+                        paymentStatus: 'paid_by_cheque',
+                        amountPaid: amountPaid,
+                        paymentMethod: 'CHEQUE',
+                        chequeDetails: { chequeNo: chqNo, chequeDate: chqDate, bank: chqBank, amount: amountPaid },
+                        receivedAt: new Date()
+                    });
+
+                    // 2. Create Cheque record in a dedicated 'cheques' collection (OUTBOUND)
+                    const chequeRef = db.collection('cheques').doc(currentBusinessId).collection('list').doc();
+                    await chequeRef.set({
+                        id: chequeRef.id,
+                        chequeNo: chqNo,
+                        bankName: chqBank || 'N/A',
+                        amount: amountPaid,
+                        issueDate: new Date(),
+                        dueDate: new Date(chqDate + 'T12:00:00'),
+                        direction: 'OUTBOUND',
+                        supplierName: supplierName,
+                        referenceType: 'PURCHASE',
+                        referenceId: poId,
+                        status: 'pending',
+                        cleared: false,
+                        businessId: currentBusinessId,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    // 3. Journal: Dr COGS/Inventory | Cr Issued Cheques Payable (AC-21100)
+                    const journalEntry = {
+                        date: new Date(),
+                        memo: `Paid Supplier by Cheque ${chqNo} for PO: ${poId} - ${supplierName}`,
+                        entries: [
+                            { accountId: '5-5010-01', amount: amountPaid, type: 'debit' },     // Cost of Goods
+                            { accountId: ACCOUNT_CODES.ISSUED_CHEQUES || 'AC-21100', amount: amountPaid, type: 'credit' } // Issued Cheques Payable
+                        ],
+                        ref: `purchases/${poId}`,
+                        refType: 'PURCHASE_PAYMENT_CHEQUE',
+                        businessId: currentBusinessId,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    await db.collection('journal').doc(currentBusinessId).collection('entries').add(journalEntry);
+
+                    closeModal('payModal');
+                    document.getElementById('payChequeNo').value = '';
+                    document.getElementById('payChequeBank').value = '';
+                    document.getElementById('payChequeDate').value = '';
+                    showToast('Cheque payment recorded as upcoming cheque!');
+                    await loadData();
+                    return;
+                }
+
+                // ---- Existing CASH / BANK logic ----
                 const poRef = db.collection('purchases').doc(currentBusinessId).collection('orders').doc(poId);
                 await poRef.update({
                     status: 'received',

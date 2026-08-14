@@ -78,40 +78,60 @@ window.auth = firebase.auth();
         const isActive = localStorage.getItem('digibiz_impersonate_active') === 'true';
         if (!isActive) return;
 
-        const origOnAuthStateChanged = firebase.auth().onAuthStateChanged;
-        firebase.auth().onAuthStateChanged = function(callback, optError, optCompleted) {
-            const wrappedCallback = async (user) => {
-                const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'client@digibiz.lk';
-                const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || 'CLIENT_BIZ';
-                const activeUser = user || {
-                    uid: targetBizId,
-                    email: targetEmail,
-                    displayName: localStorage.getItem('digibiz_impersonate_owner_name') || targetEmail,
-                    isAnonymous: true,
-                    getIdToken: async () => 'SYNTHETIC_IMPERSONATION_TOKEN'
-                };
-
-                if (!activeUser.email) {
-                    try {
-                        Object.defineProperty(activeUser, 'email', { value: targetEmail, writable: true });
-                    } catch (_eE) {
-                        try { activeUser.email = targetEmail; } catch (_eE2) {}
-                    }
-                }
-                return callback(activeUser);
-            };
-
-            // Immediately invoke callback with Synthetic Impersonation User so inline page scripts never return early
+        function createImpersonatedUserProxy(rawUser) {
             const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'client@digibiz.lk';
             const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || 'CLIENT_BIZ';
-            const initialSyntheticUser = firebase.auth().currentUser || {
+            const targetOwnerName = localStorage.getItem('digibiz_impersonate_owner_name') || localStorage.getItem('currentBusinessName') || targetEmail;
+            const base = rawUser || {
                 uid: targetBizId,
                 email: targetEmail,
-                displayName: localStorage.getItem('digibiz_impersonate_owner_name') || targetEmail,
+                displayName: targetOwnerName,
                 isAnonymous: true,
                 getIdToken: async () => 'SYNTHETIC_IMPERSONATION_TOKEN'
             };
+            return new Proxy(base, {
+                get(target, prop) {
+                    if (prop === 'email') return targetEmail;
+                    if (prop === 'uid') return targetBizId;
+                    if (prop === 'displayName') return targetOwnerName;
+                    if (prop === 'isImpersonated') return true;
+                    if (prop === 'getIdToken') return async () => (typeof target.getIdToken === 'function' ? target.getIdToken() : 'SYNTHETIC_IMPERSONATION_TOKEN');
+                    const val = target[prop];
+                    if (typeof val === 'function') return val.bind(target);
+                    return val;
+                }
+            });
+        }
 
+        // Patch firebase.auth() currentUser getter on prototype and instance
+        try {
+            const authInst = firebase.auth();
+            const authProto = Object.getPrototypeOf(authInst);
+            if (authProto) {
+                const origDesc = Object.getOwnPropertyDescriptor(authProto, 'currentUser');
+                Object.defineProperty(authProto, 'currentUser', {
+                    get: function() {
+                        if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+                            const raw = origDesc && origDesc.get ? origDesc.get.call(this) : this._currentUser;
+                            return createImpersonatedUserProxy(raw);
+                        }
+                        return origDesc && origDesc.get ? origDesc.get.call(this) : this._currentUser;
+                    },
+                    configurable: true
+                });
+            }
+        } catch (eAuthGet) {
+            console.warn('[Impersonation Auth Getter Patch Warn]', eAuthGet);
+        }
+
+        const origOnAuthStateChanged = firebase.auth().onAuthStateChanged;
+        firebase.auth().onAuthStateChanged = function(callback, optError, optCompleted) {
+            const wrappedCallback = async (user) => {
+                const impersonatedUser = createImpersonatedUserProxy(user);
+                return callback(impersonatedUser);
+            };
+
+            const initialSyntheticUser = createImpersonatedUserProxy(firebase.auth().currentUser);
             setTimeout(() => {
                 try { callback(initialSyntheticUser); } catch (_eInitCb) {}
             }, 0);
@@ -130,11 +150,27 @@ window.auth = firebase.auth();
                         const docRef = origDoc.apply(this, arguments);
                         const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || 'CLIENT_BIZ';
                         const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'client@digibiz.lk';
+                        const targetBizName = localStorage.getItem('digibiz_impersonate_biz_name') || localStorage.getItem('currentBusinessName') || 'Client Business';
                         const origGet = docRef.get;
                         docRef.get = async function(options) {
                             try {
                                 const snap = await origGet.apply(this, arguments);
-                                if (snap && snap.exists) return snap;
+                                if (snap && snap.exists) {
+                                    const realData = snap.data() || {};
+                                    return {
+                                        exists: true,
+                                        id: snap.id,
+                                        data: () => ({
+                                            ...realData,
+                                            businessId: realData.businessId || targetBizId,
+                                            role: 'BUSINESS_OWNER',
+                                            email: realData.email || targetEmail,
+                                            businessName: realData.businessName || targetBizName,
+                                            ownerName: realData.ownerName || realData.name || localStorage.getItem('digibiz_impersonate_owner_name') || targetEmail,
+                                            businessType: realData.businessType || localStorage.getItem('digibiz_impersonate_type') || 'retail'
+                                        })
+                                    };
+                                }
                             } catch (eSnap) {}
                             return {
                                 exists: true,
@@ -143,6 +179,7 @@ window.auth = firebase.auth();
                                     businessId: targetBizId,
                                     role: 'BUSINESS_OWNER',
                                     email: targetEmail,
+                                    businessName: targetBizName,
                                     ownerName: localStorage.getItem('digibiz_impersonate_owner_name') || targetEmail,
                                     businessType: localStorage.getItem('digibiz_impersonate_type') || 'retail'
                                 })

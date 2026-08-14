@@ -18,6 +18,7 @@ const EVENT_PAYLOAD_SCHEMAS = {
         optional: {
             orderNo: 'string',
             paymentStatus: 'string',
+            paymentMode: 'string',
             businessId: 'string'
         }
     },

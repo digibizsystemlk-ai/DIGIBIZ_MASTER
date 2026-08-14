@@ -124,7 +124,7 @@ class AccountsCore {
             reference: validData.invoiceNo,
             referenceType: 'SALE'
         };
-        
+
         await this.saveJournalEntry(journalEntry);
         console.log(`📝 Journal entry created for sale: Rs. ${amount}`);
     }
@@ -136,14 +136,22 @@ class AccountsCore {
         const amount = validData.amount;
         const businessId = validData.businessId || this.cachedBusinessId;
         const isCredit = validData.paymentStatus === 'unpaid' || validData.paymentStatus === 'CREDIT';
+        const paymentMode = String(validData.paymentMode || 'CASH').toUpperCase();
 
-        const creditAccountLine = isCredit 
-            ? { accountCode: '2-2010-01', accountName: 'Accounts Payable', debit: 0, credit: amount }
-            : { accountCode: '1-1010-01', accountName: 'Cash', debit: 0, credit: amount };
+        // GRN එක unpaid නම් Accounts Payable ට credit වේ (පසුව payables වලින් settle)
+        // unpaid නොවන විට paymentMode අනුව Cash / Bank ලෙස settle වේ
+        let creditAccountLine;
+        if (isCredit) {
+            creditAccountLine = { accountId: 'AC-21000', accountCode: 'AC-21000', accountName: 'Accounts Payable', debit: 0, credit: amount };
+        } else if (paymentMode === 'BANK' || paymentMode === 'BANK_TRANSFER' || paymentMode === 'CHEQUE') {
+            creditAccountLine = { accountId: 'AC-10200', accountCode: 'AC-10200', accountName: 'Bank - Current Account', debit: 0, credit: amount };
+        } else {
+            creditAccountLine = { accountId: 'AC-10100', accountCode: 'AC-10100', accountName: 'Cash', debit: 0, credit: amount };
+        }
 
         const journalEntry = {
             date: new Date(),
-            description: `Purchase - Order ${validData.orderNo || 'N/A'}${data.supplierName ? ' from ' + data.supplierName : ''}`,
+            description: `Purchase - Order ${validData.orderNo || 'N/A'}${data.supplierName ? ' from ' + data.supplierName : ''} [${paymentMode}]`,
             businessId: businessId,
             entries: [
                 { accountCode: '1-1040-01', accountName: 'Inventory', debit: amount, credit: 0 },
@@ -152,11 +160,13 @@ class AccountsCore {
             totalDebit: amount,
             totalCredit: amount,
             reference: validData.orderNo,
-            referenceType: 'PURCHASE'
+            referenceType: 'PURCHASE',
+            paymentMode: paymentMode,
+            paymentStatus: validData.paymentStatus || 'unpaid'
         };
-        
+
         await this.saveJournalEntry(journalEntry);
-        console.log(`📝 Journal entry created for purchase: Rs. ${amount} (${isCredit ? 'Credit' : 'Cash'})`);
+        console.log(`📝 Journal entry created for purchase: Rs. ${amount} (${isCredit ? 'Credit' : paymentMode})`);
     }
 
     // ණයක් දීම handle කරන්න
@@ -177,7 +187,7 @@ class AccountsCore {
             reference: validData.loanId,
             referenceType: 'LOAN'
         };
-        
+
         await this.saveJournalEntry(journalEntry);
         console.log(`📝 Journal entry created for loan: Rs. ${amount}`);
     }
@@ -200,7 +210,7 @@ class AccountsCore {
             reference: validData.paymentId,
             referenceType: 'LOAN_PAYMENT'
         };
-        
+
         await this.saveJournalEntry(journalEntry);
         console.log(`📝 Journal entry created for loan payment: Rs. ${amount}`);
     }
@@ -223,7 +233,7 @@ class AccountsCore {
             reference: validData.receiptNo,
             referenceType: 'EXPENSE'
         };
-        
+
         await this.saveJournalEntry(journalEntry);
         console.log(`📝 Journal entry created for expense: Rs. ${amount}`);
     }
@@ -535,19 +545,19 @@ class AccountsCore {
         const isPaymentGiven = validData.type === 'PAYMENT_GIVEN';
         const method = String(validData.method || 'CASH').toUpperCase();
         const cashOrBankLine = (method === 'BANK' || method === 'BANK_TRANSFER' || method === 'CHEQUE')
-            ? { accountCode: '1-1020-01', accountName: 'Bank - Current Account' }
-            : { accountCode: '1-1010-01', accountName: 'Cash' };
+            ? { accountId: 'AC-10200', accountCode: 'AC-10200', accountName: 'Bank - Current Account' }
+            : { accountId: 'AC-10100', accountCode: 'AC-10100', accountName: 'Cash' };
 
         const journalEntry = {
             date: new Date(validData.date || Date.now()),
             description: `Finance Payment ${isPaymentGiven ? 'to' : 'from'} ${validData.customerName || 'Customer'} - ${validData.note || ''}`,
             businessId: validData.businessId,
             entries: isPaymentGiven ? [
-                { accountCode: '2-2010-01', accountName: 'Accounts Payable', debit: amount, credit: 0, supplierId: validData.customerId },
+                { accountId: 'AC-21000', accountCode: 'AC-21000', accountName: 'Accounts Payable', debit: amount, credit: 0, supplierId: validData.customerId },
                 { ...cashOrBankLine, debit: 0, credit: amount }
             ] : [
                 { ...cashOrBankLine, debit: amount, credit: 0 },
-                { accountCode: '1-1060-01', accountName: 'Accounts Receivable', debit: 0, credit: amount, customerId: validData.customerId }
+                { accountId: 'AC-12000', accountCode: 'AC-12000', accountName: 'Accounts Receivable', debit: 0, credit: amount, customerId: validData.customerId }
             ],
             totalDebit: amount,
             totalCredit: amount,

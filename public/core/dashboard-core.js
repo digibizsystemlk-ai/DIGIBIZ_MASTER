@@ -178,13 +178,30 @@ class DashboardCore {
             const impBizId = localStorage.getItem('digibiz_impersonate_biz_id') || 
                              localStorage.getItem('currentBusinessId') || 
                              localStorage.getItem('businessId');
-            const impType = localStorage.getItem('digibiz_impersonate_type') || 'retail';
+            const impType = this.normalizeBusinessType(localStorage.getItem('digibiz_impersonate_type') || localStorage.getItem('currentBusinessType') || 'retail');
+            const impEmail = String(localStorage.getItem('digibiz_impersonate_email') || localStorage.getItem('userEmail') || '').toLowerCase().trim();
+            const impBizName = localStorage.getItem('digibiz_impersonate_biz_name') || localStorage.getItem('currentBusinessName') || '';
+            const impOwnerName = localStorage.getItem('digibiz_impersonate_owner_name') || impBizName || impEmail;
             if (impBizId) {
                 return {
                     businessId: impBizId,
                     businessType: impType,
+                    userEmail: impEmail,
+                    email: impEmail,
+                    ownerEmail: impEmail,
+                    businessName: impBizName,
+                    ownerName: impOwnerName,
                     role: 'BUSINESS_OWNER',
-                    userDocData: { role: 'BUSINESS_OWNER', businessId: impBizId }
+                    userDocData: {
+                        role: 'BUSINESS_OWNER',
+                        businessId: impBizId,
+                        email: impEmail,
+                        ownerEmail: impEmail,
+                        name: impOwnerName,
+                        ownerName: impOwnerName,
+                        businessName: impBizName,
+                        businessType: impType
+                    }
                 };
             }
         }
@@ -344,7 +361,7 @@ class DashboardCore {
             if (!Array.isArray(entry.entries)) return sum;
             return sum + entry.entries.reduce((entrySum, row) => {
                 const code = String(row.accountCode || row.accountId || '');
-                if (!code.startsWith('1-1010') && !code.startsWith('1-1020')) return entrySum;
+                if (!code.startsWith('1-1010') && !code.startsWith('1-1020') && code !== 'AC-10100' && code !== 'AC-10200') return entrySum;
                 
                 let dr = Number(row.debit) || 0;
                 let cr = Number(row.credit) || 0;
@@ -419,7 +436,7 @@ class DashboardCore {
     async fetchUnifiedOrders(bid, userEmail) {
         if (!bid) return { docs: [] };
         try {
-            const uEmail = String(userEmail || '').toLowerCase().trim();
+            const uEmail = String(userEmail || (localStorage.getItem('digibiz_impersonate_active') === 'true' ? localStorage.getItem('digibiz_impersonate_email') : '') || localStorage.getItem('userEmail') || '').toLowerCase().trim();
             const queries = [
                 window.db.collection('orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
                 window.db.collection('orders').doc(bid).collection('list').get().catch(() => ({ docs: [] })),
@@ -432,10 +449,13 @@ class DashboardCore {
 
             if (uEmail) {
                 queries.push(window.db.collection('orders').where('ownerEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
+                queries.push(window.db.collection('orders').where('userEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
                 queries.push(window.db.collection('orders').where('repEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
                 queries.push(window.db.collection('distributor_orders').where('ownerEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
+                queries.push(window.db.collection('distributor_orders').where('userEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
                 queries.push(window.db.collection('distributor_orders').where('repEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
                 queries.push(window.db.collection('pendingOrders').where('ownerEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
+                queries.push(window.db.collection('pendingOrders').where('userEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
                 queries.push(window.db.collection('pendingOrders').where('repEmail', '==', uEmail).get().catch(() => ({ docs: [] })));
             }
 
@@ -506,10 +526,14 @@ class DashboardCore {
                 }
             });
 
-            const [unifiedOrders, expensesSnap] = await Promise.all([
+            const [unifiedOrders, expensesSnap1, expensesSnap2] = await Promise.all([
                 this.fetchUnifiedOrders(bid, userEmail),
-                window.db.collection('expenses').where('businessId', '==', bid).get().catch(() => ({ docs: [] }))
+                window.db.collection('expenses').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                window.db.collection('expenses').doc(bid).collection('list').get().catch(() => ({ docs: [] }))
             ]);
+            const expDocMap = {};
+            [...expensesSnap1.docs, ...expensesSnap2.docs].forEach(d => { expDocMap[d.id] = d; });
+            const allExpenseDocs = Object.values(expDocMap);
 
             for (const doc of unifiedOrders.docs) {
                 const data = doc.data() || {};
@@ -536,9 +560,18 @@ class DashboardCore {
                 if (total <= 0) continue;
 
                 const dt = this.parseDateAny(data.orderDate || data.createdAt || data.timestamp) || new Date();
-                const pm = String(data.paymentMethod || 'CASH').toUpperCase();
-                const isCash = pm === 'CASH';
                 const customer = data.customerName || data.shopName || data.shop || data.customer || 'Customer';
+                const collected = Number(data.collectionAmount != null ? data.collectionAmount : (data.collectedAmount != null ? data.collectedAmount : 0)) || 0;
+                const outstanding = Math.max(0, total - collected);
+
+                const jEntries = [];
+                if (collected > 0) {
+                    jEntries.push({ accountCode: '1-1010-01', accountName: 'Cash in Drawer', debit: collected, credit: 0 });
+                }
+                if (outstanding > 0) {
+                    jEntries.push({ accountCode: '1-1030-01', accountName: 'Accounts Receivable', debit: outstanding, credit: 0 });
+                }
+                jEntries.push({ accountCode: '4-4010-01', accountName: 'Sales Revenue', debit: 0, credit: total });
 
                 const jRef = window.db.collection('journal').doc(bid).collection('entries').doc(customId1);
                 const jObj = {
@@ -549,10 +582,7 @@ class DashboardCore {
                     referenceType: 'SALE',
                     totalDebit: total,
                     totalCredit: total,
-                    entries: [
-                        { accountCode: isCash ? '1-1010-01' : '1-1030-01', accountName: isCash ? 'Cash in Drawer' : 'Accounts Receivable', debit: total, credit: 0 },
-                        { accountCode: '4-4010-01', accountName: 'Sales Revenue', debit: 0, credit: total }
-                    ]
+                    entries: jEntries
                 };
                 batch.set(jRef, jObj, { merge: true });
                 existingRefs.add(refStr1);
@@ -564,7 +594,7 @@ class DashboardCore {
                 newEntriesAdded++;
             }
 
-            for (const doc of expensesSnap.docs) {
+            for (const doc of allExpenseDocs) {
                 const data = doc.data() || {};
                 const expId = doc.id;
                 const refStr = `expenses/${expId}`;
@@ -774,29 +804,52 @@ class DashboardCore {
 
     async getDistributorMetrics(context) {
         const bid = context.businessId;
-        await this.syncUnjournaledTransactions(bid, context.userEmail);
-        const [snapshot, pendingSnap, productsSnap, repsSnap, shopsSnap, journalSnap] = await Promise.all([
-            this.fetchUnifiedOrders(bid, context.userEmail),
-            window.db.collection('pendingOrders').where('businessId', '==', bid).get(),
-            window.db.collection('products').where('businessId', '==', bid).get(),
-            window.db.collection('reps').where('businessId', '==', bid).get(),
-            window.db.collection('shops').where('businessId', '==', bid).get(),
-            window.db.collection('journal').doc(bid).collection('entries').get()
+        const uEmail = String(context.userEmail || context.email || context.ownerEmail || (localStorage.getItem('digibiz_impersonate_active') === 'true' ? localStorage.getItem('digibiz_impersonate_email') : '') || localStorage.getItem('userEmail') || '').toLowerCase().trim();
+        await this.syncUnjournaledTransactions(bid, uEmail);
+        const [snapshot, pendingSnap, pFlat, pNest, pBiz, repsSnap, shopsSnap, journalSnap] = await Promise.all([
+            this.fetchUnifiedOrders(bid, uEmail),
+            window.db.collection('pendingOrders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+            window.db.collection('products').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+            window.db.collection('products').doc(bid).collection('list').get().catch(() => ({ docs: [] })),
+            window.db.collection('businesses').doc(bid).collection('products').get().catch(() => ({ docs: [] })),
+            window.db.collection('reps').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+            window.db.collection('shops').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+            window.db.collection('journal').doc(bid).collection('entries').get().catch(() => ({ docs: [] }))
         ]);
+
+        const prodMapDocs = {};
+        [...pFlat.docs, ...pNest.docs, ...pBiz.docs].forEach(d => { prodMapDocs[d.id] = d; });
+        const productsSnap = Object.values(prodMapDocs);
 
         const journalEntries = journalSnap.docs.map(d => d.data());
         const startToday = new Date();
         startToday.setHours(0, 0, 0, 0);
         const startMonth = new Date(startToday.getFullYear(), startToday.getMonth(), 1);
 
-        // --- ACCOUNTING-BASED METRICS (The Truth Source) ---
+        // --- ACCOUNTING & OPERATIONAL SALES METRICS (Strictly Synchronized with Orders) ---
         
-        // 1. Sales (Income Accounts: 4-xxxx)
+        // 1. Sales Calculation (Income from approved revenue orders and journal adjustments)
         let todaySales = 0;
         let monthSales = 0;
         let monthReturnsValue = 0;
         let monthFreeIssuesValue = 0;
 
+        snapshot.docs.forEach(doc => {
+            const order = doc.data() || {};
+            const st = String(order.status || '').toLowerCase();
+            if (['approved', 'completed', 'delivered', 'dispatched'].includes(st)) {
+                const dt = order.orderDate?.toDate ? order.orderDate.toDate() : (order.createdAt ? new Date(order.createdAt) : (order.date ? new Date(order.date) : null));
+                const amt = Number(order.totalAmount || order.grandTotal || order.amount || 0);
+                if (dt && !isNaN(dt.getTime())) {
+                    if (dt >= startToday) todaySales += amt;
+                    if (dt >= startMonth) monthSales += amt;
+                } else {
+                    monthSales += amt;
+                }
+            }
+        });
+
+        // Journal Return and Free Issue adjustments
         journalEntries.forEach(entry => {
             const entryDate = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date);
             const isThisMonth = entryDate >= startMonth;
@@ -804,14 +857,8 @@ class DashboardCore {
 
             (entry.entries || []).forEach(line => {
                 const code = String(line.accountCode);
-                // Sales Revenue
-                if (code.startsWith('4-4010-01')) {
-                    const val = Number(line.credit) || 0;
-                    if (isToday) todaySales += val;
-                    if (isThisMonth) monthSales += val;
-                }
                 // Sales Returns (Subtract from Sales)
-                else if (code.startsWith('4-4010-02')) {
+                if (code.startsWith('4-4010-02')) {
                     const val = Number(line.debit) || 0;
                     if (isToday) todaySales -= val;
                     if (isThisMonth) {
@@ -826,14 +873,54 @@ class DashboardCore {
                 }
             });
         });
+             todaySales = Math.max(0, Number(todaySales.toFixed(2)));
+        monthSales = Math.max(0, Number(monthSales.toFixed(2)));
 
-        // 2. Outstanding Balance (Accounts Receivable: 1-1030)
-        let outstandingBalance = this.accountBalance(journalEntries, (code) => code.startsWith('1-1030'));
+        // 2. Outstanding Balance & Cash Inflows from Orders
+        let orderOutstanding = 0;
+        let orderCashCollections = 0;
 
-        // 3. Cash Flow (Cash & Bank: 1-1010, 1-1020)
-        const cashFlow = this.accountBalance(journalEntries, (code) => code.startsWith('1-1010') || code.startsWith('1-1020'));
+        snapshot.docs.forEach(doc => {
+            const order = doc.data() || {};
+            const st = String(order.status || '').toLowerCase();
+            if (['approved', 'completed', 'delivered', 'dispatched'].includes(st)) {
+                const total = Number(order.totalAmount || order.grandTotal || order.amount || 0);
+                const collected = Number(order.collectionAmount != null ? order.collectionAmount : (order.collectedAmount != null ? order.collectedAmount : 0)) || 0;
+                const out = Math.max(0, total - collected);
+                orderOutstanding += out;
+                orderCashCollections += collected;
+            }
+        });
 
-        // 4. Inventory Value (1-1040 only — scrap supplier advances were mis-posted to 1-1040 before 1-1060 split)
+        // 3. Cash & Bank Balances (from GL / Journal and Collections)
+        let journalCash = 0;
+        let journalBank = 0;
+        let journalAR = 0;
+
+        journalEntries.forEach(entry => {
+            const ref = String(entry.ref || entry.reference || entry.description || '');
+            const isSyntheticOrder = ref.startsWith('orders/') || ref.startsWith('pendingOrders/') || String(entry.referenceType) === 'SALE';
+            
+            (entry.entries || []).forEach(line => {
+                const code = String(line.accountCode || '');
+                const dr = Number(line.debit) || 0;
+                const cr = Number(line.credit) || 0;
+                const net = dr - cr;
+
+                if (!isSyntheticOrder) {
+                    if (code.startsWith('1-1010') || code === 'AC-10100') journalCash += net;
+                    if (code.startsWith('1-1020') || code === 'AC-10200') journalBank += net;
+                    if (code.startsWith('1-1030') || code === 'AC-10300') journalAR += net;
+                }
+            });
+        });
+
+        let cashBalance = Math.max(0, Number((orderCashCollections + journalCash).toFixed(2)));
+        let bankBalance = Math.max(0, Number(journalBank.toFixed(2)));
+        let cashFlow = Number((cashBalance + bankBalance).toFixed(2));
+        let outstandingBalance = Math.max(0, Number((orderOutstanding + journalAR).toFixed(2)));
+
+        // 4. Inventory Value
         let totalStockValue = this.accountBalance(journalEntries, (code, name) =>
             code.startsWith('1-1040') && !String(name || '').toLowerCase().includes('supplier advance'));
 
@@ -901,10 +988,13 @@ class DashboardCore {
                 });
             }
 
-            if (status === 'approved') approvedCount++;
-            else if (status === 'rejected') rejectedCount++;
-            else if (status === 'dispatched') dispatchedCount++;
-            else if (status === 'delivered') deliveredCount++;
+            if (isRevenueOrder) {
+                if (status === 'approved') approvedCount++;
+                else if (status === 'dispatched') dispatchedCount++;
+                else if (status === 'delivered') deliveredCount++;
+            } else if (status === 'rejected' || status === 'cancelled') {
+                rejectedCount++;
+            }
 
             if (dateValue && isRevenueOrder) {
                 const dk = `${dateValue.getFullYear()}-${dateValue.getMonth()}-${dateValue.getDate()}`;
@@ -956,13 +1046,12 @@ class DashboardCore {
                 const tb = b.orderDate?.toDate ? b.orderDate.toDate().getTime() : 0;
                 return tb - ta;
             })
-            .slice(0, 12);
+            .slice(0, 10);
 
         return {
             todaySales,
             monthSales,
             pendingOrders,
-            pendingQueueCount: pendingSnap.size,
             approvedCount,
             rejectedCount,
             dispatchedCount,
@@ -979,6 +1068,8 @@ class DashboardCore {
             newCustomers,
             monthOrderCount,
             cashFlow,
+            cashBalance,
+            bankBalance,
             monthReturnsValue,
             monthFreeIssuesValue,
             repSummary,
@@ -1010,9 +1101,13 @@ class DashboardCore {
 
         const productSnapshot = await window.db.collection('products').doc(context.businessId).collection('list').get();
         let lowStock = 0;
+        let computedStockValue = 0;
         productSnapshot.docs.forEach(doc => {
-            const stock = Number(doc.data().stock) || 0;
+            const data = doc.data();
+            const stock = Number(data.stock) || 0;
             if (stock > 0 && stock <= 10) lowStock++;
+            const cost = Number(data.cost) || Number(data.price) || 0;
+            if (stock > 0 && cost > 0) computedStockValue += (stock * cost);
         });
 
         const journalSnapshot = await window.db.collection('journal').doc(context.businessId).collection('entries')
@@ -1028,12 +1123,19 @@ class DashboardCore {
 
         let monthSales = 0;
         let todaySales = 0;
-        monthEntries.forEach(entry => {
-            if (!['SALE', 'DISTRIBUTOR_ORDER_APPROVED'].includes(entry.referenceType)) return;
-            const amount = Number(entry.totalCredit) || 0;
-            monthSales += amount;
-            const entryDate = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date);
-            if (entryDate >= startToday) todaySales += amount;
+        orderSnapshot.docs.forEach(doc => {
+            const order = doc.data() || {};
+            const st = String(order.status || '').toLowerCase();
+            if (['approved', 'completed', 'delivered', 'paid', 'success'].includes(st) || !order.status) {
+                const amount = Number(order.totalAmount || order.grandTotal || order.total || order.amount || 0);
+                const dt = order.orderDate?.toDate ? order.orderDate.toDate() : (order.createdAt ? new Date(order.createdAt) : (order.date ? new Date(order.date) : null));
+                if (dt && !isNaN(dt.getTime())) {
+                    if (dt >= startToday) todaySales += amount;
+                    if (dt >= startMonth) monthSales += amount;
+                } else {
+                    monthSales += amount;
+                }
+            }
         });
 
         const cashFlow = this.calculateCashFlow(monthEntries);
@@ -1041,7 +1143,7 @@ class DashboardCore {
             if (!Array.isArray(entry.entries)) return sum;
             return sum + entry.entries.reduce((entrySum, row) => {
                 const code = String(row.accountCode || row.accountId || '');
-                if (!code.startsWith('1-1010')) return entrySum;
+                if (!code.startsWith('1-1010') && code !== 'AC-10100') return entrySum;
                 let dr = Number(row.debit) || 0;
                 let cr = Number(row.credit) || 0;
                 if (row.amount !== undefined && row.type !== undefined) {
@@ -1055,7 +1157,7 @@ class DashboardCore {
             if (!Array.isArray(entry.entries)) return sum;
             return sum + entry.entries.reduce((entrySum, row) => {
                 const code = String(row.accountCode || row.accountId || '');
-                if (!code.startsWith('1-1020')) return entrySum;
+                if (!code.startsWith('1-1020') && code !== 'AC-10200') return entrySum;
                 let dr = Number(row.debit) || 0;
                 let cr = Number(row.credit) || 0;
                 if (row.amount !== undefined && row.type !== undefined) {
@@ -1074,7 +1176,7 @@ class DashboardCore {
             if (Array.isArray(entry.entries)) {
                 entry.entries.forEach(row => {
                     const code = String(row.accountCode || row.accountId || '');
-                    if (!code.startsWith('1-1010') && !code.startsWith('1-1020')) return;
+                    if (!code.startsWith('1-1010') && !code.startsWith('1-1020') && code !== 'AC-10100' && code !== 'AC-10200') return;
                     let dr = Number(row.debit) || 0;
                     let cr = Number(row.credit) || 0;
                     if (row.amount !== undefined && row.type !== undefined) {
@@ -1120,6 +1222,9 @@ class DashboardCore {
 
         if (glBalances['1-1040-01']) {
             stockValue = glBalances['1-1040-01'].debit - glBalances['1-1040-01'].credit;
+        }
+        if (!stockValue || stockValue <= 0) {
+            stockValue = computedStockValue;
         }
         if (glBalances['1-1030-01']) {
             customerOutstanding = glBalances['1-1030-01'].debit - glBalances['1-1030-01'].credit;
@@ -1289,19 +1394,36 @@ class DashboardCore {
         let cashExpenses = 0;
         let bankExpenses = 0;
         try {
-            const expSnapshot = await window.db.collection('expenses').doc(context.businessId).collection('list').get();
-            expSnapshot.docs.forEach(doc => {
-                const exp = doc.data();
-                const amt = Number(exp.amount) || 0;
-                let eDate = null;
-                if (exp.expenseDate) eDate = new Date(exp.expenseDate);
-                else if (exp.createdAt) eDate = exp.createdAt.toDate ? exp.createdAt.toDate() : new Date(exp.createdAt);
+            const [expSnapshot1, expSnapshot2] = await Promise.all([
+                window.db.collection('expenses').doc(context.businessId).collection('list').get().catch(() => ({ docs: [] })),
+                window.db.collection('expenses').where('businessId', '==', context.businessId).get().catch(() => ({ docs: [] }))
+            ]);
+            const expDocMap = {};
+            [...expSnapshot1.docs, ...expSnapshot2.docs].forEach(d => { expDocMap[d.id] = d.data() || {}; });
 
-                const payMethod = String(exp.paymentMethod || 'cash').toLowerCase();
+            Object.values(expDocMap).forEach(exp => {
+                if (exp.isDeleted === true) return;
+                const amt = Number(exp.amount) || 0;
+                if (amt <= 0) return;
+
+                let eDate = null;
+                if (exp.expenseDate) {
+                    const parts = String(exp.expenseDate).split('-');
+                    if (parts.length === 3) eDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+                    else eDate = new Date(exp.expenseDate);
+                } else if (exp.createdAt) {
+                    eDate = exp.createdAt.toDate ? exp.createdAt.toDate() : new Date(exp.createdAt);
+                }
+
                 if (eDate && !isNaN(eDate.getTime()) && eDate >= startMonth) {
                     monthExpenses += amt;
-                    if (payMethod === 'bank' || payMethod === 'cheque') bankExpenses += amt;
-                    else cashExpenses += amt;
+                }
+
+                const payMethod = String(exp.paymentMethod || 'cash').toLowerCase().trim();
+                if (payMethod === 'bank' || payMethod === 'cheque' || payMethod === 'card' || payMethod === 'bank_transfer' || payMethod === 'online') {
+                    bankExpenses += amt;
+                } else {
+                    cashExpenses += amt;
                 }
             });
         } catch (e) {
@@ -2230,7 +2352,7 @@ class DashboardCore {
     getDashboardStructure(businessType) {
         businessType = this.normalizeBusinessType(businessType);
         const structures = {
-            retail: ['todaySales', 'monthSales', 'pendingOrders', 'lowStock', 'cashFlow', 'stockValue', 'customerOutstanding', 'supplierOutstanding'],
+            retail: ['todaySales', 'monthSales', 'pendingOrders', 'lowStock', 'stockValue', 'customerOutstanding', 'supplierOutstanding'],
             distributor: [
                 'pendingQueueCount', 'todaySales', 'monthSales', 'approvedCount', 'rejectedCount',
                 'dispatchedCount', 'deliveredCount', 'totalStockValue', 'outOfStockCount', 'lowStockAlertCount',

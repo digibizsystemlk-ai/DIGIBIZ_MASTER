@@ -170,12 +170,30 @@
                     <label data-i18n="Amount Paid">Amount Paid</label>
                     <input id="payAmount" type="number" step="0.01" required>
                 </div>
-                <div>
+                                <div>
                     <label data-i18n="Payment Method Label">Payment Method</label>
                     <select id="payMethod" required>
                         <option value="CASH">Cash</option>
                         <option value="BANK">Bank</option>
+                        <option value="CHEQUE">Cheque</option>
                     </select>
+                </div>
+                <div id="payChequeDetails" style="display:none; padding:12px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; margin-bottom:15px;">
+                    <strong style="font-size:13px; color:#475569;">📄 Cheque Details</strong>
+                    <div style="display:flex; gap:10px; margin-top:8px;">
+                        <div style="flex:1;">
+                            <label>Cheque No</label>
+                            <input id="payChequeNo" type="text" placeholder="Cheque Number">
+                        </div>
+                        <div style="flex:1;">
+                            <label>Bank Name</label>
+                            <input id="payChequeBank" type="text" placeholder="Bank Name">
+                        </div>
+                        <div style="flex:1;">
+                            <label>Cheque Date</label>
+                            <input id="payChequeDate" type="date">
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-buttons">
                     <button type="button" class="btn-cancel" onclick="closeModal('payModal')" data-i18n="Cancel">Cancel</button>
@@ -202,12 +220,30 @@
                     <label data-i18n="Date Label">Date</label>
                     <input id="loanDate" type="date" required>
                 </div>
-                <div>
+                                <div>
                     <label data-i18n="Payment Method Label">Payment Method</label>
                     <select id="loanMethod" required>
                         <option value="CASH">Cash</option>
                         <option value="BANK">Bank</option>
+                        <option value="CHEQUE">Cheque</option>
                     </select>
+                </div>
+                <div id="loanChequeDetails" style="display:none; padding:12px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:8px; margin-bottom:15px;">
+                    <strong style="font-size:13px; color:#475569;">📄 Cheque Details</strong>
+                    <div style="display:flex; gap:10px; margin-top:8px;">
+                        <div style="flex:1;">
+                            <label>Cheque No</label>
+                            <input id="loanChequeNo" type="text" placeholder="Cheque Number">
+                        </div>
+                        <div style="flex:1;">
+                            <label>Bank Name</label>
+                            <input id="loanChequeBank" type="text" placeholder="Bank Name">
+                        </div>
+                        <div style="flex:1;">
+                            <label>Cheque Date</label>
+                            <input id="loanChequeDate" type="date">
+                        </div>
+                    </div>
                 </div>
                 <div>
                     <label data-i18n="Description Label">Description</label>
@@ -344,12 +380,14 @@
                     const badgeText = window.i18n('Unpaid Badge');
                     const actionBtnText = window.i18n('Settle Loan Button');
                     
+                                        const payModeText = data.paymentMethod || 'CASH';
+                    const payChequeText = (payModeText === 'CHEQUE' && data.chequeNo) ? ` (${data.chequeNo})` : '';
                     html += `<tr>
                         <td>${data.date || '-'}</td>
                         <td style="font-weight:600;">${data.personName}</td>
                         <td>${data.description || '-'}</td>
                         <td class="numeric" style="color:#ef4444;">${formatCurrency(amount)}</td>
-                        <td>${data.paymentMethod || 'CASH'}</td>
+                        <td>${payModeText}${payChequeText}</td>
                         <td><span class="badge badge-unpaid">${badgeText}</span></td>
                         <td style="text-align:center;">
                             <button class="btn-outline" onclick="settleHandLoan('${doc.id}', '${data.personName}', ${amount}, '${data.paymentMethod || 'CASH'}')">${actionBtnText}</button>
@@ -365,42 +403,74 @@
             document.getElementById('statTotalPayables').textContent = formatCurrency(supplierTotal + loansTotal);
         }
         
-        window.triggerPaySupplier = (poId, outstanding) => {
+                window.triggerPaySupplier = (poId, outstanding) => {
             document.getElementById('modalPoId').value = poId;
             document.getElementById('modalOutstandingDisplay').textContent = formatCurrency(outstanding);
             document.getElementById('payAmount').value = outstanding;
+            document.getElementById('payMethod').value = 'CASH';
+            document.getElementById('payChequeDetails').style.display = 'none';
+            document.getElementById('payChequeNo').value = '';
+            document.getElementById('payChequeBank').value = '';
+            document.getElementById('payChequeDate').value = '';
             openModal('payModal');
         };
+        
+        // Payment method toggle - show cheque fields when CHEQUE selected
+        document.getElementById('payMethod').addEventListener('change', function(){
+            const chequeEl = document.getElementById('payChequeDetails');
+            if (this.value === 'CHEQUE') {
+                chequeEl.style.display = 'block';
+            } else {
+                chequeEl.style.display = 'none';
+            }
+        });
         
         document.getElementById('payForm').onsubmit = async (e) => {
             e.preventDefault();
             const poId = document.getElementById('modalPoId').value;
             const amountPaid = parseFloat(document.getElementById('payAmount').value);
             const method = document.getElementById('payMethod').value;
+            const chequeNo = document.getElementById('payChequeNo').value.trim() || null;
+            const chequeBank = document.getElementById('payChequeBank').value.trim() || null;
+            const chequeDate = document.getElementById('payChequeDate').value || null;
             
             if (isNaN(amountPaid) || amountPaid <= 0) return;
+            if (method === 'CHEQUE' && !chequeNo) {
+                showToast('Please enter cheque number');
+                return;
+            }
             
             try {
                 // Update purchase status in DB
                 const poRef = db.collection('purchases').doc(currentBusinessId).collection('orders').doc(poId);
+                const poDoc = await poRef.get();
+                const currentPo = poDoc.exists ? poDoc.data() : {};
                 await poRef.update({
                     status: 'received',
                     paymentStatus: 'paid',
+                    paymentMode: method,
                     amountPaid: amountPaid,
+                    chequeNo: method === 'CHEQUE' ? chequeNo : (currentPo.chequeNo || null),
+                    chequeBank: method === 'CHEQUE' ? chequeBank : (currentPo.chequeBank || null),
+                    chequeDate: method === 'CHEQUE' ? chequeDate : (currentPo.chequeDate || null),
                     receivedAt: new Date()
                 });
                 
-                // Write Journal Entry to Accounting (Debit Inventory or COGS / Credit Cash or Bank)
-                const creditAccount = method === 'BANK' ? ACCOUNT_CODES.BANK : ACCOUNT_CODES.CASH;
+                // Write Journal Entry to Accounting (Debit Inventory or COGS / Credit Cash, Bank or AP)
+                const creditAccount = method === 'BANK' || method === 'CHEQUE' ? ACCOUNT_CODES.BANK : ACCOUNT_CODES.CASH;
                 const journalEntry = {
                     date: new Date(),
-                    memo: `Paid Supplier for PO: ${poId}`,
+                    memo: `Paid Supplier for PO: ${poId}${method === 'CHEQUE' ? ' (Cheque ' + chequeNo + ')' : ''} [${method}]`,
                     entries: [
                         { accountId: '5-5010-01', amount: amountPaid, type: 'debit' }, // Cost of Goods Sold (Standard)
                         { accountId: creditAccount, amount: amountPaid, type: 'credit' }
                     ],
                     ref: `purchases/${poId}`,
                     refType: 'PURCHASE_PAYMENT',
+                    paymentMethod: method,
+                    chequeNo: method === 'CHEQUE' ? chequeNo : null,
+                    chequeBank: method === 'CHEQUE' ? chequeBank : null,
+                    chequeDate: method === 'CHEQUE' ? chequeDate : null,
                     businessId: currentBusinessId,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
@@ -416,10 +486,25 @@
             }
         };
         
-        document.getElementById('addLoanBtn').onclick = () => {
+                document.getElementById('addLoanBtn').onclick = () => {
             document.getElementById('loanDate').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('loanMethod').value = 'CASH';
+            document.getElementById('loanChequeDetails').style.display = 'none';
+            document.getElementById('loanChequeNo').value = '';
+            document.getElementById('loanChequeBank').value = '';
+            document.getElementById('loanChequeDate').value = '';
             openModal('loanModal');
         };
+        
+        // Loan payment method toggle - show cheque fields when CHEQUE selected
+        document.getElementById('loanMethod').addEventListener('change', function(){
+            const chequeEl = document.getElementById('loanChequeDetails');
+            if (this.value === 'CHEQUE') {
+                chequeEl.style.display = 'block';
+            } else {
+                chequeEl.style.display = 'none';
+            }
+        });
         
         document.getElementById('loanForm').onsubmit = async (e) => {
             e.preventDefault();
@@ -428,8 +513,15 @@
             const date = document.getElementById('loanDate').value;
             const method = document.getElementById('loanMethod').value;
             const description = document.getElementById('loanDescription').value.trim();
+            const chequeNo = document.getElementById('loanChequeNo').value.trim() || null;
+            const chequeBank = document.getElementById('loanChequeBank').value.trim() || null;
+            const chequeDate = document.getElementById('loanChequeDate').value || null;
             
             if (!personName || isNaN(amount) || amount <= 0) return;
+            if (method === 'CHEQUE' && !chequeNo) {
+                showToast('Please enter cheque number');
+                return;
+            }
             
             try {
                 const loanData = {
@@ -438,6 +530,9 @@
                     amount: amount,
                     date: date,
                     paymentMethod: method,
+                    chequeNo: method === 'CHEQUE' ? chequeNo : null,
+                    chequeBank: method === 'CHEQUE' ? chequeBank : null,
+                    chequeDate: method === 'CHEQUE' ? chequeDate : null,
                     description: description,
                     status: 'unpaid',
                     createdAt: new Date()
@@ -446,16 +541,20 @@
                 const docRef = await db.collection('hand_loans').doc(currentBusinessId).collection('list').add(loanData);
                 
                 // Create accounting journal entry
-                const debitAccount = method === 'BANK' ? ACCOUNT_CODES.BANK : ACCOUNT_CODES.CASH;
+                const debitAccount = method === 'BANK' || method === 'CHEQUE' ? ACCOUNT_CODES.BANK : ACCOUNT_CODES.CASH;
                 const journalEntry = {
                     date: new Date(date),
-                    memo: `Hand Loan Received from ${personName} - ${description}`,
+                    memo: `Hand Loan Received from ${personName} - ${description}${method === 'CHEQUE' ? ' (Cheque ' + chequeNo + ')' : ''} [${method}]`,
                     entries: [
                         { accountId: debitAccount, amount: amount, type: 'debit' },
                         { accountId: ACCOUNT_CODES.ACCOUNTS_PAYABLE, amount: amount, type: 'credit' }
                     ],
                     ref: `hand_loans/${docRef.id}`,
                     refType: 'HAND_LOAN_RECEIVED',
+                    paymentMethod: method,
+                    chequeNo: method === 'CHEQUE' ? chequeNo : null,
+                    chequeBank: method === 'CHEQUE' ? chequeBank : null,
+                    chequeDate: method === 'CHEQUE' ? chequeDate : null,
                     businessId: currentBusinessId,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
@@ -464,6 +563,7 @@
                 
                 closeModal('loanModal');
                 document.getElementById('loanForm').reset();
+                document.getElementById('loanChequeDetails').style.display = 'none';
                 showToast('Hand loan recorded successfully!');
                 await loadData();
             } catch (err) {
@@ -472,8 +572,9 @@
             }
         };
         
-        window.settleHandLoan = async (loanId, personName, amount, method) => {
+                window.settleHandLoan = async (loanId, personName, amount, method) => {
             if (!confirm(`Confirm payoff of Rs. ${amount.toLocaleString()} to ${personName}?`)) return;
+            const chequeInfoG = (method === 'CHEQUE') ? ' via Cheque' : '';
             
             try {
                 await db.collection('hand_loans').doc(currentBusinessId).collection('list').doc(loanId).update({
@@ -482,16 +583,17 @@
                 });
                 
                 // Create journal entry for settlement
-                const creditAccount = method === 'BANK' ? ACCOUNT_CODES.BANK : ACCOUNT_CODES.CASH;
+                const creditAccount = method === 'BANK' || method === 'CHEQUE' ? ACCOUNT_CODES.BANK : ACCOUNT_CODES.CASH;
                 const journalEntry = {
                     date: new Date(),
-                    memo: `Paid back Hand Loan to ${personName}`,
+                    memo: `Paid back Hand Loan to ${personName}${chequeInfoG} [${method}]`,
                     entries: [
                         { accountId: ACCOUNT_CODES.ACCOUNTS_PAYABLE, amount: amount, type: 'debit' },
                         { accountId: creditAccount, amount: amount, type: 'credit' }
                     ],
                     ref: `hand_loans/${loanId}`,
                     refType: 'HAND_LOAN_PAYOFF',
+                    paymentMethod: method,
                     businessId: currentBusinessId,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 };

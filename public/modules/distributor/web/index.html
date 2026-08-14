@@ -2216,23 +2216,54 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
             }
 
             try {
-                const [oFlat, oPending, oNested, jEntries, jFlat, lFlat, slFlat, abFlat, fFlat1, fFlat2, eFlat, eNested] = await Promise.all([
-                    db.collection('orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
-                    db.collection('pendingOrders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
-                    db.collection('orders').doc(bid).collection('list').get().catch(() => ({ docs: [] })),
-                    db.collection('journal').doc(bid).collection('entries').get().catch(() => ({ docs: [] })),
-                    db.collection('journal_entries').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
-                    db.collection('ledger').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
-                    db.collection('supplier_ledger').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
-                    db.collection('account_balances').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
-                    db.collection('free_issues').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
-                    db.collection('freeIssues').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
-                    db.collection('expenses').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
-                    db.collection('expenses').doc(bid).collection('list').get().catch(() => ({ docs: [] }))
-                ]);
+                const ownerEm = String((currentBusinessData && (currentBusinessData.ownerEmail || currentBusinessData.email)) ||
+                                localStorage.getItem('digibiz_impersonate_email') || localStorage.getItem('userEmail') || '').toLowerCase().trim();
 
-                const refs = [];
-                [...oFlat.docs, ...oPending.docs, ...oNested.docs, ...jEntries.docs, ...jFlat.docs, ...lFlat.docs, ...slFlat.docs, ...abFlat.docs, ...fFlat1.docs, ...fFlat2.docs, ...eFlat.docs, ...eNested.docs].forEach(d => refs.push(d.ref));
+                const queries = [];
+                if (bid) {
+                    queries.push(db.collection('orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('pendingOrders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('distributor_orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('orders').doc(bid).collection('list').get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('pendingOrders').doc(bid).collection('list').get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('businesses').doc(bid).collection('orders').get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('businesses').doc(bid).collection('pendingOrders').get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('journal').doc(bid).collection('entries').get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('journal_entries').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('ledger').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('supplier_ledger').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('account_balances').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('free_issues').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('freeIssues').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('expenses').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('expenses').doc(bid).collection('list').get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('commissions').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('commissions_history').where('businessId', '==', bid).get().catch(() => ({ docs: [] })));
+                }
+
+                if (ownerEm) {
+                    queries.push(db.collection('orders').where('ownerEmail', '==', ownerEm).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('orders').where('userEmail', '==', ownerEm).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('pendingOrders').where('ownerEmail', '==', ownerEm).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('pendingOrders').where('userEmail', '==', ownerEm).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('distributor_orders').where('ownerEmail', '==', ownerEm).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('distributor_orders').where('userEmail', '==', ownerEm).get().catch(() => ({ docs: [] })));
+                    queries.push(db.collection('expenses').where('ownerEmail', '==', ownerEm).get().catch(() => ({ docs: [] })));
+                }
+
+                const snaps = await Promise.all(queries);
+                const refsMap = new Map();
+
+                snaps.forEach(snap => {
+                    (snap.docs || []).forEach(doc => {
+                        const id = doc.id;
+                        // PRESERVE opening stock journal entries
+                        if (id.startsWith('JE_STOCK_')) return;
+                        refsMap.set(doc.ref.path, doc.ref);
+                    });
+                });
+
+                const refs = Array.from(refsMap.values());
 
                 if (refs.length === 0) {
                     alert('No test transaction records found to delete.');
@@ -2246,7 +2277,7 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                     await batch.commit();
                 }
 
-                alert(`Successfully deleted ${refs.length} test records (orders + journal entries)! Everything is reset to 0.`);
+                alert(`✅ Successfully permanently deleted ${refs.length} test records! Everything is reset to 0.`);
                 location.reload();
             } catch (e) {
                 alert('Error clearing test transactions: ' + e.message);
@@ -2445,7 +2476,10 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                     return;
                 }
 
-                const ownerEm = (currentBusinessData && currentBusinessData.ownerEmail) ? String(currentBusinessData.ownerEmail).toLowerCase().trim() : '';
+                const ownerEm = (currentBusinessData && (currentBusinessData.ownerEmail || currentBusinessData.email)) ||
+                                (localStorage.getItem('digibiz_impersonate_active') === 'true' ? localStorage.getItem('digibiz_impersonate_email') : '') ||
+                                localStorage.getItem('userEmail') ||
+                                (firebase.auth().currentUser && firebase.auth().currentUser.email) || '';
 
                 const orderQueries = [
                     db.collection('orders').where('businessId', '==', targetBid).limit(300).get().catch(() => ({ docs: [] })),
@@ -2455,8 +2489,11 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                 ];
 
                 if (ownerEm) {
-                    orderQueries.push(db.collection('orders').where('ownerEmail', '==', ownerEm).limit(300).get().catch(() => ({ docs: [] })));
-                    orderQueries.push(db.collection('pendingOrders').where('ownerEmail', '==', ownerEm).limit(150).get().catch(() => ({ docs: [] })));
+                    const normEmail = String(ownerEm).toLowerCase().trim();
+                    orderQueries.push(db.collection('orders').where('ownerEmail', '==', normEmail).limit(300).get().catch(() => ({ docs: [] })));
+                    orderQueries.push(db.collection('orders').where('userEmail', '==', normEmail).limit(300).get().catch(() => ({ docs: [] })));
+                    orderQueries.push(db.collection('pendingOrders').where('ownerEmail', '==', normEmail).limit(150).get().catch(() => ({ docs: [] })));
+                    orderQueries.push(db.collection('pendingOrders').where('userEmail', '==', normEmail).limit(150).get().catch(() => ({ docs: [] })));
                 }
 
                 const snaps = await Promise.all(orderQueries);
@@ -2642,22 +2679,24 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
         }
 
         async function deleteApprovedOrder(orderId) {
-            if (!confirm('මෙම ඇණවුම මකාදැමීමට ස්ථිරද? (Delete order and restore stock back to inventory?)')) return;
+            if (!confirm('මෙම ඇණවුම ස්ථිරවම මකාදැමීමට අවශ්‍යද? (Permanently delete this order from database and restore stock?)')) return;
             try {
-                let order = allOrders.find(o => o.id === orderId);
+                let order = allOrders.find(o => o.id === orderId || o.orderNumber === orderId || o.orderId === orderId);
                 if (!order) {
-                    const snap = await db.collection('orders').doc(orderId).get();
-                    if (snap.exists) order = { id: snap.id, ...snap.data() };
+                    const snap = await db.collection('orders').doc(orderId).get().catch(() => null);
+                    if (snap && snap.exists) order = { id: snap.id, ...snap.data() };
                 }
                 if (!order) {
-                    alert('Order not found.');
-                    return;
+                    const snapP = await db.collection('pendingOrders').doc(orderId).get().catch(() => null);
+                    if (snapP && snapP.exists) order = { id: snapP.id, ...snapP.data() };
                 }
 
-                // Restore Stock
-                const items = Array.isArray(order.items) ? order.items : [];
-                if (items.length > 0) {
-                    const productsSnap = await db.collection('products').where('businessId', '==', currentBusinessId).get();
+                const bid = currentBusinessId || (order && order.businessId) || localStorage.getItem('currentBusinessId') || '';
+
+                // 1. Restore Stock
+                const items = Array.isArray(order?.items) ? order.items : (Array.isArray(order?.orderItems) ? order.orderItems : []);
+                if (items.length > 0 && bid) {
+                    const productsSnap = await db.collection('products').where('businessId', '==', bid).get().catch(() => ({ docs: [] }));
                     const byId = {};
                     const byName = {};
                     productsSnap.docs.forEach((doc) => {
@@ -2667,9 +2706,9 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
 
                     const batch = db.batch();
                     items.forEach((item) => {
-                        const productDoc = item.productId ? byId[item.productId] : byName[String(item.productName || '').toLowerCase()];
+                        const productDoc = item.productId ? byId[item.productId] : byName[String(item.productName || item.name || '').toLowerCase()];
                         if (!productDoc) return;
-                        const restoreQty = Math.max(0, (Number(item.orderedQty) || 0) + (Number(item.freeQty) || 0) - (Number(item.returnQty) || 0));
+                        const restoreQty = Math.max(0, (Number(item.orderedQty != null ? item.orderedQty : (item.quantity != null ? item.quantity : item.qty)) || 0) + (Number(item.freeQty) || 0) - (Number(item.returnQty) || 0));
                         if (restoreQty > 0) {
                             batch.update(productDoc.ref, {
                                 stock: firebase.firestore.FieldValue.increment(restoreQty),
@@ -2678,16 +2717,46 @@ html,body{margin:0;padding:0;background:#fff;color:#000;font-family:'Inter','Rob
                             });
                         }
                     });
-                    await batch.commit();
+                    await batch.commit().catch(() => {});
                 }
 
-                // Delete order documents
-                await db.collection('orders').doc(orderId).delete().catch(() => {});
-                await db.collection('pendingOrders').doc(orderId).delete().catch(() => {});
+                // 2. Permanently delete all order docs matching orderId or orderNumber across all paths
+                const orderNum = order ? (order.orderNumber || order.orderId || orderId) : orderId;
+                const docIdsToDelete = new Set([orderId, orderNum]);
+                if (order && order.id) docIdsToDelete.add(order.id);
 
-                alert('Order deleted successfully and stock restored to inventory!');
+                const deletePromises = [];
+                docIdsToDelete.forEach(id => {
+                    deletePromises.push(db.collection('orders').doc(id).delete().catch(() => {}));
+                    deletePromises.push(db.collection('pendingOrders').doc(id).delete().catch(() => {}));
+                    deletePromises.push(db.collection('distributor_orders').doc(id).delete().catch(() => {}));
+                    if (bid) {
+                        deletePromises.push(db.collection('orders').doc(bid).collection('list').doc(id).delete().catch(() => {}));
+                        deletePromises.push(db.collection('pendingOrders').doc(bid).collection('list').doc(id).delete().catch(() => {}));
+                        deletePromises.push(db.collection('businesses').doc(bid).collection('orders').doc(id).delete().catch(() => {}));
+                        deletePromises.push(db.collection('businesses').doc(bid).collection('pendingOrders').doc(id).delete().catch(() => {}));
+                        // Delete associated journal entries
+                        deletePromises.push(db.collection('journal').doc(bid).collection('entries').doc(`JE_${id}`).delete().catch(() => {}));
+                        deletePromises.push(db.collection('journal').doc(bid).collection('entries').doc(id).delete().catch(() => {}));
+                    }
+                });
+
+                // Also delete any matching query results for this specific orderNumber
+                if (orderNum) {
+                    const qOrders = await db.collection('orders').where('orderNumber', '==', orderNum).get().catch(() => ({ docs: [] }));
+                    qOrders.docs.forEach(d => deletePromises.push(d.ref.delete().catch(() => {})));
+                    const qPending = await db.collection('pendingOrders').where('orderNumber', '==', orderNum).get().catch(() => ({ docs: [] }));
+                    qPending.docs.forEach(d => deletePromises.push(d.ref.delete().catch(() => {})));
+                }
+
+                await Promise.all(deletePromises);
+
+                alert('✅ Order and associated accounting records permanently deleted!');
+                allOrders = allOrders.filter(o => !docIdsToDelete.has(o.id) && !docIdsToDelete.has(o.orderNumber) && !docIdsToDelete.has(o.orderId));
+                displayOrders();
                 await loadStats();
-                await loadOrders();
+                await loadOwnerProfitDashboard();
+                await loadAccountingSummaryWidget();
             } catch (err) {
                 console.error("Error deleting order:", err);
                 alert("Failed to delete order: " + (err.message || String(err)));

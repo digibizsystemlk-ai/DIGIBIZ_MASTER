@@ -1239,7 +1239,7 @@
             bindDashboardPollInterval();
         }
 
-        async function loadCoreOwnerProfitDashboard() {
+                async function loadCoreOwnerProfitDashboard() {
             const sec = document.getElementById('coreOwnerProfitSection');
             const u = firebase.auth().currentUser;
             const bid = (dashboardContext && dashboardContext.businessId) || localStorage.getItem('currentBusinessId') || localStorage.getItem('selectedBusinessId') || (u && u.uid);
@@ -1251,29 +1251,46 @@
                 const db = firebase.firestore();
                 const opt = navigator.onLine ? {} : { source: 'cache' };
 
-                const [pFlat, pNested, oFlat, oPending, oNested, eFlat, eNested] = await Promise.all([
+                const userEmail = (dashboardContext && (dashboardContext.userEmail || dashboardContext.email || dashboardContext.ownerEmail)) ||
+                                  (localStorage.getItem('digibiz_impersonate_active') === 'true' ? localStorage.getItem('digibiz_impersonate_email') : '') ||
+                                  localStorage.getItem('userEmail') ||
+                                  (u && u.email ? String(u.email).trim().toLowerCase() : null);
+
+                const oOwnerPromise = userEmail ? db.collection('orders').where('ownerEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+                const oUserPromise = userEmail ? db.collection('orders').where('userEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+                const pOwnerPromise = userEmail ? db.collection('products').where('ownerEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+                const eOwnerPromise = userEmail ? db.collection('expenses').where('ownerEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+
+                const [pFlat, pNested, pBiz, oFlat, oPending, oNested, oBiz, eFlat, eNested, eBiz, oOwner, oUser, pOwner, eOwner] = await Promise.all([
                     db.collection('products').where('businessId', '==', bid).get(opt).catch(() => ({ docs: [] })),
                     db.collection('products').doc(bid).collection('list').get(opt).catch(() => ({ docs: [] })),
+                    db.collection('businesses').doc(bid).collection('products').get(opt).catch(() => ({ docs: [] })),
                     db.collection('orders').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
                     db.collection('pendingOrders').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
                     db.collection('orders').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('businesses').doc(bid).collection('orders').limit(1000).get(opt).catch(() => ({ docs: [] })),
                     db.collection('expenses').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
-                    db.collection('expenses').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] }))
+                    db.collection('expenses').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('businesses').doc(bid).collection('expenses').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    oOwnerPromise,
+                    oUserPromise,
+                    pOwnerPromise,
+                    eOwnerPromise
                 ]);
 
                 const prodMap = {};
-                [...pFlat.docs, ...pNested.docs].forEach(d => {
+                [...pFlat.docs, ...pNested.docs, ...pBiz.docs, ...pOwner.docs].forEach(d => {
                     const data = d.data() || {};
                     prodMap[d.id] = data;
                     if (data.productCode) prodMap[String(data.productCode).trim()] = data;
                 });
 
                 const orderDocsMap = {};
-                [...oFlat.docs, ...oPending.docs, ...oNested.docs].forEach(d => { orderDocsMap[d.id] = d; });
+                [...oFlat.docs, ...oPending.docs, ...oNested.docs, ...oBiz.docs, ...oOwner.docs, ...oUser.docs].forEach(d => { orderDocsMap[d.id] = d; });
                 const allOrderDocs = Object.values(orderDocsMap);
 
                 const expDocsMap = {};
-                [...eFlat.docs, ...eNested.docs].forEach(d => { expDocsMap[d.id] = d; });
+                [...eFlat.docs, ...eNested.docs, ...eBiz.docs, ...eOwner.docs].forEach(d => { expDocsMap[d.id] = d; });
                 const allExpDocs = Object.values(expDocsMap);
 
                 const now = new Date();

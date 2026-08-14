@@ -38,6 +38,7 @@
     <script src="/core/dashboard-core.js?v=3"></script>
     <script src="/core/subscription-manager.js?v=3"></script>
     <script src="/core/sidebar.js?v=2000"></script>
+    <script src="/modules/retail/js/location-stock-core.js?v=1"></script>
 
     <style>
         * {
@@ -353,14 +354,22 @@
     <div class="main-content">
         <div class="page-header">
             <h1><i class="fas fa-boxes"></i> Inventory Management</h1>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <!-- Preferred Location Selector -->
+                <div style="display:flex; align-items:center; gap:8px; background:#fff; padding:8px 14px; border-radius:10px; border:1.5px solid #cbd5e1; font-size:13px;">
+                    <i class="fas fa-map-marker-alt" style="color:#3b82f6;"></i>
+                    <span style="font-weight:600; color:#475569;">My Location:</span>
+                    <select id="userPreferredLocationSelect" style="border:none; background:transparent; font-weight:700; color:#1e293b; outline:none; cursor:pointer;" onchange="window.onUserPreferredLocationChange(this.value)">
+                        <option value="MAIN">Main Store (MAIN)</option>
+                    </select>
+                </div>
                 <button class="btn-outline" style="border-color:#ef4444; color:#ef4444;"
                     onclick="openSpoilageModal()"><i class="fas fa-biohazard"></i> Log Spoilage / Damage (හානි)</button>
                 <button class="btn-outline" style="border-color:#0f3b2c; color:#0f3b2c;"
                     onclick="openReconciliationModal()"><i class="fas fa-balance-scale"></i> Stock Reconciliation (තොග
                     සැසඳීම)</button>
-                <button class="btn-outline" style="border-color:#d97706; color:#d97706;"
-                    onclick="syncPastSalesStock()"><i class="fas fa-sync-alt"></i> Sync Past Sales</button>
+                <button class="btn-outline" style="border-color:#3b82f6; color:#1d4ed8;"
+                    onclick="window.runMigrationUI()"><i class="fas fa-database"></i> Location Migration</button>
                 <button class="btn-primary" id="addProductBtn"><i class="fas fa-plus"></i> Add Product</button>
             </div>
         </div>
@@ -677,6 +686,34 @@
             </div>
         </div>
 
+        <!-- Location Breakdown Modal -->
+        <div id="locationBreakdownModal" class="modal">
+            <div class="modal-content" style="max-width:600px; width:95%;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <h3 style="color:#1e40af;" id="locationBreakdownTitle"><i class="fas fa-map-marker-alt"></i> Stock by Location</h3>
+                    <button onclick="window.closeLocationBreakdownModal()" style="background:none; border:none; font-size:18px; cursor:pointer;">✕</button>
+                </div>
+                <p style="font-size:12px; color:#64748b; margin-bottom:15px;" id="locationBreakdownSubtitle">Location-wise inventory distribution.</p>
+                <div style="max-height:350px; overflow-y:auto; border:1px solid #e9ecef; border-radius:12px; margin-bottom:15px;">
+                    <table class="data-table" style="font-size:13px;">
+                        <thead>
+                            <tr style="background:#f8fafc;">
+                                <th>Location Code</th>
+                                <th>Location Name</th>
+                                <th style="text-align:right;">Stock Quantity</th>
+                            </tr>
+                        </thead>
+                        <tbody id="locationBreakdownTableBody">
+                            <tr><td colspan="3" style="text-align:center; padding:30px; color:#64748b;">Loading location stocks...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div style="display:flex; justify-content:flex-end;">
+                    <button class="btn-outline" onclick="window.closeLocationBreakdownModal()">Close</button>
+                </div>
+            </div>
+        </div>
+
         <div id="toast" class="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
 
         <script>
@@ -812,6 +849,7 @@
                     <td>${formatCurrency((p.stock || 0) * (p.cost || 0))}</td>
                     <td>${stockBadge}</td>
                     <td>
+                        <button type="button" class="btn-outline" onclick="window.openLocationBreakdownModal('${pid}')" style="padding:5px 8px;font-size:12px;margin-right:4px;border-color:#3b82f6;color:#1d4ed8;" title="View stock breakdown by location"><i class="fas fa-map-marker-alt"></i> Locations</button>
                         <button type="button" class="btn-outline" onclick="editProduct('${pid}')" style="padding:5px 10px;margin-right:4px;"><i class="fas fa-edit"></i> Edit</button>
                         <button type="button" class="btn-outline" onclick="adjustStock('${pid}')" style="padding:5px 10px;margin-right:4px;"><i class="fas fa-boxes"></i> Stock</button>
                         <button type="button" class="btn-danger" onclick="deleteProduct('${pid}')" style="padding:5px 10px;"><i class="fas fa-trash"></i></button>
@@ -872,7 +910,8 @@
                 const name = document.getElementById('productName').value.trim();
                 const category = document.getElementById('productCategory').value.trim();
                 const sellType = document.getElementById('productSellType').value;
-                const unit = document.getElementById('productUnit').value;
+                let unit = document.getElementById('productUnit').value;
+                if (sellType === 'weight') unit = 'kg'; // Enforce kg for weight items
                 const price = parseFloat(document.getElementById('productPrice').value);
                 const cost = parseFloat(document.getElementById('productCost').value || 0);
                 const stock = parseFloat(document.getElementById('productStock').value) || 0;
@@ -1454,16 +1493,94 @@
                 }
             };
 
+            let businessLocations = [];
+            let userPreferredLocation = 'MAIN';
+            let currentUser = null;
+            let currentUserProfile = null;
+
+            window.onUserPreferredLocationChange = async function(val) {
+                userPreferredLocation = val || 'MAIN';
+                if (currentUser) {
+                    await LocationStockCore.setUserPreferredLocation(currentUser.uid, userPreferredLocation);
+                    showToast(`Preferred location updated to: ${userPreferredLocation}`);
+                }
+            };
+
+            window.closeLocationBreakdownModal = function() {
+                const modal = document.getElementById('locationBreakdownModal');
+                if (modal) modal.style.display = 'none';
+            };
+
+            window.openLocationBreakdownModal = async function(productId) {
+                const modal = document.getElementById('locationBreakdownModal');
+                if (!modal) return;
+                modal.style.display = 'flex';
+                modal.style.zIndex = '1000002';
+
+                const p = products.find(prod => String(prod.id) === String(productId) || String(prod.docId) === String(productId) || String(prod.code) === String(productId));
+                const productName = p ? (p.name || 'Selected Item') : 'Product Location Breakdown';
+                const totalStock = p ? (p.stock || 0) : 0;
+                const unitStr = p ? (p.unit || (p.sellType === 'weight' ? 'kg' : 'Pcs')) : 'Pcs';
+
+                document.getElementById('locationBreakdownTitle').innerHTML = `<i class="fas fa-map-marker-alt" style="color:#3b82f6;"></i> Location Stocks: ${productName}`;
+                document.getElementById('locationBreakdownSubtitle').innerHTML = `Total System Stock: <strong>${totalStock} ${unitStr}</strong> | Product Code: <code>${p?.code || productId}</code>`;
+                
+                const tbody = document.getElementById('locationBreakdownTableBody');
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:25px; color:#64748b;"><i class="fas fa-spinner fa-spin"></i> Loading location breakdown...</td></tr>';
+
+                try {
+                    const locStocks = await LocationStockCore.getProductLocationStocks(currentBusinessId, productId);
+                    const locStockMap = new Map();
+                    locStocks.forEach(ls => locStockMap.set(ls.locationId, ls.quantity || 0));
+
+                    if (businessLocations.length === 0) {
+                        businessLocations = await LocationStockCore.getLocations(currentBusinessId);
+                    }
+
+                    tbody.innerHTML = businessLocations.map(loc => {
+                        const locQty = locStockMap.has(loc.id) ? locStockMap.get(loc.id) : (loc.id === 'MAIN' ? totalStock : 0);
+                        const isPreferred = loc.id === userPreferredLocation;
+                        return `
+                            <tr>
+                                <td><code>${loc.code || loc.id}</code> ${isPreferred ? '<span class="badge" style="background:#dbeafe; color:#1e40af; font-size:10px;">My Loc</span>' : ''}</td>
+                                <td><strong>${loc.name || loc.code || loc.id}</strong></td>
+                                <td style="text-align:right; font-weight:800; font-size:14px; color:${locQty > 0 ? '#10b981' : '#ef4444'};">${locQty} ${unitStr}</td>
+                            </tr>
+                        `;
+                    }).join('');
+
+                } catch (err) {
+                    console.error('[LocationBreakdown] Error:', err);
+                    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding:20px; color:red;">Error loading locations: ${err.message}</td></tr>`;
+                }
+            };
+
+            window.runMigrationUI = async function() {
+                if (!confirm('Run Location Stock Backfill Migration?\n\nThis will link existing products with Main Store (MAIN) location and create INITIAL_IMPORT stock movements.')) {
+                    return;
+                }
+
+                showToast('Starting location stock migration...');
+                try {
+                    const res = await LocationStockCore.runLocationStockMigration(currentBusinessId, currentUser, (prog) => {
+                        console.log(`[Migration Progress] ${prog.current}/${prog.total} (${prog.percent}%)`);
+                    });
+                    showToast(`Migration Complete! ${res.migrated} products backfilled to MAIN location.`);
+                    await loadProducts();
+                } catch (err) {
+                    console.error('[Migration] Error:', err);
+                    showToast('Migration error: ' + err.message, true);
+                }
+            };
+
             window.closeStockHistoryModal = function () {
                 const modal = document.getElementById('stockHistoryModal');
                 if (modal) modal.style.display = 'none';
             };
 
             window.openStockHistoryModal = async function (productId) {
-                console.log('[StockHistory] openStockHistoryModal called with:', productId);
                 const modal = document.getElementById('stockHistoryModal');
                 if (!modal) return;
-                console.log('[StockHistory] modal element found, opening...');
                 modal.style.display = 'flex';
                 modal.style.zIndex = '1000001';
 
@@ -1476,7 +1593,25 @@
                 try {
                     const effBizId = window.getEffectiveBusinessId ? window.getEffectiveBusinessId(null, currentBusinessId) : currentBusinessId;
 
-                    // Query stock history for this product without requiring indexes
+                    // 1. Fetch immutable stockMovements (Location-based GRN, Reversals, Initial Imports)
+                    const movements = await LocationStockCore.getStockMovements(effBizId, { productId, limit: 100 });
+                    let docs = [];
+
+                    movements.forEach(m => {
+                        const locInfo = m.toLocation ? ` (To: ${m.toLocation})` : (m.fromLocation ? ` (From: ${m.fromLocation})` : '');
+                        const reasonInfo = m.reversalReason ? ` - Reason: ${m.reversalReason}` : '';
+                        const isPositive = m.movementType === 'GRN_IN' || m.movementType === 'INITIAL_IMPORT' || m.qty > 0;
+                        docs.push({
+                            productId: m.productId,
+                            productName: m.productName,
+                            qtyChange: (m.movementType === 'GRN_REVERSAL' ? -Math.abs(m.qty) : (isPositive ? Math.abs(m.qty) : -Math.abs(m.qty))),
+                            type: m.movementType || 'MOVEMENT',
+                            ref: `${m.refId || m.refType || 'GRN'}${locInfo}${reasonInfo}`,
+                            createdAt: m.createdAt
+                        });
+                    });
+
+                    // 2. Query legacy stock_history
                     const snap = await db.collection('stock_history')
                         .doc(effBizId)
                         .collection('list')
@@ -1484,10 +1619,16 @@
                         .get()
                         .catch(() => ({ docs: [] }));
 
-                    let docs = [];
-                    if (snap.docs) snap.docs.forEach(doc => docs.push({ id: doc.id, ...doc.data() }));
+                    if (snap.docs) {
+                        snap.docs.forEach(doc => {
+                            const d = doc.data();
+                            if (!docs.some(h => h.ref === d.ref && h.type === d.type)) {
+                                docs.push({ id: doc.id, ...d });
+                            }
+                        });
+                    }
 
-                    // Also query orders for sales of this item
+                    // 3. Query orders for sales of this item
                     const ordersSnap = await db.collection('orders').doc(effBizId).collection('list').get().catch(() => ({ docs: [] }));
                     if (ordersSnap.docs) {
                         ordersSnap.docs.forEach(d => {
@@ -1518,34 +1659,29 @@
                         return dbTime - da;
                     });
 
-                    // Apply Zero-Reset filtering: iterate from newest to oldest. If stock reached 0 at any moment, stop showing older history!
-                    let filteredDocs = [];
-                    for (let i = 0; i < docs.length; i++) {
-                        const item = docs[i];
-                        filteredDocs.push(item);
-                        if (item.type === 'ZERO_RESET' || item.resultingStock === 0 || item.qtyChange === 0) {
-                            break; // Stop showing history before this zero point!
-                        }
-                    }
-
                     const tbody = document.getElementById('stockHistoryTableBody');
-                    if (filteredDocs.length === 0) {
+                    if (docs.length === 0) {
                         tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:30px; color:#64748b;">No stock movement history records found for this item.</td></tr>';
                         return;
                     }
 
-                    tbody.innerHTML = filteredDocs.map(d => {
+                    tbody.innerHTML = docs.map(d => {
                         const rawDt = d.createdAt;
                         const dt = rawDt && rawDt.toDate ? rawDt.toDate() : (rawDt ? new Date(rawDt) : new Date());
                         const dateStr = !isNaN(dt.getTime()) ? dt.toLocaleString() : '-';
                         const change = Number(d.qtyChange || 0);
                         const changeStr = change > 0 ? `+${change}` : `${change}`;
                         const changeColor = change > 0 ? '#10b981' : '#ef4444';
+                        let badgeBg = '#f1f5f9', badgeColor = '#334155';
+                        if (d.type === 'GRN_IN' || d.type === 'GRN') { badgeBg = '#d1fae5'; badgeColor = '#065f46'; }
+                        else if (d.type === 'GRN_REVERSAL') { badgeBg = '#fee2e2'; badgeColor = '#991b1b'; }
+                        else if (d.type === 'INITIAL_IMPORT') { badgeBg = '#e0f2fe'; badgeColor = '#075985'; }
+                        else if (d.type === 'SALE') { badgeBg = '#fef3c7'; badgeColor = '#92400e'; }
 
                         return `
                         <tr>
                             <td>${dateStr}</td>
-                            <td><span class="badge" style="background:#f1f5f9; color:#334155; font-weight:700;">${d.type || 'ADJUST'}</span></td>
+                            <td><span class="badge" style="background:${badgeBg}; color:${badgeColor}; font-weight:700;">${d.type || 'ADJUST'}</span></td>
                             <td style="text-align:right; font-weight:800; color:${changeColor};">${changeStr}</td>
                             <td>${d.ref || '-'}</td>
                         </tr>
@@ -1556,21 +1692,39 @@
                     console.error('[StockHistory] Error:', err);
                     document.getElementById('stockHistoryTableBody').innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px; color:red;">Error loading history: ${err.message}</td></tr>`;
                 }
-            }
+            };
 
             async function initInventoryPage(user) {
                 const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
                 if (!user && !isImpersonating) { window.location.href = '/'; return; }
+                currentUser = user;
                 if (isImpersonating) {
                     currentBusinessId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || (user && user.uid);
                 } else if (user) {
                     try {
                         const userDoc = await db.collection('users').doc(user.uid).get();
+                        if (userDoc.exists) {
+                            currentUserProfile = userDoc.data();
+                        }
                         currentBusinessId = (userDoc && userDoc.exists && userDoc.data().businessId) ? userDoc.data().businessId : user.uid;
                     } catch (e) {
                         currentBusinessId = localStorage.getItem('currentBusinessId') || user.uid;
                     }
                 }
+
+                // Load Locations & Preferred Location
+                try {
+                    businessLocations = await LocationStockCore.getLocations(currentBusinessId);
+                    userPreferredLocation = await LocationStockCore.getUserPreferredLocation(user?.uid);
+                    
+                    const prefSelect = document.getElementById('userPreferredLocationSelect');
+                    if (prefSelect) {
+                        prefSelect.innerHTML = businessLocations.map(l => `<option value="${l.id}" ${l.id === userPreferredLocation ? 'selected' : ''}>${l.name || l.code || l.id}</option>`).join('');
+                    }
+                } catch (eLoc) {
+                    console.warn('[Inventory] Locations init error:', eLoc);
+                }
+
                 await loadProducts();
             }
 

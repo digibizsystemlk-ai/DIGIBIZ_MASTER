@@ -295,6 +295,26 @@
             grnList.unshift(grnRecord);
             localStorage.setItem(`autocare_grn_${bizId}`, JSON.stringify(grnList));
 
+            // 3. Post Journal Entry to Accounting Firestore
+            try {
+                if (window.db) {
+                    window.db.collection('journal').doc(bizId).collection('entries').add({
+                        date: new Date(date),
+                        memo: `Auto Care GRN Purchase: ${pName} (${qty} units) from ${supplier || 'Supplier'} (GRN: ${grnNo})`,
+                        entries: [
+                            { accountId: '5-5010-01', accountCode: '5-5010-01', accountName: 'Cost of Goods Sold', debit: totalCost, credit: 0, amount: totalCost, type: 'debit' },
+                            { accountId: 'AC-21000', accountCode: 'AC-21000', accountName: 'Accounts Payable', debit: 0, credit: totalCost, amount: totalCost, type: 'credit' }
+                        ],
+                        ref: `purchases/${grnRecord.id}`,
+                        refType: 'PURCHASE',
+                        businessId: bizId,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+            } catch (eJ) {
+                console.warn('[Auto Care GRN] Journal posting warning:', eJ);
+            }
+
             // Increment Counter
             const counterKey = `autocare_grn_counter_${bizId}`;
             let count = parseInt(localStorage.getItem(counterKey) || '0', 10) + 1;

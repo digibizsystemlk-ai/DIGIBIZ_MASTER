@@ -96,10 +96,19 @@ class SubscriptionManager {
             }, { merge: true });
         }
 
+        const userEmail = String((user && user.email) || '').toLowerCase().trim();
+        const isDemoUser = userEmail.startsWith('test@') || userEmail.includes('demo');
+
         const expireDate = new Date(subscription.expireDate || subscription.trialEnd || now.toISOString());
-        const remainingDays = this.daysBetween(now, expireDate);
-        const expired = remainingDays <= 0;
-        const plan = subscription.plan || 'TRIAL';
+        let remainingDays = this.daysBetween(now, expireDate);
+        let expired = remainingDays <= 0;
+        let plan = subscription.plan || 'TRIAL';
+
+        if (isDemoUser) {
+            expired = false;
+            remainingDays = 9999;
+            plan = 'LIVE_DEMO';
+        }
 
         const wallet = settingsData.smsWallet || {};
         const walletMissing = !snapshot.exists || !settingsData.smsWallet;
@@ -137,9 +146,11 @@ class SubscriptionManager {
             remainingDays,
             expired,
             plan,
-            statusText: plan === 'TRIAL'
-                ? (expired ? 'Trial Expired' : `Trial: ${remainingDays} day(s) left`)
-                : `${plan} Active`
+            statusText: plan === 'LIVE_DEMO'
+                ? '🎮 Live Demo Active'
+                : (plan === 'TRIAL'
+                    ? (expired ? 'Trial Expired' : `Trial: ${remainingDays} day(s) left`)
+                    : `${plan} Active`)
         };
     }
 
@@ -147,9 +158,22 @@ class SubscriptionManager {
         if (!user || !businessId || !window.db) return null;
         this.renderVersionBadge();
 
+        const userEmail = String(user.email || '').toLowerCase().trim();
+        const isDemoUser = userEmail.startsWith('test@') || userEmail.includes('demo');
         const isAdmin = ['SUPER_ADMIN', 'ADMIN'].includes(role) || String(role || '').includes('ADMIN');
+        
         const subscription = await this.loadOrCreateSubscription(user, businessId);
-        this.current = { ...subscription, isAdmin, businessId };
+
+        if (isDemoUser || isAdmin) {
+            subscription.expired = false;
+            subscription.remainingDays = 9999;
+            if (isDemoUser) {
+                subscription.plan = 'LIVE_DEMO';
+                subscription.statusText = '🎮 Live Demo Active';
+            }
+        }
+
+        this.current = { ...subscription, isAdmin, isDemoUser, businessId };
 
         const pathname = window.location.pathname;
         if (subscription.expired && !this.getAllowedWhenExpired(pathname)) {

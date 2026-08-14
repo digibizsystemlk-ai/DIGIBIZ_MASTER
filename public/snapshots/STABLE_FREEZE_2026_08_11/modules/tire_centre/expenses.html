@@ -459,10 +459,12 @@
 
             // Update matching journal entry
             const journalSnap = await db.collection('journal').doc(currentBusinessId).collection('entries').where('ref', '==', id).get();
-            const creditAcc = pay === 'BANK' ? '1-1020-01' : '1-1010-01';
+            const creditAcc = pay === 'BANK' ? 'AC-10200' : (pay === 'CHEQUE' ? 'AC-21100' : 'AC-10100');
+            const creditAccLegacy = pay === 'BANK' ? '1-1020-01' : (pay === 'CHEQUE' ? '2-2020-01' : '1-1010-01');
+            const creditName = pay === 'BANK' ? 'Bank Account' : (pay === 'CHEQUE' ? 'Issued Cheques Payable' : 'Cash in Hand');
             const journalEntries = [
-                { accountId: accCode, amount: amount, type: 'debit' },
-                { accountId: creditAcc, amount: amount, type: 'credit' }
+                { accountId: accCode, accountCode: accCode, accountName: accName, amount: amount, debit: amount, credit: 0, type: 'debit' },
+                { accountId: creditAcc, accountCode: creditAcc, accountName: creditName, amount: amount, debit: 0, credit: amount, type: 'credit' }
             ];
 
             const batch = db.batch();
@@ -470,6 +472,9 @@
                 batch.update(jDoc.ref, {
                     date: new Date(expenseDate),
                     memo: `Expense - ${category}${note ? ' (' + note + ')' : ''}`,
+                    description: `Expense - ${category}${note ? ' (' + note + ')' : ''}`,
+                    totalDebit: amount,
+                    totalCredit: amount,
                     entries: journalEntries
                 });
             });
@@ -524,18 +529,23 @@
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
 
-            const creditAcc = pay === 'BANK' ? '1-1020-01' : '1-1010-01';
+            const creditAcc = pay === 'BANK' ? 'AC-10200' : (pay === 'CHEQUE' ? 'AC-21100' : 'AC-10100');
+            const creditName = pay === 'BANK' ? 'Bank Account' : (pay === 'CHEQUE' ? 'Issued Cheques Payable' : 'Cash in Hand');
             const journalEntries = [
-                { accountId: accCode, amount: amount, type: 'debit' },
-                { accountId: creditAcc, amount: amount, type: 'credit' }
+                { accountId: accCode, accountCode: accCode, accountName: accName, amount: amount, debit: amount, credit: 0, type: 'debit' },
+                { accountId: creditAcc, accountCode: creditAcc, accountName: creditName, amount: amount, debit: 0, credit: amount, type: 'credit' }
             ];
 
             await db.collection('journal').doc(currentBusinessId).collection('entries').add({
                 date: new Date(expenseDate),
                 memo: `Expense - ${category}${note ? ' (' + note + ')' : ''}`,
+                description: `Expense - ${category}${note ? ' (' + note + ')' : ''}`,
+                totalDebit: amount,
+                totalCredit: amount,
                 entries: journalEntries,
                 ref: expDoc.id,
                 refType: 'EXPENSE',
+                referenceType: 'EXPENSE',
                 businessId: currentBusinessId,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });

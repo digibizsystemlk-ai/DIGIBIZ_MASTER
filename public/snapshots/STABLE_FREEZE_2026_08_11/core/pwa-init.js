@@ -57,7 +57,7 @@
                     });
                 });
             }
-            navigator.serviceWorker.register('/sw.js?v=3138').then(function(reg) {
+            navigator.serviceWorker.register('/sw.js?v=3139').then(function(reg) {
                 if (reg && reg.update) reg.update();
 
                 // PWA update notification awareness
