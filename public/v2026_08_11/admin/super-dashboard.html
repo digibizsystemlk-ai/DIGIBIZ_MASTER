@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Admin Console - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" crossorigin="anonymous">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js" crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-functions-compat.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" crossorigin="anonymous"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="../core/sidebar.js?v=2000"></script>
+    <link rel="stylesheet" href="/admin/admin.css?v=2041">
+</head>
+<body>
+<div class="admin-wrap">
+    <div class="top">
+        <div><h1>Super Dashboard</h1><p>Global control center (super admin only)</p></div>
+        <button id="btnTheme" class="theme-btn">Toggle Dark/Light</button>
+    </div>
+    <div id="superBizSwitchWrap" style="display:block;background:#111a2d;border:1px solid #23324d;border-radius:10px;padding:10px;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Switch Business (Super Admin)</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <select id="superBizSwitchSelect" style="min-width:320px;">
+                <option value="">Loading businesses...</option>
+            </select>
+            <button id="btnSuperBizSwitch" class="btn alt" type="button">Go</button>
+        </div>
+    </div>
+    <div id="superUserBizSwitchWrap" style="display:block;background:#111a2d;border:1px solid #23324d;border-radius:10px;padding:10px;margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Switch User Business (Super Admin)</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <input id="targetUserEmail" type="email" placeholder="User Email" style="min-width:240px;">
+            <select id="targetUserBusinessSelect" style="min-width:320px;">
+                <option value="">Loading businesses...</option>
+            </select>
+            <button id="btnSwitchUserBusiness" class="btn" type="button">Switch</button>
+        </div>
+        <div style="margin-top:8px;">
+            <button id="btnOpenE2EModalFromSwitch" class="btn alt" type="button">🧪 Run E2E Tests</button>
+        </div>
+        <p class="small" style="margin-top:8px;">Updates selected user default business for next login session.</p>
+    </div>
+
+    <div class="stats">
+        <div class="stat"><div class="k">Users</div><div class="v" id="stUsers">0</div></div>
+        <div class="stat"><div class="k">Businesses</div><div class="v" id="stBusinesses">0</div></div>
+        <div class="stat"><div class="k">Owners</div><div class="v" id="stOwners">0</div></div>
+        <div class="stat"><div class="k">Transactions</div><div class="v" id="stTx">0</div></div>
+        <div class="stat"><div class="k">Daily Active</div><div class="v" id="stDaily">0</div></div>
+        <div class="stat"><div class="k">Monthly Active Biz</div><div class="v" id="stMab">0</div></div>
+    </div>
+    <div class="stats">
+        <div class="stat"><div class="k">Storage Usage</div><div class="v" id="stStorage">N/A</div></div>
+        <div class="stat"><div class="k">Error Logs</div><div class="v" id="stErrors">N/A</div></div>
+        <div class="stat"><div class="k">Health</div><div class="v" id="stHealth">OK</div></div>
+        <div class="stat"><div class="k">Announcements</div><div class="v" id="stAnnouncements">-</div></div>
+        <div class="stat"><div class="k">Jobs</div><div class="v" id="stJobs">-</div></div>
+    </div>
+
+    <!-- Active Accounts Breakdown & Trend Chart Section -->
+    <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-radius: 16px; padding: 20px; color: #ffffff; margin-bottom: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.12); border: 1px solid #334155;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+            <div>
+                <h2 style="margin:0; font-size:18px; font-weight:800; color:#38bdf8; display:flex; align-items:center; gap:8px;">
+                    ⚡ Active Accounts Overview (සක්‍රීය ගිණුම් විශ්ලේෂණය)
+                </h2>
+                <p style="margin:4px 0 0 0; font-size:12.5px; color:#94a3b8;">Deduplicated unique account logins & activities per calendar date (එක් ගිණුමකට දිනයකට 1 වරක් පමණක් සලකනු ලැබේ)</p>
+            </div>
+            <button id="btnRefreshActiveMetrics" class="btn alt" style="background:#334155; color:#fff; border-color:#475569;" type="button">🔄 Refresh Activity Data</button>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:12px; margin-bottom:20px;">
+            <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); padding:14px; border-radius:12px; text-align:center;">
+                <div style="font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase;">🌞 Today (අද)</div>
+                <div style="font-size:26px; font-weight:900; color:#10b981; margin-top:4px;" id="actToday">0</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); padding:14px; border-radius:12px; text-align:center;">
+                <div style="font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase;">🌙 Yesterday (ඊයේ)</div>
+                <div style="font-size:26px; font-weight:900; color:#38bdf8; margin-top:4px;" id="actYesterday">0</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); padding:14px; border-radius:12px; text-align:center;">
+                <div style="font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase;">📅 This Week (මේ සතියේ)</div>
+                <div style="font-size:26px; font-weight:900; color:#fbbf24; margin-top:4px;" id="actWeek">0</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); padding:14px; border-radius:12px; text-align:center;">
+                <div style="font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase;">🗓️ This Month (මේ මාසයේ)</div>
+                <div style="font-size:26px; font-weight:900; color:#c084fc; margin-top:4px;" id="actMonth">0</div>
+            </div>
+        </div>
+
+        <!-- 30-Day Active Trend Chart -->
+        <div style="background:#ffffff; border-radius:14px; padding:18px; color:#0f172a;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div style="font-size:14px; font-weight:800; color:#0f172a;">📈 30-Day Active Accounts Trend (ගෙවෙන මාසයේ ගිණුම් සක්‍රීය භාවිතාව)</div>
+                <div style="font-size:11px; font-weight:700; color:#10b981; background:#dcfce7; padding:3px 10px; border-radius:12px;" id="activeTrendBadge">Unique Daily Active Accounts</div>
+            </div>
+            <div style="position:relative; height:240px; width:100%;">
+                <canvas id="activeTrendChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab active" data-tab="users">User Management</button>
+        <button class="tab" data-tab="businesses">Business Management</button>
+        <button class="tab" data-tab="assignment">Business-User Assignment</button>
+        <button class="tab" data-tab="types">Business Types</button>
+        <button class="tab" data-tab="system">System Config</button>
+        <button class="tab" data-tab="data">Data Management</button>
+        <button class="tab" data-tab="analytics">Monitoring & Analytics</button>
+        <button class="tab" data-tab="security">Security & Permissions</button>
+        <button class="tab" data-tab="support">Support & Communication</button>
+        <button class="tab" data-tab="devtools">Developer Tools</button>
+    </div>
+
+    <section id="panel-users" class="panel active">
+        <div class="filters">
+            <input id="userSearch" placeholder="Search by email / name / uid" />
+            <button id="btnRefreshAll" class="btn alt">Refresh all</button>
+            <button id="btnExportUsers" class="btn alt">Export Users JSON</button>
+        </div>
+            <div class="card" style="grid-column: span 2;">
+                <h3>User list</h3>
+                <div class="table-responsive">
+                    <table><thead><tr><th>UID</th><th>Name</th><th>Email</th><th>Role</th><th>Business</th><th>Created</th><th>Actions</th></tr></thead><tbody id="usersBody"></tbody></table>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Create / Recover user profile</h3>
+                <div class="two">
+                    <input id="newUserName" placeholder="Name">
+                    <input id="newUserEmail" placeholder="Email">
+                </div>
+                <div class="two">
+                    <select id="newUserRole">
+                        <option>BUSINESS_OWNER</option><option>ADMIN</option><option>ACCOUNTANT</option><option>STAFF</option><option>VIEWER</option><option>SUPER_ADMIN</option>
+                    </select>
+                    <input id="newUserBusinessId" placeholder="Business ID (optional)">
+                </div>
+                <button id="btnCreateUser" class="btn">Create User Profile</button>
+                <p class="small">Password reset / impersonation actions are queued via admin jobs from support tab.</p>
+            </div>
+            <div class="card" id="passwordResetCard">
+                <h3>Reset User Password</h3>
+                <div class="two">
+                    <input id="resetEmail" type="email" placeholder="Target user email">
+                    <input id="resetNewPassword" type="password" placeholder="New password (min 6 chars)">
+                </div>
+                <div class="two">
+                    <input id="resetConfirmPassword" type="password" placeholder="Confirm new password">
+                    <button id="btnResetPassword" class="btn">Reset Password</button>
+                </div>
+                <p id="resetPasswordMsg" class="small"></p>
+            </div>
+        </div>
+    </section>
+
+    <section id="panel-businesses" class="panel">
+        <div class="filters">
+            <input id="bizSearch" placeholder="Search by business name / id / type" />
+            <button id="btnExportBiz" class="btn alt">Export Businesses JSON</button>
+        </div>
+            <div class="card" style="grid-column: span 2;">
+                <h3>Business list</h3>
+                <div class="table-responsive">
+                    <table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Owner</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="bizBody"></tbody></table>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Create business</h3>
+                <div class="two">
+                    <input id="newBizName" placeholder="Business name">
+                    <input id="newBizEmail" placeholder="Business email">
+                </div>
+                <div class="two">
+                    <select id="newBizType">
+                        <option value="retail">retail</option><option value="manufacturer">manufacturer</option><option value="distributor">distributor</option><option value="tea_factory">tea_factory</option><option value="pharmacy">pharmacy</option>
+                    </select>
+                    <input id="newBizOwner" placeholder="Owner UID (optional)">
+                </div>
+                <button id="btnCreateBiz" class="btn">Create Business</button>
+            </div>
+        </div>
+    </section>
+
+    <section id="panel-assignment" class="panel">
+        <div class="card">
+            <h3>Assign ANY user to ANY business</h3>
+            <div class="two">
+                <div>
+                    <label class="small">User search (email/name/uid)</label>
+                    <input id="assignUserSearch" placeholder="Type to search users">
+                </div>
+                <div>
+                    <label class="small">User selection</label>
+                    <select id="assignUserId"></select>
+                </div>
+            </div>
+            <div class="two">
+                <div>
+                    <label class="small">Primary business type</label>
+                    <select id="assignBusinessType">
+                        <option value="">Select type</option>
+                        <option value="retail">retail</option>
+                        <option value="manufacturer">manufacturer</option>
+                        <option value="distributor">distributor</option>
+                        <option value="hardware">hardware</option>
+                        <option value="pharmacy">pharmacy</option>
+                        <option value="restaurant">restaurant</option>
+                        <option value="garment">garment</option>
+                        <option value="service">service</option>
+                        <option value="tea_factory">tea_factory</option>
+                        <option value="scrap_collection_center">scrap_collection_center</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="small">Business selection</label>
+                    <select id="assignBusinessId"></select>
+                </div>
+            </div>
+            <div class="two" id="createBusinessInlineWrap" style="display:none;">
+                <input id="assignCreateBusinessName" placeholder="New business name">
+                <input id="assignCreateBusinessEmail" placeholder="New business email (optional)">
+            </div>
+            <div class="two">
+                <select id="assignRole">
+                    <option>BUSINESS_OWNER</option><option>ADMIN</option><option>ACCOUNTANT</option><option>STAFF</option><option>VIEWER</option>
+                </select>
+                <button id="btnAssign" class="btn">Assign</button>
+            </div>
+            <p id="assignPreview" class="small"></p>
+            <p class="small">Bulk assign can be executed by importing CSV in Data Management tab and using batch updates.</p>
+        </div>
+    </section>
+
+    <section id="panel-types" class="panel">
+        <div class="row">
+            <div class="card">
+                <h3>Business type definitions</h3>
+                <textarea id="typeDefinitions" rows="14" placeholder='{"retail":{"modules":["pos","inventory"]}}'></textarea>
+                <button class="btn" onclick="document.getElementById('btnSaveTypeDefs').click()">Save type properties</button>
+                <button id="btnSaveTypeDefs" class="btn alt" style="display:none"></button>
+            </div>
+            <div class="card">
+                <h3>Module/sidebar mapping guidance</h3>
+                <div class="tools">
+                    <button class="btn alt">Map type -> modules</button>
+                    <button class="btn alt">Map type -> sidebar</button>
+                    <button class="btn alt">Assign type to business</button>
+                    <button class="btn alt">Validate type coverage</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="panel-system" class="panel">
+        <div class="row">
+            <div class="card">
+                <h3>System configuration & health</h3>
+                <div class="tools">
+                    <button id="btnSystemHealth" class="btn">Run health check</button>
+                    <button class="btn alt">View Firestore rules status</button>
+                    <button class="btn alt">View RTDB rules status</button>
+                    <button class="btn alt">View Functions logs</button>
+                    <button class="btn alt">View Auth logs</button>
+                    <button class="btn alt">Clear CDN cache</button>
+                </div>
+                <pre id="healthOutput" class="small"></pre>
+            </div>
+            <div class="card"><h3>Runtime notes</h3><p class="small">Advanced actions are queued as `admin_jobs` for secure server-side execution.</p></div>
+        </div>
+    </section>
+
+    <section id="panel-data" class="panel">
+        <div class="row">
+            <div class="card">
+                <h3>Data management</h3>
+                <div class="tools">
+                    <button class="btn alt">Export CSV</button>
+                    <button class="btn alt">Export JSON</button>
+                    <button class="btn alt">Import products/users/businesses</button>
+                    <button class="btn alt">Backup now</button>
+                    <button class="btn alt">Restore backup</button>
+                    <button class="btn alt">Run migration tools</button>
+                    <button class="btn alt">Fix inconsistencies</button>
+                    <button class="btn alt">Batch update docs</button>
+                </div>
+            </div>
+            <div class="card"><h3>File drop</h3><textarea rows="10" placeholder="Paste JSON/CSV here for parser tools"></textarea></div>
+        </div>
+    </section>
+
+    <section id="panel-analytics" class="panel">
+        <div class="card">
+            <h3>Monitoring and analytics</h3>
+            <div class="tools">
+                <button class="btn alt">Total users/businesses/transactions</button>
+                <button class="btn alt">Daily active users</button>
+                <button class="btn alt">Monthly active businesses</button>
+                <button class="btn alt">Revenue analytics</button>
+                <button class="btn alt">Error log viewer</button>
+                <button class="btn alt">Storage usage</button>
+            </div>
+        </div>
+    </section>
+
+    <section id="panel-security" class="panel">
+        <div class="row">
+            <div class="card" style="grid-column: span 2;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <h3>🛡️ Real-Time System Audit Logs</h3>
+                    <button id="btnRefreshAuditLogs" class="btn alt" type="button">🔄 Refresh Audit Logs</button>
+                </div>
+                <div style="max-height: 480px; overflow-y: auto;">
+                    <table style="width:100%; border-collapse:collapse;">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Action</th>
+                                <th>Business ID</th>
+                                <th>User Email</th>
+                                <th>IP Address</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditLogsBody">
+                            <tr><td colspan="6" class="small">Loading audit logs...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="panel-support" class="panel">
+        <div class="row">
+            <div class="card">
+                <h3>Support & communication</h3>
+                <input id="announceTitle" placeholder="Announcement title">
+                <textarea id="announceBody" rows="5" placeholder="Announcement body"></textarea>
+                <button id="btnSendAnnouncement" class="btn">Create Announcement</button>
+            </div>
+            <div class="card">
+                <h3>Broadcast</h3>
+                <input id="broadcastSubject" placeholder="Email subject">
+                <textarea id="broadcastMessage" rows="5" placeholder="Broadcast message"></textarea>
+                <div class="two">
+                    <button id="btnBroadcastEmail" class="btn">Queue email broadcast</button>
+                    <button id="btnBroadcastSms" class="btn">Queue SMS broadcast</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="panel-devtools" class="panel">
+        <div class="row">
+            <div class="card">
+                <h3>Developer tools</h3>
+                <div class="two">
+                    <input id="devCollection" placeholder="Collection name">
+                    <input id="devLimit" type="number" value="20" min="1" max="200">
+                </div>
+                <button id="btnRunQuery" class="btn">Run Firestore query</button>
+                <textarea id="devOutput" rows="12" placeholder="Query output"></textarea>
+            </div>
+            <div class="card">
+                <h3>More tools</h3>
+                <div class="tools">
+                    <button class="btn alt">View Firebase config</button>
+                    <button class="btn alt">Test webhook endpoint</button>
+                    <button class="btn alt">View environment variables</button>
+                    <button class="btn alt">Clear Firebase cache</button>
+                    <button class="btn alt">Export PDF</button>
+                    <button class="btn alt">Export Excel</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="e2eTestRunnerSection" class="panel active" style="margin-top:16px;display:none;">
+        <div class="card">
+            <h3>🧪 E2E Test Runner</h3>
+            <p class="small">Run selected E2E scenarios for a target business (Super Admin only).</p>
+
+            <div class="row" style="grid-template-columns:1fr 1fr;">
+                <div class="card" style="margin:0;">
+                    <h4 style="margin-top:0;">Test Selection</h4>
+                    <label style="display:block;margin:6px 0;"><input type="checkbox" class="e2e-test" value="grnFlow" checked> GRN Flow</label>
+                    <label style="display:block;margin:6px 0;"><input type="checkbox" class="e2e-test" value="stockTransfer" checked> Stock Transfer</label>
+                    <label style="display:block;margin:6px 0;"><input type="checkbox" class="e2e-test" value="orderWithLorry" checked> Order with Lorry</label>
+                    <label style="display:block;margin:6px 0;"><input type="checkbox" class="e2e-test" value="chequeManagement" checked> Cheque Management</label>
+                    <label style="display:block;margin:6px 0;"><input type="checkbox" class="e2e-test" value="accountingDashboard" checked> Accounting Dashboard</label>
+                </div>
+
+                <div class="card" style="margin:0;">
+                    <h4 style="margin-top:0;">Target Business</h4>
+                    <div class="two">
+                        <input id="e2eTargetEmail" type="email" placeholder="User Email (e.g., bdkariyapperuma@gmail.com)">
+                        <select id="e2eTargetBusiness">
+                            <option value="">Select business from list...</option>
+                        </select>
+                    </div>
+                    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                        <button id="btnRunE2ETests" class="btn" type="button">Run Selected Tests</button>
+                        <span id="e2eRunnerStatus" class="small"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row" style="grid-template-columns:1fr 1fr;margin-top:12px;">
+                <div class="card" style="margin:0;">
+                    <h4 style="margin-top:0;">Results</h4>
+                    <div id="e2eResultSummary" class="small">No runs yet.</div>
+                    <table style="margin-top:8px;">
+                        <thead><tr><th>Test</th><th>Status</th><th>Duration</th></tr></thead>
+                        <tbody id="e2eResultsBody">
+                            <tr><td colspan="3" class="small">No test execution data.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card" style="margin:0;">
+                    <h4 style="margin-top:0;">Console Output</h4>
+                    <pre id="e2eConsoleLog" class="small" style="min-height:180px;max-height:260px;overflow:auto;background:#0b1220;border:1px solid #23324d;border-radius:8px;padding:10px;">Waiting for test run...</pre>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<div id="editModal" class="modal">
+    <div class="modal-body">
+        <h3 id="modalTitle">Edit</h3>
+        <input type="hidden" id="mType">
+        <input type="hidden" id="mId">
+        <div class="two">
+            <input id="mName" placeholder="Name">
+            <input id="mEmail" placeholder="Email">
+        </div>
+        <div class="two">
+            <input id="mRole" placeholder="Role / Type">
+            <input id="mBusinessId" placeholder="Business ID / Owner UID">
+        </div>
+        <div class="two">
+            <button id="btnCloseModal" class="btn alt">Cancel</button>
+            <button id="btnSaveModal" class="btn">Save</button>
+        </div>
+    </div>
+</div>
+
+<div id="assignConfirmModal" class="modal">
+    <div class="modal-body">
+        <h3>Confirm assignment</h3>
+        <p id="assignConfirmText" class="small"></p>
+        <div class="two">
+            <button id="btnAssignCancel" class="btn alt">Cancel</button>
+            <button id="btnAssignConfirm" class="btn">Confirm Assign</button>
+        </div>
+    </div>
+</div>
+
+<div id="e2eQuickRunModal" class="modal">
+    <div class="modal-body">
+        <h3>🧪 Run E2E Tests</h3>
+        <p class="small">Use below command locally, or trigger Cloud Function runner if available.</p>
+        <div class="two">
+            <input id="e2eModalTargetEmail" placeholder="Target email" readonly>
+            <input id="e2eModalTargetBusiness" placeholder="Target business ID" readonly>
+        </div>
+        <label class="small" style="display:block;margin:8px 0 4px;">Test command</label>
+        <textarea id="e2eModalCommand" rows="3" readonly>cd N:\DIGIBIZ\DIGIBIZ_MASTER
+npm run test:e2e:distributor</textarea>
+        <div style="margin:8px 0;">
+            <label style="display:block;margin:4px 0;"><input type="checkbox" class="e2e-modal-test" value="grn-flow" checked> GRN</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" class="e2e-modal-test" value="stock-transfer" checked> Stock Transfer</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" class="e2e-modal-test" value="order-with-lorry" checked> Order</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" class="e2e-modal-test" value="cheque-management" checked> Cheque</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" class="e2e-modal-test" value="accounting-dashboard" checked> Accounting</label>
+        </div>
+        <p id="e2eModalStatus" class="small"></p>
+        <div class="two">
+            <button id="btnE2EModalClose" class="btn alt" type="button">Close</button>
+            <button id="btnE2ECopyCommand" class="btn alt" type="button">Copy Command</button>
+        </div>
+        <div class="two" style="margin-top:8px;">
+            <button id="btnE2ERunViaFunction" class="btn" type="button">Run via Cloud Function</button>
+            <button id="btnE2EModalOpenPanel" class="btn alt" type="button">Open Full Test Panel</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<script>
+(function () {
+    const SUPER_ADMIN_EMAILS = ['biz.sirimal@gmail.com', '2biz.sirimal@gmail.com'];
+    const section = document.getElementById('e2eTestRunnerSection');
+    const emailInput = document.getElementById('e2eTargetEmail');
+    const bizSelect = document.getElementById('e2eTargetBusiness');
+    const runBtn = document.getElementById('btnRunE2ETests');
+    const statusEl = document.getElementById('e2eRunnerStatus');
+    const summaryEl = document.getElementById('e2eResultSummary');
+    const bodyEl = document.getElementById('e2eResultsBody');
+    const logEl = document.getElementById('e2eConsoleLog');
+    const quickBtn = document.getElementById('btnOpenE2EModalFromSwitch');
+    const quickModal = document.getElementById('e2eQuickRunModal');
+    const quickStatus = document.getElementById('e2eModalStatus');
+
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function formatMs(ms) {
+        const n = Number(ms) || 0;
+        if (n < 1000) return n + ' ms';
+        return (n / 1000).toFixed(2) + ' s';
+    }
+
+    async function isSuperAdmin() {
+        const user = firebase.auth().currentUser;
+        if (!user) return false;
+        const email = String(user.email || '').toLowerCase();
+        if (SUPER_ADMIN_EMAILS.includes(email)) return true;
+        try {
+            const doc = await db.collection('users').doc(user.uid).get();
+            const role = String((doc.exists ? (doc.data().role || '') : '')).toUpperCase();
+            return role === 'SUPER_ADMIN';
+        } catch (_e) {
+            return false;
+        }
+    }
+
+    async function loadBusinessesToRunner() {
+        try {
+            const snap = await db.collection('businesses').limit(500).get();
+            const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+            rows.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+            bizSelect.innerHTML = '<option value="">Select business from list...</option>' +
+                rows.map((x) => '<option value="' + esc(x.id) + '">' + esc((x.name || x.id) + ' (' + x.id + ')') + '</option>').join('');
+        } catch (e) {
+            bizSelect.innerHTML = '<option value="">Failed to load businesses</option>';
+        }
+    }
+
+    function getSelectedTests() {
+        return Array.from(document.querySelectorAll('.e2e-test:checked')).map((el) => el.value);
+    }
+
+    function renderResults(result) {
+        const tests = Array.isArray(result.tests)
+            ? result.tests
+            : (Array.isArray(result.results) ? result.results : []);
+        if (!tests.length) {
+            bodyEl.innerHTML = '<tr><td colspan="3" class="small">No per-test output returned.</td></tr>';
+        } else {
+            bodyEl.innerHTML = tests.map((t) => {
+                const ok = (String(t.status || '').toLowerCase() === 'passed') || t.passed === true;
+                return '<tr>' +
+                    '<td>' + esc(t.name || t.id || t.testName || '-') + '</td>' +
+                    '<td>' + (ok ? '✅ Passed' : '❌ Failed') + '</td>' +
+                    '<td>' + esc(formatMs(t.durationMs || t.duration)) + '</td>' +
+                    '</tr>';
+            }).join('');
+        }
+
+        const passed = tests.filter((t) => (String(t.status || '').toLowerCase() === 'passed') || t.passed === true).length;
+        const failed = tests.length - passed;
+        summaryEl.textContent = 'Execution time: ' + formatMs(result.durationMs || 0) + ' | Passed: ' + passed + ' | Failed: ' + failed;
+        logEl.textContent = Array.isArray(result.logs) ? result.logs.join('\n') : (result.logs || result.log || 'No logs returned.');
+    }
+
+    async function pollE2EResult(runId) {
+        const pollFn = firebase.functions && firebase.functions().httpsCallable
+            ? firebase.functions().httpsCallable('getE2ETestRunResult')
+            : null;
+        if (!pollFn) throw new Error('getE2ETestRunResult callable is unavailable.');
+
+        const maxPolls = 120; // up to ~10 minutes
+        for (let i = 0; i < maxPolls; i += 1) {
+            const res = await pollFn({ runId });
+            const data = res && res.data ? res.data : {};
+            if (data.ready) return data;
+            statusEl.textContent = 'Queued... waiting for Cloud Run job result (' + (i + 1) + '/' + maxPolls + ')';
+            await new Promise((r) => setTimeout(r, 5000));
+        }
+        throw new Error('Timed out waiting for E2E result.');
+    }
+
+    async function runE2ETests() {
+        const selectedTests = getSelectedTests();
+        if (!selectedTests.length) {
+            statusEl.textContent = 'Select at least one test.';
+            return;
+        }
+        const targetEmail = String(emailInput.value || '').trim();
+        const targetBusinessId = String(bizSelect.value || '').trim();
+        if (!targetEmail && !targetBusinessId) {
+            statusEl.textContent = 'Enter target email or select business.';
+            return;
+        }
+
+        runBtn.disabled = true;
+        statusEl.textContent = 'Running tests...';
+        logEl.textContent = 'Triggering E2E runner...';
+        bodyEl.innerHTML = '<tr><td colspan="3" class="small">Running...</td></tr>';
+        const startedAt = Date.now();
+
+        try {
+            const payload = { selectedTests, targetEmail, targetBusinessId };
+            let responseData = null;
+
+            if (firebase.functions) {
+                try {
+                    const fn = firebase.functions().httpsCallable('runE2ETests');
+                    const res = await fn(payload);
+                    responseData = res && res.data ? res.data : null;
+                } catch (_fnErr) {
+                    // Fallback fetch endpoint if callable function is not configured.
+                }
+            }
+            if (!responseData) {
+                const r = await fetch('/api/admin/run-e2e-tests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!r.ok) throw new Error('E2E API failed: ' + r.status);
+                responseData = await r.json();
+            }
+
+            if (responseData && responseData.queued && responseData.runId) {
+                statusEl.textContent = 'Queued as ' + responseData.runId + '. Polling...';
+                const finalResult = await pollE2EResult(responseData.runId);
+                renderResults({
+                    results: finalResult.results || [],
+                    logs: finalResult.logs || '',
+                    durationMs: finalResult.durationMs || (Date.now() - startedAt)
+                });
+                statusEl.textContent = finalResult.success ? 'Completed.' : 'Completed with failures.';
+            } else {
+                renderResults({
+                    tests: responseData.tests || [],
+                    results: responseData.results || [],
+                    logs: responseData.logs || [],
+                    durationMs: responseData.durationMs || (Date.now() - startedAt)
+                });
+                statusEl.textContent = 'Completed.';
+            }
+        } catch (e) {
+            const msg = (e && e.message) ? e.message : String(e);
+            statusEl.textContent = 'Run failed.';
+            summaryEl.textContent = 'Execution time: ' + formatMs(Date.now() - startedAt) + ' | Failed';
+            bodyEl.innerHTML = '<tr><td colspan="3" class="small">❌ Test trigger failed</td></tr>';
+            logEl.textContent = 'Runner error:\n' + msg;
+        } finally {
+            runBtn.disabled = false;
+        }
+    }
+
+    runBtn.addEventListener('click', runE2ETests);
+
+    function openQuickModal() {
+        const srcEmail = document.getElementById('targetUserEmail');
+        const srcBiz = document.getElementById('targetUserBusinessSelect');
+        const qEmail = document.getElementById('e2eModalTargetEmail');
+        const qBiz = document.getElementById('e2eModalTargetBusiness');
+        const cmd = document.getElementById('e2eModalCommand');
+        qEmail.value = String((srcEmail && srcEmail.value) || '').trim();
+        qBiz.value = String((srcBiz && srcBiz.value) || '').trim();
+        cmd.value = 'cd N:\\DIGIBIZ\\DIGIBIZ_MASTER\nnpm run test:e2e:distributor';
+        quickStatus.textContent = 'Target: ' + (qEmail.value || '(no email)') + ' | ' + (qBiz.value || '(no business selected)');
+        quickModal.classList.add('show');
+    }
+
+    function closeQuickModal() {
+        quickModal.classList.remove('show');
+    }
+
+    async function copyQuickCommand() {
+        const cmd = document.getElementById('e2eModalCommand');
+        try {
+            await navigator.clipboard.writeText(cmd.value);
+            quickStatus.textContent = 'Command copied.';
+        } catch (_e) {
+            quickStatus.textContent = 'Copy failed. Manually copy command.';
+        }
+    }
+
+    async function runViaFunctionFromQuickModal() {
+        const targetEmail = String(document.getElementById('e2eModalTargetEmail').value || '').trim();
+        const targetBusinessId = String(document.getElementById('e2eModalTargetBusiness').value || '').trim();
+        const selectedTests = Array.from(document.querySelectorAll('.e2e-modal-test:checked')).map((el) => el.value);
+        if (!selectedTests.length) {
+            quickStatus.textContent = 'Select at least one test.';
+            return;
+        }
+        if (!targetEmail && !targetBusinessId) {
+            quickStatus.textContent = 'Provide email or business target first.';
+            return;
+        }
+        quickStatus.textContent = 'Triggering Cloud Function...';
+        try {
+            const fn = firebase.functions().httpsCallable('runE2ETests');
+            const res = await fn({ selectedTests, targetEmail, targetBusinessId });
+            const data = res && res.data ? res.data : {};
+            quickStatus.textContent = data.runId
+                ? ('Queued. Run ID: ' + data.runId)
+                : 'Triggered successfully.';
+        } catch (e) {
+            quickStatus.textContent = 'Cloud Function trigger failed: ' + ((e && e.message) ? e.message : String(e));
+        }
+    }
+
+    function openFullPanelFromModal() {
+        closeQuickModal();
+        const e2eSection = document.getElementById('e2eTestRunnerSection');
+        if (e2eSection) {
+            e2eSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    if (quickBtn) quickBtn.addEventListener('click', openQuickModal);
+    document.getElementById('btnE2EModalClose').addEventListener('click', closeQuickModal);
+    document.getElementById('btnE2ECopyCommand').addEventListener('click', copyQuickCommand);
+    document.getElementById('btnE2ERunViaFunction').addEventListener('click', runViaFunctionFromQuickModal);
+    document.getElementById('btnE2EModalOpenPanel').addEventListener('click', openFullPanelFromModal);
+    quickModal.addEventListener('click', function (e) {
+        if (e.target === quickModal) closeQuickModal();
+    });
+
+    firebase.auth().onAuthStateChanged(async function (u) {
+        if (!u) {
+            section.style.display = 'none';
+            return;
+        }
+        const allowed = await isSuperAdmin();
+        section.style.display = allowed ? 'block' : 'none';
+        if (allowed) await loadBusinessesToRunner();
+    });
+})();
+</script>
+<!-- Friendly Email MFA Enforcement Modal Overlay (Sinhala Version) -->
+<div id="mfaEnforcementModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(15,23,42,0.90); backdrop-filter:blur(8px); z-index:99999; justify-content:center; align-items:center; padding:20px; box-sizing:border-box;">
+    <div style="background:#ffffff; border-radius:24px; max-width:540px; width:100%; padding:32px; box-shadow:0 25px 60px rgba(0,0,0,0.25); border:2px solid #0284c7; text-align:center;">
+        <div style="width:64px; height:64px; background:#e0f2fe; border-radius:50%; display:flex; justify-content:center; align-items:center; margin:0 auto 16px auto; font-size:32px; border:1px solid #bae6fd;">🛡️</div>
+        <h2 style="margin:0 0 10px 0; font-size:20px; font-weight:800; color:#0369a1;">ගිණුම් ආරක්ෂාව සක්‍රීය කරමු</h2>
+        <p style="margin:0 0 22px 0; font-size:13.5px; color:#334155; line-height:1.6; text-align:left; background:#f0f9ff; border:1px solid #e0f2fe; padding:14px 18px; border-radius:14px;">
+            <strong>සුභ දවසක්!</strong><br>
+            පද්ධතියේ සියලුම ගිණුම්වල සහ දත්තවල වැඩිදුර ආරක්ෂාව උදෙසා <strong>දෙපියවර සත්‍යාපනය (2FA Email Verification)</strong> සක්‍රීය කර ගැනීමට කරුණාකර ඔබගේ විද්‍යුත් තැපෑලට (Email) ලැබෙන OTP අංකය ඇතුළත් කරන්න.
+        </p>
+
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px; padding:18px; margin-bottom:20px; text-align:left;">
+            <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:6px;">ඔබගේ විද්‍යුත් තැපැල් ලිපිනය (Email Address):</label>
+            <div style="display:flex; gap:8px; margin-bottom:14px;">
+                <input id="mfaEmailAddress" readonly style="flex-grow:1; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; font-size:13px; background:#e2e8f0; color:#0f172a; font-weight:700;" value="loading..." />
+                <button id="btnSendMfaOtp" class="btn" style="background:#0284c7; color:#fff; font-size:12px; white-space:nowrap; padding:10px 16px; border-radius:10px;" type="button">📩 කේතය යවන්න</button>
+            </div>
+            <label style="font-size:12px; font-weight:700; color:#475569; display:block; margin-bottom:6px;">Email මගින් ලැබුණු අංක 6යේ OTP කේතය:</label>
+            <input id="mfaOtpCode" placeholder="Email එකට ලැබුණු අංක 6යේ OTP කේතය ඇතුළත් කරන්න" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; font-size:13px; box-sizing:border-box;" />
+            <p style="font-size:11.5px; color:#475569; margin:8px 0 0 0; line-height:1.4; background:#f1f5f9; padding:8px 12px; border-radius:8px;">
+                💡 <strong>Email එක ලැබී නැත්නම්:</strong> කරුණාකර ඔබගේ Email එකෙහි <strong>Spam, Junk හෝ Promotions Folder</strong> පරීක්ෂා කරන්න. නැතහොත් උඩ ඇති <strong>"📩 කේතය යවන්න"</strong> නැවත ඔබන්න. (පරීක්ෂණ කේතය: <code>123456</code>)
+            </p>
+        </div>
+
+        <p id="mfaStatusMsg" style="font-size:12.5px; font-weight:700; color:#0284c7; margin-bottom:16px; min-height:18px;"></p>
+
+        <div style="display:flex; gap:10px;">
+            <button id="btnVerifyMfaEnrollment" class="btn" style="flex-grow:1; background:#059669; color:#fff; font-size:14px; padding:12px; border-radius:12px;" type="button">✅ ආරක්ෂණ කේතය සත්‍යාපනය කරන්න</button>
+            <button id="btnSignOutMfa" class="btn alt" style="background:#f1f5f9; color:#475569; font-size:13px; border-radius:12px;" type="button">ඉවත් වන්න (Sign Out)</button>
+        </div>
+    </div>
+</div>
+
+<script src="/admin/super-dashboard.js?v=2053"></script>
+</body>
+</html>

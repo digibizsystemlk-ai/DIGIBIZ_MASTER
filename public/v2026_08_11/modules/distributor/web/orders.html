@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orders - DIGIBIZ</title>
+    <script>
+        (function () {
+            const MW_TRADING_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+            const BACKFILL_PARAM = 'mwBackfill';
+            const businessId =
+                localStorage.getItem('currentBusinessId') ||
+                sessionStorage.getItem('currentBusinessId') ||
+                localStorage.getItem('selectedBusinessId') ||
+                sessionStorage.getItem('selectedBusinessId') ||
+                '';
+            function isMwTradingLike(bid) {
+                return bid === MW_TRADING_BUSINESS_ID || bid === 'SPRANZA_PVT_LTD';
+            }
+            const isMWTrading = isMwTradingLike(businessId);
+            const sp = new URLSearchParams(window.location.search || '');
+            const shouldRunBackfill = sp.get(BACKFILL_PARAM) === '1';
+
+            async function runMwTradingOrderTotalsBackfill() {
+                const root = document.getElementById('backfillStatus');
+                function log(msg) {
+                    if (root) root.textContent += msg + '\n';
+                    console.log('[MW-BACKFILL]', msg);
+                }
+                try {
+                    if (!window.db) throw new Error('Firestore db instance is not available.');
+                    log('Scanning pendingOrders for ' + businessId + '...');
+                    const pendingSnap = await db.collection('pendingOrders')
+                        .where('businessId', '==', businessId)
+                        .get();
+                    log('Scanning approved orders for ' + businessId + '...');
+                    const orderSnap = await db.collection('orders')
+                        .where('businessId', '==', businessId)
+                        .get();
+                    const docs = [];
+                    pendingSnap.forEach((d) => docs.push({ ref: d.ref, id: d.id, data: d.data(), source: 'pendingOrders' }));
+                    orderSnap.forEach((d) => docs.push({ ref: d.ref, id: d.id, data: d.data(), source: 'orders' }));
+                    log('Found ' + docs.length + ' order docs.');
+
+                    let fixed = 0;
+                    for (const row of docs) {
+                        const items = Array.isArray(row.data.items) ? row.data.items : [];
+                        const recalcedItems = items.map(it => {
+                            const oq = Number(it.orderedQty != null ? it.orderedQty : it.qty) || 0;
+                            const fq = Number(it.freeQty) || 0;
+                            const rq = (Number(it.returnResellQty) || 0) + (Number(it.returnCompanyQty) || 0);
+                            const rate = Number(it.unitPrice) || 0;
+                            return { ...it, totalPrice: Math.max(0, oq - rq) * rate };
+                        });
+                        const corrected = recalcedItems.reduce((sum, it) => sum + (Number(it.totalPrice) || 0), 0);
+                        const freeQty = recalcedItems.reduce((sum, it) => sum + (Number(it.freeQty) || 0), 0);
+                        
+                        const current = Number(row.data.totalAmount) || 0;
+                        const currentFree = Number(row.data.mwFreeIssuesQty);
+                        const freeChanged = Number.isNaN(currentFree) || Math.abs(currentFree - freeQty) > 0.0001;
+                        if (Math.abs(corrected - current) < 0.0001 && !freeChanged) continue;
+
+                        await row.ref.set({
+                            items: recalcedItems,
+                            totalAmount: corrected,
+                            subtotal: corrected,
+                            mwFreeIssuesQty: freeQty,
+                            billingRule: 'mw_free_qty_excluded_v2',
+                            correctedAt: new Date(),
+                            correctedBy: 'orders.html.backfill.v2'
+                        }, { merge: true });
+                        fixed += 1;
+                        log('Fixed ' + row.source + '/' + row.id + ' -> total ' + corrected.toFixed(2) + ', free ' + freeQty);
+                    }
+                    log('Backfill complete. Updated docs: ' + fixed);
+                    return { success: true, scanned: docs.length, fixed };
+                } catch (err) {
+                    log('Backfill failed: ' + (err && err.message ? err.message : String(err)));
+                    return { success: false, error: String(err && err.message ? err.message : err) };
+                }
+            }
+
+            window.runMwTradingOrderTotalsBackfill = runMwTradingOrderTotalsBackfill;
+            if (!isMWTrading) {
+                // other distributors unchanged
+                window.location.replace('/modules/distributor/web/index.html?tab=approved');
+                return;
+            }
+
+            // MW-like: pin canonical businessId so downstream queries hit the correct tenant.
+            localStorage.setItem('currentBusinessId', businessId);
+            sessionStorage.setItem('currentBusinessId', businessId);
+            localStorage.setItem('selectedBusinessId', businessId);
+            sessionStorage.setItem('selectedBusinessId', businessId);
+
+            const tab = sp.get('tab') || 'approved';
+            const lorry = sp.get('lorry') || '';
+            if (shouldRunBackfill) {
+                window.addEventListener('load', function () {
+                    runMwTradingOrderTotalsBackfill();
+                });
+                return;
+            }
+            const out = new URL('/modules/distributor/web/index.html', window.location.origin);
+            out.searchParams.set('tab', tab);
+            out.searchParams.set('mwFix', '1');
+            if (lorry) out.searchParams.set('lorry', lorry);
+            window.location.replace(out.pathname + '?' + out.searchParams.toString());
+        })();
+    </script>
+</head>
+<body>
+    <p style="font-family: system-ui, sans-serif; padding: 24px; color: #374151;">Redirecting to orders…</p>
+    <pre id="backfillStatus" style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 0 24px 24px; color: #111827;"></pre>
+</body>
+</html>

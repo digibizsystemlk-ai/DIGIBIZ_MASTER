@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Services Management - DIGIBIZ Tire Center</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=3"></script>
+    <script src="/core/event-bus.js?v=3"></script>
+    <script src="/core/accounts-core.js?v=3"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/dashboard-core.js?v=3"></script>
+    <script src="/core/subscription-manager.js?v=3"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter',sans-serif;background:#f8fafc;color:#1e293b;padding:30px;}
+        
+        .header-section{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px;}
+        .header-title h2{font-size:24px;font-weight:800;color:#0f172a;}
+        .header-title p{font-size:14px;color:#64748b;margin-top:4px;}
+        
+        .btn-primary{background:#3b82f6;color:white;border:none;padding:12px 24px;border-radius:10px;font-weight:600;font-size:14px;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 4px 12px rgba(59,130,246,0.25);transition:all 0.2s;}
+        .btn-primary:hover{background:#2563eb;transform:translateY(-1px);}
+        .btn-outline{background:white;border:1px solid #cbd5e1;color:#475569;padding:10px 20px;border-radius:10px;font-weight:600;font-size:14px;cursor:pointer;}
+        .btn-outline:hover{background:#f8fafc;}
+        .btn-danger{background:#ef4444;color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600;font-size:12px;}
+        .btn-danger:hover{background:#dc2626;}
+
+        .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-bottom:30px;}
+        .stat-card{background:white;border-radius:16px;padding:20px;border:1px solid #e2e8f0;display:flex;flex-direction:column;}
+        .stat-card .label{font-size:13px;font-weight:600;color:#64748b;}
+        .stat-card .value{font-size:28px;font-weight:800;color:#0f172a;margin-top:8px;}
+        
+        .filter-bar{background:white;border-radius:16px;padding:15px 20px;margin-bottom:25px;display:flex;gap:15px;align-items:center;border:1px solid #e2e8f0;}
+        .filter-bar input{flex:1;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;}
+        
+        .table-container{background:white;border-radius:20px;border:1px solid #e2e8f0;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);}
+        .data-table{width:100%;border-collapse:collapse;}
+        .data-table th,.data-table td{padding:14px 18px;text-align:left;border-bottom:1px solid #e2e8f0;font-size:13px;}
+        .data-table th{background:#f8fafc;font-weight:600;color:#475569;}
+        .data-table tr:hover{background:#f8fafc;}
+        
+        /* Modal Styles */
+        .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:2000;justify-content:center;align-items:center;}
+        .modal-content{background:white;border-radius:24px;padding:32px;width:90%;max-width:480px;}
+        .modal-content label{display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:5px;}
+        .modal-content input,.modal-content textarea{width:100%;padding:12px;margin-bottom:15px;border:1px solid #cbd5e1;border-radius:10px;font-size:13.5px;}
+        .modal-buttons{display:flex;gap:12px;justify-content:flex-end;margin-top:15px;}
+        
+        .toast{position:fixed;bottom:20px;right:20px;background:#1e293b;color:white;padding:12px 24px;border-radius:10px;z-index:3000;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1);display:none;font-weight:500;font-size:13.5px;}
+        .toast.error{background:#ef4444;}
+    </style>
+</head>
+<body>
+    <div class="header-section">
+        <div class="header-title">
+            <h2>Services Management</h2>
+            <p>Configure pricing and setup wheel alignment, balancing, and fitting services</p>
+        </div>
+        <button class="btn-primary" onclick="openAddModal()">
+            <i class="fas fa-plus"></i> Create Service
+        </button>
+    </div>
+    
+    <div class="stats-grid">
+        <div class="stat-card">
+            <span class="label">Total Services</span>
+            <span class="value" id="statTotal">0</span>
+        </div>
+        <div class="stat-card">
+            <span class="label">Average Service Price</span>
+            <span class="value" id="statAvg" style="color:#3b82f6;">Rs. 0.00</span>
+        </div>
+    </div>
+    
+    <div class="filter-bar">
+        <input type="text" id="searchInput" placeholder="Search by service name or code...">
+        <button onclick="clearFilters()" class="btn-outline" style="padding:10px 15px;">Clear</button>
+    </div>
+    
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Service Code</th>
+                    <th>Service Name</th>
+                    <th>Base Price</th>
+                    <th>Description</th>
+                    <th style="width:180px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="servicesList">
+                <tr><td colspan="5" style="text-align:center;padding:40px;color:#64748b;">Loading services...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Create/Edit Modal -->
+    <div id="serviceModal" class="modal">
+        <div class="modal-content">
+            <h3 id="modalTitle" style="margin-bottom:20px;font-size:18px;font-weight:700;">Create New Service</h3>
+            
+            <label for="srvCode">Service Code (optional)</label>
+            <input type="text" id="srvCode" placeholder="e.g. ALIGN-01">
+            
+            <label for="srvName">Service Name</label>
+            <input type="text" id="srvName" placeholder="e.g. Wheel Alignment">
+            
+            <label for="srvPrice">Base Price (Rs.)</label>
+            <input type="number" id="srvPrice" placeholder="e.g. 2500">
+            
+            <label for="srvDesc">Description</label>
+            <textarea id="srvDesc" placeholder="Describe the service (optional)" rows="3" style="width:100%;padding:12px;margin-bottom:15px;border:1px solid #cbd5e1;border-radius:10px;font-size:13.5px;resize:none;"></textarea>
+            
+            <div class="modal-buttons">
+                <button class="btn-outline" id="closeModalBtn">Cancel</button>
+                <button class="btn-primary" id="saveServiceBtn">Save Service</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="toast" class="toast"></div>
+    
+    <script>
+        let services = [];
+        let currentBusinessId = '';
+        let editingId = null;
+        
+        function formatCurrency(val) {
+            return 'Rs. ' + Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        
+        function showToast(message, isError = false) {
+            const t = document.getElementById('toast');
+            t.textContent = message;
+            t.className = 'toast' + (isError ? ' error' : '');
+            t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 3000);
+        }
+        
+        async function getBusinessContext() {
+            if (window.Sidebar && typeof window.Sidebar.getBusinessContext === 'function') {
+                return await window.Sidebar.getBusinessContext();
+            }
+            const user = firebase.auth().currentUser;
+            return { businessId: user ? user.uid : null };
+        }
+        
+        async function loadServices() {
+            try {
+                const snap = await db.collection('services').doc(currentBusinessId).collection('list')
+                                   .orderBy('createdAt', 'desc')
+                                   .get();
+                services = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                applyFilters();
+                updateStats();
+            } catch (e) {
+                console.error(e);
+                showToast('Failed to load services', true);
+            }
+        }
+        
+        function updateStats() {
+            const count = services.length;
+            const totalVal = services.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+            const avg = count > 0 ? (totalVal / count) : 0;
+            
+            document.getElementById('statTotal').textContent = count;
+            document.getElementById('statAvg').textContent = formatCurrency(avg);
+        }
+        
+        function applyFilters() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const filtered = services.filter(s => {
+                return (s.name || '').toLowerCase().includes(search) || 
+                       (s.id || '').toLowerCase().includes(search);
+            });
+            renderServices(filtered);
+        }
+        
+        function renderServices(list) {
+            const tbody = document.getElementById('servicesList');
+            if (list.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:#64748b;">No services found.</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = list.map(s => {
+                return `
+                <tr>
+                    <td><code>${s.code || s.id}</code></td>
+                    <td><strong>${s.name}</strong></td>
+                    <td>${formatCurrency(s.price)}</td>
+                    <td>${s.description || '-'}</td>
+                    <td>
+                        <button class="btn-outline" onclick="editService('${s.id}')" style="padding:6px 12px;margin-right:5px;"><i class="fas fa-edit"></i></button>
+                        <button class="btn-danger" onclick="deleteService('${s.id}')" style="padding:6px 12px;"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>
+                `;
+            }).join('');
+        }
+        
+        function openAddModal() {
+            editingId = null;
+            document.getElementById('modalTitle').textContent = 'Create New Service';
+            document.getElementById('srvCode').value = '';
+            document.getElementById('srvName').value = '';
+            document.getElementById('srvPrice').value = '';
+            document.getElementById('srvDesc').value = '';
+            document.getElementById('serviceModal').style.display = 'flex';
+        }
+        
+        window.editService = (id) => {
+            const s = services.find(x => x.id === id);
+            if (!s) return;
+            editingId = id;
+            document.getElementById('modalTitle').textContent = 'Edit Service';
+            document.getElementById('srvCode').value = s.code || s.id;
+            document.getElementById('srvName').value = s.name;
+            document.getElementById('srvPrice').value = s.price;
+            document.getElementById('srvDesc').value = s.description || '';
+            document.getElementById('serviceModal').style.display = 'flex';
+        }
+        
+        async function saveService() {
+            const code = document.getElementById('srvCode').value.trim();
+            const name = document.getElementById('srvName').value.trim();
+            const price = parseFloat(document.getElementById('srvPrice').value) || 0;
+            const description = document.getElementById('srvDesc').value.trim();
+            
+            if (!name || price <= 0) {
+                showToast('Service name and valid price are required!', true);
+                return;
+            }
+            
+            const btn = document.getElementById('saveServiceBtn');
+            btn.disabled = true;
+            
+            const serviceId = editingId || code || 'S' + Date.now();
+            const serviceData = {
+                id: serviceId,
+                code: serviceId,
+                name: name,
+                price: price,
+                description: description,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            
+            try {
+                if (editingId) {
+                    await db.collection('services').doc(currentBusinessId).collection('list').doc(editingId).update(serviceData);
+                    showToast('Service updated successfully!');
+                } else {
+                    serviceData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                    await db.collection('services').doc(currentBusinessId).collection('list').doc(serviceId).set(serviceData);
+                    showToast('Service created successfully!');
+                }
+                document.getElementById('serviceModal').style.display = 'none';
+                await loadServices();
+            } catch (e) {
+                console.error(e);
+                showToast('Failed to save service', true);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        
+        window.deleteService = async (id) => {
+            if (confirm('Are you sure you want to delete this service?')) {
+                try {
+                    await db.collection('services').doc(currentBusinessId).collection('list').doc(id).delete();
+                    showToast('Service deleted successfully');
+                    await loadServices();
+                } catch (e) {
+                    console.error(e);
+                    showToast('Failed to delete service', true);
+                }
+            }
+        }
+        
+        function clearFilters() {
+            document.getElementById('searchInput').value = '';
+            applyFilters();
+        }
+        
+        document.getElementById('closeModalBtn').onclick = () => document.getElementById('serviceModal').style.display = 'none';
+        document.getElementById('saveServiceBtn').onclick = saveService;
+        document.getElementById('searchInput').onkeyup = applyFilters;
+        
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = '/auth/login.html';
+                return;
+            }
+            try {
+                const ctx = await getBusinessContext();
+                currentBusinessId = (ctx && ctx.businessId) ? ctx.businessId : user.uid;
+                await loadServices();
+            } catch (e) {
+                console.error(e);
+                currentBusinessId = user.uid;
+                await loadServices();
+            }
+        });
+    </script>
+</body>
+</html>

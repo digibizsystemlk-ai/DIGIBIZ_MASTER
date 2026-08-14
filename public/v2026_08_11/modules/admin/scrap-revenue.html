@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Revenue & Margin Analysis — Scrap Workbench</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <script src="/core/scrap-vba-core.js?v=78"></script>
+    <script>
+        const OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13'; // Default owner for scrap
+    </script>
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; line-height: 1.5; }
+        .page { padding: 30px; max-width: 1200px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px; }
+        .header-text h1 { font-size: 26px; font-weight: 800; color: #1e293b; margin: 0; letter-spacing: -0.5px; }
+        .header-text p { font-size: 14px; color: #64748b; margin: 5px 0 0; }
+        
+        .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; transition: transform 0.2s; }
+        .kpi:hover { transform: translateY(-2px); border-color: #cbd5e1; }
+        .kpi .l { font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+        .kpi .v { font-size: 24px; font-weight: 800; color: #0f172a; margin-top: 8px; }
+        .kpi.highlight { background: #f0fdf4; border-color: #bbf7d0; }
+        .kpi.highlight .v { color: #166534; }
+        .kpi.danger { background: #fef2f2; border-color: #fecaca; }
+        .kpi.danger .v { color: #991b1b; }
+
+        table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+        th { background: #f8fafc; color: #475569; font-weight: 700; padding: 12px 16px; text-align: left; border-bottom: 2px solid #e2e8f0; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+        td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f8fafc; }
+        .num { text-align: right; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+        
+        .btn { background: #0f172a; color: #fff; border: none; padding: 12px 24px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 14px; transition: background 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+        .btn:hover { background: #334155; }
+        
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #475569; }
+        .section-title { font-size: 18px; font-weight: 800; color: #1e293b; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+
+        /* Modal Styles */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+        .modal-card { background: #fff; border-radius: 20px; width: 100%; max-width: 600px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); animation: modalIn 0.3s ease-out; overflow: hidden; }
+        @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; }
+        .modal-header h2 { margin: 0; font-size: 18px; font-weight: 800; color: #0f172a; }
+        .modal-close { background: #f1f5f9; border: none; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; transition: all 0.2s; }
+        .modal-close:hover { background: #e2e8f0; color: #0f172a; }
+        .modal-body { padding: 24px; max-height: 70vh; overflow-y: auto; }
+        .detail-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-info { display: flex; flex-direction: column; gap: 2px; }
+        .detail-name { font-weight: 700; color: #0f172a; font-size: 15px; }
+        .detail-meta { font-size: 12px; color: #64748b; font-family: 'JetBrains Mono', monospace; }
+        .detail-profit { font-weight: 800; color: #16a34a; font-family: 'JetBrains Mono', monospace; text-align: right; }
+        .supplier-link { color: #2563eb; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; transition: color 0.2s; }
+        .supplier-link:hover { color: #1d4ed8; background: #eff6ff; border-radius: 4px; }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="header">
+        <div class="header-text">
+            <h1>Revenue & Margin Analysis</h1>
+            <p>Real-time profitability tracking based on dynamic buying and selling rates.</p>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <button type="button" id="syncPoolBtn" class="btn" style="background:#059669;" onclick="callSyncPool()">
+                <span>🔄</span> Sync with Pool
+            </button>
+            <button type="button" id="refreshBtn" class="btn">
+                <span>🔄</span> Refresh Data
+            </button>
+        </div>
+    </div>
+
+    <div class="kpis" id="kpis">
+        <div class="kpi">
+            <div class="l">Total Buying (Today)</div>
+            <div class="v" id="kBuy">LKR 0.00</div>
+        </div>
+        <div class="kpi highlight">
+            <div class="l">Estimated Margin</div>
+            <div class="v" id="kMargin">LKR 0.00</div>
+        </div>
+        <div class="kpi danger">
+            <div class="l">Daily Expenses</div>
+            <div class="v" id="kExp">LKR 0.00</div>
+        </div>
+        <div class="kpi highlight" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none;">
+            <div class="l" style="color: rgba(255,255,255,0.8);">Net Daily Margin</div>
+            <div class="v" id="kNet" style="color: #fff;">LKR 0.00</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="section-title">📦 Buying Sessions & Margins</div>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Supplier</th>
+                        <th class="num">Bill Total</th>
+                        <th class="num">Estimated Margin</th>
+                    </tr>
+                </thead>
+                <tbody id="buyBody">
+                    <tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">Initializing financial data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="section-title">💸 Daily Expenses Breakdown</div>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Category</th>
+                        <th class="num">Amount</th>
+                        <th>Note</th>
+                    </tr>
+                </thead>
+                <tbody id="expBody">
+                    <tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">No expenses recorded today.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="section-title">📈 Daily Estimated Profit History (365 Days)</div>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th class="num">Daily Profit (Margin)</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody">
+                    <tr><td colspan="2" style="text-align:center; padding:40px; color:#64748b;">Calculating history...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Details Modal -->
+<div id="detailsModal" class="modal-overlay" onclick="if(event.target===this) closeModal()">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h2 id="modalTitle">Session Details</h2>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body" id="modalBody">
+            <!-- Details injected here -->
+        </div>
+    </div>
+</div>
+
+<script>
+let SCRAP_BUSINESS_ID = '';
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtInt = (v) => `Rs ${(Math.round(Number(v)) || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+function localDateKey(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function rowLocalDateKey(row) {
+    const raw = row.billDateTime || row.date || row.createdAt || row.expenseDate;
+    let dt = null;
+    if (raw && typeof raw.toDate === 'function') dt = raw.toDate();
+    else if (typeof raw === 'string' || raw instanceof Date) dt = new Date(raw);
+    if (!dt || Number.isNaN(dt.getTime())) return '';
+    return localDateKey(dt);
+}
+
+function isTodayRow(row) {
+    const rk = rowLocalDateKey(row);
+    const tk = localDateKey();
+    return rk && tk && rk.slice(0, 10) === tk.slice(0, 10);
+}
+
+async function refresh() {
+    try {
+        if (!SCRAP_BUSINESS_ID) return;
+        const todayK = localDateKey();
+        const [itemsSnap, buySnap, expSnap] = await Promise.all([
+        db.collection('scrap_items').get().catch(() => ({ docs: [] })),
+        db.collection('buying_history').limit(2000).get().catch(() => ({ docs: [] })),
+        db.collection('scrap_expenses').limit(2000).get().catch(() => ({ docs: [] }))
+    ]);
+    console.log(`[Refresh-v74] Items: ${itemsSnap.size}, Buying: ${buySnap.size}, Exp: ${expSnap.size}`);
+
+    const sellById = {};
+    itemsSnap.docs.forEach((d) => {
+        const r = d.data() || {};
+        if (r.businessId !== SCRAP_BUSINESS_ID) return;
+        sellById[d.id] = Number(r.sellingPrice) || 0;
+    });
+
+    let buyTotal = 0;
+    let marginTotal = 0;
+    const buyRows = [];
+    buySnap.docs.forEach((d) => {
+        const b = d.data() || {};
+        if (b.businessId !== SCRAP_BUSINESS_ID) return;
+        if (!isTodayRow(b)) {
+            console.log(`[Refresh-v74] Skipping non-today row: ${b.date || b.billDateTime} (Today: ${todayK})`);
+            return;
+        }
+        
+        let m = 0;
+        const items = Array.isArray(b.items) ? b.items : [];
+        items.forEach((line) => {
+            const w = Number(line.weight) || 0;
+            const bp = Number(line.buyingPrice) || 0;
+            const sp = sellById[line.itemId] || 0;
+            m += w * Math.max(0, sp - bp);
+        });
+        
+        const bt = Number(b.billGrandTotal || b.totalAmount) || 0;
+        const vh = Number(b.vehicleHireApplied || 0);
+        buyTotal += bt;
+        marginTotal += (m + vh); // Add item margin PLUS vehicle hire revenue
+
+        const rawBt = b.billDateTime || b.date;
+        const btDt = rawBt && rawBt.toDate ? rawBt.toDate() : (rawBt ? new Date(rawBt) : null);
+        const tlabel = btDt && !Number.isNaN(btDt.getTime()) ? btDt.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : (rowLocalDateKey(b) || '-');
+        
+        const breakdown = items.map(line => {
+            const w = Number(line.weight) || 0;
+            const bp = Number(line.buyingPrice) || 0;
+            const sp = sellById[line.itemId] || 0;
+            return {
+                name: line.itemName || 'Unknown',
+                weight: w,
+                buyPrice: bp,
+                sellPrice: sp,
+                profit: w * Math.max(0, sp - bp)
+            };
+        });
+
+        buyRows.push({ t: tlabel, sup: b.supplierName || '-', bt, m: m + vh, items: breakdown, vh, rawDate: btDt });
+    });
+
+    buyRows.sort((a, b) => {
+        const tA = a.rawDate ? a.rawDate.getTime() : 0;
+        const tB = b.rawDate ? b.rawDate.getTime() : 0;
+        return tB - tA;
+    });
+
+
+    document.getElementById('kBuy').textContent = fmt(buyTotal);
+    document.getElementById('kMargin').textContent = fmt(marginTotal);
+
+    let expTotal = 0;
+    const expRows = [];
+    expSnap.docs.forEach((d) => {
+        const r = d.data() || {};
+        if (r.businessId !== SCRAP_BUSINESS_ID) return;
+        if (String(r.expenseDate || '') === todayK) {
+            const a = Number(r.amount) || 0;
+            expTotal += a;
+            expRows.push({ 
+                t: r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-', 
+                cat: r.category || '-', 
+                a, 
+                note: r.note || '' 
+            });
+        }
+    });
+
+    document.getElementById('kExp').textContent = fmt(expTotal);
+    document.getElementById('kNet').textContent = fmt(marginTotal - expTotal);
+
+    document.getElementById('buyBody').innerHTML = buyRows.length
+        ? buyRows.map((r, idx) => `<tr>
+            <td><span class="badge">${r.t}</span></td>
+            <td><span class="supplier-link" onclick="showDetails(${idx})">${String(r.sup).replace(/</g,'&lt;')}</span></td>
+            <td class="num">${fmt(r.bt)}</td>
+            <td class="num" style="color:#166534;">+ ${fmt(r.m)}</td>
+        </tr>`).join('')
+        : '<tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">No buying sessions recorded today.</td></tr>';
+
+    window.lastBuyRows = buyRows; // Store for modal access
+
+    document.getElementById('expBody').innerHTML = expRows.length
+        ? expRows.map((r) => `<tr><td><span class="badge">${r.t}</span></td><td>${String(r.cat).replace(/</g,'&lt;')}</td><td class="num" style="color:#991b1b;">- ${fmt(r.a)}</td><td>${String(r.note).replace(/</g,'&lt;')}</td></tr>`).join('')
+        : '<tr><td colspan="4" style="text-align:center; padding:40px; color:#64748b;">No expenses recorded today. <a href="/modules/admin/scrap-expenses.html" style="color:#2563eb; text-decoration:none;">Add Expense →</a></td></tr>';
+
+    // HISTORY LOGIC: Aggregate profit per day (365 days)
+    const historyMap = {};
+    buySnap.docs.forEach((d) => {
+        const b = d.data() || {};
+        if (b.businessId !== SCRAP_BUSINESS_ID) return;
+        const dateKey = rowLocalDateKey(b);
+        if (!dateKey) return;
+        
+        let m = 0;
+        const items = Array.isArray(b.items) ? b.items : [];
+        items.forEach((line) => {
+            const w = Number(line.weight) || 0;
+            const bp = Number(line.buyingPrice) || 0;
+            const sp = sellById[line.itemId] || 0;
+            m += w * Math.max(0, sp - bp);
+        });
+        const vh = Number(b.vehicleHireApplied || 0);
+        const margin = m + vh;
+        
+        historyMap[dateKey] = (historyMap[dateKey] || 0) + margin;
+    });
+
+    const historyRows = Object.keys(historyMap).sort((a, b) => b.localeCompare(a)).slice(0, 365);
+    document.getElementById('historyBody').innerHTML = historyRows.length
+        ? historyRows.map(k => `<tr>
+            <td style="font-weight:600; color:#1e293b;">${k}</td>
+            <td class="num" style="color:#166534;">+ ${fmtInt(historyMap[k])}</td>
+        </tr>`).join('')
+        : '<tr><td colspan="2" style="text-align:center; padding:40px; color:#64748b;">No history available.</td></tr>';
+
+    } catch (err) {
+        console.error("[RefreshError]", err);
+        document.getElementById('buyBody').innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px; color:red;">Error loading data: ${err.message}</td></tr>`;
+    }
+}
+
+async function callSyncPool(isSilent = false) {
+    if (!SCRAP_BUSINESS_ID) return;
+    const btn = document.getElementById('syncPoolBtn');
+    const originalText = btn ? btn.innerHTML : '';
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span>⏳</span> Syncing...';
+        }
+        if (!window.scrapVbaCore?.recalculateProfitPoolFromHistory) {
+            if (!isSilent) alert("Core library not fully loaded. Please wait a moment and try again.");
+            return;
+        }
+        const res = await window.scrapVbaCore.recalculateProfitPoolFromHistory(SCRAP_BUSINESS_ID);
+        if (res.error) throw new Error(res.error);
+        
+        if (!isSilent) {
+            alert(`✅ Success!\nTotal Margin: Rs ${res.totalMargin.toLocaleString()}\nTotal Expenses: Rs ${res.totalExp.toLocaleString()}\n\nNew Pool Balance: Rs ${res.finalPool.toLocaleString()}`);
+            location.reload();
+        } else {
+            // Update sidebar badge silently if possible
+            if (window.sidebar && typeof window.sidebar.refreshScrapPoolBadge === 'function') {
+                window.sidebar.refreshScrapPoolBadge();
+            }
+        }
+    } catch (e) {
+        console.error("Sync Failed:", e);
+        if (!isSilent) alert("Sync Failed: " + (e.message || String(e)));
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+document.getElementById('refreshBtn').addEventListener('click', () => {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+    refresh().catch((e) => alert(String(e && e.message || e))).finally(() => {
+        btn.disabled = false;
+        btn.textContent = 'Refresh Data';
+    });
+});
+
+function showDetails(idx) {
+    const session = window.lastBuyRows && window.lastBuyRows[idx];
+    if (!session) return;
+
+    document.getElementById('modalTitle').textContent = `Profit Breakdown: ${session.sup}`;
+    const body = document.getElementById('modalBody');
+    
+    if (!session.items || session.items.length === 0) {
+        body.innerHTML = '<p style="text-align:center; color:#64748b;">No items found for this session.</p>';
+    } else {
+        body.innerHTML = session.items.map(it => `
+            <div class="detail-row">
+                <div class="detail-info">
+                    <span class="detail-name">${it.name}</span>
+                    <span class="detail-meta">${it.weight.toFixed(2)} kg × (Rs ${it.sellPrice.toFixed(2)} - Rs ${it.buyPrice.toFixed(2)})</span>
+                </div>
+                <div class="detail-profit">+ ${fmt(it.profit)}</div>
+            </div>
+        `).join('');
+
+        if (session.vh > 0.01) {
+            body.innerHTML += `
+                <div class="detail-row" style="background: #f0fdf4; margin-top: 10px; border-radius: 8px; padding: 12px;">
+                    <div class="detail-info">
+                        <span class="detail-name" style="color: #166534;">Vehicle Hire Revenue</span>
+                        <span class="detail-meta">Deduction from bill</span>
+                    </div>
+                    <div class="detail-profit" style="color: #166534;">+ ${fmt(session.vh)}</div>
+                </div>
+            `;
+        }
+    }
+    
+    document.getElementById('detailsModal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('detailsModal').style.display = 'none';
+}
+
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '/'; return; }
+    const userDoc = await db.collection('users').doc(user.uid).get();
+    const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    SCRAP_BUSINESS_ID = businessId;
+    const bizDoc = await db.collection('businesses').doc(businessId).get();
+    const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
+    
+    // Allow Sirimal's owner account
+    const OWNER_UID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+    if (user.uid !== OWNER_UID && businessType !== 'scrap_collection_center') {
+        window.location.href = '/modules/admin/dashboard.html';
+        return;
+    }
+    await refresh();
+});
+</script>
+</body>
+</html>

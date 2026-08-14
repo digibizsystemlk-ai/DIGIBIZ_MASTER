@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Agent Pro - Scrap Logistics</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <link rel="manifest" href="manifest.json">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary: #0f172a;
+            --accent: #2563eb;
+            --accent-glow: rgba(37, 99, 235, 0.25);
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --radius-xl: 24px;
+            --radius-lg: 16px;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Hero Header */
+        .header-pro {
+            background: var(--primary);
+            color: #fff;
+            padding: 40px 25px 60px;
+            border-bottom-left-radius: 35px;
+            border-bottom-right-radius: 35px;
+            position: relative;
+        }
+        .header-content { display: flex; justify-content: space-between; align-items: center; }
+        .user-info { display: flex; align-items: center; gap: 15px; }
+        .avatar-pro {
+            width: 50px; height: 50px; background: linear-gradient(135deg, var(--accent), #1d4ed8);
+            border-radius: 15px; display: flex; align-items: center; justify-content: center;
+            font-weight: 800; font-size: 20px; box-shadow: 0 8px 15px rgba(37,99,235,0.3);
+        }
+        .user-meta h2 { font-size: 18px; margin: 0; font-weight: 700; }
+        .user-meta span { font-size: 12px; opacity: 0.6; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
+
+        .btn-icon {
+            width: 44px; height: 44px; background: rgba(255,255,255,0.1); border: none;
+            border-radius: 12px; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer;
+        }
+
+        /* Stats Floating */
+        .stats-float {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 15px;
+            padding: 0 25px; margin-top: -30px;
+        }
+        .stat-card-pro {
+            background: #fff; padding: 20px; border-radius: var(--radius-lg);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05); text-align: center;
+        }
+        .stat-card-pro .val { font-size: 26px; font-weight: 800; color: var(--accent); display: block; }
+        .stat-card-pro .lbl { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+
+        /* Tasks Section */
+        main { padding: 30px 25px 100px; }
+        .section-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .section-hdr h3 { font-size: 17px; font-weight: 800; margin: 0; color: var(--text-main); }
+        .badge-count { background: #eff6ff; color: var(--accent); padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 800; }
+
+        .task-card-pro {
+            background: #fff; padding: 20px; border-radius: var(--radius-lg);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.03); margin-bottom: 15px;
+            border: 1px solid rgba(0,0,0,0.03); display: flex; gap: 15px;
+            transition: transform 0.2s;
+        }
+        .task-card-pro:active { transform: scale(0.98); }
+        
+        .task-icon {
+            width: 50px; height: 50px; border-radius: 15px; background: #f8fafc;
+            display: flex; align-items: center; justify-content: center; font-size: 24px;
+        }
+        .task-main { flex: 1; }
+        .task-cat { font-size: 10px; font-weight: 800; color: var(--accent); text-transform: uppercase; display: block; margin-bottom: 3px; }
+        .task-name { font-size: 16px; font-weight: 700; display: block; margin-bottom: 3px; }
+        .task-loc { font-size: 12px; color: var(--text-muted); font-weight: 500; display: flex; align-items: center; gap: 4px; }
+
+        .status-pill {
+            font-size: 9px; font-weight: 800; padding: 4px 8px; border-radius: 6px;
+            text-transform: uppercase; height: fit-content;
+        }
+        .pill-pending { background: #fef3c7; color: #d97706; }
+        .pill-way { background: #dcfce7; color: #15803d; }
+
+        /* Action Drawer */
+        .drawer {
+            position: fixed; inset: 0; background: rgba(15,23,42,0.4);
+            backdrop-filter: blur(4px); z-index: 1000; display: none;
+            align-items: flex-end;
+        }
+        .drawer.active { display: flex; }
+        .drawer-content {
+            background: #fff; width: 100%; border-top-left-radius: 30px;
+            border-top-right-radius: 30px; padding: 30px 25px;
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            max-height: 90vh; overflow-y: auto;
+        }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        .drawer-handle { width: 40px; height: 5px; background: #e2e8f0; border-radius: 10px; margin: -15px auto 25px; }
+
+        .drawer-photo {
+            width: 100%; height: 200px; border-radius: 20px; object-fit: cover;
+            background: #f1f5f9; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .drawer-info h2 { font-size: 24px; font-weight: 800; margin: 0 0 5px; }
+        .drawer-info p { color: var(--text-muted); font-weight: 600; font-size: 14px; margin-bottom: 25px; }
+
+        .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+        .btn-pro {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            padding: 16px; border-radius: 15px; font-weight: 700; font-size: 14px;
+            border: none; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-call { background: #f1f5f9; color: var(--text-main); }
+        .btn-nav { background: var(--accent); color: #fff; box-shadow: 0 8px 15px var(--accent-glow); }
+        .btn-finish { background: var(--success); color: #fff; width: 100%; margin-top: 10px; font-size: 16px; height: 60px; }
+
+        /* Auth Screen */
+        .auth-screen {
+            position: fixed; inset: 0; background: var(--primary); z-index: 2000;
+            display: flex; align-items: center; justify-content: center; padding: 25px;
+        }
+        .auth-card-pro {
+            background: #fff; width: 100%; max-width: 400px; padding: 40px 30px;
+            border-radius: 30px; text-align: center;
+        }
+        .auth-card-pro h1 { font-weight: 800; font-size: 26px; margin-bottom: 10px; }
+        .auth-card-pro p { color: var(--text-muted); font-size: 14px; margin-bottom: 30px; }
+        .input-pro {
+            width: 100%; padding: 16px; border-radius: 15px; border: 1px solid #e2e8f0;
+            margin-bottom: 15px; font-family: inherit; font-size: 15px; font-weight: 600;
+        }
+        .btn-login {
+            width: 100%; padding: 16px; background: var(--accent); color: #fff;
+            border: none; border-radius: 15px; font-weight: 800; font-size: 16px;
+            box-shadow: 0 10px 20px var(--accent-glow); margin-top: 10px;
+        }
+
+        /* Nav Bar */
+        .nav-pro {
+            position: fixed; bottom: 20px; left: 20px; right: 20px;
+            height: 70px; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px);
+            border-radius: 25px; display: flex; justify-content: space-around; align-items: center;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2); z-index: 900;
+        }
+        .nav-pro a { color: rgba(255,255,255,0.5); display: flex; flex-direction: column; align-items: center; text-decoration: none; font-size: 10px; font-weight: 700; gap: 4px; }
+        .nav-pro a.active { color: var(--accent); }
+        .nav-pro a i { width: 20px; }
+    </style>
+</head>
+<body>
+
+    <div id="authScreen" class="auth-screen">
+        <div class="auth-card-pro">
+            <h1>DUST TO CASH</h1>
+            <p>Agent Logistics Portal</p>
+            <input type="email" id="lEmail" class="input-pro" placeholder="Email Address">
+            <input type="password" id="lPass" class="input-pro" placeholder="Password">
+            <button onclick="login()" id="lBtn" class="btn-login">Login Securely</button>
+        </div>
+    </div>
+
+    <div id="mainApp" style="display:none;">
+        <header class="header-pro">
+            <div class="header-content">
+                <div class="user-info">
+                    <div class="avatar-pro" id="uAvatar">A</div>
+                    <div class="user-meta">
+                        <span id="uGreeting">Welcome back</span>
+                        <h2 id="uName">Loading...</h2>
+                    </div>
+                </div>
+                <button class="btn-icon" onclick="logout()"><i data-lucide="log-out"></i></button>
+            </div>
+        </header>
+
+        <div class="stats-float">
+            <div class="stat-card-pro">
+                <span class="val" id="sPending">0</span>
+                <span class="lbl">Assigned</span>
+            </div>
+            <div class="stat-card-pro">
+                <span class="val" id="sDone">0</span>
+                <span class="lbl">Completed</span>
+            </div>
+        </div>
+
+        <main>
+            <div class="section-hdr">
+                <h3>අද දින රාජකාරි (Active Tasks)</h3>
+                <div class="badge-count" id="taskCount">0 Tasks</div>
+            </div>
+
+            <div id="taskList" style="display: flex; flex-direction: column;">
+                <!-- Task Cards -->
+                <p style="text-align:center; padding:40px; color:var(--text-muted);">ගවේෂණය කරමින්...</p>
+            </div>
+        </main>
+
+        <nav class="nav-pro">
+            <a href="#" class="active"><i data-lucide="layout-grid"></i> Dashboard</a>
+            <a href="#"><i data-lucide="map-pin"></i> Routes</a>
+            <a href="#"><i data-lucide="settings"></i> Profile</a>
+        </nav>
+    </div>
+
+    <!-- Detail Drawer -->
+    <div id="taskDrawer" class="drawer">
+        <div class="drawer-content">
+            <div class="drawer-handle"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <div id="dCat" style="font-size:12px; font-weight:800; color:var(--accent); text-transform:uppercase;">Category</div>
+                <button onclick="closeDrawer()" style="background:none; border:none; cursor:pointer;"><i data-lucide="x" style="color:var(--text-muted);"></i></button>
+            </div>
+            
+            <img id="dPhoto" src="" class="drawer-photo" alt="Scrap Photo">
+            
+            <div class="drawer-info">
+                <h2 id="dName">Customer Name</h2>
+                <p id="dPhone">Phone Number</p>
+            </div>
+
+            <div class="action-grid">
+                <a id="dCall" href="#" class="btn-pro btn-call"><i data-lucide="phone"></i> Call Now</a>
+                <a id="dNav" href="#" target="_blank" class="btn-pro btn-nav"><i data-lucide="navigation"></i> Navigate</a>
+            </div>
+
+            <button class="btn-pro btn-finish" id="finishBtn" onclick="finishTask()">Mark as Collected</button>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        const db = firebase.firestore();
+        let curUser = null;
+        let selTaskId = null;
+
+        firebase.auth().onAuthStateChanged(user => {
+            if (user) {
+                curUser = user;
+                document.getElementById('authScreen').style.display = 'none';
+                document.getElementById('mainApp').style.display = 'block';
+                document.getElementById('uName').textContent = user.displayName || user.email.split('@')[0];
+                document.getElementById('uAvatar').textContent = (user.displayName || 'A').charAt(0).toUpperCase();
+                
+                const hour = new Date().getHours();
+                document.getElementById('uGreeting').textContent = hour < 12 ? 'Good Morning' : (hour < 18 ? 'Good Afternoon' : 'Good Evening');
+                
+                initApp();
+            } else {
+                document.getElementById('authScreen').style.display = 'flex';
+                document.getElementById('mainApp').style.display = 'none';
+            }
+        });
+
+        async function login() {
+            const email = document.getElementById('lEmail').value;
+            const pass = document.getElementById('lPass').value;
+            const btn = document.getElementById('lBtn');
+            if (!email || !pass) return alert("කරුණාකර විස්තර ඇතුළත් කරන්න.");
+
+            btn.disabled = true;
+            btn.textContent = "Verifying...";
+            try {
+                await firebase.auth().signInWithEmailAndPassword(email, pass);
+            } catch (e) {
+                alert("පිවිසීම අසාර්ථකයි: " + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Login Securely";
+            }
+        }
+
+        function logout() { if(confirm("පද්ධතියෙන් ඉවත් වීමට ඔබට අවශ්‍යද?")) firebase.auth().signOut(); }
+
+        function initApp() {
+            // Stats real-time
+            db.collection('scrap_public_leads').where('assignedTo', '==', curUser.uid)
+                .onSnapshot(snap => {
+                    const all = snap.docs.map(doc => doc.data());
+                    const pending = all.filter(d => d.status === 'ASSIGNED' || d.status === 'ON_THE_WAY').length;
+                    const done = all.filter(d => d.status === 'COMPLETED').length;
+                    
+                    document.getElementById('sPending').textContent = pending;
+                    document.getElementById('sDone').textContent = done;
+                    document.getElementById('taskCount').textContent = `${pending} Tasks`;
+                    
+                    renderTasks(snap.docs.filter(d => d.data().status !== 'COMPLETED'));
+                });
+        }
+
+        function renderTasks(docs) {
+            const list = document.getElementById('taskList');
+            if (docs.length === 0) {
+                list.innerHTML = '<div style="text-align:center; padding:50px 20px;"><i data-lucide="check-circle" style="width:40px; height:40px; color:var(--success); opacity:0.3; margin-bottom:15px;"></i><p style="color:var(--text-muted); font-weight:600;">නියමයි! සියලු වැඩ නිම කර ඇත.</p></div>';
+                lucide.createIcons();
+                return;
+            }
+
+            list.innerHTML = docs.map(doc => {
+                const t = doc.data();
+                const icon = getIconForCat(t.category);
+                return `
+                    <div class="task-card-pro" onclick="openTask('${doc.id}')">
+                        <div class="task-icon">${icon}</div>
+                        <div class="task-main">
+                            <span class="task-cat">${t.categoryName || t.category}</span>
+                            <span class="task-name">${t.customerName}</span>
+                            <div class="task-loc"><i data-lucide="map-pin" style="width:12px;"></i> ${t.location ? 'Location Ready' : 'Contact for Location'}</div>
+                        </div>
+                        <div class="status-pill ${t.status === 'ON_THE_WAY' ? 'pill-way' : 'pill-pending'}">
+                            ${t.status === 'ON_THE_WAY' ? 'Way' : 'New'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            lucide.createIcons();
+        }
+
+        function getIconForCat(c) {
+            if (c === 'CARDBOARD') return '📦';
+            if (c === 'METAL') return '🏗️';
+            if (c === 'PLASTIC') return '🥤';
+            if (c === 'BATTERY') return '🔋';
+            return '♻️';
+        }
+
+        function openTask(id) {
+            selTaskId = id;
+            const task = db.collection('scrap_public_leads').doc(id).get().then(doc => {
+                const t = doc.data();
+                document.getElementById('dCat').textContent = t.categoryName || t.category;
+                document.getElementById('dName').textContent = t.customerName;
+                document.getElementById('dPhone').textContent = t.customerPhone;
+                
+                // Support multiple images
+                const photoEl = document.getElementById('dPhoto');
+                const galleryId = 'dGalleryAgent';
+                let oldG = document.getElementById(galleryId);
+                if (oldG) oldG.remove();
+
+                const urls = t.imageUrls || (t.imageUrl ? [t.imageUrl] : []);
+                if (urls.length > 0) {
+                    photoEl.style.display = 'none';
+                    const galleryEl = document.createElement('div');
+                    galleryEl.id = galleryId;
+                    galleryEl.style.display = 'flex';
+                    galleryEl.style.gap = '10px';
+                    galleryEl.style.overflowX = 'auto';
+                    galleryEl.style.paddingBottom = '15px';
+                    galleryEl.style.marginBottom = '20px';
+                    
+                    galleryEl.innerHTML = urls.map(url => `
+                        <img src="${url}" style="width:250px; height:180px; object-fit:cover; border-radius:15px; flex-shrink:0; box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+                    `).join('');
+                    photoEl.parentNode.insertBefore(galleryEl, photoEl);
+                } else {
+                    photoEl.style.display = 'block';
+                    photoEl.src = 'https://via.placeholder.com/600x300?text=No+Photo';
+                }
+
+                document.getElementById('dCall').href = "tel:" + t.customerPhone;
+                
+                if (t.location) {
+                    document.getElementById('dNav').href = `https://www.google.com/maps/dir/?api=1&destination=${t.location}`;
+                    document.getElementById('dNav').style.display = 'flex';
+                } else {
+                    document.getElementById('dNav').style.display = 'none';
+                }
+
+                document.getElementById('taskDrawer').classList.add('active');
+                lucide.createIcons();
+            });
+        }
+
+        function closeDrawer() { document.getElementById('taskDrawer').classList.remove('active'); }
+
+        async function finishTask() {
+            if (!confirm("මෙම එකතු කිරීම සාර්ථකව නිම කළ බව සහතිකද?")) return;
+            const btn = document.getElementById('finishBtn');
+            btn.disabled = true;
+            btn.textContent = "Updating...";
+            
+            try {
+                await db.collection('scrap_public_leads').doc(selTaskId).update({
+                    status: 'COMPLETED',
+                    completedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                closeDrawer();
+            } catch (e) { alert("Error: " + e.message); }
+            finally { btn.disabled = false; btn.textContent = "Mark as Collected"; }
+        }
+    </script>
+</body>
+</html>

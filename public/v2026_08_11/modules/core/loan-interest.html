@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interest Loan 10% - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/loan-zero-cleanup.js?v=1"></script>
+    <script src="/core/loan-sms-notice.js?v=1"></script>
+    <script src="/core/scrap-vba-core.js?v=1"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <style>
+        body{font-family:Inter,system-ui,sans-serif;background:#ecfdf5;margin:0;color:#14532d}
+        .wrap{padding:20px}
+        .hero{background:linear-gradient(135deg,#bbf7d0,#15803d);color:#fff;border-radius:16px;padding:18px 20px;margin-bottom:14px;box-shadow:0 8px 22px rgba(21,128,61,.2)}
+        .hero h2{margin:0;font-size:22px;text-shadow:0 1px 2px rgba(0,0,0,.12)}
+        .hero p{margin:6px 0 0;font-size:13px;opacity:.95}
+        .card{background:#fff;border:1px solid #86efac;border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 4px 16px rgba(21,128,61,.08)}
+        .row{display:grid;grid-template-columns:1fr 150px 150px auto;gap:10px;align-items:end}
+        input,select,button{padding:10px;border:1px solid #86efac;border-radius:10px;font-size:14px}
+        button{background:#15803d;color:#fff;border:none;cursor:pointer;font-weight:600}
+        button:hover{filter:brightness(.95)}
+        button.btn-danger{background:#b91c1c;color:#fff}
+        button.btn-danger:hover{filter:brightness(.95)}
+        .card-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th,td{padding:10px;border-bottom:1px solid #bbf7d0;text-align:left}
+        th{font-size:12px;text-transform:uppercase;letter-spacing:.3px;color:#166534}
+        .sms-debug{font-size:12px;min-height:1.2em;margin-top:12px}
+        @media (max-width:980px){.row{grid-template-columns:1fr}}
+        /* Settlement Modal Styles */
+        .modal-ov{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,.6);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+        .modal-card{background:#fff;padding:22px;border-radius:18px;width:100%;max-width:360px;box-shadow:0 20px 40px rgba(0,0,0,.2)}
+        .modal-card h3{margin:0 0 14px;font-size:18px;color:#0f172a}
+        .modal-body{display:flex;flex-direction:column;gap:12px}
+        .modal-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+        .btn-ghost{background:#f1f5f9;color:#475569;border:none;cursor:pointer;padding:10px 16px;border-radius:10px}
+        .btn-primary{background:#15803d;color:#fff;border:none;cursor:pointer;padding:10px 16px;border-radius:10px;font-weight:600}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="hero">
+        <h2>Interest Loan (10% monthly)</h2>
+        <p>Principal accrues daily interest (10% ÷ 30 per day, calendar days Asia/Colombo). Scheduled Cloud Function runs nightly—no need to keep this page open. SMS uses the same queue as Hand Loans.</p>
+    </div>
+    <div class="card">
+        <h3 style="margin:0 0 10px;color:#14532d;">New loan</h3>
+        <div class="row">
+            <select id="customerId"><option value="">Select customer...</option></select>
+            <input id="amount" type="number" step="0.01" placeholder="Principal">
+            <input id="date" type="date">
+            <button id="saveBtn" type="button">Create</button>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head">
+            <h3 style="margin:0;color:#14532d;">Active loans</h3>
+            <button type="button" id="clearAllBtn" class="btn-danger" style="padding:10px 12px;border-radius:10px;border:none;font-size:13px;font-weight:600;">Clear all interest loans</button>
+        </div>
+        <table><thead><tr><th>Customer</th><th>Principal</th><th>Interest due</th><th>Total due</th><th>Last calc</th><th>Action</th></tr></thead><tbody id="rows"></tbody></table>
+        <div id="smsDebug" class="sms-debug" style="color:#334155;"></div>
+    </div>
+</div>
+
+<!-- Settlement Modal -->
+<div id="settleModal" class="modal-ov">
+    <div class="modal-card">
+        <h3>Loan Settlement</h3>
+        <div class="modal-body">
+            <div style="font-size:13px;color:#64748b;margin-bottom:4px;" id="settleCustomerName">Customer</div>
+            <input id="settleAmount" type="number" step="0.01" placeholder="Amount to pay">
+            <select id="settleMethod">
+                <option value="CASH">Cash Payment</option>
+                <option value="BANK">Bank Transfer</option>
+            </select>
+        </div>
+        <div class="modal-foot">
+            <button class="btn-ghost" onclick="closeSettleModal()">Cancel</button>
+            <button class="btn-primary" id="confirmSettleBtn">Confirm Pay</button>
+        </div>
+    </div>
+</div>
+<script>
+let businessId = null; const RATE = 10; const customerMap = {};
+let intLoanSweepTimer = null;
+const GL_CASH = { accountCode:'1-1010-01', accountName:'Cash - Main' };
+const GL_BANK = { accountCode:'1-1020-01', accountName:'Bank - Current Account' };
+const GL_INT_AR = { accountCode:'1-1030-12', accountName:'A/R — Interest loans (10%)' };
+const GL_INT_INC = { accountCode:'4-4020-12', accountName:'Service income — Interest loans' };
+function intLoanFullyZero(r){
+  return (Number(r.principalOutstanding||0)+Number(r.interestOutstanding||0))<=0.0001;
+}
+function m(v){ return `Rs. ${(Number(v)||0).toFixed(2)}`; }
+function pickMobile(v){
+  return String(v?.mobile || v?.phone || v?.phoneNumber || '').trim();
+}
+async function loadCustomers(){
+  const snap = await db.collection('customers').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
+  const sel = document.getElementById('customerId'); sel.innerHTML = '<option value="">Select customer...</option>';
+  snap.docs.forEach((d)=>{ const x=d.data()||{}; customerMap[d.id]=x; const o=document.createElement('option'); o.value=d.id; o.textContent=x.fullName||d.id; sel.appendChild(o); });
+}
+async function addJournal(desc, entries, refType, loanLink){
+  const totalDebit = entries.reduce((s,e)=>s+(Number(e.debit)||0),0);
+  const totalCredit = entries.reduce((s,e)=>s+(Number(e.credit)||0),0);
+  const row = { businessId, date: new Date(), description: desc, entries, totalDebit, totalCredit, referenceType: refType };
+  if (loanLink && loanLink.collection && loanLink.docId) {
+    row.loanCollection = loanLink.collection;
+    row.loanDocId = loanLink.docId;
+  }
+  const jref = await db.collection('journal').doc(businessId).collection('entries').add(row);
+  if (loanLink && loanLink.collection && loanLink.docId) {
+    try {
+      await db.collection(loanLink.collection).doc(loanLink.docId).set({
+        linkedJournalEntryIds: firebase.firestore.FieldValue.arrayUnion(jref.id)
+      }, { merge: true });
+    } catch (e) {
+      console.warn('[loan-interest] journal link to loan doc:', e && (e.message || e));
+    }
+  }
+  return jref;
+}
+/** Same path as Hand Loans: scrapVbaCore first, else pending_sms + RTDB. */
+async function enqueueSms(mobile, message){
+  try {
+    if (!mobile) return { ok:false, skipped:'no_mobile' };
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.enqueuePendingSms === 'function') {
+      return await window.scrapVbaCore.enqueuePendingSms(businessId, mobile, message);
+    }
+    const id = `loan_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+    await db.collection('pending_sms').doc(id).set({
+      businessId,mobile,message,status:'pending',createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (typeof firebase !== 'undefined' && typeof firebase.database === 'function') {
+      await firebase.database().ref(`sms_gateway/${businessId}/pending_sms/${id}`).set({businessId,mobile,message});
+    }
+    return { ok:true, id };
+  } catch (e) {
+    return { ok:false, skipped:'send_error', error: String(e?.message || e || 'unknown') };
+  }
+}
+function showSmsDebug(text, ok){
+  if (window.LoanSmsNotice && typeof window.LoanSmsNotice.show === 'function') {
+    window.LoanSmsNotice.show('smsDebug', text, ok);
+    return;
+  }
+  const el = document.getElementById('smsDebug');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = ok ? '#166534' : '#b91c1c';
+}
+/** Business calendar day YYYY-MM-DD in Asia/Colombo (matches Cloud Scheduler job). */
+function colomboDateKey(d){
+  const x = d instanceof Date ? d : new Date(d);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(x);
+}
+function colomboCalendarDaysBetween(lastIso, now){
+  const lastKey = colomboDateKey(new Date(lastIso));
+  const todayKey = colomboDateKey(now);
+  const [y1,m1,d1] = lastKey.split('-').map(Number);
+  const [y2,m2,d2] = todayKey.split('-').map(Number);
+  const t1 = Date.UTC(y1,m1-1,d1);
+  const t2 = Date.UTC(y2,m2-1,d2);
+  return Math.round((t2 - t1) / 86400000);
+}
+/**
+ * Catch-up when browser opens: same math as Cloud Function. Skips if interestDailyColomboKey already today (server ran).
+ */
+async function runDailyInterestAndSms(){
+  if (!businessId) return;
+  const now = new Date();
+  const todayKey = colomboDateKey(now);
+  const snap = await db.collection('loan_interest_entries').where('businessId','==',businessId).where('active','==',true).get().catch(()=>({docs:[]}));
+  const dailyRate = RATE / 30 / 100;
+  let smsOk = 0, smsSkip = 0, loansUpdated = 0;
+  for (const d of snap.docs){
+    const row = d.data()||{};
+    if (String(row.interestDailyColomboKey || '') === todayKey) continue;
+    const lastRaw = row.lastInterestCalcAt || (row.createdAt?.toDate ? row.createdAt.toDate().toISOString() : new Date().toISOString());
+    const diffDays = colomboCalendarDaysBetween(lastRaw, now);
+    if (diffDays < 1) continue;
+    const principal = Number(row.principalOutstanding||0);
+    if (principal <= 0.0001) continue;
+    const rate = Number(row.rateMonthly) || RATE;
+    const dr = rate / 30 / 100;
+    const addInterest = principal * dr * diffDays;
+    if (addInterest <= 0.00001) continue;
+    const prevInt = Number(row.interestOutstanding||0);
+    const nextInt = prevInt + addInterest;
+    const totalDue = principal + nextInt;
+    await d.ref.set({
+      interestOutstanding: nextInt,
+      lastInterestCalcAt: now.toISOString(),
+      interestDailyColomboKey: todayKey,
+      updatedAt: new Date()
+    }, { merge:true });
+    loansUpdated += 1;
+    const mobile = pickMobile(row) || (row.customerId ? pickMobile(customerMap[row.customerId]) : '');
+    const name = row.customerName || 'customer';
+    const msg = `Dear ${name}, daily interest added Rs.${addInterest.toFixed(2)} (${diffDays} day(s) at ${rate}%/mo). Total interest Rs.${nextInt.toFixed(2)}. Total due Rs.${totalDue.toFixed(2)}.`;
+    if (mobile) {
+      const smsRes = await enqueueSms(mobile, msg);
+      if (smsRes?.ok) smsOk += 1;
+      else smsSkip += 1;
+    } else {
+      smsSkip += 1;
+    }
+  }
+  if (snap.docs.length === 0) {
+    showSmsDebug('Daily interest: no active loans.', true);
+  } else if (loansUpdated === 0) {
+    showSmsDebug('Daily interest: up to date (nightly job runs in Asia/Colombo; open page for catch-up if needed).', true);
+  } else {
+    showSmsDebug(`Catch-up interest: ${loansUpdated} loan(s) updated. SMS queued: ${smsOk}, skipped: ${smsSkip}.`, smsSkip === 0);
+  }
+}
+async function saveLoan(){
+  const cid = document.getElementById('customerId').value; const amount = Number(document.getElementById('amount').value||0); const date = document.getElementById('date').value;
+  if(!cid || amount<=0) return alert('Customer and amount required.');
+  const c = customerMap[cid]||{};
+  if (!confirm(`Confirm interest loan issue?\nCustomer: ${c.fullName||cid}\nAmount: Rs.${amount.toFixed(2)}\nRate: ${RATE}% monthly`)) return;
+  const mob = pickMobile(c);
+  const loanRef = await db.collection('loan_interest_entries').add({
+    businessId,
+    customerId:cid,
+    customerName:c.fullName||cid,
+    customerMobile:mob,
+    principalOutstanding:amount,
+    interestOutstanding:0,
+    rateMonthly:RATE,
+    date,
+    createdAt:new Date(),
+    lastInterestCalcAt:new Date().toISOString(),
+    active:true
+  });
+  try {
+    await db.collection('loan_interest_history').add({
+      businessId,
+      loanId: loanRef.id,
+      customerName: c.fullName || cid,
+      date: new Date().toISOString(),
+      amount: amount,
+      type: 'ISSUE',
+      principalChange: amount,
+      interestChange: 0,
+      note: `Principal issue`,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (e) { console.warn("Failed to write to loan_interest_history:", e); }
+  await addJournal(`Interest loan given - ${c.fullName||cid}`,[{...GL_INT_AR,debit:amount,credit:0},{...GL_CASH,debit:0,credit:amount}],'LOAN_INTEREST_GIVEN',{ collection: 'loan_interest_entries', docId: loanRef.id });
+  const nm = c.fullName || cid;
+  const smsRes = await enqueueSms(mob, `Dear ${nm}, interest loan issued Rs.${amount.toFixed(2)} at ${RATE}% monthly. Principal due Rs.${amount.toFixed(2)}.`);
+  if (smsRes?.ok) showSmsDebug(`Issue SMS queued for ${nm}.`, true);
+  document.getElementById('amount').value=''; await loadRows();
+  if (window.scrapVbaCore && typeof window.scrapVbaCore.recordTotalLoanHistory === 'function') {
+      await window.scrapVbaCore.recordTotalLoanHistory(businessId, nm);
+  }
+}
+function closeSettleModal(){ document.getElementById('settleModal').style.display='none'; }
+async function repay(id){
+  const ref = db.collection('loan_interest_entries').doc(id); const snap = await ref.get(); if(!snap.exists) return;
+  const r = snap.data()||{};
+  document.getElementById('settleCustomerName').textContent = `Settling loan for: ${r.customerName || '-'}`;
+  const totalDueNow = (Number(r.principalOutstanding||0) + Number(r.interestOutstanding||0));
+  document.getElementById('settleAmount').value = totalDueNow.toFixed(2);
+  document.getElementById('settleModal').style.display = 'flex';
+  document.getElementById('confirmSettleBtn').onclick = async () => {
+    const pay = Number(document.getElementById('settleAmount').value||0); if(pay<=0) return alert('Enter valid amount');
+    const method = document.getElementById('settleMethod').value;
+    const GL_PAY = method === 'BANK' ? GL_BANK : GL_CASH;
+    const btn = document.getElementById('confirmSettleBtn');
+    btn.disabled = true; btn.textContent = 'Processing...';
+    try {
+        let remain = pay;
+        let intOut = Number(r.interestOutstanding||0); let principal = Number(r.principalOutstanding||0);
+        const intPaid = Math.min(intOut, remain); intOut -= intPaid; remain -= intPaid;
+        const principalPaid = Math.min(principal, remain); principal -= principalPaid; remain -= principalPaid;
+        const tot = (Number(principal)||0)+(Number(intOut)||0);
+        const patch = { interestOutstanding:intOut, principalOutstanding:principal, active: tot > 0.0001, updatedAt:new Date() };
+        if (tot <= 0.0001 && window.LoanZeroCleanup) patch.pendingRemovalAt = window.LoanZeroCleanup.removalTimestamp();
+        else patch.pendingRemovalAt = firebase.firestore.FieldValue.delete();
+        await ref.set(patch,{merge:true});
+        try {
+            await db.collection('loan_interest_history').add({
+                businessId,
+                loanId: id,
+                customerName: r.customerName || '-',
+                date: new Date().toISOString(),
+                amount: -pay,
+                type: 'REPAY',
+                principalChange: -principalPaid,
+                interestChange: -intPaid,
+                note: `Repayment - ${method}`,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch (e) { console.warn("Failed to write to loan_interest_history:", e); }
+        await addJournal(`Interest loan repayment - ${r.customerName||'-'} (${method})`,[{...GL_PAY,debit:pay,credit:0},{...GL_INT_AR,debit:0,credit:principalPaid},{...GL_INT_INC,debit:0,credit:intPaid}],'LOAN_INTEREST_REPAY',{ collection: 'loan_interest_entries', docId: id });
+        const totalDueAfter = (Number(principal)||0) + (Number(intOut)||0);
+        const mob = pickMobile(r) || (r.customerId ? pickMobile(customerMap[r.customerId]) : '');
+        const smsRes = await enqueueSms(mob, `Dear ${r.customerName || 'customer'}, repayment recorded Rs.${pay.toFixed(2)}. Principal Rs.${principal.toFixed(2)}, interest due Rs.${intOut.toFixed(2)}, total due Rs.${totalDueAfter.toFixed(2)}.`);
+        if (smsRes?.ok) showSmsDebug(`Repayment SMS queued for ${r.customerName || 'customer'}.`, true);
+        else showSmsDebug(`Repayment SMS skipped: ${smsRes?.skipped || 'failed'}${smsRes?.error ? ` (${smsRes.error})` : ''}.`, false);
+        closeSettleModal(); await loadRows();
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.recordTotalLoanHistory === 'function') {
+            await window.scrapVbaCore.recordTotalLoanHistory(businessId, r.customerName || '-');
+        }
+    } catch(e) { alert(e.message || 'Error'); }
+    finally { btn.disabled = false; btn.textContent = 'Confirm Pay'; }
+  };
+}
+async function deleteAllInterestLoansForBusiness(){
+  if (!confirm('Delete ALL interest loan records for this business? This cannot be undone. Existing journal entries are NOT reversed.')) return;
+  if (String(prompt('Type DELETE to confirm')||'') !== 'DELETE') { alert('Cancelled.'); return; }
+  try {
+    let n = 0;
+    while (true) {
+      const snap = await db.collection('loan_interest_entries').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
+      if (!snap.docs.length) break;
+      const batch = db.batch();
+      snap.docs.forEach((d)=>batch.delete(d.ref));
+      await batch.commit();
+      n += snap.docs.length;
+      if (snap.docs.length < 500) break;
+    }
+    alert(n ? `Removed ${n} record(s).` : 'No records to remove.');
+    await loadRows();
+  } catch (e) {
+    alert('Delete failed: ' + (e?.message || e));
+  }
+}
+async function loadRows(){
+  if (window.LoanZeroCleanup && businessId) {
+    await window.LoanZeroCleanup.sweepExpired(db, businessId, 'loan_interest_entries', intLoanFullyZero);
+  }
+  const snap = await db.collection('loan_interest_entries').where('businessId','==',businessId).limit(500).get().catch(()=>({docs:[]}));
+  let rows = snap.docs.map((d)=>({id:d.id,...(d.data()||{})}));
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const searchFilter = urlParams.get('customer') || urlParams.get('search');
+  if (searchFilter) {
+      rows = rows.filter(r => String(r.customerName || '').toLowerCase().includes(searchFilter.toLowerCase()));
+      // Show filter notice
+      let noticeEl = document.getElementById('filterNotice');
+      if (!noticeEl) {
+          noticeEl = document.createElement('div');
+          noticeEl.id = 'filterNotice';
+          noticeEl.style = 'margin: 10px 0; font-size: 13px; color: #b91c1c; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; background: #fee2e2; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 8px;';
+          const container = document.querySelector('.wrap');
+          if (container) {
+              const kpis = document.querySelector('.kpis');
+              if (kpis) kpis.parentNode.insertBefore(noticeEl, kpis.nextSibling);
+              else container.insertBefore(noticeEl, container.firstChild);
+          }
+      }
+      const cleanFilterVal = String(searchFilter).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      noticeEl.innerHTML = `Showing results for: <strong>${cleanFilterVal}</strong> <button onclick="clearFilter()" style="margin-left: 8px; padding: 2px 8px; font-size: 11px; background: #fff; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; color: #b91c1c; font-weight: 700;">Clear</button>`;
+  } else {
+      const noticeEl = document.getElementById('filterNotice');
+      if (noticeEl) noticeEl.remove();
+  }
+
+  window.clearFilter = function() {
+      const url = new URL(window.location);
+      url.searchParams.delete('customer');
+      url.searchParams.delete('search');
+      window.history.replaceState({}, '', url);
+      loadRows();
+  };
+  document.getElementById('rows').innerHTML = rows.map((r)=>`<tr><td>${r.customerName||'-'}</td><td>${m(r.principalOutstanding).replace('Rs. ','')}</td><td>${m(r.interestOutstanding).replace('Rs. ','')}</td><td><b onclick="openInterestHistory('${r.id}', '${(r.customerName||'').replace(/'/g, "\\'")}', ${Number(r.principalOutstanding || 0)}, ${Number(r.interestOutstanding || 0)})" style="color:#2563eb;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;">${m((Number(r.principalOutstanding)||0)+(Number(r.interestOutstanding)||0)).replace('Rs. ','')}</b></td><td>${r.lastInterestCalcAt?new Date(r.lastInterestCalcAt).toLocaleString():'-'}</td><td><button type="button" data-id="${r.id}" ${((Number(r.principalOutstanding)||0)+(Number(r.interestOutstanding)||0))<=0?'disabled':''}>Receive</button></td></tr>`).join('') || '<tr><td colspan="6">No records</td></tr>';
+  document.querySelectorAll('#rows button[data-id]').forEach((b)=>b.onclick=()=>repay(b.dataset.id));
+}
+firebase.auth().onAuthStateChanged(async (u)=>{
+  if(!u){location.href='/';return;}
+  if (intLoanSweepTimer) { clearInterval(intLoanSweepTimer); intLoanSweepTimer = null; }
+  const ctx = await window.dashboardCore.getContext(u);
+  businessId = String((ctx&&ctx.businessId)||u.uid);
+  document.getElementById('date').value = new Date().toISOString().slice(0,10);
+  await loadCustomers();
+  await runDailyInterestAndSms();
+  await loadRows();
+  if (window.LoanZeroCleanup) {
+    intLoanSweepTimer = setInterval(async ()=>{
+      if (!businessId) return;
+      await window.LoanZeroCleanup.sweepExpired(db, businessId, 'loan_interest_entries', intLoanFullyZero);
+      await loadRows();
+    }, 20000);
+  }
+});
+document.getElementById('saveBtn').onclick = saveLoan;
+document.getElementById('clearAllBtn').onclick = deleteAllInterestLoansForBusiness;
+</script>
+
+<!-- Interest Loan History Modal -->
+<div id="interestHistoryModal" class="modal-ov">
+    <div class="modal-card" style="max-width:500px; padding:0; overflow:hidden;">
+        <div style="padding:20px 25px; border-bottom:1px solid #bbf7d0; display:flex; justify-content:space-between; align-items:center; background:#ecfdf5;">
+            <div>
+                <div style="font-size:18px; font-weight:800; color:#14532d;" id="ihTitle">Interest Loan History</div>
+                <div style="font-size:12px; font-weight:600; color:#166534; margin-top:2px;" id="ihSubtitle">Loading...</div>
+            </div>
+            <button onclick="document.getElementById('interestHistoryModal').style.display='none'" style="background:#f1f5f9; border:none; padding:8px 15px; border-radius:12px; font-size:12px; font-weight:700; color:#475569; cursor:pointer;">Close</button>
+        </div>
+        <div style="overflow-y:auto; padding:0; flex:1; max-height: 60vh;">
+            <table style="width:100%; border-collapse:collapse; font-size:13px; margin:0;">
+                <thead style="position:sticky; top:0; background:#f8fafc; z-index:2;">
+                    <tr>
+                        <th style="padding:12px 15px; text-align:left; font-size:11px; font-weight:700; color:#166534; border-bottom:1px solid #bbf7d0;">DATE</th>
+                        <th style="padding:12px 15px; text-align:right; font-size:11px; font-weight:700; color:#166534; border-bottom:1px solid #bbf7d0;">CHANGE</th>
+                        <th style="padding:12px 15px; text-align:right; font-size:11px; font-weight:700; color:#166534; border-bottom:1px solid #bbf7d0;">TOTAL BALANCE</th>
+                    </tr>
+                </thead>
+                <tbody id="ihBody">
+                    <tr><td colspan="3" style="text-align:center; padding:30px; color:#166534;">Loading data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+async function openInterestHistory(loanId, customerName, currentPrincipal, currentInterest) {
+    const m = document.getElementById('interestHistoryModal');
+    if(!m) return;
+    m.style.display = 'flex';
+    document.getElementById('ihTitle').textContent = `History: ${customerName}`;
+    document.getElementById('ihSubtitle').textContent = "Fetching records...";
+    document.getElementById('ihBody').innerHTML = '<tr><td colspan="3" style="text-align:center; padding:30px; color:#166534;">Please wait...</td></tr>';
+
+    try {
+        const snap = await db.collection('loan_interest_history')
+            .where('businessId', '==', businessId)
+            .where('loanId', '==', loanId)
+            .limit(500)
+            .get();
+        
+        let allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        allDocs.sort((a,b)=>String(a.date || '').localeCompare(String(b.date || '')));
+        
+        let runningP = 0;
+        let runningI = 0;
+        let lastZeroIdx = -1;
+        const withTotals = allDocs.map((x, idx)=>{
+            const pChg = Number(x.principalChange || 0);
+            const iChg = Number(x.interestChange || 0);
+            runningP += pChg;
+            runningI += iChg;
+            if (Math.abs(runningP + runningI) < 0.01) lastZeroIdx = idx;
+            return { ...x, runningP, runningI, runningTotal: runningP + runningI };
+        });
+
+        const cycleRows = withTotals.slice(lastZeroIdx + 1);
+        let rows = cycleRows.slice().sort((a,b)=>String(b.date || '').localeCompare(String(a.date || '')));
+
+        if (rows.length === 0 && (currentPrincipal > 0 || currentInterest > 0)) {
+            rows = [{
+                date: new Date().toISOString(),
+                amount: currentPrincipal + currentInterest,
+                runningTotal: currentPrincipal + currentInterest,
+                note: 'START / Current Balance'
+            }];
+        }
+
+        document.getElementById('ihSubtitle').textContent = `Found ${rows.length} records`;
+
+        document.getElementById('ihBody').innerHTML = rows.map((x)=>{
+            const dt = x.date ? new Date(x.date).toLocaleDateString() : '-';
+            const amt = Number(x.amount || 0);
+            const sign = amt >= 0 ? '+' : '';
+            const tone = amt >= 0 ? '#166534' : '#b91c1c';
+            
+            return `<tr>
+                <td style="padding:12px 15px; border-bottom:1px solid #bbf7d0;">
+                    <div style="font-weight:600; color:#14532d;">${dt}</div>
+                    <div style="font-size:10px; color:#166534; margin-top:2px;">${x.note || '-'}</div>
+                </td>
+                <td style="padding:12px 15px; text-align:right; font-weight:800; color:${tone}; border-bottom:1px solid #bbf7d0;">
+                    ${sign}${Math.abs(amt).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}
+                </td>
+                <td style="padding:12px 15px; text-align:right; font-weight:700; color:#14532d; border-bottom:1px solid #bbf7d0;">
+                    ${(x.runningTotal || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}
+                </td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="3" style="text-align:center; padding:30px; color:#166534;">No records found.</td></tr>';
+
+    } catch (err) {
+        console.error("History Error:", err);
+        document.getElementById('ihSubtitle').textContent = "Error.";
+        document.getElementById('ihBody').innerHTML = `<tr><td colspan="3" style="text-align:center; padding:30px; color:#ef4444;">Failed to fetch data.</td></tr>`;
+    }
+}
+</script>
+</body>
+</html>

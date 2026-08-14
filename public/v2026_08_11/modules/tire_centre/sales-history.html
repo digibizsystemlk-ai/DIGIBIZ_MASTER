@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales History — DIGIBIZ Tire Center</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=100"></script>
+    <script src="/core/dashboard-core.js?v=100"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #10b981;
+            --primary-dark: #059669;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #0f172a;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+            --shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+
+        body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; line-height: 1.5; }
+        .page { padding: 30px; max-width: 1350px; margin: 0 auto; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 15px; }
+        .header-text h1 { font-family: 'Outfit', sans-serif; font-size: 28px; font-weight: 800; color: #0f3b2c; margin: 0; display: flex; align-items: center; gap: 10px; }
+        .header-text p { font-size: 14px; color: var(--text-light); margin: 4px 0 0; }
+        
+        .btn { background: #0f3b2c; color: #fff; border: none; padding: 10px 18px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 13.5px; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; box-shadow: var(--shadow-sm); }
+        .btn:hover { background: #10b981; transform: translateY(-1px); }
+        .btn-outline { background: white; color: #0f172a; border: 1.5px solid var(--border); }
+        .btn-outline:hover { background: #f1f5f9; color: #0f3b2c; }
+
+        /* Summary KPIs */
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .kpi-card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 18px 22px; box-shadow: var(--shadow-sm); transition: all 0.2s; }
+        .kpi-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+        .kpi-card .lbl { font-size: 11px; font-weight: 800; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
+        .kpi-card .val { font-size: 22px; font-weight: 800; color: var(--text); margin-top: 6px; font-family: 'Outfit', sans-serif; }
+        .kpi-card .sub { font-size: 11.5px; color: var(--text-light); margin-top: 2px; font-weight: 600; }
+
+        /* Filter Panel */
+        .filter-panel { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 20px; margin-bottom: 24px; box-shadow: var(--shadow-sm); }
+        .filter-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+        .filter-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px; }
+        .filter-group label { font-size: 11px; font-weight: 800; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.5px; }
+        .filter-group input, .filter-group select { padding: 9px 12px; border-radius: 10px; border: 1.5px solid var(--border); font-size: 13px; font-weight: 600; outline: none; background: #fff; transition: all 0.2s; }
+        .filter-group input:focus, .filter-group select:focus { border-color: var(--primary); }
+
+        .preset-btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+        .preset-btn { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; color: #475569; cursor: pointer; transition: all 0.2s; }
+        .preset-btn.active, .preset-btn:hover { background: #0f3b2c; color: white; border-color: #0f3b2c; }
+
+        /* Table Card */
+        .table-card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 22px; box-shadow: var(--shadow-sm); overflow: hidden; }
+        .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+        .table-header h2 { font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 800; color: #0f3b2c; margin: 0; }
+
+        table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+        th { background: #fafbfc; color: var(--text-light); font-weight: 800; padding: 12px 14px; text-align: left; border-bottom: 1.5px solid var(--border); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.5px; }
+        td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; color: var(--text); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f8fafc; }
+
+        .num { font-family: monospace; font-weight: 700; text-align: right; }
+        .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; }
+        .badge-paid { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .badge-unpaid { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+        .badge-cancelled { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+
+        /* Modal Styles */
+        .modal { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 15px; }
+        .modal-content { background: #fff; border-radius: 20px; width: 100%; max-width: 650px; max-height: 85vh; overflow-y: auto; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: modalIn 0.2s ease-out; }
+        @keyframes modalIn { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="header">
+        <div class="header-text">
+            <h1>📜 Sales History Terminal</h1>
+            <p>Comprehensive Sales & Revenue Audit for Tire Center. Filter, inspect, edit, or cancel any transaction.</p>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <a href="/modules/tire_centre/pos.html" class="btn btn-outline"><i class="fa-solid fa-cart-shopping"></i> Point of Sale</a>
+            <button type="button" onclick="loadSalesHistory()" class="btn"><i class="fa-solid fa-arrows-rotate"></i> Refresh Data</button>
+            <button type="button" onclick="exportSalesReport()" class="btn btn-outline"><i class="fa-solid fa-file-export"></i> Print Report</button>
+        </div>
+    </div>
+
+    <!-- Summary KPIs -->
+    <div class="kpi-grid">
+        <div class="kpi-card" style="border-left: 4px solid #10b981;">
+            <div class="lbl"><i class="fa-solid fa-sack-dollar" style="color:#10b981;"></i> Filtered Sales Total</div>
+            <div class="val" id="kpiTotalSales">LKR 0.00</div>
+            <div class="sub" id="kpiTotalCount">0 Invoices</div>
+        </div>
+        <div class="kpi-card" style="border-left: 4px solid #3b82f6;">
+            <div class="lbl"><i class="fa-solid fa-circle-check" style="color:#3b82f6;"></i> Collected / Paid</div>
+            <div class="val" id="kpiPaidTotal">LKR 0.00</div>
+            <div class="sub">Cash, Card, Bank, Cheque</div>
+        </div>
+        <div class="kpi-card" style="border-left: 4px solid #ef4444;">
+            <div class="lbl"><i class="fa-solid fa-clock-rotate-left" style="color:#ef4444;"></i> Credit / Balance Due</div>
+            <div class="val" id="kpiCreditTotal">LKR 0.00</div>
+            <div class="sub">Unpaid Customer Debts</div>
+        </div>
+        <div class="kpi-card" style="border-left: 4px solid #8b5cf6;">
+            <div class="lbl"><i class="fa-solid fa-boxes-stacked" style="color:#8b5cf6;"></i> Products vs Services</div>
+            <div class="val" id="kpiItemsSummary">0 Items</div>
+            <div class="sub" id="kpiItemsSub">Items sold in period</div>
+        </div>
+    </div>
+
+    <!-- Filter Controls Panel -->
+    <div class="filter-panel">
+        <div style="margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div style="font-size:12px; font-weight:800; color:#0f3b2c; text-transform:uppercase; letter-spacing:0.5px;"><i class="fa-solid fa-filter" style="color:#10b981; margin-right:6px;"></i> Quick Date Range Presets</div>
+            <div class="preset-btn-group">
+                <button type="button" class="preset-btn" onclick="setPresetDate('today')">Today</button>
+                <button type="button" class="preset-btn" onclick="setPresetDate('yesterday')">Yesterday</button>
+                <button type="button" class="preset-btn" onclick="setPresetDate('week')">This Week</button>
+                <button type="button" class="preset-btn active" onclick="setPresetDate('month')">This Month</button>
+                <button type="button" class="preset-btn" onclick="setPresetDate('30days')">Last 30 Days</button>
+                <button type="button" class="preset-btn" onclick="setPresetDate('all')">All Time</button>
+            </div>
+        </div>
+
+        <div class="filter-row">
+            <div class="filter-group">
+                <label>From Date</label>
+                <input type="date" id="filterStartDate" onchange="applyFilters()">
+            </div>
+            <div class="filter-group">
+                <label>To Date</label>
+                <input type="date" id="filterEndDate" onchange="applyFilters()">
+            </div>
+            <div class="filter-group">
+                <label>Payment Status</label>
+                <select id="filterStatus" onchange="applyFilters()">
+                    <option value="all">All Statuses</option>
+                    <option value="paid">Paid in Full</option>
+                    <option value="unpaid">Unpaid / Credit</option>
+                    <option value="cancelled">Cancelled Orders</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Payment Method</label>
+                <select id="filterMethod" onchange="applyFilters()">
+                    <option value="all">All Payment Methods</option>
+                    <option value="cash">Cash</option>
+                    <option value="credit">On Credit / Pay Later</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="bank">Bank Transfer</option>
+                    <option value="card">Card Payment</option>
+                </select>
+            </div>
+            <div class="filter-group" style="flex:2; min-width:220px;">
+                <label>Search Sales</label>
+                <input type="text" id="filterSearch" placeholder="Search Invoice No, Customer, Item Name..." oninput="applyFilters()">
+            </div>
+        </div>
+    </div>
+
+    <!-- Sales Table -->
+    <div class="table-card">
+        <div class="table-header">
+            <h2>📜 Invoices & Sales Records (<span id="recordCountLabel">0</span>)</h2>
+            <div style="font-size:12px; color:var(--text-light); font-weight:600;">Click on Customer Name or Invoice No to view itemized breakdown</div>
+        </div>
+        <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Invoice No</th>
+                        <th>Date & Time</th>
+                        <th>Customer</th>
+                        <th>Items Summary</th>
+                        <th>Payment Mode</th>
+                        <th class="num">Total Amount</th>
+                        <th class="num">Balance Due</th>
+                        <th>Status</th>
+                        <th style="text-align:center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="salesHistoryBody">
+                    <tr><td colspan="9" style="text-align:center; padding:30px; color:var(--text-light);"><i class="fa-solid fa-spinner fa-spin"></i> Loading Sales History...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Order Details Modal -->
+<div id="orderDetailsModal" class="modal">
+    <div class="modal-content">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1.5px solid #f1f5f9; padding-bottom:12px; margin-bottom:16px;">
+            <div>
+                <h3 id="detModalInvoiceNo" style="margin:0; font-family:'Outfit',sans-serif; font-size:20px; font-weight:800; color:#0f3b2c;">Invoice Details</h3>
+                <div id="detModalDate" style="font-size:12px; color:#64748b; margin-top:2px;">-</div>
+            </div>
+            <button type="button" onclick="closeOrderDetailsModal()" style="background:#f1f5f9; border:none; width:32px; height:32px; border-radius:8px; cursor:pointer; font-weight:800; color:#64748b;">✕</button>
+        </div>
+        
+        <div id="detModalContent"></div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; border-top:1.5px solid #f1f5f9; padding-top:16px; flex-wrap:wrap; gap:10px;">
+            <div style="display:flex; gap:8px;">
+                <button type="button" id="detPrintBtn" class="btn btn-outline" style="padding:8px 14px; font-size:13px;"><i class="fa-solid fa-print"></i> Print Receipt</button>
+                <button type="button" id="detEditBtn" class="btn btn-outline" style="padding:8px 14px; font-size:13px; color:#d97706; border-color:#fcd34d;"><i class="fa-solid fa-pen-to-square"></i> Edit Order</button>
+                <button type="button" id="detDeleteBtn" class="btn btn-outline" style="padding:8px 14px; font-size:13px; color:#ef4444; border-color:#fca5a5;"><i class="fa-solid fa-trash-can"></i> Delete Order</button>
+            </div>
+            <button type="button" onclick="closeOrderDetailsModal()" class="btn btn-outline" style="padding:8px 16px; font-size:13px;">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Order Modal -->
+<div id="editOrderModal" class="modal" style="z-index:10000;">
+    <div class="modal-content" style="max-width:500px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1.5px solid #f1f5f9; padding-bottom:12px; margin-bottom:16px;">
+            <h3 id="editModalInvoiceNo" style="margin:0; font-family:'Outfit',sans-serif; font-size:18px; font-weight:800; color:#0f3b2c;">Edit Order</h3>
+            <button type="button" onclick="closeEditOrderModal()" style="background:#f1f5f9; border:none; width:32px; height:32px; border-radius:8px; cursor:pointer; font-weight:800; color:#64748b;">✕</button>
+        </div>
+
+        <form id="editOrderForm" onsubmit="saveEditedOrder(event)">
+            <input type="hidden" id="editOrderId">
+            <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:20px;">
+                <div>
+                    <label style="font-size:12px; font-weight:700; color:#475569;">Customer Name</label>
+                    <input type="text" id="editCustomerName" required style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                </div>
+                <div>
+                    <label style="font-size:12px; font-weight:700; color:#475569;">Customer Phone</label>
+                    <input type="text" id="editCustomerPhone" style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                </div>
+                <div>
+                    <label style="font-size:12px; font-weight:700; color:#475569;">Payment Method</label>
+                    <select id="editPaymentMethod" style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                        <option value="cash">Cash Payment</option>
+                        <option value="credit">On Credit / Pay Later</option>
+                        <option value="cheque">Cheque Payment</option>
+                        <option value="bank">Bank Transfer</option>
+                        <option value="card">Card Payment</option>
+                    </select>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569;">Amount Paid (Rs)</label>
+                        <input type="number" step="0.01" id="editAmountPaid" required style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                    </div>
+                    <div>
+                        <label style="font-size:12px; font-weight:700; color:#475569;">Balance Due (Rs)</label>
+                        <input type="number" step="0.01" id="editBalanceDue" required style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                    </div>
+                </div>
+                <div>
+                    <label style="font-size:12px; font-weight:700; color:#475569;">Credit Due Date</label>
+                    <input type="date" id="editDueDate" style="width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border); box-sizing:border-box; margin-top:4px;">
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:10px;">
+                <button type="button" onclick="closeEditOrderModal()" class="btn btn-outline">Cancel</button>
+                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+let CURRENT_BUSINESS_ID = '';
+let allRawOrders = [];
+let filteredOrders = [];
+
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function parseDateAny(v) {
+    if (!v) return null;
+    if (typeof v.toDate === 'function') return v.toDate();
+    if (v.seconds) return new Date(v.seconds * 1000);
+    if (typeof v === 'number') return new Date(v);
+    if (typeof v === 'string') {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+            const [y, m, d] = v.split('-').map(Number);
+            return new Date(y, m - 1, d, 12, 0, 0);
+        }
+        const parsed = new Date(v);
+        return isNaN(parsed.getTime()) ? null : parsed;
+    }
+    return null;
+}
+
+function toLocalDateStr(dt) {
+    if (!dt || isNaN(dt.getTime())) return '';
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+function setPresetDate(preset) {
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+
+    const now = new Date();
+    const startInput = document.getElementById('filterStartDate');
+    const endInput = document.getElementById('filterEndDate');
+
+    if (preset === 'today') {
+        const tStr = toLocalDateStr(now);
+        startInput.value = tStr;
+        endInput.value = tStr;
+    } else if (preset === 'yesterday') {
+        const yest = new Date(now); yest.setDate(yest.getDate() - 1);
+        const yStr = toLocalDateStr(yest);
+        startInput.value = yStr;
+        endInput.value = yStr;
+    } else if (preset === 'week') {
+        const dayOfWeek = now.getDay();
+        const diffToMon = (dayOfWeek === 0 ? -6 : 1 - dayOfWeek);
+        const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMon);
+        startInput.value = toLocalDateStr(mon);
+        endInput.value = toLocalDateStr(now);
+    } else if (preset === 'month') {
+        const first = new Date(now.getFullYear(), now.getMonth(), 1);
+        startInput.value = toLocalDateStr(first);
+        endInput.value = toLocalDateStr(now);
+    } else if (preset === '30days') {
+        const thirtyAgo = new Date(now); thirtyAgo.setDate(thirtyAgo.getDate() - 30);
+        startInput.value = toLocalDateStr(thirtyAgo);
+        endInput.value = toLocalDateStr(now);
+    } else if (preset === 'all') {
+        startInput.value = '';
+        endInput.value = '';
+    }
+
+    applyFilters();
+}
+
+async function loadSalesHistory() {
+    try {
+        if (!CURRENT_BUSINESS_ID) return;
+        document.getElementById('salesHistoryBody').innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#64748b;"><i class="fa-solid fa-spinner fa-spin"></i> Fetching Sales History...</td></tr>';
+
+        const opt = navigator.onLine ? {} : { source: 'cache' };
+        let snap;
+        try {
+            snap = await db.collection('orders').doc(CURRENT_BUSINESS_ID).collection('list').orderBy('createdAt', 'desc').get(opt);
+        } catch (e1) {
+            console.warn('[SalesHistory] orderBy fallback:', e1);
+            snap = await db.collection('orders').doc(CURRENT_BUSINESS_ID).collection('list').get(opt).catch(() => ({ docs: [] }));
+        }
+
+        allRawOrders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        allRawOrders.sort((a, b) => {
+            const da = parseDateAny(a.createdAt || a.date) || new Date(0);
+            const dbDate = parseDateAny(b.createdAt || b.date) || new Date(0);
+            return dbDate - da;
+        });
+
+        applyFilters();
+    } catch (err) {
+        console.error('loadSalesHistory error:', err);
+        document.getElementById('salesHistoryBody').innerHTML = `<tr><td colspan="9" style="text-align:center; padding:30px; color:#ef4444;">Failed to load sales history: ${err.message}</td></tr>`;
+    }
+}
+
+function applyFilters() {
+    const sDateVal = document.getElementById('filterStartDate').value;
+    const eDateVal = document.getElementById('filterEndDate').value;
+    const statusVal = document.getElementById('filterStatus').value;
+    const methodVal = document.getElementById('filterMethod').value;
+    const searchVal = document.getElementById('filterSearch').value.trim().toLowerCase();
+
+    filteredOrders = allRawOrders.filter(o => {
+        const dt = parseDateAny(o.createdAt || o.date || o.invoiceDate || o.orderDate || o.timestamp);
+        const dtStr = toLocalDateStr(dt);
+
+        if (sDateVal && dtStr && dtStr < sDateVal) return false;
+        if (eDateVal && dtStr && dtStr > eDateVal) return false;
+
+        const isCancelled = o.status === 'cancelled' || o.isReversed === true;
+        const balance = Number(o.balanceDue || 0);
+
+        if (statusVal === 'paid' && (isCancelled || balance > 0.01)) return false;
+        if (statusVal === 'unpaid' && (isCancelled || balance <= 0.01)) return false;
+        if (statusVal === 'cancelled' && !isCancelled) return false;
+
+        if (methodVal !== 'all') {
+            const pm = String(o.paymentMethod || 'cash').toLowerCase();
+            if (pm !== methodVal) return false;
+        }
+
+        if (searchVal) {
+            const inv = String(o.invoiceNo || '').toLowerCase();
+            const custName = String(o.customer ? (o.customer.name || o.customer.fullName || '') : '').toLowerCase();
+            const custPhone = String(o.customer ? (o.customer.phone || '') : '').toLowerCase();
+            const itemsStr = Array.isArray(o.items) ? o.items.map(i => i.name).join(' ').toLowerCase() : '';
+
+            if (!inv.includes(searchVal) && !custName.includes(searchVal) && !custPhone.includes(searchVal) && !itemsStr.includes(searchVal)) {
+                return false;
+            }
+        }
+
+        return true;
+    });
+
+    renderTable();
+    renderKpis();
+}
+
+function renderKpis() {
+    let salesTotal = 0;
+    let paidTotal = 0;
+    let creditTotal = 0;
+    let totalItemsCount = 0;
+
+    filteredOrders.forEach(o => {
+        if (o.status === 'cancelled' || o.isReversed === true) return;
+        const tot = Number(o.total || o.netTotal || o.grandTotal || 0);
+        const due = Number(o.balanceDue || 0);
+        const pd = Number(o.amountPaid != null ? o.amountPaid : (tot - due));
+
+        salesTotal += tot;
+        creditTotal += Math.max(0, due);
+        paidTotal += Math.max(0, pd);
+
+        if (Array.isArray(o.items)) {
+            o.items.forEach(i => totalItemsCount += Number(i.quantity || i.qty || 1));
+        }
+    });
+
+    document.getElementById('kpiTotalSales').textContent = fmt(salesTotal);
+    document.getElementById('kpiTotalCount').textContent = `${filteredOrders.length} Invoices Filtered`;
+    document.getElementById('kpiPaidTotal').textContent = fmt(paidTotal);
+    document.getElementById('kpiCreditTotal').textContent = fmt(creditTotal);
+    document.getElementById('kpiItemsSummary').textContent = `${totalItemsCount} Units`;
+    document.getElementById('recordCountLabel').textContent = filteredOrders.length;
+}
+
+function renderTable() {
+    const body = document.getElementById('salesHistoryBody');
+    if (!body) return;
+
+    if (filteredOrders.length === 0) {
+        body.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:40px; color:#64748b;">No matching sales history records found for the selected filters.</td></tr>';
+        return;
+    }
+
+    body.innerHTML = filteredOrders.map(s => {
+        const isCancelled = s.status === 'cancelled' || s.isReversed === true;
+        const dt = parseDateAny(s.createdAt || s.date);
+        const dtFormatted = dt ? dt.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'N/A';
+        const custName = s.customer ? (s.customer.name || s.customer.fullName || 'Guest') : 'Guest';
+        const custPhone = s.customer ? (s.customer.phone || '') : '';
+        const balance = Number(s.balanceDue || 0);
+        const isPaid = balance < 0.01;
+
+        const items = Array.isArray(s.items) ? s.items : [];
+        const itemsSummary = items.map(i => `${i.quantity || 1}x ${i.name}`).slice(0, 2).join(', ') + (items.length > 2 ? ` (+${items.length - 2} more)` : '');
+
+        if (isCancelled) {
+            return `
+            <tr style="background:#fef2f2; opacity:0.75;">
+                <td style="font-family:monospace; font-weight:700;"><del>${s.invoiceNo || 'N/A'}</del></td>
+                <td style="font-size:12px; color:#64748b;">${dtFormatted}</td>
+                <td><del>${custName}</del></td>
+                <td style="font-size:12px; color:#64748b;">${itemsSummary || '-'}</td>
+                <td><span class="badge" style="background:#e2e8f0; color:#475569;">${String(s.paymentMethod || 'cash').toUpperCase()}</span></td>
+                <td class="num"><del>${fmt(s.total || 0)}</del></td>
+                <td class="num">-</td>
+                <td><span class="badge badge-cancelled">Cancelled</span></td>
+                <td style="text-align:center;">
+                    <button type="button" class="btn btn-outline" title="View Cancelled Details" onclick="openOrderDetailsModal('${s.id}')" style="padding:4px 8px; font-size:12px;"><i class="fa-solid fa-eye"></i></button>
+                </td>
+            </tr>`;
+        }
+
+        return `
+        <tr>
+            <td style="font-family:monospace; font-weight:800; color:#0284c7; cursor:pointer;" onclick="openOrderDetailsModal('${s.id}')" title="Click to view full order details">${s.invoiceNo || 'N/A'}</td>
+            <td style="font-size:12px; color:#64748b;">${dtFormatted}</td>
+            <td>
+                <span style="font-weight:700; color:#0f172a; cursor:pointer; text-decoration:underline; text-decoration-color:#cbd5e1;" onclick="openOrderDetailsModal('${s.id}')" title="Click to view customer order details">
+                    <i class="fa-solid fa-user-tag" style="color:#3b82f6; margin-right:4px;"></i> ${custName}
+                </span>
+                ${custPhone ? `<div style="font-size:11px; color:#64748b;">${custPhone}</div>` : ''}
+            </td>
+            <td style="font-size:12px; color:#475569; max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${itemsSummary || '-'}</td>
+            <td><span class="badge" style="background:#f1f5f9; color:#0f172a; border:1px solid #cbd5e1;">${String(s.paymentMethod || 'cash').toUpperCase()}</span></td>
+            <td class="num" style="font-weight:800; color:#0f172a;">${fmt(s.total || 0)}</td>
+            <td class="num" style="color:${balance > 0 ? '#ef4444' : '#10b981'}; font-weight:800;">${fmt(balance)}</td>
+            <td><span class="badge ${isPaid ? 'badge-paid' : 'badge-unpaid'}">${isPaid ? 'Paid' : 'Unpaid'}</span></td>
+            <td style="text-align:center;">
+                <div style="display:flex; gap:6px; justify-content:center;">
+                    <button type="button" class="btn btn-outline" title="View Full Details" onclick="openOrderDetailsModal('${s.id}')" style="padding:4px 8px; font-size:12px; color:#0284c7;"><i class="fa-solid fa-eye"></i></button>
+                    <button type="button" class="btn btn-outline" title="Edit Order" onclick="openEditOrderModal('${s.id}')" style="padding:4px 8px; font-size:12px; color:#d97706;"><i class="fa-solid fa-pen-to-square"></i></button>
+                    <button type="button" class="btn btn-outline" title="Delete Order & Revert Stock" onclick="deletePosOrder('${s.id}', '${s.invoiceNo || 'N/A'}')" style="padding:4px 8px; font-size:12px; color:#ef4444; border-color:#fca5a5;"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+window.openOrderDetailsModal = (orderId) => {
+    const order = allRawOrders.find(o => o.id === orderId);
+    if (!order) return;
+
+    window.currentActiveOrderModal = order;
+
+    document.getElementById('detModalInvoiceNo').textContent = `Invoice: ${order.invoiceNo || 'N/A'}`;
+    const dt = parseDateAny(order.createdAt || order.date);
+    document.getElementById('detModalDate').textContent = `Date: ${dt ? dt.toLocaleString() : '-'} · Payment: ${String(order.paymentMethod || 'cash').toUpperCase()}`;
+
+    const cust = order.customer || {};
+    const custName = cust.name || cust.fullName || 'Guest';
+    const custPhone = cust.phone || '-';
+    const items = Array.isArray(order.items) ? order.items : [];
+    const isCancelled = order.status === 'cancelled' || order.isReversed === true;
+
+    document.getElementById('detModalContent').innerHTML = `
+        <div style="background:#f8fafc; border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:16px; display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:13px;">
+            <div>
+                <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Customer Details</div>
+                <div style="font-weight:800; color:#0f172a; font-size:14.5px; margin-top:2px;"><i class="fa-solid fa-user" style="color:#3b82f6; margin-right:6px;"></i> ${custName}</div>
+                <div style="color:#64748b; font-size:12px; margin-top:2px;">Phone: ${custPhone}</div>
+            </div>
+            <div>
+                <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Payment Status</div>
+                <div style="font-weight:800; font-size:14.5px; margin-top:2px; color:${isCancelled ? '#ef4444' : ((order.balanceDue || 0) <= 0 ? '#10b981' : '#f59e0b')};">
+                    ${isCancelled ? 'CANCELLED' : ((order.balanceDue || 0) <= 0 ? 'PAID IN FULL' : 'UNPAID BALANCE')}
+                </div>
+                <div style="color:#64748b; font-size:12px; margin-top:2px;">Balance: ${fmt(order.balanceDue || 0)}</div>
+            </div>
+        </div>
+
+        <h4 style="margin:0 0 10px 0; font-family:'Outfit',sans-serif; font-size:15px; color:#0f3b2c; font-weight:800;">Items Breakdown</h4>
+        <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:16px;">
+            <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                <thead>
+                    <tr style="background:#f1f5f9; text-transform:uppercase; font-size:10.5px; font-weight:800; color:#64748b;">
+                        <th style="padding:8px 12px; text-align:left;">Item</th>
+                        <th style="padding:8px 12px; text-align:center;">Qty</th>
+                        <th style="padding:8px 12px; text-align:right;">Price</th>
+                        <th style="padding:8px 12px; text-align:right;">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${items.map(it => {
+                        const q = Number(it.quantity || it.qty || 0);
+                        const p = Number(it.price || it.unitPrice || 0);
+                        const isServ = it.isService === true || it.category === 'Services' || String(it.category || '').toLowerCase().includes('service');
+                        return `
+                        <tr style="border-bottom:1px solid #f1f5f9;">
+                            <td style="padding:8px 12px;">
+                                <div style="font-weight:700; color:#0f172a;">${it.name || 'Item'}</div>
+                                <div style="font-size:11px; color:#64748b;">
+                                    ${isServ ? '<span style="background:#f5f3ff; color:#6d28d9; padding:1px 5px; border-radius:4px; font-weight:800;">Service</span>' : '<span style="background:#eff6ff; color:#1d4ed8; padding:1px 5px; border-radius:4px; font-weight:800;">Product</span>'}
+                                    ${it.code || it.productCode ? '· ' + (it.code || it.productCode) : ''}
+                                </div>
+                            </td>
+                            <td style="padding:8px 12px; text-align:center; font-weight:700;">${q}</td>
+                            <td style="padding:8px 12px; text-align:right; font-family:monospace;">${fmt(p)}</td>
+                            <td style="padding:8px 12px; text-align:right; font-family:monospace; font-weight:800; color:#0f172a;">${fmt(q * p)}</td>
+                        </tr>`;
+                    }).join('') || '<tr><td colspan="4" style="text-align:center; padding:15px;">No items.</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+
+        <div style="background:#fafbfc; border:1px solid var(--border); border-radius:12px; padding:12px 16px; font-size:13px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#64748b;">
+                <span>Subtotal:</span>
+                <span style="font-family:monospace; font-weight:700; color:#0f172a;">${fmt(order.subtotal || order.total || 0)}</span>
+            </div>
+            ${(order.discountAmount || 0) > 0 ? `
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#ef4444;">
+                <span>Discount:</span>
+                <span style="font-family:monospace; font-weight:700;">- ${fmt(order.discountAmount)}</span>
+            </div>` : ''}
+            <div style="display:flex; justify-content:space-between; margin-top:6px; border-top:1px dashed #cbd5e1; padding-top:6px; font-size:15px; font-weight:800; color:#0f3b2c;">
+                <span>Grand Total:</span>
+                <span style="font-family:'Outfit',sans-serif; color:#10b981;">${fmt(order.total || 0)}</span>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('detPrintBtn').onclick = () => window.print();
+    document.getElementById('detEditBtn').onclick = () => openEditOrderModal(order.id);
+    document.getElementById('detDeleteBtn').onclick = () => deletePosOrder(order.id, order.invoiceNo || 'N/A');
+
+    document.getElementById('orderDetailsModal').style.display = 'flex';
+};
+
+window.closeOrderDetailsModal = () => { document.getElementById('orderDetailsModal').style.display = 'none'; };
+
+window.openEditOrderModal = (orderId) => {
+    const order = allRawOrders.find(o => o.id === orderId);
+    if (!order) return;
+
+    document.getElementById('editOrderId').value = order.id;
+    document.getElementById('editModalInvoiceNo').textContent = `Edit Invoice: ${order.invoiceNo || 'N/A'}`;
+    document.getElementById('editCustomerName').value = order.customer ? (order.customer.name || order.customer.fullName || '') : 'Guest';
+    document.getElementById('editCustomerPhone').value = order.customer ? (order.customer.phone || '') : '';
+    document.getElementById('editPaymentMethod').value = order.paymentMethod || 'cash';
+    document.getElementById('editAmountPaid').value = Number(order.amountPaid != null ? order.amountPaid : (order.total || 0)).toFixed(2);
+    document.getElementById('editBalanceDue').value = Number(order.balanceDue || 0).toFixed(2);
+    document.getElementById('editDueDate').value = order.dueDate || '';
+
+    document.getElementById('editOrderModal').style.display = 'flex';
+};
+
+window.closeEditOrderModal = () => { document.getElementById('editOrderModal').style.display = 'none'; };
+
+window.deletePosOrder = async (orderId, invoiceNo) => {
+    if (!confirm(`⚠️ Are you sure you want to DELETE / CANCEL invoice ${invoiceNo}?\n\nThis will restore product stock levels in inventory and mark the invoice as cancelled.`)) return;
+
+    try {
+        const orderDoc = await db.collection('orders').doc(CURRENT_BUSINESS_ID).collection('list').doc(orderId).get();
+        if (!orderDoc.exists) return alert('Order not found!');
+
+        const orderData = orderDoc.data();
+        const items = Array.isArray(orderData.items) ? orderData.items : [];
+
+        const batch = db.batch();
+        items.forEach(item => {
+            const isServ = item.isService === true || item.category === 'Services' || String(item.category || '').toLowerCase().includes('service');
+            const pId = item.id || item.productId;
+            const qty = Number(item.quantity || item.qty || 0);
+
+            if (!isServ && pId && qty > 0) {
+                const pRef = db.collection('products').doc(CURRENT_BUSINESS_ID).collection('list').doc(pId);
+                batch.update(pRef, { stock: firebase.firestore.FieldValue.increment(qty) });
+            }
+        });
+
+        const orderRef = db.collection('orders').doc(CURRENT_BUSINESS_ID).collection('list').doc(orderId);
+        batch.update(orderRef, { status: 'cancelled', isReversed: true, cancelledAt: firebase.firestore.FieldValue.serverTimestamp() });
+
+        const journalSnap = await db.collection('journal').doc(CURRENT_BUSINESS_ID).collection('entries').where('ref', '==', orderId).get();
+        journalSnap.docs.forEach(jDoc => batch.update(jDoc.ref, { isReversed: true, reversalDate: new Date() }));
+
+        await batch.commit();
+
+        alert(`Invoice ${invoiceNo} deleted & stock restored!`);
+        closeOrderDetailsModal();
+        await loadSalesHistory();
+    } catch (err) {
+        alert('Failed to delete order: ' + err.message);
+    }
+};
+
+window.saveEditedOrder = async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('editOrderId').value;
+    const name = document.getElementById('editCustomerName').value.trim();
+    const phone = document.getElementById('editCustomerPhone').value.trim();
+    const pm = document.getElementById('editPaymentMethod').value;
+    const paid = parseFloat(document.getElementById('editAmountPaid').value) || 0;
+    const due = parseFloat(document.getElementById('editBalanceDue').value) || 0;
+    const dueDate = document.getElementById('editDueDate').value;
+
+    try {
+        const orderRef = db.collection('orders').doc(CURRENT_BUSINESS_ID).collection('list').doc(id);
+        const orderDoc = await orderRef.get();
+        if (!orderDoc.exists) return alert('Order not found!');
+
+        const oldData = orderDoc.data();
+        const updatedCustomer = { ...(oldData.customer || {}), name: name, phone: phone };
+
+        await orderRef.update({
+            customer: updatedCustomer,
+            paymentMethod: pm,
+            amountPaid: paid,
+            balanceDue: due,
+            dueDate: dueDate || null,
+            status: due > 0 ? 'unpaid' : 'completed',
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        alert('Order updated successfully!');
+        closeEditOrderModal();
+        closeOrderDetailsModal();
+        await loadSalesHistory();
+    } catch (err) {
+        alert('Failed to update order: ' + err.message);
+    }
+};
+
+function exportSalesReport() {
+    window.print();
+}
+
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '/'; return; }
+    let businessId = '';
+    if (window.dashboardCore && window.dashboardCore.getContext) {
+        try {
+            const ctx = await window.dashboardCore.getContext(user);
+            if (ctx && ctx.businessId) businessId = ctx.businessId;
+        } catch (e) {}
+    }
+    if (!businessId) {
+        const preferred = localStorage.getItem('selectedBusinessId') || localStorage.getItem('currentBusinessId');
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        businessId = preferred || (userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid);
+    }
+    CURRENT_BUSINESS_ID = businessId;
+
+    // Set initial preset date to 'month'
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    document.getElementById('filterStartDate').value = toLocalDateStr(first);
+    document.getElementById('filterEndDate').value = toLocalDateStr(now);
+
+    await loadSalesHistory();
+});
+</script>
+</body>
+</html>

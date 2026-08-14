@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DigiBiz Retail - Mobile Outdoor Sales PWA</title>
+
+    <!-- PWA Bootstrap & Icons -->
+    <script src="/core/pwa-init.js?v=4"></script>
+    <meta name="theme-color" content="#0f3b2c">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DigiBiz Sales">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icons/icon-192.svg">
+
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+
+    <style>
+        :root {
+            --primary: #10b981;
+            --primary-dark: #0f3b2c;
+            --accent: #f59e0b;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #0f172a;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --radius: 16px;
+        }
+
+        * { margin:0; padding:0; box-sizing:border-box; font-family:'Inter', sans-serif; -webkit-tap-highlight-color:transparent; }
+        body { background:var(--bg); color:var(--text); padding-bottom:100px; overflow-x:hidden; }
+
+        /* Header Bar */
+        .app-header {
+            background: linear-gradient(135deg, #0f3b2c 0%, #10b981 100%);
+            color: white;
+            padding: 12px 16px;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 4px 15px rgba(15, 59, 44, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .biz-brand-name { font-family:'Outfit', sans-serif; font-weight:800; font-size:16px; color:#ffffff; line-height:1.2; }
+        .biz-account-sub { font-size:11px; color:#a7f3d0; font-weight:600; }
+
+        .pwa-install-btn {
+            background: #f59e0b;
+            color: #0f172a;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 800;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+
+        .container { padding: 14px; max-width: 600px; margin: 0 auto; }
+
+        /* Embedded Native Login Overlay */
+        .login-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(8px);
+            z-index: 99999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 18px;
+        }
+        .login-card {
+            background: #ffffff;
+            width: 100%;
+            max-width: 400px;
+            border-radius: 24px;
+            padding: 28px 22px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+            border: 1px solid #cbd5e1;
+        }
+
+        /* Quick Info Card */
+        .mode-banner {
+            background: #ecfdf5;
+            border: 1.5px solid #a7f3d0;
+            border-radius: var(--radius);
+            padding: 10px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #047857;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        /* Customer Card */
+        .section-card {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 14px;
+            border: 1px solid var(--border);
+            margin-bottom: 12px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+        }
+        .section-title { font-size:12px; font-weight:700; color:var(--text-light); text-transform:uppercase; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; }
+        
+        select, input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1.5px solid var(--border);
+            border-radius: 12px;
+            font-size: 14px;
+            font-family: inherit;
+            outline: none;
+            background: white;
+            transition: all 0.2s;
+        }
+        select:focus, input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15); }
+
+        /* Category Chips */
+        .category-scroll { display:flex; gap:8px; overflow-x:auto; padding-bottom:8px; scrollbar-width:none; margin-bottom:10px; }
+        .cat-chip {
+            background: white;
+            border: 1px solid var(--border);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-light);
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .cat-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+        /* Product Cards List */
+        .product-list { display:flex; flex-direction:column; gap:10px; }
+        .product-item {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
+        }
+        .product-item:active { background: #f8fafc; }
+        .prod-info { flex: 1; padding-right: 10px; }
+        .prod-name { font-weight: 700; font-size: 14px; color: var(--text); margin-bottom: 2px; }
+        .prod-price { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 15px; color: #059669; }
+        .prod-stock { font-size: 11px; color: var(--text-light); font-weight: 600; }
+
+        .add-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .add-btn:active { background: var(--primary-dark); }
+
+        /* Bottom Fixed Checkout Bar */
+        .bottom-checkout-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-top: 1px solid var(--border);
+            padding: 12px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 999;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
+        }
+        .checkout-total-val { font-family: 'Outfit', sans-serif; font-weight: 900; font-size: 18px; color: #0f3b2c; }
+        .checkout-count { font-size: 11px; color: var(--text-light); font-weight: 600; }
+        
+        .btn-checkout {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border: none;
+            padding: 12px 22px;
+            border-radius: 14px;
+            font-weight: 800;
+            font-size: 15px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Cart Drawer Modal */
+        .cart-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 2000;
+            display: none;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+        .cart-modal-content {
+            background: white;
+            border-radius: 24px 24px 0 0;
+            padding: 20px;
+            max-height: 85vh;
+            overflow-y: auto;
+            animation: slideUp 0.3s cubic-bezier(0.1, 0.9, 0.2, 1);
+        }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        .cart-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .cart-qty-input { width: 60px; text-align: center; padding: 6px; font-weight: 700; }
+        .cart-price-input { width: 80px; text-align: right; padding: 6px; font-weight: 700; }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #0f172a;
+            color: white;
+            padding: 10px 18px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            z-index: 99999;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        /* Digital Receipt Modal */
+        .receipt-card {
+            background: #fff;
+            border: 1px dashed #94a3b8;
+            padding: 16px;
+            font-family: monospace;
+            font-size: 12px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Embedded Native Login Overlay for any phone -->
+    <div id="loginOverlayModal" class="login-overlay" style="display:none;">
+        <div class="login-card">
+            <div style="text-align:center; margin-bottom:20px;">
+                <div style="font-size:42px; margin-bottom:4px;">🛒</div>
+                <h2 style="margin:4px 0 2px; color:#0f3b2c; font-weight:900; font-size:22px; font-family:'Outfit',sans-serif;">DIGIBIZ RETAIL PWA</h2>
+                <p style="margin:0; color:#64748b; font-size:13px;">Login to Retail Outdoor Sales Portal</p>
+            </div>
+            
+            <form id="pwaLoginForm" action="javascript:void(0);" onsubmit="handlePWALogin(event)">
+                <div style="margin-bottom:14px;">
+                    <label style="display:block; font-weight:700; font-size:12px; color:#475569; margin-bottom:6px;">Store Email Account</label>
+                    <input type="email" id="loginEmailInput" placeholder="e.g. store@gmail.com" autocomplete="username" required>
+                </div>
+                <div style="margin-bottom:20px;">
+                    <label style="display:block; font-weight:700; font-size:12px; color:#475569; margin-bottom:6px;">Password</label>
+                    <input type="password" id="loginPasswordInput" placeholder="Enter Password" autocomplete="current-password" required>
+                </div>
+
+                <button type="submit" id="loginSubmitBtn" style="background:#0f3b2c; color:white; border:none; padding:14px; border-radius:12px; font-weight:800; font-size:15px; width:100%; cursor:pointer;">
+                    🔑 Log In & Start Selling
+                </button>
+            </form>
+
+            <div id="loginErrorMsg" style="color:#ef4444; font-size:13px; margin-top:12px; text-align:center; font-weight:700;"></div>
+
+            <hr style="margin:18px 0; border:none; border-top:1px solid #e2e8f0;">
+
+            <button type="button" onclick="triggerPWAInstall()" style="background:#f59e0b; color:#0f172a; border:none; padding:12px; border-radius:12px; font-weight:800; font-size:13px; width:100%; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                <i class="fas fa-download"></i> 📲 Install App on Phone Home Screen
+            </button>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="app-header">
+        <div>
+            <div class="biz-brand-name" id="hdrBizName">🏬 Retail Store</div>
+            <div class="biz-account-sub" id="hdrBizEmail">Outdoor Sales PWA</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <button id="pwaInstallBtn" class="pwa-install-btn" onclick="triggerPWAInstall()">
+                <i class="fas fa-download"></i> Install App
+            </button>
+            <button onclick="handleSignOut()" style="background:rgba(255,255,255,0.2); color:white; border:none; padding:6px 10px; border-radius:12px; font-size:11px; font-weight:800; cursor:pointer;" title="Sign Out / Switch Store">
+                🚪 Switch
+            </button>
+        </div>
+    </div>
+
+    <div class="container">
+        
+        <!-- Fast Mode Banner -->
+        <div class="mode-banner">
+            <span>⚡ <strong>Fast Mode:</strong> Today's Date Auto-Set</span>
+            <span id="currentDateStr" style="font-size:11px; opacity:0.9;">Today</span>
+        </div>
+
+        <!-- Customer Select -->
+        <div class="section-card">
+            <div class="section-title">
+                <span>👤 Customer / Shop</span>
+                <button type="button" onclick="openNewCustomerModal()" style="background:none; border:none; color:var(--primary); font-weight:700; cursor:pointer;">+ New</button>
+            </div>
+            <select id="mobileCustomerSelect">
+                <option value="guest" data-name="Walk-in Outdoor Customer" data-phone="-">Walk-in / Outdoor Customer</option>
+            </select>
+        </div>
+
+        <!-- Search & Categories -->
+        <div class="section-card" style="padding:10px;">
+            <input type="text" id="mobileSearchInput" placeholder="🔍 Search product name, code or scan..." oninput="onSearchInput()">
+        </div>
+
+        <div class="category-scroll" id="catScroll">
+            <div class="cat-chip active" onclick="filterCategory('all', this)">All Items</div>
+        </div>
+
+        <!-- Product List -->
+        <div class="product-list" id="productListContainer">
+            <div style="text-align:center; padding:30px; color:var(--text-light);">Loading Retail Inventory...</div>
+        </div>
+
+    </div>
+
+    <!-- Bottom Checkout Bar -->
+    <div class="bottom-checkout-bar">
+        <div>
+            <div class="checkout-count" id="barItemCount">0 Items in Cart</div>
+            <div class="checkout-total-val" id="barTotalPrice">Rs. 0.00</div>
+        </div>
+        <button class="btn-checkout" onclick="openCartModal()">
+            <span>🛒 Checkout</span> <i class="fas fa-arrow-right"></i>
+        </button>
+    </div>
+
+    <!-- Cart & Payment Drawer Modal -->
+    <div id="cartModal" class="cart-modal">
+        <div class="cart-modal-content">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <h3 style="font-family:'Outfit',sans-serif; font-weight:800; font-size:18px; color:#0f3b2c;">🛒 Outdoor Sale Cart</h3>
+                <button onclick="closeCartModal()" style="background:none; border:none; font-size:18px; color:var(--text-light); cursor:pointer;">✕</button>
+            </div>
+
+            <div id="cartItemsList"></div>
+
+            <div style="margin-top:14px; background:#f8fafc; padding:12px; border-radius:14px; border:1px solid var(--border);">
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--text-light);">
+                    <span>Subtotal:</span>
+                    <span id="cartSubtotal">Rs. 0.00</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px; font-size:13px; font-weight:600; color:var(--text-light);">
+                    <span>Discount (Rs.):</span>
+                    <input type="number" id="cartDiscountInput" value="0" style="width:80px; padding:4px 8px; text-align:right;" oninput="calculateCartTotals()">
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:18px; font-weight:900; color:#0f3b2c; border-top:1.5px dashed var(--border); padding-top:8px; margin-top:6px;">
+                    <span>Total Amount:</span>
+                    <span id="cartGrandTotal">Rs. 0.00</span>
+                </div>
+            </div>
+
+            <!-- Payment Method -->
+            <div style="margin-top:14px;">
+                <label style="font-weight:700; font-size:12px; color:var(--text-light); text-transform:uppercase; display:block; margin-bottom:6px;">Payment Method</label>
+                <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px;">
+                    <button class="pay-type-btn active" onclick="selectPayType('cash', this)">💵 Cash</button>
+                    <button class="pay-type-btn" onclick="selectPayType('card', this)">💳 Card</button>
+                    <button class="pay-type-btn" onclick="selectPayType('bank', this)">🏛️ Bank</button>
+                    <button class="pay-type-btn" onclick="selectPayType('credit', this)">📝 Credit</button>
+                </div>
+            </div>
+
+            <button onclick="submitOutdoorSale()" class="btn-checkout" style="width:100%; margin-top:16px; justify-content:center; padding:15px; font-size:16px;">
+                🚀 Complete Sale & Sync Live
+            </button>
+        </div>
+    </div>
+
+    <!-- New Customer Modal -->
+    <div id="newCustModal" class="cart-modal">
+        <div class="cart-modal-content" style="border-radius:20px;">
+            <h3 style="font-weight:800; font-size:16px; margin-bottom:12px;">➕ Register New Customer</h3>
+            <input type="text" id="newCustName" placeholder="Customer Name" style="margin-bottom:10px;">
+            <input type="tel" id="newCustPhone" placeholder="Mobile Number (e.g. 0771234567)" style="margin-bottom:14px;">
+            <div style="display:flex; gap:8px;">
+                <button onclick="closeNewCustomerModal()" style="flex:1; padding:12px; border:none; background:#e2e8f0; border-radius:12px; font-weight:700;">Cancel</button>
+                <button onclick="saveNewCustomer()" style="flex:1; padding:12px; border:none; background:var(--primary); color:white; border-radius:12px; font-weight:800;">Save & Select</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Receipt Modal -->
+    <div id="receiptModal" class="cart-modal">
+        <div class="cart-modal-content" style="border-radius:20px;">
+            <div style="text-align:center; margin-bottom:12px;">
+                <span style="font-size:36px;">✅</span>
+                <h3 style="font-weight:900; color:#0f3b2c; margin-top:4px;">Sale Completed!</h3>
+                <p style="font-size:12px; color:var(--text-light);">Transmitted & Synced to System Live</p>
+            </div>
+            
+            <div class="receipt-card" id="receiptPaper"></div>
+
+            <div style="display:flex; gap:8px;">
+                <button onclick="shareWhatsAppReceipt()" style="flex:1; padding:12px; border:none; background:#25D366; color:white; border-radius:12px; font-weight:800; display:flex; align-items:center; justify-content:center; gap:6px;">
+                    <i class="fab fa-whatsapp"></i> WhatsApp
+                </button>
+                <button onclick="closeReceiptModal()" style="flex:1; padding:12px; border:none; background:#0f3b2c; color:white; border-radius:12px; font-weight:800;">
+                    ➕ Next Sale
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <style>
+        .pay-type-btn {
+            padding: 8px 4px;
+            border: 1.5px solid var(--border);
+            background: #f8fafc;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            color: var(--text-light);
+            text-align: center;
+        }
+        .pay-type-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+    </style>
+
+    <script>
+        let currentBusinessId = null;
+        let products = [];
+        let customers = [];
+        let cart = [];
+        let activeCategory = 'all';
+        let selectedPayType = 'cash';
+        let deferredPrompt = null;
+        let lastCompletedOrder = null;
+        let unsubscribeProductListener = null;
+
+        // PWA Installation Handlers
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const btn = document.getElementById('pwaInstallBtn');
+            if (btn) btn.style.display = 'flex';
+        });
+
+        function triggerPWAInstall() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        showToast('App installed successfully!');
+                    }
+                    deferredPrompt = null;
+                });
+            } else {
+                alert('📲 To install on Mobile Phone:\n\n• Android Chrome: Tap Options (⋮) at top right -> Tap "Add to Home screen"\n\n• iPhone Safari: Tap Share icon (⎋) at bottom -> Tap "Add to Home Screen"');
+            }
+        }
+
+        // Initialize App & Auth Check
+        window.addEventListener('DOMContentLoaded', async () => {
+            document.getElementById('currentDateStr').textContent = new Date().toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+            
+            try {
+                await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+            } catch (err) {
+                console.warn('Auth persistence warning:', err);
+            }
+
+            auth.onAuthStateChanged(async (user) => {
+                if (user) {
+                    document.getElementById('loginOverlayModal').style.display = 'none';
+                    try {
+                        const userDoc = await db.collection('users').doc(user.uid).get();
+                        currentBusinessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+                    } catch(e) {
+                        currentBusinessId = user.uid;
+                    }
+                    await loadInitialData();
+                } else {
+                    // Reset Memory & Show Native Mobile Login Overlay
+                    products = [];
+                    cart = [];
+                    currentBusinessId = null;
+                    document.getElementById('loginOverlayModal').style.display = 'flex';
+                }
+            });
+        });
+
+        // Mobile Login Handler
+        async function handlePWALogin(e) {
+            if (e) e.preventDefault();
+            const email = document.getElementById('loginEmailInput').value.trim();
+            const password = document.getElementById('loginPasswordInput').value.trim();
+            const errDiv = document.getElementById('loginErrorMsg');
+            const submitBtn = document.getElementById('loginSubmitBtn');
+
+            if (!email || !password) {
+                errDiv.textContent = 'Please enter email and password';
+                return;
+            }
+
+            try {
+                errDiv.textContent = 'Authenticating...';
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = 'Logging in...';
+                }
+
+                products = [];
+                cart = [];
+
+                await auth.signInWithEmailAndPassword(email, password);
+                showToast('Login successful!');
+                document.getElementById('loginOverlayModal').style.display = 'none';
+            } catch (err) {
+                console.error('Mobile PWA Login Error:', err);
+                errDiv.textContent = 'Login failed: ' + (err.message || 'Invalid credentials');
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '🔑 Log In & Start Selling';
+                }
+            }
+        }
+
+        async function handleSignOut() {
+            if (confirm('Sign out from Outdoor Sales Portal?')) {
+                if (unsubscribeProductListener) {
+                    unsubscribeProductListener();
+                    unsubscribeProductListener = null;
+                }
+                await auth.signOut();
+                localStorage.clear();
+                sessionStorage.clear();
+                products = [];
+                cart = [];
+                currentBusinessId = null;
+                window.location.reload();
+            }
+        }
+
+        async function loadInitialData() {
+            if (!currentBusinessId) return;
+
+            // Reset local arrays to prevent cross-account bleeding
+            products = [];
+            cart = [];
+            updateBarSummary();
+
+            try {
+                // Fetch Business Account Profile to display Store Name in Header and check Retail businessType
+                const bizDoc = await db.collection('businesses').doc(currentBusinessId).get();
+                if (bizDoc.exists) {
+                    const bData = bizDoc.data();
+                    const bizType = String(bData.type || bData.businessType || 'retail').toLowerCase();
+                    if (bizType !== 'retail' && bizType !== 'supermarket' && bizType !== 'general' && bizType !== 'store') {
+                        // Non-retail business account tried to access retail mobile PWA!
+                        const container = document.getElementById('productListContainer');
+                        container.innerHTML = `
+                            <div style="text-align:center; padding:40px 20px; background:white; border-radius:20px; border:2px solid #ef4444; margin-top:20px;">
+                                <span style="font-size:48px;">🚫</span>
+                                <h3 style="color:#ef4444; font-family:'Outfit',sans-serif; margin:10px 0 6px;">Access Restricted</h3>
+                                <p style="color:var(--text-light); font-size:13px; margin-bottom:16px;">This Outdoor Mobile Sales PWA is strictly reserved for DIGIBIZ Retail Businesses.<br>Your account <strong>(${auth.currentUser ? auth.currentUser.email : ''})</strong> is registered under <strong>${bData.type || 'non-retail'}</strong>.</p>
+                                <button onclick="handleSignOut()" style="background:#ef4444; color:white; border:none; padding:10px 18px; border-radius:10px; font-weight:700; cursor:pointer;">Switch to Retail Account</button>
+                            </div>
+                        `;
+                        return;
+                    }
+                    const storeName = bData.name || bData.businessName || 'Retail Store';
+                    document.getElementById('hdrBizName').textContent = `🏬 ${storeName}`;
+                    document.getElementById('hdrBizEmail').textContent = `${auth.currentUser ? auth.currentUser.email : ''}`;
+                } else {
+                    document.getElementById('hdrBizName').textContent = `🏬 DIGIBIZ Retail Store`;
+                    document.getElementById('hdrBizEmail').textContent = `${auth.currentUser ? auth.currentUser.email : ''}`;
+                }
+
+                // Fetch Products strictly from currentBusinessId products list subcollection (Identical to retail/inventory.html)
+                const prodRef = db.collection('products').doc(currentBusinessId).collection('list');
+                const prodSnap = await prodRef.get();
+
+                products = prodSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                // Real-Time Products Listener for exact same business stock
+                if (unsubscribeProductListener) unsubscribeProductListener();
+                unsubscribeProductListener = prodRef.onSnapshot(snapshot => {
+                    products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderProducts(activeCategory === 'all' ? products : products.filter(p => p.category === activeCategory));
+                });
+
+                // Render Category Chips
+                const categories = new Set(products.map(p => p.category || 'General').filter(Boolean));
+                const catContainer = document.getElementById('catScroll');
+                let catHtml = '<div class="cat-chip active" onclick="filterCategory(\'all\', this)">All Items</div>';
+                categories.forEach(cat => {
+                    catHtml += `<div class="cat-chip" onclick="filterCategory('${cat}', this)">${cat}</div>`;
+                });
+                catContainer.innerHTML = catHtml;
+
+                renderProducts(products);
+
+                // Fetch Customers strictly for THIS businessId
+                const custSnap = await db.collection('customers').where('businessId', '==', currentBusinessId).get();
+                customers = custSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                const custSelect = document.getElementById('mobileCustomerSelect');
+                let custHtml = '<option value="guest" data-name="Walk-in Outdoor Customer" data-phone="-">Walk-in / Outdoor Customer</option>';
+                customers.forEach(c => {
+                    custHtml += `<option value="${c.id}" data-name="${c.fullName}" data-phone="${c.mobile}">${c.fullName} (${c.mobile})</option>`;
+                });
+                custSelect.innerHTML = custHtml;
+
+            } catch (err) {
+                console.error('Error loading mobile PWA data:', err);
+                showToast('Failed to load store inventory', true);
+            }
+        }
+
+        function filterCategory(cat, el) {
+            activeCategory = cat;
+            document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
+            if (el) el.classList.add('active');
+            
+            const term = (document.getElementById('mobileSearchInput').value || '').toLowerCase().trim();
+            let filtered = cat === 'all' ? products : products.filter(p => p.category === cat);
+            if (term) {
+                filtered = filtered.filter(p => p.name.toLowerCase().includes(term) || (p.code && p.code.toLowerCase().includes(term)));
+            }
+            renderProducts(filtered);
+        }
+
+        function onSearchInput() {
+            filterCategory(activeCategory, null);
+        }
+
+        function renderProducts(prods) {
+            const container = document.getElementById('productListContainer');
+            if (!prods || prods.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-light);">No products found in Retail Inventory.</div>';
+                return;
+            }
+
+            container.innerHTML = prods.map(p => {
+                const stock = Number(p.stock || 0);
+                const unitStr = p.unit || (p.sellType === 'weight' ? 'kg' : 'Pcs');
+                return `
+                <div class="product-item">
+                    <div class="prod-info">
+                        <div class="prod-name">${p.name}</div>
+                        <div class="prod-price">Rs. ${parseFloat(p.price || 0).toFixed(2)} <span style="font-size:11px; color:var(--text-light); font-weight:normal;">/ ${unitStr}</span></div>
+                        <div class="prod-stock">Stock: ${stock} ${unitStr}</div>
+                    </div>
+                    <button class="add-btn" onclick="addToCart('${p.id}')">
+                        <i class="fas fa-plus"></i> Add
+                    </button>
+                </div>`;
+            }).join('');
+        }
+
+        function addToCart(id) {
+            const p = products.find(prod => prod.id === id);
+            if (!p) return;
+
+            const existing = cart.find(item => item.id === id);
+            if (existing) {
+                existing.quantity += 1;
+            } else {
+                cart.push({
+                    id: p.id,
+                    name: p.name,
+                    price: parseFloat(p.price || 0),
+                    cost: parseFloat(p.cost || 0),
+                    unit: p.unit || (p.sellType === 'weight' ? 'kg' : 'Pcs'),
+                    sellType: p.sellType || 'pcs',
+                    quantity: 1
+                });
+            }
+            showToast(`Added ${p.name} to cart`);
+            updateBarSummary();
+        }
+
+        function updateBarSummary() {
+            const totalCount = cart.reduce((sum, i) => sum + i.quantity, 0);
+            const totalPrice = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+            document.getElementById('barItemCount').textContent = `${totalCount} Item${totalCount !== 1 ? 's' : ''} in Cart`;
+            document.getElementById('barTotalPrice').textContent = `Rs. ${totalPrice.toFixed(2)}`;
+        }
+
+        function openCartModal() {
+            if (cart.length === 0) {
+                showToast('Cart is empty! Add products first.', true);
+                return;
+            }
+            renderCartItems();
+            document.getElementById('cartModal').style.display = 'flex';
+        }
+
+        function closeCartModal() {
+            document.getElementById('cartModal').style.display = 'none';
+        }
+
+        function renderCartItems() {
+            const container = document.getElementById('cartItemsList');
+            container.innerHTML = cart.map(i => {
+                return `
+                <div class="cart-row">
+                    <div style="flex:1;">
+                        <div style="font-weight:700; font-size:13px; color:var(--text);">${i.name}</div>
+                        <div style="font-size:11px; color:var(--text-light);">Rs. ${i.price.toFixed(2)} / ${i.unit}</div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <input type="number" step="any" class="cart-qty-input" value="${i.quantity}" oninput="updateCartQty('${i.id}', this.value)">
+                        <input type="number" step="any" class="cart-price-input" value="${i.price}" oninput="updateCartPrice('${i.id}', this.value)">
+                        <button onclick="removeFromCart('${i.id}')" style="background:none; border:none; color:#ef4444; font-size:16px; cursor:pointer;">✕</button>
+                    </div>
+                </div>`;
+            }).join('');
+            calculateCartTotals();
+        }
+
+        function updateCartQty(id, qtyVal) {
+            const item = cart.find(i => i.id === id);
+            if (item) {
+                item.quantity = parseFloat(qtyVal) || 1;
+                calculateCartTotals();
+                updateBarSummary();
+            }
+        }
+
+        function updateCartPrice(id, priceVal) {
+            const item = cart.find(i => i.id === id);
+            if (item) {
+                item.price = parseFloat(priceVal) || 0;
+                calculateCartTotals();
+                updateBarSummary();
+            }
+        }
+
+        function removeFromCart(id) {
+            cart = cart.filter(i => i.id !== id);
+            renderCartItems();
+            updateBarSummary();
+            if (cart.length === 0) closeCartModal();
+        }
+
+        function calculateCartTotals() {
+            const subtotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+            const discount = parseFloat(document.getElementById('cartDiscountInput').value) || 0;
+            const grandTotal = Math.max(0, subtotal - discount);
+
+            document.getElementById('cartSubtotal').textContent = `Rs. ${subtotal.toFixed(2)}`;
+            document.getElementById('cartGrandTotal').textContent = `Rs. ${grandTotal.toFixed(2)}`;
+        }
+
+        function selectPayType(type, el) {
+            selectedPayType = type;
+            document.querySelectorAll('.pay-type-btn').forEach(b => b.classList.remove('active'));
+            if (el) el.classList.add('active');
+        }
+
+        async function submitOutdoorSale() {
+            if (cart.length === 0 || !currentBusinessId) return;
+
+            const custSelect = document.getElementById('mobileCustomerSelect');
+            const selectedOpt = custSelect.options[custSelect.selectedIndex];
+            const custVal = custSelect.value;
+
+            const customerObj = custVal === 'guest' 
+                ? { name: 'Walk-in Outdoor Customer', phone: '-' }
+                : { id: custVal, name: selectedOpt.dataset.name, phone: selectedOpt.dataset.phone };
+
+            const subtotal = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+            const discountAmount = parseFloat(document.getElementById('cartDiscountInput').value) || 0;
+            const total = Math.max(0, subtotal - discountAmount);
+
+            // AUTO-SET DATE AND TIME (NO DATE INPUT NEEDED!)
+            const orderData = {
+                customer: customerObj,
+                items: cart,
+                subtotal: subtotal,
+                discountAmount: discountAmount,
+                total: total,
+                paymentMethod: selectedPayType,
+                status: 'completed',
+                isOutdoorSale: true,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                billDate: new Date().toISOString().split('T')[0],
+                businessId: currentBusinessId,
+                amountPaid: total,
+                balanceDue: 0
+            };
+
+            try {
+                // Save Order to Firestore under THIS businessId collection
+                const orderRef = await db.collection('orders').doc(currentBusinessId).collection('list').add(orderData);
+                const invoiceNo = 'MOB-' + orderRef.id.substring(0, 6).toUpperCase();
+                await orderRef.update({ invoiceNo: invoiceNo });
+
+                // Auto-update Product Stock Levels in Firestore under THIS businessId
+                for (const item of cart) {
+                    const prodRef = db.collection('products').doc(currentBusinessId).collection('list').doc(item.id);
+                    const prodDoc = await prodRef.get();
+                    if (prodDoc.exists) {
+                        const currentStock = prodDoc.data().stock || 0;
+                        await prodRef.update({ stock: Math.max(0, currentStock - item.quantity) });
+                    }
+                }
+
+                lastCompletedOrder = { ...orderData, invoiceNo };
+
+                closeCartModal();
+                showReceiptModal(lastCompletedOrder);
+
+                // Reset Cart
+                cart = [];
+                updateBarSummary();
+                showToast('Sale synced live to system!');
+
+            } catch (err) {
+                console.error('Error completing outdoor sale:', err);
+                showToast('Failed to complete sale: ' + err.message, true);
+            }
+        }
+
+        function showReceiptModal(order) {
+            const paper = document.getElementById('receiptPaper');
+            let itemsText = order.items.map(i => `${i.name.padEnd(16).slice(0, 16)} x${i.quantity}  Rs.${(i.price*i.quantity).toFixed(2)}`).join('<br>');
+            
+            paper.innerHTML = `
+                <strong>*** DIGIBIZ RETAIL OUTDOOR SALE ***</strong><br>
+                Invoice: ${order.invoiceNo}<br>
+                Date: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}<br>
+                Customer: ${order.customer.name}<br>
+                -----------------------------------<br>
+                ${itemsHtml = itemsText}<br>
+                -----------------------------------<br>
+                <strong>TOTAL: Rs. ${order.total.toFixed(2)}</strong><br>
+                Payment: ${order.paymentMethod.toUpperCase()}<br>
+                Thank you for your business!
+            `;
+            document.getElementById('receiptModal').style.display = 'flex';
+        }
+
+        function closeReceiptModal() {
+            document.getElementById('receiptModal').style.display = 'none';
+        }
+
+        function shareWhatsAppReceipt() {
+            if (!lastCompletedOrder) return;
+            const text = `*DIGIBIZ RETAIL INVOICE*\nInvoice: ${lastCompletedOrder.invoiceNo}\nTotal: Rs. ${lastCompletedOrder.total.toFixed(2)}\nCustomer: ${lastCompletedOrder.customer.name}\nThank you!`;
+            window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+        }
+
+        // Customer Modal
+        function openNewCustomerModal() { document.getElementById('newCustModal').style.display = 'flex'; }
+        function closeNewCustomerModal() { document.getElementById('newCustModal').style.display = 'none'; }
+        
+        async function saveNewCustomer() {
+            const name = document.getElementById('newCustName').value.trim();
+            const phone = document.getElementById('newCustPhone').value.trim();
+            if (!name || !phone) { showToast('Name and phone required', true); return; }
+
+            try {
+                const ref = await db.collection('customers').add({ fullName: name, mobile: phone, businessId: currentBusinessId });
+                const sel = document.getElementById('mobileCustomerSelect');
+                const opt = document.createElement('option');
+                opt.value = ref.id;
+                opt.dataset.name = name;
+                opt.dataset.phone = phone;
+                opt.textContent = `${name} (${phone})`;
+                sel.appendChild(opt);
+                sel.value = ref.id;
+
+                closeNewCustomerModal();
+                showToast('Customer saved!');
+            } catch(e) {
+                showToast('Failed to save customer', true);
+            }
+        }
+
+        function showToast(msg, isErr = false) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.style.background = isErr ? '#ef4444' : '#0f172a';
+            t.style.display = 'block';
+            setTimeout(() => { t.style.display = 'none'; }, 2500);
+        }
+    </script>
+</body>
+</html>

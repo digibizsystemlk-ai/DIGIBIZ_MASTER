@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Hardware Inventory</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/dashboard-core.js?v=4"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter','Segoe UI',sans-serif;background:#f5f7fb;color:#0f172a;}
+        .main{padding:18px;}
+        .header{background:#fff;border-left:4px solid #0f3b2c;border-radius:12px;padding:14px 16px;margin-bottom:12px;}
+        .header h1{font-size:22px;color:#0f3b2c;}
+        .layout{display:grid;grid-template-columns:1.1fr 1.9fr;gap:12px;}
+        .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px;}
+        .card h3{font-size:14px;color:#0f3b2c;margin-bottom:10px;}
+        .row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+        input,select,button{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;}
+        button{cursor:pointer;background:#0f3b2c;border:none;color:#fff;}
+        table{width:100%;border-collapse:collapse;font-size:12px;}
+        th,td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left;}
+        th{background:#f8fafc;}
+        .badge{padding:2px 8px;border-radius:999px;font-size:10px;background:#e2e8f0;}
+        .tools{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px;}
+        .tools .mini{background:#f8fafc;border-radius:8px;padding:8px;}
+        .tools .mini .k{font-size:10px;color:#64748b;}
+        .tools .mini .v{font-size:14px;font-weight:700;color:#0f3b2c;}
+        @media (max-width:1000px){.layout{grid-template-columns:1fr;}.row{grid-template-columns:1fr;}.tools{grid-template-columns:repeat(2,1fr);}}
+    </style>
+</head>
+<body>
+<div class="main">
+    <div class="header">
+        <h1>🔧 Hardware Inventory</h1>
+        <p>Stock Unit + Selling Unit + measurement conversion ready inventory.</p>
+    </div>
+    <div class="layout">
+        <div class="card">
+            <h3>Add Hardware Item</h3>
+            <div class="row">
+                <input id="itemName" placeholder="Item name">
+                <input id="sku" placeholder="SKU">
+            </div>
+            <div class="row">
+                <select id="stockUnit">
+                    <option value="">Stock Unit</option>
+                    <option value="Length">Length</option>
+                    <option value="Bundle">Bundle</option>
+                    <option value="Cube">Cube</option>
+                    <option value="Kg">Kg</option>
+                    <option value="Ton">Ton</option>
+                    <option value="Items">Items</option>
+                </select>
+                <select id="sellingUnit">
+                    <option value="">Selling Unit</option>
+                    <option value="Feet">Feet</option>
+                    <option value="Inch">Inch</option>
+                    <option value="Items">Items</option>
+                    <option value="Pieces">Pieces</option>
+                    <option value="HalfCube">Half Cube</option>
+                    <option value="QuarterCube">Quarter Cube</option>
+                    <option value="Kg">Kg</option>
+                </select>
+            </div>
+            <div class="row">
+                <input id="stockQty" type="number" min="0" step="0.01" placeholder="Stock quantity">
+                <input id="unitPrice" type="number" min="0" step="0.01" placeholder="Unit price">
+            </div>
+            <div class="row">
+                <input id="lengthFeet" type="number" min="0" step="1" placeholder="Base length (feet)">
+                <input id="lengthInches" type="number" min="0" max="11" step="1" placeholder="Base inches">
+            </div>
+            <div class="row">
+                <input id="pricePerCube" type="number" min="0" step="0.01" placeholder="Price per cube (optional)">
+                <input id="pricePerKg" type="number" min="0" step="0.01" placeholder="Price per kg (optional)">
+            </div>
+            <button id="saveBtn">Save Item</button>
+            <div class="tools">
+                <div class="mini"><div class="k">Feet -> Inches</div><div class="v" id="toInches">0</div></div>
+                <div class="mini"><div class="k">Inches -> Feet</div><div class="v" id="toFeet">0</div></div>
+                <div class="mini"><div class="k">Remaining Feet</div><div class="v" id="remainingFeet">0</div></div>
+                <div class="mini"><div class="k">Remaining Inches</div><div class="v" id="remainingInches">0</div></div>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Inventory List</h3>
+            <div style="max-height:560px;overflow:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Stock Unit</th>
+                            <th>Selling Unit</th>
+                            <th>Stock</th>
+                            <th>Price</th>
+                            <th>Measure Base</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventoryBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    let state = { context: null, items: [] };
+
+    function toTotalInches(feet, inches) {
+        return (Number(feet) || 0) * 12 + (Number(inches) || 0);
+    }
+    function fromTotalInches(totalInches) {
+        const t = Math.max(0, Number(totalInches) || 0);
+        return { feet: Math.floor(t / 12), inches: Math.round(t % 12) };
+    }
+    function calculateRemaining(baseFeet, baseInches, soldFeet, soldInches) {
+        const base = toTotalInches(baseFeet, baseInches);
+        const sold = toTotalInches(soldFeet, soldInches);
+        const rem = fromTotalInches(base - sold);
+        return { ...rem, totalInches: Math.max(0, base - sold) };
+    }
+
+    function renderTools() {
+        const feet = Number(document.getElementById('lengthFeet').value) || 0;
+        const inches = Number(document.getElementById('lengthInches').value) || 0;
+        const total = toTotalInches(feet, inches);
+        const sampleSold = calculateRemaining(feet, inches, 5, 6);
+        document.getElementById('toInches').textContent = `${total}`;
+        document.getElementById('toFeet').textContent = `${(total / 12).toFixed(2)}`;
+        document.getElementById('remainingFeet').textContent = `${sampleSold.feet}`;
+        document.getElementById('remainingInches').textContent = `${sampleSold.inches}`;
+    }
+
+    async function loadItems() {
+        const snap = await window.db.collection('products').doc(state.context.businessId).collection('list')
+            .where('businessType', '==', 'hardware')
+            .get();
+        state.items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        document.getElementById('inventoryBody').innerHTML = state.items.map((it) => `
+            <tr>
+                <td>${it.name || '-'}</td>
+                <td><span class="badge">${it.stockUnit || '-'}</span></td>
+                <td><span class="badge">${it.sellingUnit || '-'}</span></td>
+                <td>${Number(it.stock) || 0}</td>
+                <td>${Number(it.unitPrice || 0).toFixed(2)}</td>
+                <td>${(it.lengthFeet || 0)}ft ${(it.lengthInches || 0)}in</td>
+            </tr>
+        `).join('') || '<tr><td colspan="6">No items</td></tr>';
+    }
+
+    async function saveItem() {
+        const payload = {
+            name: document.getElementById('itemName').value.trim(),
+            sku: document.getElementById('sku').value.trim(),
+            stockUnit: document.getElementById('stockUnit').value,
+            sellingUnit: document.getElementById('sellingUnit').value,
+            stock: Number(document.getElementById('stockQty').value) || 0,
+            unitPrice: Number(document.getElementById('unitPrice').value) || 0,
+            lengthFeet: Number(document.getElementById('lengthFeet').value) || 0,
+            lengthInches: Number(document.getElementById('lengthInches').value) || 0,
+            pricePerCube: Number(document.getElementById('pricePerCube').value) || 0,
+            pricePerKg: Number(document.getElementById('pricePerKg').value) || 0,
+            businessId: state.context.businessId,
+            businessType: 'hardware',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        if (!payload.name || !payload.stockUnit || !payload.sellingUnit) {
+            alert('Please enter item name, stock unit and selling unit.');
+            return;
+        }
+        await window.db.collection('products').doc(state.context.businessId).collection('list').add(payload);
+        document.querySelectorAll('input,select').forEach((el) => el.value = '');
+        renderTools();
+        await loadItems();
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', saveItem);
+    document.getElementById('lengthFeet').addEventListener('input', renderTools);
+    document.getElementById('lengthInches').addEventListener('input', renderTools);
+
+    auth.onAuthStateChanged(async (user) => {
+        if (!user) { window.location.href = '/'; return; }
+        state.context = await window.dashboardCore.getContext(user);
+        if (!state.context || state.context.businessType !== 'hardware') {
+            alert('This page is only available for Hardware business type.');
+            window.location.href = '/core/dashboard.html';
+            return;
+        }
+        renderTools();
+        await loadItems();
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Purchases & GRN - DIGIBIZ Auto Care</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="autocare-theme.css?v=3">
+    
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=3"></script>
+    <script src="/core/event-bus.js?v=3"></script>
+    <script src="/core/accounts-core.js?v=3"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/dashboard-core.js?v=3"></script>
+    <script src="/core/subscription-manager.js?v=3"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <script src="autocare-utils.js?v=2"></script>
+    
+    <style>
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .grn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 900px) { .grn-grid { grid-template-columns: 1fr; } }
+        .form-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div>
+            <h2 style="color:#38bdf8; font-size:24px; font-weight:800;"><i class="fa-solid fa-boxes-packing"></i> Stock Purchases & Supplier GRN Console</h2>
+            <p style="color:#94a3b8; font-size:14px; margin-top:4px;">සැපයුම්කරුවන්ගෙන් අමතර කොටස් මිලදී ගැනීම් (Stock Inflow) සහ තොගය වැඩි කිරීම</p>
+        </div>
+        <button class="btn btn-primary" onclick="openGrnModal()"><i class="fa-solid fa-cart-plus"></i> Record New Stock Purchase (GRN)</button>
+    </div>
+
+    <!-- GRN Summary Stats -->
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:20px; margin-bottom:25px;">
+        <div class="card-dark" style="padding:20px;">
+            <span style="font-size:13px; color:#94a3b8; font-weight:600;">Total Purchase GRNs</span>
+            <h2 style="font-size:26px; color:#38bdf8; margin-top:6px;" id="statGrnCount">0</h2>
+        </div>
+        <div class="card-dark" style="padding:20px;">
+            <span style="font-size:13px; color:#94a3b8; font-weight:600;">Total Stock Outflow Value</span>
+            <h2 style="font-size:26px; color:#f87171; margin-top:6px;" id="statTotalExpense">Rs. 0.00</h2>
+        </div>
+    </div>
+
+    <!-- GRN History Table -->
+    <div class="table-card" style="padding:0; overflow:hidden;">
+        <table>
+            <thead>
+                <tr>
+                    <th>GRN # / Date</th>
+                    <th>Supplier Name</th>
+                    <th>Supplier Invoice #</th>
+                    <th>Items Purchased</th>
+                    <th>Total Purchase Cost</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="grnTableBody">
+                <!-- JS Rendered -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Modal for Record New GRN -->
+    <div class="modal" id="grnModal" style="display:none;">
+        <div class="modal-content" style="max-width:650px; padding:24px; border-radius:20px;">
+            <h3 style="margin-bottom:15px; color:#38bdf8;"><i class="fa-solid fa-truck-ramp-box"></i> Record Stock Purchase / GRN</h3>
+            <form onsubmit="saveGrn(event)">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div class="form-group">
+                        <label>GRN Reference Number *</label>
+                        <input type="text" id="grnNo" style="font-weight:700; color:#38bdf8;" title="Manual paper book override supported">
+                    </div>
+                    <div class="form-group">
+                        <label>Purchase Date *</label>
+                        <input type="date" id="grnDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Supplier Name *</label>
+                        <input type="text" id="grnSupplier" placeholder="e.g. Toyota Lanka / Castrol Oil" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Supplier Invoice / Bill No</label>
+                        <input type="text" id="grnSupInv" placeholder="e.g. INV-90812">
+                    </div>
+                </div>
+
+                <hr style="margin:15px 0; border-color:#334155;">
+                <h4 style="font-size:14px; color:#38bdf8; margin-bottom:10px;"><i class="fa-solid fa-box"></i> Select Spare Part & Quantity</h4>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>Select Existing Part OR Type New Part SKU *</label>
+                        <input type="text" id="grnPartSelect" list="grnPartList" onchange="onGrnPartSelect()" placeholder="Search and select existing Part SKU..." style="width:100%;">
+                        <datalist id="grnPartList"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label>Part SKU / Number *</label>
+                        <input type="text" id="grnPartNo" placeholder="e.g. OIL-001" required style="text-transform:uppercase;">
+                    </div>
+                    <div class="form-group">
+                        <label>Part Name *</label>
+                        <input type="text" id="grnPartName" placeholder="e.g. Engine Oil 4L" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Category</label>
+                        <select id="grnPartCat">
+                            <option value="Oils & Fluids">Oils & Fluids</option>
+                            <option value="Filters">Filters</option>
+                            <option value="Brakes">Brakes</option>
+                            <option value="Engine">Engine</option>
+                            <option value="Electrical">Electrical</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Compatible Brand & Models</label>
+                        <input type="text" id="grnPartModel" placeholder="e.g. Toyota Prius, Axio">
+                    </div>
+                    <div class="form-group">
+                        <label>Purchased Quantity *</label>
+                        <input type="number" id="grnQty" value="10" required min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Cost Price per Unit (LKR) *</label>
+                        <input type="number" id="grnCost" value="0" required min="0" step="0.01">
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>Selling Price per Unit (LKR) *</label>
+                        <input type="number" id="grnPrice" value="0" required min="0" step="0.01">
+                    </div>
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                    <button type="button" class="btn btn-outline" onclick="document.getElementById('grnModal').style.display='none'">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check"></i> Complete & Add to Inventory</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let grnList = [];
+        let spareParts = [];
+
+        function getBizId() {
+            return window.AutoCareUtils ? window.AutoCareUtils.getBizId() : 'DEFAULT_BIZ';
+        }
+
+        function loadGrnData() {
+            const bizId = getBizId();
+            const grnKey = `autocare_grn_${bizId}`;
+            const partsKey = `autocare_parts_${bizId}`;
+
+            const cachedGrn = localStorage.getItem(grnKey);
+            const cachedParts = localStorage.getItem(partsKey);
+
+            grnList = cachedGrn ? JSON.parse(cachedGrn) : [];
+            spareParts = cachedParts ? JSON.parse(cachedParts) : [];
+
+            renderGrnTable();
+            populatePartDropdown();
+        }
+
+        function populatePartDropdown() {
+            const list = document.getElementById('grnPartList');
+            if(list) {
+                const options = spareParts.map(p => {
+                    return `<option value="${p.no} - ${p.name}">Stock: ${p.qty}</option>`;
+                });
+                list.innerHTML = options.join('');
+            }
+        }
+
+        function onGrnPartSelect() {
+            const inputVal = document.getElementById('grnPartSelect').value;
+            if(!inputVal) return;
+            
+            const no = inputVal.split(' - ')[0].trim();
+            const p = spareParts.find(x => x.no === no);
+            if(!p) return;
+
+            document.getElementById('grnPartNo').value = p.no;
+            document.getElementById('grnPartName').value = p.name;
+            document.getElementById('grnPartCat').value = p.cat || 'Oils & Fluids';
+            document.getElementById('grnPartModel').value = p.model || '';
+            document.getElementById('grnCost').value = p.cost || 0;
+            document.getElementById('grnPrice').value = p.price || 0;
+        }
+
+        function renderGrnTable() {
+            const tbody = document.getElementById('grnTableBody');
+            tbody.innerHTML = '';
+
+            let totalExp = 0;
+            if (grnList.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:40px; color:#64748b;">තවම Stock GRN මිලදී ගැනීම් සටහන් කර නොමැත. (No stock purchases recorded)</td></tr>`;
+            } else {
+                grnList.forEach(g => {
+                    totalExp += g.totalCost;
+                    const dateStr = window.AutoCareUtils ? window.AutoCareUtils.formatDateDDMMYYYY(g.date) : g.date;
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><strong style="color:#38bdf8;">${g.grnNo}</strong><br><small style="color:#94a3b8;">${dateStr}</small></td>
+                            <td><strong style="color:#ffffff;">${g.supplier}</strong></td>
+                            <td>${g.supInv || '-'}</td>
+                            <td><strong style="color:#ffffff;">${g.partName}</strong> (${g.qty} units @ Rs. ${g.costPrice})</td>
+                            <td><strong style="color:#f87171;">Rs. ${g.totalCost.toLocaleString('en-US', {minimumFractionDigits:2})}</strong></td>
+                            <td>
+                                <button class="btn-danger-icon" title="Delete GRN Record" onclick="deleteGrn('${g.id}')"><i class="fa-solid fa-trash-can"></i></button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            document.getElementById('statGrnCount').innerText = grnList.length;
+            document.getElementById('statTotalExpense').innerText = 'Rs. ' + totalExp.toLocaleString('en-US', {minimumFractionDigits:2});
+        }
+
+        function openGrnModal() {
+            const bizId = getBizId();
+            const counterKey = `autocare_grn_counter_${bizId}`;
+            let count = parseInt(localStorage.getItem(counterKey) || '0', 10) + 1;
+            const grnNo = 'GRN-' + String(count).padStart(5, '0');
+
+            document.getElementById('grnNo').value = grnNo;
+            document.getElementById('grnDate').valueAsDate = new Date();
+            document.getElementById('grnSupplier').value = '';
+            document.getElementById('grnSupInv').value = '';
+            document.getElementById('grnPartSelect').value = '';
+            document.getElementById('grnPartNo').value = '';
+            document.getElementById('grnPartName').value = '';
+            document.getElementById('grnPartCat').value = 'Oils & Fluids';
+            document.getElementById('grnPartModel').value = '';
+            document.getElementById('grnQty').value = '10';
+            document.getElementById('grnCost').value = '0';
+            document.getElementById('grnPrice').value = '0';
+
+            populatePartDropdown();
+            document.getElementById('grnModal').style.display = 'flex';
+        }
+
+        function saveGrn(e) {
+            e.preventDefault();
+            const bizId = getBizId();
+            const grnNo = document.getElementById('grnNo').value;
+            const date = document.getElementById('grnDate').value;
+            const supplier = document.getElementById('grnSupplier').value.trim();
+            const supInv = document.getElementById('grnSupInv').value.trim();
+
+            const pNo = document.getElementById('grnPartNo').value.toUpperCase().trim();
+            const pName = document.getElementById('grnPartName').value.trim();
+            const pCat = document.getElementById('grnPartCat').value;
+            const pModel = document.getElementById('grnPartModel').value.trim();
+            const qty = parseInt(document.getElementById('grnQty').value) || 0;
+            const costPrice = parseFloat(document.getElementById('grnCost').value) || 0;
+            const sellingPrice = parseFloat(document.getElementById('grnPrice').value) || 0;
+            const totalCost = qty * costPrice;
+
+            // 1. Update Inventory Stock!
+            let partIdx = spareParts.findIndex(x => x.no === pNo);
+            if (partIdx >= 0) {
+                spareParts[partIdx].qty += qty;
+                spareParts[partIdx].cost = costPrice;
+                spareParts[partIdx].price = sellingPrice;
+            } else {
+                spareParts.unshift({
+                    no: pNo, name: pName, cat: pCat, model: pModel,
+                    qty: qty, min: 5, cost: costPrice, price: sellingPrice
+                });
+            }
+            localStorage.setItem(`autocare_parts_${bizId}`, JSON.stringify(spareParts));
+
+            // 2. Save GRN Record
+            const grnRecord = {
+                id: 'GRN-' + Date.now(),
+                grnNo, date, supplier, supInv,
+                partNo: pNo, partName: pName, qty, costPrice, sellingPrice, totalCost
+            };
+            grnList.unshift(grnRecord);
+            localStorage.setItem(`autocare_grn_${bizId}`, JSON.stringify(grnList));
+
+            // 3. Post Journal Entry to Accounting Firestore
+            try {
+                if (window.db) {
+                    window.db.collection('journal').doc(bizId).collection('entries').add({
+                        date: new Date(date),
+                        memo: `Auto Care GRN Purchase: ${pName} (${qty} units) from ${supplier || 'Supplier'} (GRN: ${grnNo})`,
+                        entries: [
+                            { accountId: '5-5010-01', accountCode: '5-5010-01', accountName: 'Cost of Goods Sold', debit: totalCost, credit: 0, amount: totalCost, type: 'debit' },
+                            { accountId: 'AC-21000', accountCode: 'AC-21000', accountName: 'Accounts Payable', debit: 0, credit: totalCost, amount: totalCost, type: 'credit' }
+                        ],
+                        ref: `purchases/${grnRecord.id}`,
+                        refType: 'PURCHASE',
+                        businessId: bizId,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+            } catch (eJ) {
+                console.warn('[Auto Care GRN] Journal posting warning:', eJ);
+            }
+
+            // Increment Counter
+            const counterKey = `autocare_grn_counter_${bizId}`;
+            let count = parseInt(localStorage.getItem(counterKey) || '0', 10) + 1;
+            localStorage.setItem(counterKey, String(count));
+
+            // 3. Record Outflow Expense in Finance Ledger!
+            const finKey = `autocare_finance_${bizId}`;
+            let finEntries = localStorage.getItem(finKey) ? JSON.parse(localStorage.getItem(finKey)) : [];
+            finEntries.unshift({
+                id: 'FIN-GRN-' + Date.now(),
+                date: date,
+                ref: grnNo,
+                cat: 'Stock Purchase (GRN)',
+                desc: `Purchase ${pName} (${qty} units) from ${supplier}`,
+                type: 'EXPENSE',
+                amount: totalCost
+            });
+            localStorage.setItem(finKey, JSON.stringify(finEntries));
+
+            document.getElementById('grnModal').style.display = 'none';
+            renderGrnTable();
+            alert(`✅ GRN ${grnNo} recorded successfully!\nInventory updated (+${qty} units of ${pName}).`);
+        }
+
+        function deleteGrn(id) {
+            if(confirm('ඔබට මෙම GRN සටහන මකා දැමීමට අවශ්‍ය බව තහවුරු කරන්න?')) {
+                const bizId = getBizId();
+                grnList = grnList.filter(x => x.id !== id);
+                localStorage.setItem(`autocare_grn_${bizId}`, JSON.stringify(grnList));
+                renderGrnTable();
+                alert('✅ GRN record deleted!');
+            }
+        }
+
+        window.onload = loadGrnData;
+    </script>
+</body>
+</html>

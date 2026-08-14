@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>අමතර ලාභ (Additional Income) — Scrap</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <script src="/core/scrap-vba-core.js?v=76"></script>
+    <style>
+        body{font-family:Inter,Segoe UI,sans-serif;background:#f0fdf4;color:#0f172a;margin:0;}
+        .page{padding:15px;max-width:900px;margin:0 auto;}
+        .header { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
+        .header-icon { background: #166534; color: #fff; width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 12px rgba(22,101,52,0.2); }
+        .card{background:#fff;border:1px solid #bbf7d0;border-radius:20px;padding:24px;margin-bottom:15px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);}
+        h1{font-size:22px;color:#0f172a;margin:0;}
+        p.subtitle { color: #64748b; font-size: 14px; margin: 5px 0 0; }
+        label{display:block;font-size:11px;font-weight:700;color:#64748b;margin-top:16px;text-transform:uppercase;letter-spacing:0.05em;}
+        input,select,textarea{width:100%;padding:14px;border:1px solid #cbd5e1;border-radius:12px;box-sizing:border-box;font-size:15px;transition:all 0.2s;background: #f8fafc;}
+        input:focus,select:focus,textarea:focus{border-color:#166534;outline:none;box-shadow:0 0 0 4px rgba(22,101,52,0.1); background: #fff;}
+        
+        button#saveBtn { background: #166534; color: #fff; border: none; padding: 16px 20px; border-radius: 14px; cursor: pointer; font-weight: 700; font-size: 16px; margin-top: 24px; width: 100%; transition: all 0.2s; box-shadow: 0 4px 12px rgba(22,101,52,0.2); }
+        button#saveBtn:hover { background: #14532d; transform: translateY(-1px); }
+        button#saveBtn:active { transform: translateY(0); }
+        button#saveBtn:disabled { background: #94a3b8; cursor: not-allowed; transform: none; }
+
+        table{width:100%;border-collapse:collapse;font-size:14px;margin-top:15px;}
+        th,td{padding:14px 12px;border-bottom:1px solid #f1f5f9;text-align:left;}
+        th{background:#f8fafc;font-weight:700;color:#64748b;text-transform:uppercase;font-size:11px;letter-spacing:0.05em;}
+        .num{text-align:right;font-weight:700; font-family: 'JetBrains Mono', monospace; color: #166534;}
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #475569; }
+        
+        @media (max-width:600px) {
+            .mobile-hide { display: none !important; }
+            th, td { padding: 12px 6px; }
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="header">
+        <div class="header-icon">💰</div>
+        <div>
+            <h1>අමතර ලාභ (Additional Income)</h1>
+            <p class="subtitle">බිල්පත් වලින් පිටත ලැබෙන අනෙකුත් ආදායම් සහ ලාභ සටහන් කිරීම.</p>
+        </div>
+    </div>
+
+    <div class="card">
+        <label for="incomeDate">දිනය</label>
+        <input type="date" id="incomeDate">
+        
+        <label for="amount">මුදල (Rs)</label>
+        <input type="number" id="amount" step="0.01" min="0" placeholder="0.00">
+        
+        <label for="category">ලාභයේ වර්ගය (Category)</label>
+        <select id="category">
+            <option value="Service Charge">Service Charge / සේවා ගාස්තු</option>
+            <option value="Commission">Commission / කොමිස් මුදල්</option>
+            <option value="Investment Gain">Investment Gain</option>
+            <option value="Sale of Asset">Sale of Asset</option>
+            <option value="Other">Other / වෙනත්</option>
+        </select>
+
+        <label for="payMethod">ලැබුණු ආකාරය (Payment Method)</label>
+        <select id="payMethod">
+            <option value="CASH">අතට (Cash)</option>
+            <option value="BANK">බැංකුවට (Bank)</option>
+        </select>
+        
+        <label for="note">සටහන (Note)</label>
+        <textarea id="note" rows="2" placeholder="අමතර විස්තර..."></textarea>
+        
+        <button type="button" id="saveBtn">ලාභය සුරකින්න (Save Income)</button>
+    </div>
+
+    <div class="card">
+        <h2 style="font-size:17px;margin:0 0 15px; color:#1e293b;">මෑත ආදායම් (Recent Income)</h2>
+        <div style="overflow:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>දිනය</th>
+                        <th>වර්ගය</th>
+                        <th class="num">මුදල</th>
+                        <th class="mobile-hide">සටහන</th>
+                    </tr>
+                </thead>
+                <tbody id="incomeList">
+                    <tr><td colspan="4" style="text-align:center; padding:30px; color:#94a3b8;">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+let SCRAP_BUSINESS_ID = '';
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+async function loadHistory() {
+    if (!SCRAP_BUSINESS_ID) return;
+    try {
+        const snap = await db.collection('scrap_income')
+            .where('businessId', '==', SCRAP_BUSINESS_ID)
+            .orderBy('createdAt', 'desc')
+            .limit(50)
+            .get()
+            .catch(() => ({ docs: [] }));
+        
+        const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        document.getElementById('incomeList').innerHTML = rows.length 
+            ? rows.map(r => `
+                <tr>
+                    <td><div style="font-size:13px; font-weight:600;">${r.incomeDate || '-'}</div></td>
+                    <td><span class="badge">${r.category || '-'}</span></td>
+                    <td class="num">+ ${fmt(r.amount).replace('Rs ','')}</td>
+                    <td class="mobile-hide" style="font-size:12px; color:#64748b;">${String(r.note || '').slice(0, 40)}</td>
+                </tr>
+            `).join('')
+            : '<tr><td colspan="4" style="text-align:center; padding:30px; color:#94a3b8;">තවම ආදායම් වාර්තා වී නොමැත.</td></tr>';
+    } catch (e) {
+        console.error(e);
+        document.getElementById('incomeList').innerHTML = '<tr><td colspan="4" style="color:red; text-align:center;">Error loading history.</td></tr>';
+    }
+}
+
+document.getElementById('saveBtn').onclick = async function() {
+    if (!SCRAP_BUSINESS_ID) return;
+    const date = document.getElementById('incomeDate').value;
+    const amount = Number(document.getElementById('amount').value) || 0;
+    const category = document.getElementById('category').value;
+    const payMethod = document.getElementById('payMethod').value;
+    const note = document.getElementById('note').value.trim();
+
+    if (!date) return alert('කරුණාකර දිනය තෝරන්න.');
+    if (amount <= 0) return alert('කරුණාකර වලංගු මුදලක් ඇතුළත් කරන්න.');
+
+    if (!confirm(`Rs. ${amount.toFixed(2)} ක අමතර ලාභය සුරැකීමට අවශ්‍යද?`)) return;
+
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = 'සුරකිමින් පවතී...';
+
+    try {
+        const payload = {
+            businessId: SCRAP_BUSINESS_ID,
+            incomeDate: date,
+            amount: amount,
+            category: category,
+            paymentMethod: payMethod,
+            note: note,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        await db.collection('scrap_income').add(payload);
+
+        // Update Profit Pool (Increases balance)
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.updateProfitPool === 'function') {
+            await window.scrapVbaCore.updateProfitPool(SCRAP_BUSINESS_ID, Math.abs(amount), 'INCOME', `Additional Income: ${category}`);
+        }
+
+        // Post to Accounting (Journal)
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+            const GL_CASH = { accountCode: '1-1010-01', accountName: 'Cash - Main' };
+            const GL_BANK = { accountCode: '1-1020-01', accountName: 'Bank - Current Account' };
+            const GL_INCOME = { accountCode: '4-4020-99', accountName: 'Other Income' };
+            
+            const cashAccount = payMethod === 'BANK' ? GL_BANK : GL_CASH;
+            
+            // Income: Cash/Bank Debit, Income Credit
+            await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+                description: `Additional Income: ${category}`,
+                reference: date,
+                referenceType: 'SCRAP_INCOME',
+                date: date,
+                entries: [
+                    { ...cashAccount, debit: amount, credit: 0 },
+                    { ...GL_INCOME, debit: 0, credit: amount }
+                ]
+            });
+        }
+
+        alert('ලාභය සාර්ථකව සුරකින ලදී.');
+        document.getElementById('amount').value = '';
+        document.getElementById('note').value = '';
+        await loadHistory();
+    } catch (e) {
+        console.error(e);
+        alert('දෝෂයක් සිදුවිය: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'ලාභය සුරකින්න (Save Income)';
+    }
+};
+
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '/'; return; }
+    
+    let businessId = user.uid;
+    if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+        const ctx = await window.dashboardCore.getContext(user);
+        businessId = String((ctx && ctx.businessId) || user.uid);
+    } else {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    }
+    
+    SCRAP_BUSINESS_ID = businessId;
+    document.getElementById('incomeDate').value = new Date().toISOString().slice(0, 10);
+    await loadHistory();
+});
+</script>
+</body>
+</html>

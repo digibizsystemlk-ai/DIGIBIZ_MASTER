@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMS Log - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/dashboard-core.js?v=62"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <script src="/core/scrap-vba-core.js?v=62"></script>
+    <style>
+        body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f8fafc;color:#0f172a}
+        .wrap{padding:24px}
+        .card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px;box-shadow:0 8px 20px rgba(15,23,42,.06)}
+        h1{margin:0 0 6px;font-size:24px}
+        .muted{margin:0 0 14px;color:#64748b;font-size:13px}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th,td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:top}
+        .msg{white-space:normal;word-break:break-word;overflow-wrap:anywhere;line-height:1.35}
+        .pill{padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#e2e8f0;color:#334155}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>SMS Log</h1>
+    <p class="muted">Server-side SMS audit trail. Locked policy: if a row appears here as QUEUED, treat it as accepted by gateway flow for this deployment.</p>
+    <div class="card">
+        <table>
+            <thead>
+                <tr><th>Mobile</th><th>Message</th><th>Delivery</th><th>Final Status</th><th>Debug</th><th>Type</th><th>Credits</th><th>Balance after</th><th>Queued</th><th>Sent</th><th>Action</th></tr>
+            </thead>
+            <tbody id="rows"></tbody>
+        </table>
+    </div>
+</div>
+<script>
+function fmtDate(v){
+    if (!v) return '-';
+    if (typeof v.toDate === 'function') return v.toDate().toLocaleString();
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString();
+}
+function esc(v){
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+function resolveDeliveryMeta(x){
+    const status = String(x.status || '').toLowerCase();
+    const hasSentAt = !!x.sentAt;
+    const hasErr = !!(x.error || x.errorMessage || x.lastError);
+    const isFailed = status === 'failed' || hasErr;
+    if (isFailed) return { label: 'FAILED', cls: 'background:#fee2e2;color:#991b1b', note: String(x.error || x.errorMessage || x.lastError || 'Gateway failed') };
+    if (status === 'sent' || hasSentAt) return { label: 'SENT (Gateway)', cls: 'background:#dcfce7;color:#166534', note: 'Sent by gateway app. Phone outbox may not show this.' };
+    // SMS_LOCK_V1: Keep this semantics stable unless explicitly approved by owner.
+    return { label: 'QUEUED', cls: 'background:#e0f2fe;color:#0c4a6e', note: 'Accepted by gateway flow (locked policy for this deployment).' };
+}
+function resolveFinalStatus(x){
+    const status = String(x.status || '').toLowerCase();
+    const hasSentAt = !!x.sentAt;
+    const hasErr = !!(x.error || x.errorMessage || x.lastError);
+    if (status === 'failed' || hasErr) return { label: 'FAILED', cls: 'background:#fee2e2;color:#991b1b' };
+    if (status === 'sent' || hasSentAt) return { label: 'SENT', cls: 'background:#dcfce7;color:#166534' };
+    return { label: 'QUEUED', cls: 'background:#e0f2fe;color:#0c4a6e' };
+}
+firebase.auth().onAuthStateChanged(async (u) => {
+    if (!u) { window.location.href = '/'; return; }
+    const db = window.db || firebase.firestore();
+    const ctx = await window.dashboardCore.getContext(u);
+    const businessId = String((ctx && ctx.businessId) || u.uid);
+    const renderRows = (docs) => {
+        const uniq = new Map();
+        (docs || []).forEach((d) => {
+            const row = { id: d.id, ...(d.data() || {}) };
+            const prev = uniq.get(row.id);
+            const prevTime = prev && prev.updatedAt ? (prev.updatedAt.toDate ? prev.updatedAt.toDate().getTime() : new Date(prev.updatedAt || 0).getTime()) : 0;
+            const rowTime = row && row.updatedAt ? (row.updatedAt.toDate ? row.updatedAt.toDate().getTime() : new Date(row.updatedAt || 0).getTime()) : 0;
+            if (!prev || rowTime >= prevTime) uniq.set(row.id, row);
+        });
+        const rows = Array.from(uniq.values())
+            .sort((a, b) => {
+                const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+                const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+                return tb - ta;
+            });
+        const body = rows.length
+            ? rows.map((x) => {
+            const cr = x.creditCharged != null
+                ? String(x.creditCharged)
+                : (x.creditsUsed != null ? String(x.creditsUsed)
+                    : (x.smsCredits != null ? String(x.smsCredits)
+                        : (x.credit != null ? String(x.credit) : '-')));
+            const ba = x.smsBalanceAfter != null
+                ? String(x.smsBalanceAfter)
+                : (x.balanceAfter != null ? String(x.balanceAfter)
+                    : (x.walletBalanceAfter != null ? String(x.walletBalanceAfter) : '-'));
+            const dm = resolveDeliveryMeta(x);
+            const fs = resolveFinalStatus(x);
+            const debug = [
+                x.debugReason ? `Reason: ${x.debugReason}` : '',
+                x.gateway ? `Gateway: ${x.gateway}` : '',
+                x.gatewayDocPath ? `Path: ${x.gatewayDocPath}` : '',
+                x.createdBy ? `By: ${x.createdBy}` : ''
+            ].filter(Boolean).join(' | ') || dm.note || '-';
+            return `<tr>
+                <td>${esc(x.mobile || x.to || '-')}</td>
+                <td class="msg">${esc(x.message || x.body || '-')}</td>
+                <td><span class="pill" style="${dm.cls}">${esc(dm.label)}</span></td>
+                <td><span class="pill" style="${fs.cls}">${esc(fs.label)}</span></td>
+                <td class="msg">${esc(debug)}</td>
+                <td>${x.type || '-'}</td>
+                <td>${cr}</td>
+                <td>${ba}</td>
+                <td>${fmtDate(x.queuedAt || x.createdAt)}</td>
+                <td title="${esc(x.status === 'failed' ? (x.errorMessage || x.error || '') : '')}">${(() => {
+                    const st = String(x.status || '').toLowerCase();
+                    if (st === 'sent' || x.sentAt) return fmtDate(x.sentAt || x.updatedAt);
+                    if (st === 'failed') return x.failedAt ? fmtDate(x.failedAt) : (fmtDate(x.updatedAt) || 'FAILED');
+                    return '—';
+                })()}</td>
+                <td>
+                    <button class="resend-btn" onclick="window.resendSms('${esc(x.mobile || x.to || '')}', '${esc(x.message || x.body || '')}')" style="background:#0284c7;color:#fff;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:bold;transition:background 0.2s;white-space:nowrap;">නැවත යවන්න</button>
+                </td>
+            </tr>`;
+            }).join('')
+            : `<tr><td colspan="11" class="msg">No rows for this business yet. If you expect SMS here, confirm customer mobile, SMS event settings, and gateway app connectivity. This page shows server-side truth, not phone outbox state.</td></tr>`;
+        document.getElementById('rows').innerHTML = body;
+    };
+
+    window.resendSms = async (mobile, message) => {
+        if (!mobile || !message) return;
+        const cleanMsg = message.replace(/^\[[A-Z0-9]+\]\s*-\s*/i, '');
+        if (!confirm(`මෙම SMS පණිවිඩය නැවත යැවීමට අවශ්‍යද?\n\nදුරකථනය: ${mobile}\nපණිවිඩය: ${cleanMsg}`)) return;
+        
+        try {
+            if (!window.scrapVbaCore || typeof window.scrapVbaCore.enqueuePendingSms !== 'function') {
+                alert('SMS පද්ධතිය සූදානම් නැත. කරුණාකර පිටුව නැවත පූරණය කරන්න (Reload).');
+                return;
+            }
+            
+            const res = await window.scrapVbaCore.enqueuePendingSms(businessId, mobile, cleanMsg);
+            if (res && res.ok) {
+                alert('SMS පණිවිඩය නැවත සාර්ථකව පෝලිමට එක් කරන ලදී!');
+            } else {
+                alert('SMS පණිවිඩය පෝලිමට එක් කිරීමට අපොහොසත් විය: ' + (res.skipped || 'නොදන්නා දෝෂයකි'));
+            }
+        } catch (e) {
+            alert('දෝෂයක් සිදු විය: ' + (e.message || e));
+        }
+    };
+
+    // Live updates for queue/pending changes
+    const pendingRef = db.collection('pending_sms')
+        .where('businessId', '==', businessId)
+        .limit(200);
+    const logsRef = db.collection('sms_logs')
+        .where('businessId', '==', businessId)
+        .limit(200);
+    let pendingDocs = [];
+    let logDocs = [];
+    const renderMerged = () => renderRows([...(pendingDocs || []), ...(logDocs || [])]);
+    pendingRef.onSnapshot((snap) => { pendingDocs = snap.docs || []; renderMerged(); }, async () => {
+        const snap = await pendingRef.get().catch(() => ({ docs: [] }));
+        pendingDocs = snap.docs || [];
+        renderMerged();
+    });
+    logsRef.onSnapshot((snap) => { logDocs = snap.docs || []; renderMerged(); }, async () => {
+        const snap = await logsRef.get().catch(() => ({ docs: [] }));
+        logDocs = snap.docs || [];
+        renderMerged();
+    });
+});
+</script>
+</body>
+</html>

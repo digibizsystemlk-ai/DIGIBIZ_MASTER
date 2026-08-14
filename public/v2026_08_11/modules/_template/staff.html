@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staff Management - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/dashboard-core.js?v=110"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <style>
+        body{font-family:Inter,Arial,sans-serif;background:#f1f5f9;margin:0;}
+        .main{padding:24px;}
+        .card{background:#fff;border-radius:14px;padding:18px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.1);}
+        .grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;}
+        input,select,button{padding:10px;border-radius:8px;border:1px solid #d1d5db;}
+        button{background:#0f766e;color:#fff;border:none;cursor:pointer;}
+        button:disabled{opacity:0.5;cursor:not-allowed;}
+        table{width:100%;border-collapse:collapse;}
+        th,td{padding:10px;border-bottom:1px solid #e5e7eb;text-align:left;}
+        tr.mw-owner-row{background:#ecfdf5;font-weight:600;}
+        .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:3000;align-items:center;justify-content:center;padding:20px;}
+        .modal-panel{background:#fff;border-radius:14px;max-width:440px;width:100%;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.2);}
+        .modal-panel h3{margin:0 0 14px;font-size:18px;}
+        .modal-panel .form-group{margin-bottom:12px;}
+        .modal-panel label{display:block;font-size:13px;margin-bottom:4px;color:#374151;}
+        .modal-panel input,.modal-panel select{width:100%;box-sizing:border-box;}
+        .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;}
+        .btn-outline{background:#fff;color:#0f766e;border:1px solid #0f766e;}
+        .btn-sm{padding:6px 10px;font-size:12px;margin-right:6px;}
+    </style>
+</head>
+<body>
+    <div class="main">
+        <div class="card" id="roleManagerCard" style="display:none; border-left: 4px solid #0f766e;">
+            <h3 style="margin-top:0;">Role Management</h3>
+            <div style="display:flex; gap:10px; margin-bottom:15px;">
+                <input id="newRoleName" placeholder="New Role Name" style="flex:1;">
+                <button type="button" id="addRoleBtn" style="background:#1e293b;">+ Add Role</button>
+            </div>
+            <div id="customRolesList" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+        </div>
+
+        <div class="card">
+            <h2>Create Staff Account Link</h2>
+            <div class="grid">
+                <input id="staffName" placeholder="Staff Name">
+                <input id="staffEmail" placeholder="Staff Email">
+                <select id="staffRole"></select>
+                <button type="button" id="addStaffBtn">Add Staff</button>
+            </div>
+            <p style="font-size:12px;color:#64748b;margin-top:8px;">Master account: default password <strong>123456789</strong>.</p>
+        </div>
+
+        <!-- Quick Rep Mobile Order Link Generator -->
+        <div class="card" style="background:#f0fdf4; border:1px solid #bbf7d0;">
+            <h2 style="color:#0f766e; margin-top:0;">📱 Universal Rep Mobile Order Link</h2>
+            <p style="font-size:13px; color:#334155; margin-bottom:12px;">Send this universal link to your Sales Reps via WhatsApp (Default Password: <strong>123456789</strong>):</p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                <input type="text" readonly id="quickRepOrderUrl" style="flex:1; min-width:280px; padding:10px 14px; font-size:13px; font-weight:600; background:#fff; border:1px solid #cbd5e1; border-radius:8px;" value="https://digibiz-sys.web.app/modules/distributor/web/distributor-repapp.html">
+                <button type="button" onclick="copyQuickRepLink()" style="background:#0f766e; color:#fff; border:none; padding:10px 16px; border-radius:8px; font-weight:700; cursor:pointer;">📋 Copy Link</button>
+                <a href="https://digibiz-sys.web.app/modules/distributor/web/distributor-repapp.html" target="_blank" style="background:#fff; color:#0f766e; border:1px solid #0f766e; padding:9px 16px; border-radius:8px; font-weight:700; text-decoration:none; display:inline-block;">🔗 Open Link</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Linked Staff</h3>
+            <table>
+                <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
+                <tbody id="staffRows"><tr><td colspan="4">Loading staff data...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modals (Edit/Add) -->
+    <div id="staffEditModal" class="modal"><div class="modal-panel">
+        <h3>Edit staff</h3><input type="hidden" id="editStaffUid">
+        <div class="form-group"><label>Name</label><input id="editStaffName" type="text"></div>
+        <div class="form-group"><label>Email</label><input id="editStaffEmail" type="email" readonly style="background:#f1f5f9;"></div>
+        <div class="form-group"><label>Role</label><select id="editStaffRole"></select></div>
+        <div class="modal-actions"><button type="button" class="btn-outline" id="staffEditModalCancel">Cancel</button><button type="button" id="staffEditModalSave">Save</button></div>
+    </div></div>
+
+    <div id="staffModal" class="modal"><div class="modal-panel">
+        <h3>Add staff</h3>
+        <div class="form-group"><label>Staff name</label><input id="modalStaffName" type="text"></div>
+        <div class="form-group"><label>Email</label><input id="modalStaffEmail" type="email"></div>
+        <div class="form-group"><label>Role</label><select id="modalStaffRole"></select></div>
+        <div class="modal-actions"><button type="button" class="btn-outline" id="staffModalCancel">Cancel</button><button type="button" id="staffModalSave">Link staff</button></div>
+    </div></div>
+
+    <script>
+        const MW_MASTER_EMAIL = 'mwtradingsolutions@gmail.com';
+        const MW_BUSINESS_ID = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+        let currentUser = null;
+        let context = { businessId: null };
+
+        function isMwMasterEmail(user) {
+            return String(user && user.email || '').trim().toLowerCase() === MW_MASTER_EMAIL;
+        }
+
+        function escapeHtml(s) {
+            if (s == null) return '';
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        async function loadStaff() {
+            const body = document.getElementById('staffRows');
+            const bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : (context ? context.businessId : null);
+            
+            console.log('[Staff] loadStaff, bid:', bid);
+            if (!bid) {
+                body.innerHTML = '<tr><td colspan="4" style="color:#ef4444;">Business context not resolved. Please refresh or check business settings.</td></tr>';
+                return;
+            }
+
+            try {
+                const snap = await window.db.collection('businesses').doc(bid).collection('users').get();
+                const uid = currentUser && currentUser.uid;
+                const mw = isMwMasterEmail(currentUser);
+                const rows = [];
+
+                if (mw && uid) {
+                    const ownerName = (currentUser.displayName) || 'Master Owner';
+                    rows.push('<tr class="mw-owner-row"><td>' + escapeHtml(ownerName) + '</td><td>' + escapeHtml(MW_MASTER_EMAIL) + '</td><td>Owner</td><td>—</td></tr>');
+                }
+
+                snap.docs.forEach(doc => {
+                    if (mw && uid && doc.id === uid) return;
+                    const row = doc.data();
+                    rows.push('<tr><td><strong>' + escapeHtml(row.name || '-') + '</strong></td><td>' + escapeHtml(row.email || '-') + '</td><td>' + escapeHtml(row.role || '-') + '</td><td>' +
+                        '<button class="btn-outline btn-sm" onclick="openEditStaff(\'' + doc.id + '\')">Edit</button>' +
+                        '<button class="btn-outline btn-sm" style="color:#ef4444;border-color:#fee2e2;" onclick="deleteStaffMember(\'' + doc.id + '\')">Delete</button></td></tr>');
+                });
+                body.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="4">No staff linked yet.</td></tr>';
+            } catch (e) {
+                console.error('[Staff] loadStaff error:', e);
+                body.innerHTML = '<tr><td colspan="4" style="color:#ef4444;">Error loading staff: ' + e.message + '</td></tr>';
+            }
+        }
+
+        function copyQuickRepLink() {
+            const input = document.getElementById('quickRepOrderUrl');
+            if (!input) return;
+            input.select();
+            navigator.clipboard.writeText(input.value);
+            alert('📱 Rep Mobile Order Link copied to clipboard!\nYou can now paste and send it to your Rep on WhatsApp.');
+        }
+
+        function copyRepLink(id) {
+            const input = document.getElementById('repLinkInput_' + id);
+            if (!input) return;
+            input.select();
+            navigator.clipboard.writeText(input.value);
+            alert('📱 Rep Mobile Order Link copied to clipboard!\nYou can now send it to the Rep on WhatsApp.');
+        }
+
+        async function loadCustomRoles() {
+            const bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : (context ? context.businessId : null);
+            if (!bid) return;
+
+            const role = String(window.__DIGIBIZ_LOCAL_ROLE__ || '').toUpperCase();
+            if (role === 'BUSINESS_OWNER' || role === 'DISTRIBUTOR_OWNER' || isMwMasterEmail(currentUser)) {
+                document.getElementById('roleManagerCard').style.display = 'block';
+            }
+
+            try {
+                const snap = await window.db.collection('businesses').doc(bid).collection('configs').doc('roles').get();
+                const customRoles = snap.exists ? (snap.data().list || []) : [];
+                const standardRoles = [
+                    { id: 'REP', label: 'Rep' },
+                    { id: 'ACCOUNTANT', label: 'Accountant' },
+                    { id: 'BUSINESS_OWNER', label: 'Owner' },
+                    { id: 'SALES_COORDINATOR', label: 'Sales Coordinator' },
+                    { id: 'AREA_MANAGER', label: 'Area Manager' }
+                ];
+
+                const optionsHtml = standardRoles.map(r => `<option value="${r.id}">${r.label}</option>`).join('') +
+                                   customRoles.map(r => `<option value="${r.toUpperCase().replace(/\s+/g, '_')}">${r}</option>`).join('');
+                
+                document.querySelectorAll('#staffRole, #editStaffRole, #modalStaffRole').forEach(el => el.innerHTML = optionsHtml);
+
+                const tagsHtml = customRoles.map(r => `
+                    <span style="background:#f1f5f9; padding:5px 12px; border-radius:20px; font-size:12px; display:flex; align-items:center; gap:8px; border:1px solid #e2e8f0;">
+                        ${r} <span onclick="deleteCustomRole('${r}')" style="cursor:pointer; color:#ef4444; font-weight:bold;">×</span>
+                    </span>
+                `).join('');
+                document.getElementById('customRolesList').innerHTML = tagsHtml || '<span style="color:#94a3b8; font-size:12px;">No custom roles.</span>';
+            } catch (e) { console.warn('[Staff] loadRoles error', e); }
+        }
+
+        async function addCustomRole() {
+            const name = document.getElementById('newRoleName').value.trim();
+            if (!name) return;
+            const bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : context.businessId;
+            const ref = window.db.collection('businesses').doc(bid).collection('configs').doc('roles');
+            const snap = await ref.get();
+            let list = snap.exists ? (snap.data().list || []) : [];
+            if (list.includes(name)) return;
+            list.push(name);
+            await ref.set({ list });
+            document.getElementById('newRoleName').value = '';
+            await loadCustomRoles();
+        }
+
+        async function deleteCustomRole(name) {
+            if (!confirm(`Delete role "${name}"?`)) return;
+            const bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : context.businessId;
+            const ref = window.db.collection('businesses').doc(bid).collection('configs').doc('roles');
+            const snap = await ref.get();
+            let list = (snap.data().list || []).filter(r => r !== name);
+            await ref.set({ list });
+            await loadCustomRoles();
+        }
+
+        async function deleteStaffMember(uid) {
+            if (uid === currentUser.uid) return alert('Cannot delete self');
+            if (!confirm('Remove this staff?')) return;
+            const bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : context.businessId;
+            await window.db.collection('businesses').doc(bid).collection('users').doc(uid).delete();
+            await loadStaff();
+        }
+
+        function openEditStaff(uid) {
+            const bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : context.businessId;
+            window.db.collection('businesses').doc(bid).collection('users').doc(uid).get().then(snap => {
+                if (!snap.exists) return;
+                const d = snap.data();
+                document.getElementById('editStaffUid').value = uid;
+                document.getElementById('editStaffName').value = d.name || '';
+                document.getElementById('editStaffEmail').value = d.email || '';
+                document.getElementById('editStaffRole').value = d.role || 'REP';
+                document.getElementById('staffEditModal').style.display = 'flex';
+            });
+        }
+
+        async function saveStaffEdit() {
+            const uid = document.getElementById('editStaffUid').value;
+            const name = document.getElementById('editStaffName').value.trim();
+            const role = document.getElementById('editStaffRole').value;
+            const bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : context.businessId;
+            await window.db.collection('businesses').doc(bid).collection('users').doc(uid).update({ name, role, updatedAt: new Date() });
+            document.getElementById('staffEditModal').style.display = 'none';
+            await loadStaff();
+        }
+
+        document.getElementById('addRoleBtn').onclick = addCustomRole;
+        document.getElementById('staffEditModalCancel').onclick = () => document.getElementById('staffEditModal').style.display = 'none';
+        document.getElementById('staffEditModalSave').onclick = saveStaffEdit;
+        document.getElementById('addStaffBtn').onclick = async () => {
+            const name = document.getElementById('staffName').value.trim();
+            const email = document.getElementById('staffEmail').value.trim().toLowerCase();
+            const role = document.getElementById('staffRole').value;
+            if (!name || !email) return alert('Name and email required');
+            const bid = isMwMasterEmail(currentUser) ? MW_BUSINESS_ID : context.businessId;
+            const batch = window.db.batch();
+            
+            // 1. Link in business sub-collection
+            const bizUserRef = window.db.collection('businesses').doc(bid).collection('users').doc(email);
+            batch.set(bizUserRef, { name, email, role, linkedAt: new Date() }, { merge: true });
+            
+            // 2. Register in global staff registry for auto-discovery
+            const globalRegistryRef = window.db.collection('staff_registry').doc(email);
+            batch.set(globalRegistryRef, { businessId: bid, role, email, addedAt: new Date() }, { merge: true });
+            
+            await batch.commit();
+
+            // 3. Pre-register Firebase Auth account with default password 123456789
+            try {
+                const secApp = firebase.apps.find(a => a.name === 'StaffCreatorApp') || 
+                    firebase.initializeApp(firebase.app().options, 'StaffCreatorApp');
+                await secApp.auth().createUserWithEmailAndPassword(email, '123456789');
+                await secApp.auth().signOut();
+            } catch (secErr) {
+                console.warn('[Staff] Secondary auth creation note:', secErr.message);
+            }
+
+            await loadStaff();
+        };
+
+        window.auth.onAuthStateChanged(async user => {
+            if (!user) { window.location.href = '/'; return; }
+            currentUser = user;
+            try {
+                const fetched = await window.dashboardCore.getContext(user);
+                context = fetched || { businessId: null };
+                
+                if (isMwMasterEmail(user)) {
+                    context.businessId = MW_BUSINESS_ID;
+                    window.__DIGIBIZ_LOCAL_ROLE__ = 'BUSINESS_OWNER';
+                } else {
+                    const roleInfo = await window.getUserRole(user.uid, context.businessId);
+                    window.__DIGIBIZ_LOCAL_ROLE__ = String(roleInfo && roleInfo.role || '').toUpperCase();
+                }
+                
+                await loadCustomRoles();
+                await loadStaff();
+            } catch (err) {
+                console.error('[Staff] Auth error:', err);
+                document.getElementById('staffRows').innerHTML = '<tr><td colspan="4" style="color:#ef4444;">Auth init failed.</td></tr>';
+            }
+        });
+
+        window.openEditStaff = openEditStaff;
+        window.deleteStaffMember = deleteStaffMember;
+        window.deleteCustomRole = deleteCustomRole;
+    </script>
+</body>
+</html>

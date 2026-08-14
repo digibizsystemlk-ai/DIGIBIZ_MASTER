@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoicing & Billing Console - DIGIBIZ Auto Care</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="autocare-theme.css?v=3">
+    
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=3"></script>
+    <script src="/core/event-bus.js?v=3"></script>
+    <script src="/core/accounts-core.js?v=3"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/dashboard-core.js?v=3"></script>
+    <script src="/core/subscription-manager.js?v=3"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <script src="autocare-utils.js?v=2"></script>
+    
+    <style>
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        .mode-switcher { display: flex; gap: 15px; margin-bottom: 20px; }
+        .mode-btn { flex: 1; padding: 14px; border-radius: 12px; background: #0f172a; border: 1px solid #334155; color: #94a3b8; font-weight: 700; cursor: pointer; text-align: center; transition: all 0.2s; }
+        .mode-btn.active { background: #1e293b; border-color: #38bdf8; color: #38bdf8; box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); }
+
+        .bill-header { display: flex; justify-content: space-between; border-bottom: 2px solid #38bdf8; padding-bottom: 16px; margin-bottom: 20px; }
+        .bill-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; background: #0f172a; padding: 16px; border-radius: 12px; margin-bottom: 25px; border: 1px solid #334155; }
+        .payment-box { display: flex; justify-content: space-between; align-items: center; background: rgba(16, 185, 129, 0.15); padding: 20px; border-radius: 14px; border: 1px solid rgba(16, 185, 129, 0.3); margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="header-bar">
+        <div>
+            <h2 style="color:#38bdf8; font-size:24px; font-weight:800;"><i class="fa-solid fa-receipt"></i> Invoicing & Direct Over-the-Counter Sales Console</h2>
+            <p style="color:#94a3b8; font-size:14px; margin-top:4px;">රැකියා කාඩ්පත් සඳහා ඉන්වොයිස් සාදන සහ සෘජු අමතර කොටස් අලෙවි කරන (Direct Counter Sale) ස්ථානය</p>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <button class="btn btn-outline" onclick="window.history.back()"><i class="fa-solid fa-arrow-left"></i> Back</button>
+            <button class="btn btn-primary" onclick="window.print()"><i class="fa-solid fa-print"></i> Print Official Bill</button>
+        </div>
+    </div>
+
+    <!-- Mode Selector Cards -->
+    <div class="mode-switcher">
+        <div class="mode-btn active" id="btnModeJob" onclick="switchMode('JOB')">
+            <i class="fa-solid fa-car-side"></i> 1. Active Job Card Billing (රැකියා කාඩ්පත් ගෙවීම්)
+        </div>
+        <div class="mode-btn" id="btnModeCounter" onclick="switchMode('COUNTER')">
+            <i class="fa-solid fa-cart-shopping"></i> 2. Direct Counter Spare Part Sale (සෘජු අමතර කොටස් අලෙවිය)
+        </div>
+    </div>
+
+    <!-- Job Selection Card -->
+    <div class="card-dark" id="selectJobCard" style="padding:24px; margin-bottom:25px;">
+        <h3 style="font-size:16px; font-weight:700; color:#38bdf8; margin-bottom:12px;"><i class="fa-solid fa-car-side"></i> Select Job Card to Bill (ගෙවීම් කිරීමට Job Card එක තෝරන්න)</h3>
+        <div style="display:flex; gap:12px; align-items:center;">
+            <select id="jobCardSelect" onchange="loadSelectedJobBill()" style="flex:1;">
+                <option value="">-- Choose Job Card --</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Counter Customer Detail Inputs (For Mode 2) -->
+    <div class="card-dark" id="selectCounterCard" style="padding:24px; margin-bottom:25px; display:none;">
+        <h3 style="font-size:16px; font-weight:700; color:#38bdf8; margin-bottom:12px;"><i class="fa-solid fa-user-tag"></i> Walk-in Customer & Vehicle Info (විකුණුම් පාරිභෝගික විස්තර)</h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+            <div>
+                <label>Customer Name</label>
+                <input type="text" id="counterCustName" list="customerNameList" placeholder="e.g. Walk-in Customer" style="width:100%;">
+                <datalist id="customerNameList"></datalist>
+            </div>
+            <div>
+                <label>Customer Phone</label>
+                <input type="text" id="counterCustPhone" list="customerPhoneList" placeholder="e.g. 0771234567" style="width:100%;">
+                <datalist id="customerPhoneList"></datalist>
+            </div>
+            <div>
+                <label>Vehicle Reg / Note</label>
+                <input type="text" id="counterVehReg" placeholder="e.g. Over-The-Counter Sale" style="width:100%;">
+            </div>
+        </div>
+    </div>
+
+    <div class="card-dark" id="invoiceContent" style="padding:28px;">
+        <div class="bill-header" style="border-bottom:2px solid #0284c7; padding-bottom:18px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; align-items:center; gap:16px;">
+                <input type="file" id="logoFileInput" accept="image/*" style="display:none;" onchange="uploadCompanyLogo(event)">
+                <div id="companyLogoContainer" onclick="document.getElementById('logoFileInput').click()" title="Click to upload/change your official Business Logo (ලෝගෝ එක වෙනස් කිරීමට ක්ලික් කරන්න)" style="width:65px; height:65px; background:linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border-radius:12px; display:flex; align-items:center; justify-content:center; color:#ffffff; font-size:26px; box-shadow:0 4px 12px rgba(2,132,199,0.3); flex-shrink:0; cursor:pointer; position:relative; overflow:hidden;">
+                    <i class="fa-solid fa-car-tunnel"></i>
+                </div>
+                <div>
+                    <h1 style="color:#38bdf8; font-size:22px; font-weight:900; margin:0; text-transform:uppercase; letter-spacing:0.5px;" id="compTitle">DIGIBIZ AUTO CARE & REPAIR CENTER</h1>
+                    <p style="font-size:13px; color:#cbd5e1; margin:3px 0 0 0; font-weight:600;"><i class="fa-solid fa-wrench" style="color:#38bdf8;"></i> High-Tech Vehicle Diagnostics & Maintenance Systems</p>
+                    <p style="font-size:11px; color:#94a3b8; margin:2px 0 0 0;">Official Sales Invoice & Payment Receipt <span class="no-print" style="color:#38bdf8; font-weight:700; cursor:pointer;" onclick="document.getElementById('logoFileInput').click()">(📷 Upload Logo)</span></p>
+                </div>
+            </div>
+            <div style="text-align:right;">
+                <div style="display:inline-block; background:rgba(2, 132, 199, 0.2); border:1px solid #0284c7; color:#38bdf8; font-size:11px; font-weight:800; padding:4px 12px; border-radius:20px; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">
+                    OFFICIAL INVOICE
+                </div>
+                <div style="display:flex; align-items:center; gap:6px; justify-content:flex-end;">
+                    <span style="color:#ffffff; font-size:15px; font-weight:800;">INVOICE #</span>
+                    <input type="text" id="invNoInput" value="INV-00001" style="font-size:18px; font-weight:900; color:#38bdf8; width:150px; text-align:right;" title="Manual Paper Book Invoice Number override">
+                </div>
+                <p style="font-size:12px; color:#cbd5e1; margin-top:2px;" id="invDate">Date: -</p>
+            </div>
+        </div>
+
+        <!-- Saved Draft Invoices Drawer Bar -->
+        <div class="no-print" style="background:#0f172a; padding:12px 16px; border-radius:12px; margin-bottom:16px; border:1px solid #334155; display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <i class="fa-solid fa-file-pen" style="color:#fbbf24; font-size:18px;"></i>
+                <span style="font-size:13px; color:#ffffff; font-weight:700;">Multi-Day Draft Invoices (කෙටුම්පත්):</span>
+                <select id="draftSelect" onchange="loadSelectedDraft()" style="max-width:280px;">
+                    <option value="">-- Choose Saved Draft Invoice --</option>
+                </select>
+            </div>
+            <span style="font-size:12px; color:#94a3b8;">(දවස් කිහිපයක් යන ජොබ් සඳහා එදිනෙදා වැඩ කොටස් Draft ලෙස සූදානම් කරගත හැක)</span>
+        </div>
+
+        <div class="bill-meta">
+            <div>
+                <p style="font-size:12px; color:#38bdf8; font-weight:700;">CUSTOMER INFORMATION</p>
+                <p style="font-size:16px; font-weight:800; color:#ffffff;" id="custName">Direct Customer / Walk-in</p>
+                <p style="font-size:13px; color:#cbd5e1;" id="custPhone">Phone: -</p>
+            </div>
+            <div>
+                <p style="font-size:12px; color:#38bdf8; font-weight:700;">VEHICLE & JOB DETAILS</p>
+                <p style="font-size:16px; font-weight:800; color:#ffffff;" id="vDetails">General Service / Counter Sale</p>
+                <p style="font-size:13px; color:#cbd5e1;" id="jobRef">Job Ref: Direct Billing</p>
+            </div>
+        </div>
+
+        <!-- Quick Spare Part Stock Inserter Bar -->
+        <div class="no-print" style="background:#0f172a; padding:14px; border-radius:12px; margin-bottom:16px; border:1px solid #334155; display:flex; gap:12px; align-items:center;">
+            <i class="fa-solid fa-box-open" style="color:#38bdf8; font-size:20px;"></i>
+            <input type="text" id="quickPartPicker" list="quickPartList" placeholder="Search and type Spare Part No or Name..." style="flex:1;">
+            <datalist id="quickPartList"></datalist>
+            <button type="button" class="btn btn-primary" onclick="addPickedPartToBill()"><i class="fa-solid fa-plus"></i> Add Part to Bill</button>
+        </div>
+
+        <h3 style="font-size:16px; font-weight:700; color:#38bdf8; margin-bottom:12px;"><i class="fa-solid fa-list-check"></i> Billable Items & Services (අයිතම සහ ගාස්තු)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:35%;">Item Description</th>
+                    <th style="width:20%;">Category / SKU</th>
+                    <th style="width:12%;">Qty</th>
+                    <th style="width:15%;">Unit Price (LKR)</th>
+                    <th style="width:18%;">Amount (LKR)</th>
+                </tr>
+            </thead>
+            <tbody id="billItemsBody">
+                <tr>
+                    <td><input type="text" placeholder="e.g. Engine Oil Synthetic / Labor Charge..." style="width:100%;"></td>
+                    <td>
+                        <select style="width:100%;">
+                            <option>Labor Charge</option>
+                            <option>Spare Part</option>
+                            <option>Oil & Fluid</option>
+                            <option>Inspection Fee</option>
+                        </select>
+                    </td>
+                    <td><input type="number" class="b-qty" value="1" onchange="calcBillTotal()" style="width:100%;"></td>
+                    <td><input type="number" class="b-price" value="0" onchange="calcBillTotal()" style="width:100%;"></td>
+                    <td class="b-row-total" style="font-weight:700; color:#38bdf8;">Rs. 0.00</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <button class="btn btn-outline no-print" style="margin-top:14px; font-size:12px;" onclick="addBillRow()"><i class="fa-solid fa-plus"></i> Add Custom Service / Item Line</button>
+
+        <div class="payment-box">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <label style="font-size:14px; font-weight:700; color:#ffffff;">Payment Method:</label>
+                <select id="payMethod">
+                    <option value="CASH">Cash Payment (අත්පිට මුදල් ගෙවීම)</option>
+                    <option value="CARD">Card Payment - Visa / Mastercard (කාඩ්පත් ගෙවීම)</option>
+                    <option value="BANK">Bank Transfer / Online Deposit (බැංකු තැන්පතු / Online)</option>
+                    <option value="CREDIT_ADVANCE">Customer Credit / Advance Balance (පාරිභෝගික ණය / අත්තිකාරම් මුදලින් හිලව් කිරීම)</option>
+                    <option value="DEBIT_OUTSTANDING">Customer Debit / Credit Sale (පාරිභෝගික ණය මුදලක් ලෙස සටහන් කිරීම - Outstanding Debt)</option>
+                </select>
+            </div>
+            <div style="text-align:right;">
+                <span style="font-size:13px; color:#6ee7b7; font-weight:700;">Grand Total Amount:</span>
+                <h2 style="font-size:24px; color:#6ee7b7; font-weight:900;" id="billTotal">Rs. 0.00</h2>
+                <div class="no-print" style="display:flex; gap:10px; margin-top:10px; justify-content:flex-end;">
+                    <button class="btn btn-outline" style="border-color:#fbbf24; color:#fbbf24;" onclick="saveInvoiceDraft()"><i class="fa-solid fa-floppy-disk"></i> Save as Draft (කෙටුම්පතක් ලෙස)</button>
+                    <button class="btn btn-primary" style="background:#10b981;" onclick="processPayment()"><i class="fa-solid fa-circle-check"></i> Settle & Deduct Stock</button>
+                    <button class="btn-danger-icon" title="Delete Draft / Invoice" onclick="deleteCurrentInvoice()"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Official Print Footer (Signatures & Terms) -->
+        <div class="print-only-footer" style="margin-top:40px; border-top:1px solid #cbd5e1; padding-top:20px; display:none;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:30px;">
+                <div style="text-align:center; width:200px;">
+                    <p style="border-bottom:1px dashed #64748b; margin-bottom:6px; height:40px;"></p>
+                    <p style="font-size:12px; font-weight:700;">Customer Signature</p>
+                </div>
+                <div style="text-align:center; width:200px;">
+                    <p style="border-bottom:1px dashed #64748b; margin-bottom:6px; height:40px;"></p>
+                    <p style="font-size:12px; font-weight:700;">Authorized Stamp / Cashier</p>
+                </div>
+            </div>
+            <p style="text-align:center; font-size:11px; color:#64748b;">Thank you for your business! Driven by DIGIBIZ Auto Care Management Systems.</p>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 'JOB'; // 'JOB' or 'COUNTER'
+        let inventoryParts = [];
+
+        function getBizId() {
+            return window.AutoCareUtils ? window.AutoCareUtils.getBizId() : 'DEFAULT_BIZ';
+        }
+
+        function initInvoicing() {
+            const companyName = window.AutoCareUtils ? window.AutoCareUtils.getCompanyName() : "DIGIBIZ Auto Care";
+            document.getElementById('compTitle').innerText = companyName;
+
+            const bizId = getBizId();
+            const jobsKey = `autocare_jobs_${bizId}`;
+            const partsKey = `autocare_parts_${bizId}`;
+
+            const cachedJobs = localStorage.getItem(jobsKey);
+            const cachedParts = localStorage.getItem(partsKey);
+
+            let jobs = cachedJobs ? JSON.parse(cachedJobs) : [];
+            inventoryParts = cachedParts ? JSON.parse(cachedParts) : [];
+
+            // Populate Job Card dropdown
+            const select = document.getElementById('jobCardSelect');
+            select.innerHTML = '<option value="">-- Choose Job Card --</option>';
+
+            if (jobs.length === 0) {
+                select.innerHTML += '<option value="" disabled>No Job Cards available</option>';
+            } else {
+                jobs.forEach(j => {
+                    const cName = j.customerName || j.customer || '';
+                    select.innerHTML += `<option value="${j.id}">#${j.id} - ${j.regNo} (${cName})</option>`;
+                });
+            }
+
+            // Populate Quick Spare Part Picker
+            const pickerList = document.getElementById('quickPartList');
+            if (pickerList) {
+                const options = inventoryParts.map(p => {
+                    const stockLabel = p.qty <= p.min ? `⚠️ LOW (${p.qty})` : `Stock: ${p.qty}`;
+                    return `<option value="${p.no} - ${p.name}">Rs. ${p.price.toLocaleString()} (${stockLabel})</option>`;
+                });
+                pickerList.innerHTML = options.join('');
+            }
+
+            // Populate Customer Datalists
+            const nameList = document.getElementById('customerNameList');
+            const phoneList = document.getElementById('customerPhoneList');
+            if (nameList || phoneList) {
+                const customers = window.AutoCareUtils ? window.AutoCareUtils.getCustomers() : [];
+                if (nameList) nameList.innerHTML = customers.map(c => `<option value="${c.name}">${c.phone ? '(' + c.phone + ')' : ''}</option>`).join('');
+                if (phoneList) phoneList.innerHTML = customers.filter(c => c.phone).map(c => `<option value="${c.phone}">${c.name}</option>`).join('');
+            }
+
+            const formattedToday = window.AutoCareUtils ? window.AutoCareUtils.formatDateDDMMYYYY(new Date()) : new Date().toISOString().split('T')[0];
+            document.getElementById('invDate').innerText = 'Date: ' + formattedToday;
+            if (window.AutoCareUtils) {
+                window.AutoCareUtils.renderCompanyLogo('companyLogoContainer');
+            }
+            calcBillTotal();
+        }
+
+        function uploadCompanyLogo(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const base64 = evt.target.result;
+                if (window.AutoCareUtils) {
+                    window.AutoCareUtils.saveCompanyLogo(base64);
+                    window.AutoCareUtils.renderCompanyLogo('companyLogoContainer');
+                }
+                alert('✅ Business Logo updated successfully! It will now appear on all Invoices, Estimations, Job Cards, and Inspection Certificates.');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function switchMode(mode) {
+            currentMode = mode;
+            document.getElementById('btnModeJob').classList.toggle('active', mode === 'JOB');
+            document.getElementById('btnModeCounter').classList.toggle('active', mode === 'COUNTER');
+
+            if (mode === 'JOB') {
+                document.getElementById('selectJobCard').style.display = 'block';
+                document.getElementById('selectCounterCard').style.display = 'none';
+                document.getElementById('invNo').innerText = 'INVOICE #INV-NEW';
+                document.getElementById('custName').innerText = 'Select a Job Card';
+                document.getElementById('custPhone').innerText = 'Phone: -';
+                document.getElementById('vDetails').innerText = 'General Service';
+                document.getElementById('jobRef').innerText = 'Job Ref: Direct Billing';
+            } else {
+                document.getElementById('selectJobCard').style.display = 'none';
+                document.getElementById('selectCounterCard').style.display = 'block';
+                document.getElementById('invNo').innerText = 'INVOICE #POS-' + Math.floor(1000 + Math.random() * 9000);
+                document.getElementById('custName').innerText = 'Over-The-Counter Customer';
+                document.getElementById('custPhone').innerText = 'Phone: Direct Sale';
+                document.getElementById('vDetails').innerText = 'Direct Spare Parts Sale';
+                document.getElementById('jobRef').innerText = 'Job Ref: Counter Sale';
+            }
+        }
+
+        function addPickedPartToBill() {
+            const inputVal = document.getElementById('quickPartPicker').value;
+            if(!inputVal) return;
+            
+            // Extract Part No from "PART-NO - Part Name" format
+            const partNo = inputVal.split(' - ')[0].trim();
+            const p = inventoryParts.find(x => x.no === partNo);
+            
+            if(!p) {
+                alert("⚠️ Please select a valid part from the list.");
+                return;
+            }
+
+            if(p.qty <= 0) {
+                alert(`⚠️ Warning: Part ${p.name} (${p.no}) has 0 stock remaining! Please re-order via Stock Purchases (GRN).`);
+            }
+
+            const tbody = document.getElementById('billItemsBody');
+            const tr = document.createElement('tr');
+            tr.setAttribute('data-part-no', p.no);
+            tr.innerHTML = `
+                <td><input type="text" value="${p.name}" style="width:100%;"></td>
+                <td>
+                    <select style="width:100%;">
+                        <option value="Spare Part" selected>Spare Part (${p.no})</option>
+                        <option value="Oil & Fluid">Oil & Fluid</option>
+                    </select>
+                </td>
+                <td><input type="number" class="b-qty" value="1" max="${p.qty}" onchange="calcBillTotal()" onkeyup="calcBillTotal()" style="width:100%;"></td>
+                <td><input type="number" class="b-price" value="${p.price}" onchange="calcBillTotal()" onkeyup="calcBillTotal()" style="width:100%;" title="You can edit the unit price here"></td>
+                <td class="b-row-total" style="font-weight:700; color:#38bdf8;">Rs. ${p.price.toLocaleString('en-US', {minimumFractionDigits:2})}</td>
+            `;
+            tbody.appendChild(tr);
+            calcBillTotal();
+            
+            // Clear input
+            document.getElementById('quickPartPicker').value = '';
+        }
+
+        function calcBillTotal() {
+            let total = 0;
+            const rows = document.querySelectorAll('#billItemsBody tr');
+            rows.forEach(r => {
+                const qtyInput = r.querySelector('.b-qty');
+                const priceInput = r.querySelector('.b-price');
+                const totalCell = r.querySelector('.b-row-total');
+                if (qtyInput && priceInput && totalCell) {
+                    const qty = parseFloat(qtyInput.value) || 0;
+                    const price = parseFloat(priceInput.value) || 0;
+                    const rowSum = qty * price;
+                    totalCell.innerText = 'Rs. ' + rowSum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    total += rowSum;
+                }
+            });
+            document.getElementById('billTotal').innerText = 'Rs. ' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function addBillRow() {
+            const tbody = document.getElementById('billItemsBody');
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><input type="text" placeholder="e.g. Custom service or spare part..." style="width:100%;"></td>
+                <td>
+                    <select style="width:100%;">
+                        <option>Labor Charge</option>
+                        <option>Spare Part</option>
+                        <option>Oil & Fluid</option>
+                        <option>Inspection Fee</option>
+                    </select>
+                </td>
+                <td><input type="number" class="b-qty" value="1" onchange="calcBillTotal()" style="width:100%;"></td>
+                <td><input type="number" class="b-price" value="0" onchange="calcBillTotal()" style="width:100%;"></td>
+                <td class="b-row-total" style="font-weight:700; color:#38bdf8;">Rs. 0.00</td>
+            `;
+            tbody.appendChild(tr);
+        }
+
+        function loadSelectedJobBill() {
+            const id = document.getElementById('jobCardSelect').value;
+            if(!id) return;
+            const bizId = getBizId();
+            const cached = localStorage.getItem(`autocare_jobs_${bizId}`);
+            let jobs = cached ? JSON.parse(cached) : [];
+            const j = jobs.find(x => x.id === id);
+            if(!j) return;
+
+            document.getElementById('invNo').innerText = `INVOICE #INV-${j.id.replace('JOB-', '')}`;
+            document.getElementById('custName').innerText = j.customerName || j.customer || '-';
+            document.getElementById('custPhone').innerText = `Phone: ${j.customerPhone || j.phone || '-'}`;
+            document.getElementById('vDetails').innerText = `${j.regNo} (${(j.brand || '')} ${(j.model || '')})`;
+            document.getElementById('jobRef').innerText = `Job Ref: #${j.id} | Mileage: ${j.mileage}`;
+
+            document.getElementById('billItemsBody').innerHTML = `
+                <tr>
+                    <td><input type="text" value="${j.services || 'General Vehicle Service & Maintenance'}" style="width:100%;"></td>
+                    <td>
+                        <select style="width:100%;">
+                            <option>Labor Charge</option>
+                            <option>Spare Part</option>
+                            <option>Oil & Fluid</option>
+                        </select>
+                    </td>
+                    <td><input type="number" class="b-qty" value="1" onchange="calcBillTotal()" style="width:100%;"></td>
+                    <td><input type="number" class="b-price" value="0" onchange="calcBillTotal()" style="width:100%;"></td>
+                    <td class="b-row-total" style="font-weight:700; color:#38bdf8;">Rs. 0.00</td>
+                </tr>
+            `;
+            calcBillTotal();
+        }
+
+        function processPayment() {
+            const method = document.getElementById('payMethod').value;
+            const totalStr = document.getElementById('billTotal').innerText;
+            const invNo = document.getElementById('invNo').innerText;
+            const bizId = getBizId();
+
+            let grandTotalNum = parseFloat(totalStr.replace(/[^0-9.]/g, '')) || 0;
+            if (grandTotalNum <= 0) {
+                alert('⚠️ Please enter invoice items and prices before settling payment.');
+                return;
+            }
+
+            // 1. Deduct Inventory Stock for sold spare parts!
+            const rows = document.querySelectorAll('#billItemsBody tr');
+            let itemsSoldSummary = [];
+
+            rows.forEach(r => {
+                const partNo = r.getAttribute('data-part-no');
+                const qtyInput = r.querySelector('.b-qty');
+                const nameInput = r.querySelector('td:first-child input');
+
+                if (qtyInput && nameInput) {
+                    const qtySold = parseInt(qtyInput.value) || 0;
+                    const itemName = nameInput.value.trim();
+                    if (qtySold > 0) itemsSoldSummary.push(`${itemName} (${qtySold})`);
+
+                    if (partNo && qtySold > 0) {
+                        const partIdx = inventoryParts.findIndex(x => x.no === partNo);
+                        if (partIdx >= 0) {
+                            inventoryParts[partIdx].qty = Math.max(0, inventoryParts[partIdx].qty - qtySold);
+                        }
+                    }
+                }
+            });
+
+            // Save updated inventory parts back to localStorage
+            localStorage.setItem(`autocare_parts_${bizId}`, JSON.stringify(inventoryParts));
+
+            // 2. Classify Payment Method & Category for Banking, Accounting & Finance Linkage
+            let methodLabel = "Cash Payment";
+            let finCategory = currentMode === 'JOB' ? 'Job Card Invoice' : 'Counter Spare Part Sale';
+            let finType = 'INCOME';
+
+            if (method === 'CASH') {
+                methodLabel = "Cash Payment (අත්පිට මුදල් ගෙවීම)";
+                finType = 'INCOME';
+            } else if (method === 'CARD') {
+                methodLabel = "Card Payment (Visa / Mastercard)";
+                finType = 'INCOME';
+            } else if (method === 'BANK') {
+                methodLabel = "Bank Transfer / Online Deposit (බැංකු තැන්පතු)";
+                finType = 'INCOME';
+            } else if (method === 'CREDIT_ADVANCE') {
+                methodLabel = "Customer Credit / Advance Balance (පාරිභෝගික ණය / අත්තිකාරම් හිලව් කිරීම)";
+                finCategory = 'Advance Credit Settlement';
+                finType = 'INCOME';
+            } else if (method === 'DEBIT_OUTSTANDING') {
+                methodLabel = "Customer Debit / Credit Sale (පාරිභෝගික ණය - Outstanding Debt)";
+                finCategory = 'Customer Credit Sale';
+                finType = 'RECEIVABLE';
+            }
+
+            const custNameStr = document.getElementById('custName').innerText;
+            const custPhoneStr = document.getElementById('custPhone').innerText;
+            const vDetailsStr = document.getElementById('vDetails').innerText;
+
+            // 3. Record in Auto Care Financial Ledger (autocare_finance_${bizId})
+            const finKey = `autocare_finance_${bizId}`;
+            let finEntries = localStorage.getItem(finKey) ? JSON.parse(localStorage.getItem(finKey)) : [];
+
+            const newFinEntry = {
+                id: 'FIN-INC-' + Date.now(),
+                date: new Date().toISOString().split('T')[0],
+                ref: invNo,
+                cat: finCategory,
+                method: method,
+                methodLabel: methodLabel,
+                desc: `${finCategory} - ${custNameStr} (${vDetailsStr}) - ${itemsSoldSummary.join(', ')}`,
+                type: finType,
+                amount: grandTotalNum
+            };
+            finEntries.unshift(newFinEntry);
+            localStorage.setItem(finKey, JSON.stringify(finEntries));
+
+            // 4. Link with AccountsCore global Banking & Finance system if present
+            if (window.AccountsCore && typeof window.AccountsCore.recordIncome === 'function') {
+                try {
+                    window.AccountsCore.recordIncome({
+                        date: new Date().toISOString().split('T')[0],
+                        amount: grandTotalNum,
+                        category: finCategory,
+                        paymentMethod: method,
+                        reference: invNo,
+                        notes: `${methodLabel} - ${custNameStr}`
+                    });
+                } catch(e) { console.log('AccountsCore sync optional:', e); }
+            }
+
+            // 5. Update Customer Memory & Customer Credit (Receivables Debtors)
+            if (currentMode === 'COUNTER') {
+                const cName = document.getElementById('counterCustName').value;
+                const cPhone = document.getElementById('counterCustPhone').value;
+                const cReg = document.getElementById('counterVehReg').value;
+                if (window.AutoCareUtils && cName) {
+                    window.AutoCareUtils.saveCustomerMemory(cName, cPhone, cReg);
+                }
+            } else {
+                if (window.AutoCareUtils && custNameStr) {
+                    window.AutoCareUtils.saveCustomerMemory(custNameStr, custPhoneStr.replace('Phone: ', ''));
+                }
+            }
+
+            // 6. Remove from draft list if was draft
+            removeInvoiceDraft(invNo);
+
+            let alertMsg = `✅ Invoice ${invNo} settled successfully for ${totalStr}!\n`;
+            alertMsg += `💳 Payment Method: ${methodLabel}\n`;
+            alertMsg += `📊 Financial Ledger & Banking Section updated cleanly.`;
+
+            if (method === 'DEBIT_OUTSTANDING') {
+                alertMsg += `\n⚠️ Marked as Outstanding Debt - Added to Customer Credit Receivables Console!`;
+            } else if (method === 'CREDIT_ADVANCE') {
+                alertMsg += `\nℹ️ Settled against Customer Advance / Credit Balance.`;
+            }
+
+            alert(alertMsg);
+            initInvoicing();
+        }
+
+        // --- Draft Invoices & Delete Helper Functions ---
+        function renderDraftDropdown() {
+            const bizId = getBizId();
+            const draftKey = `autocare_draft_invoices_${bizId}`;
+            const drafts = localStorage.getItem(draftKey) ? JSON.parse(localStorage.getItem(draftKey)) : [];
+            const select = document.getElementById('draftSelect');
+            if(!select) return;
+            select.innerHTML = '<option value="">-- Choose Saved Draft Invoice --</option>';
+            drafts.forEach(d => {
+                select.innerHTML += `<option value="${d.id}">${d.id} - ${d.custName} (${d.regNo || 'Walk-in'}) [Rs. ${d.total.toLocaleString()}]</option>`;
+            });
+        }
+
+        function saveInvoiceDraft() {
+            const bizId = getBizId();
+            const draftKey = `autocare_draft_invoices_${bizId}`;
+            let drafts = localStorage.getItem(draftKey) ? JSON.parse(localStorage.getItem(draftKey)) : [];
+
+            const invNo = document.getElementById('invNoInput').value.trim() || 'DRAFT-' + Date.now();
+            const custName = document.getElementById('custName').innerText;
+            const regNo = document.getElementById('vDetails').innerText;
+            const totalStr = document.getElementById('billTotal').innerText;
+            const totalNum = parseFloat(totalStr.replace(/[^0-9.]/g, '')) || 0;
+
+            let items = [];
+            const rows = document.querySelectorAll('#billItemsBody tr');
+            rows.forEach(r => {
+                const desc = r.querySelector('td:first-child input') ? r.querySelector('td:first-child input').value : '';
+                const cat = r.querySelector('select') ? r.querySelector('select').value : '';
+                const qty = r.querySelector('.b-qty') ? parseFloat(r.querySelector('.b-qty').value) || 0 : 0;
+                const price = r.querySelector('.b-price') ? parseFloat(r.querySelector('.b-price').value) || 0 : 0;
+                const partNo = r.getAttribute('data-part-no') || '';
+                items.push({ desc, cat, qty, price, partNo });
+            });
+
+            const draftObj = {
+                id: invNo,
+                mode: currentMode,
+                custName, regNo, total: totalNum,
+                date: new Date().toISOString().split('T')[0],
+                items
+            };
+
+            const existingIdx = drafts.findIndex(d => d.id === invNo);
+            if (existingIdx >= 0) drafts[existingIdx] = draftObj;
+            else drafts.unshift(draftObj);
+
+            localStorage.setItem(draftKey, JSON.stringify(drafts));
+            renderDraftDropdown();
+            alert(`✅ Invoice Draft ${invNo} saved successfully!\nYou can continue adding work items tomorrow.`);
+        }
+
+        function loadSelectedDraft() {
+            const id = document.getElementById('draftSelect').value;
+            if (!id) return;
+            const bizId = getBizId();
+            const draftKey = `autocare_draft_invoices_${bizId}`;
+            const drafts = localStorage.getItem(draftKey) ? JSON.parse(localStorage.getItem(draftKey)) : [];
+            const d = drafts.find(x => x.id === id);
+            if (!d) return;
+
+            document.getElementById('invNoInput').value = d.id;
+            document.getElementById('custName').innerText = d.custName;
+            document.getElementById('vDetails').innerText = d.regNo;
+
+            const tbody = document.getElementById('billItemsBody');
+            tbody.innerHTML = '';
+
+            (d.items || []).forEach(item => {
+                const tr = document.createElement('tr');
+                if (item.partNo) tr.setAttribute('data-part-no', item.partNo);
+                tr.innerHTML = `
+                    <td><input type="text" value="${item.desc}" style="width:100%;"></td>
+                    <td>
+                        <select style="width:100%;">
+                            <option value="Labor Charge" ${item.cat==='Labor Charge'?'selected':''}>Labor Charge</option>
+                            <option value="Spare Part" ${item.cat==='Spare Part'?'selected':''}>Spare Part</option>
+                            <option value="Oil & Fluid" ${item.cat==='Oil & Fluid'?'selected':''}>Oil & Fluid</option>
+                            <option value="Inspection Fee" ${item.cat==='Inspection Fee'?'selected':''}>Inspection Fee</option>
+                        </select>
+                    </td>
+                    <td><input type="number" class="b-qty" value="${item.qty}" onchange="calcBillTotal()" style="width:100%;"></td>
+                    <td><input type="number" class="b-price" value="${item.price}" onchange="calcBillTotal()" style="width:100%;"></td>
+                    <td class="b-row-total" style="font-weight:700; color:#38bdf8;">Rs. ${(item.qty*item.price).toLocaleString()}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            calcBillTotal();
+        }
+
+        function removeInvoiceDraft(id) {
+            const bizId = getBizId();
+            const draftKey = `autocare_draft_invoices_${bizId}`;
+            let drafts = localStorage.getItem(draftKey) ? JSON.parse(localStorage.getItem(draftKey)) : [];
+            drafts = drafts.filter(x => x.id !== id);
+            localStorage.setItem(draftKey, JSON.stringify(drafts));
+            renderDraftDropdown();
+        }
+
+        function deleteCurrentInvoice() {
+            const invNo = document.getElementById('invNoInput').value;
+            if (confirm(`ඔබට ${invNo} ඉන්වොයිස් / ඩ්‍රාෆ්ට් සටහන මකා දැමීමට අවශ්‍ය බව තහවුරු කරන්න?`)) {
+                removeInvoiceDraft(invNo);
+                alert(`✅ Invoice ${invNo} deleted!`);
+                initInvoicing();
+            }
+        }
+
+        window.onload = function() {
+            initInvoicing();
+            renderDraftDropdown();
+        };
+    </script>
+</body>
+</html>

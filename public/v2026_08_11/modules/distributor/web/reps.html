@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Reps - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=34"></script>
+    <script src="/core/dashboard-core.js?v=34"></script>
+    <script src="/core/subscription-manager.js?v=2"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter',sans-serif;background:#f3f4f6;}
+        .main-content{padding:24px;min-height:100vh;}
+        .page-header{margin-bottom:24px;}
+        .page-header h1{font-size:24px;color:#111827;}
+        .card{background:white;border-radius:16px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.1);overflow:hidden;}
+        .card-header{padding:16px 20px;border-bottom:1px solid #e5e7eb;background:#f9fafb;}
+        .card-header h3{font-size:16px;font-weight:600;}
+        .card-body{padding:20px;}
+        .form-group{margin-bottom:16px;}
+        .form-group label{display:block;font-size:13px;font-weight:500;margin-bottom:6px;color:#374151;}
+        .form-group input{width:100%;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;}
+        .btn-primary{background:#10b981;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;}
+        .btn-primary:hover{background:#059669;}
+        .btn-danger{background:#ef4444;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;}
+        .btn-warning{background:#f59e0b;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;}
+        .reps-table{width:100%;border-collapse:collapse;}
+        .reps-table th,.reps-table td{padding:12px;text-align:left;border-bottom:1px solid #e5e7eb;}
+        .reps-table th{background:#f9fafb;font-weight:600;}
+        .status-badge{padding:4px 10px;border-radius:20px;font-size:11px;display:inline-block;}
+        .status-active{background:#d1fae5;color:#065f46;}
+        .alert{padding:12px;border-radius:8px;margin-bottom:16px;}
+        .alert-success{background:#d1fae5;color:#065f46;border-left:4px solid #10b981;}
+        .alert-error{background:#fee2e2;color:#991b1b;border-left:4px solid #ef4444;}
+        .loading{text-align:center;padding:40px;color:#9ca3af;}
+        .flex-between{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+        .mt-4{margin-top:16px;}
+        .code-display{display:flex;gap:10px;margin-top:8px;align-items:center;}
+        .code-display input{background:#f3f4f6;font-family:monospace;font-size:28px;letter-spacing:5px;text-align:center;font-weight:bold;width:200px;padding:10px;}
+        .qr-container{text-align:center;padding:15px;background:#f9fafb;border-radius:12px;}
+        .qr-code{display:inline-block;padding:10px;background:white;border-radius:12px;}
+        .search-box{margin-bottom:16px;}
+        .search-box input{width:300px;padding:8px 12px;border:1px solid #e5e7eb;border-radius:8px;}
+        .table-responsive{overflow-x:auto;}
+        .password-cell{background:#f3f4f6;padding:4px 8px;border-radius:6px;font-family:monospace;font-size:14px;font-weight:bold;display:inline-block;}
+        .access-denied{text-align:center;padding:60px;background:white;border-radius:16px;margin:40px;}
+        .access-denied i{font-size:64px;color:#ef4444;}
+        @media (max-width:768px){.main-content{padding:16px;}}
+    </style>
+</head>
+<body>
+    <div id="accessDenied" style="display:none;">
+        <div class="access-denied">
+            <i>🔒</i>
+            <h2>Access Denied</h2>
+            <p>You don't have permission to view this page.<br>This page is only for Business Owners.</p>
+            <button class="btn-primary" onclick="window.location.href='/modules/distributor/web/index.html?tab=pending'">Go to Order Status</button>
+        </div>
+    </div>
+
+    <div id="pageContent" style="display:none;">
+        <div class="main-content">
+            <div class="page-header flex-between">
+                <div>
+                    <h1>👥 Manage Sales Representatives</h1>
+                    <p>Rep profiles for the mobile app are created from <strong>Staff Management</strong> (REP role).</p>
+                </div>
+                <a href="/modules/distributor/web/staff.html" class="btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-weight:700; background:#0f766e; padding:12px 18px;">👥 Open Staff Management (Get Rep Mobile Links)</a>
+            </div>
+
+            <!-- Business Code Section -->
+            <div class="card">
+                <div class="card-header"><h3>📱 Mobile App Access Code</h3></div>
+                <div class="card-body">
+                    <div class="flex-between">
+                        <div>
+                            <div class="code-display">
+                                <input type="text" id="businessCode" readonly>
+                                <button class="btn-primary" onclick="copyBusinessCode()">📋 Copy</button>
+                                <button class="btn-warning" onclick="regenerateBusinessCode()">🔄 Regenerate</button>
+                            </div>
+                        </div>
+                        <div class="qr-container">
+                            <div class="qr-code" id="qrCode"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reps List -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="flex-between">
+                        <h3>📋 Current Representatives</h3>
+                        <span id="repsCount"></span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="search-box">
+                        <input type="text" id="searchRep" placeholder="🔍 Search..." onkeyup="filterReps()">
+                    </div>
+                    <div class="table-responsive">
+                        <div id="repsList" class="loading">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentBusinessId = null;
+        let currentUser = null;
+        let currentBusinessCode = null;
+        let allReps = [];
+
+        const MW_TRADING_OWNER_EMAIL = 'mwtradingsolutions@gmail.com';
+
+        // Simple access check
+        async function checkAccess() {
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                window.location.href = '/';
+                return false;
+            }
+            
+            currentUser = user;
+            if (typeof window.ensureMwTradingOwnerBizMembership === 'function') {
+                await window.ensureMwTradingOwnerBizMembership(user);
+                console.log('[Reps] ensureMwTradingOwnerBizMembership finished');
+            }
+            
+            // Get business ID
+            currentBusinessId = localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            if (!currentBusinessId && window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+                const ctx = await window.dashboardCore.getContext(user).catch(() => null);
+                currentBusinessId = ctx && ctx.businessId ? ctx.businessId : null;
+                if (currentBusinessId) {
+                    localStorage.setItem('currentBusinessId', currentBusinessId);
+                    sessionStorage.setItem('currentBusinessId', currentBusinessId);
+                }
+            }
+            if (!currentBusinessId) {
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                currentBusinessId = userDoc.data()?.businessId;
+                if (currentBusinessId) {
+                    localStorage.setItem('currentBusinessId', currentBusinessId);
+                    sessionStorage.setItem('currentBusinessId', currentBusinessId);
+                }
+            }
+            if (!currentBusinessId && String(user.email || '').trim().toLowerCase() === MW_TRADING_OWNER_EMAIL) {
+                currentBusinessId = 'YRMbB6aq4CMevSrLWkQvoVMtc8b2';
+                localStorage.setItem('currentBusinessId', currentBusinessId);
+                sessionStorage.setItem('currentBusinessId', currentBusinessId);
+                console.log('[Reps] MW owner: defaulted currentBusinessId to MW business');
+            }
+            
+            if (!currentBusinessId) {
+                document.getElementById('accessDenied').style.display = 'block';
+                return false;
+            }
+            
+            // Check business type
+            const businessDoc = await db.collection('businesses').doc(currentBusinessId).get();
+            const businessType = businessDoc.data()?.businessType;
+            
+            // ALLOW ACCESS - NO ROLE CHECK FOR NOW (just business type)
+            if (businessType === 'distributor') {
+                document.getElementById('accessDenied').style.display = 'none';
+                document.getElementById('pageContent').style.display = 'block';
+                return true;
+            }
+            
+            document.getElementById('accessDenied').style.display = 'block';
+            return false;
+        }
+
+        async function loadBusinessCode() {
+            const businessDoc = await db.collection('businesses').doc(currentBusinessId).get();
+            let loginCode = businessDoc.data()?.repLoginCode;
+            if (!loginCode) {
+                loginCode = Math.floor(100000 + Math.random() * 900000).toString();
+                await db.collection('businesses').doc(currentBusinessId).update({ repLoginCode: loginCode });
+            }
+            currentBusinessCode = loginCode;
+            document.getElementById('businessCode').value = loginCode;
+            const qrContainer = document.getElementById('qrCode');
+            qrContainer.innerHTML = '';
+            new QRCode(qrContainer, {
+                text: `https://digibiz-sys.web.app/modules/distributor/mobile/?code=${loginCode}`,
+                width: 100, height: 100
+            });
+        }
+
+        function copyBusinessCode() {
+            const code = document.getElementById('businessCode');
+            code.select();
+            document.execCommand('copy');
+            alert('Code copied!');
+        }
+
+        async function regenerateBusinessCode() {
+            if (!confirm('Regenerate code? Old code will stop working.')) return;
+            const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+            await db.collection('businesses').doc(currentBusinessId).update({ repLoginCode: newCode });
+            currentBusinessCode = newCode;
+            document.getElementById('businessCode').value = newCode;
+            alert('New code generated!');
+        }
+
+        async function loadReps() {
+            allReps = [];
+            const staffSnap = await db.collection('businesses').doc(currentBusinessId).collection('users')
+                .get()
+                .catch(() => ({ docs: [] }));
+            staffSnap.docs.forEach(doc => {
+                const u = doc.data() || {};
+                if (u.isActive === false) return;
+                allReps.push({
+                    id: doc.id,
+                    userId: doc.id,
+                    businessId: currentBusinessId,
+                    name: String(u.name || u.displayName || u.email || doc.id).trim(),
+                    email: String(u.email || '').trim().toLowerCase(),
+                    phone: '',
+                    route: '',
+                    isActive: true,
+                    provisionedFromStaff: true
+                });
+            });
+
+            allReps.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+            
+            const container = document.getElementById('repsList');
+            if (allReps.length === 0) {
+                container.innerHTML = '<div class="loading">No rep profiles yet. Add staff with role <strong>REP</strong> on the Staff page to create a rep automatically.</div>';
+                document.getElementById('repsCount').innerText = '0 reps';
+                return;
+            }
+            
+            document.getElementById('repsCount').innerText = `${allReps.length} reps`;
+            
+            let html = `<table class="reps-table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Route</th><th>App login</th><th>Actions</th></tr></thead><tbody>`;
+            for (const rep of allReps) {
+                const pwdCell = rep.provisionedFromStaff
+                    ? '<span style="font-size:12px;color:#64748b;">DIGIBIZ staff password</span>'
+                    : `<span class="password-cell">${rep.password || '—'}</span>`;
+                html += `<tr>
+                    <td>${rep.name}</td>
+                    <td>${rep.email}</td>
+                    <td>${rep.phone || '-'}</td>
+                    <td>${rep.route || '-'}</td>
+                    <td>${pwdCell}</td>
+                    <td>
+                        <button class="btn-warning" onclick="resetPassword('${rep.id}')">Reset Pwd</button>
+                        <button class="btn-danger" onclick="deleteRep('${rep.id}')">Delete</button>
+                    </td>
+                </tr>`;
+            }
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        async function resetPassword(repId) {
+            const rep = allReps.find(r => r.id === repId);
+            if (!rep) return;
+            const newPassword = Math.floor(100000 + Math.random() * 900000).toString();
+            if (confirm(`Reset password for ${rep.name}?\nNew password: ${newPassword}`)) {
+                await db.collection('reps').doc(repId).update({ password: newPassword });
+                alert(`Password reset!\nNew password: ${newPassword}`);
+                await loadReps();
+            }
+        }
+
+        async function deleteRep(repId) {
+            if (!confirm('Delete this rep?')) return;
+            await db.collection('reps').doc(repId).delete();
+            await loadReps();
+        }
+
+        function filterReps() {
+            const term = document.getElementById('searchRep').value.toLowerCase();
+            const filtered = allReps.filter(r => r.name.toLowerCase().includes(term) || r.email.toLowerCase().includes(term));
+            const container = document.getElementById('repsList');
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="loading">No matches</div>';
+                return;
+            }
+            let html = `<table class="reps-table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Route</th><th>App login</th><th>Actions</th></tr></thead><tbody>`;
+            for (const rep of filtered) {
+                const pwdCell = rep.provisionedFromStaff
+                    ? '<span style="font-size:12px;color:#64748b;">DIGIBIZ staff password</span>'
+                    : `<span class="password-cell">${rep.password || '—'}</span>`;
+                html += `<tr><td>${rep.name}</td><td>${rep.email}</td><td>${rep.phone || '-'}</td><td>${rep.route || '-'}</td><td>${pwdCell}</td><td><button class="btn-warning" onclick="resetPassword('${rep.id}')">Reset Pwd</button><button class="btn-danger" onclick="deleteRep('${rep.id}')">Delete</button></td></tr>`;
+            }
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        window.resetPassword = resetPassword;
+        window.deleteRep = deleteRep;
+        window.filterReps = filterReps;
+        window.copyBusinessCode = copyBusinessCode;
+        window.regenerateBusinessCode = regenerateBusinessCode;
+
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (user) {
+                const hasAccess = await checkAccess();
+                if (hasAccess) {
+                    await loadBusinessCode();
+                    await loadReps();
+                    if (typeof window.getUserRole === 'function') {
+                        const ri = await window.getUserRole(user.uid, currentBusinessId);
+                        window.__DIGIBIZ_LOCAL_ROLE__ = ri && ri.role;
+                        console.log('[Reps] __DIGIBIZ_LOCAL_ROLE__', window.__DIGIBIZ_LOCAL_ROLE__, 'business', currentBusinessId);
+                    }
+                }
+            } else {
+                window.location.href = '/';
+            }
+        });
+    </script>
+</body>
+</html>

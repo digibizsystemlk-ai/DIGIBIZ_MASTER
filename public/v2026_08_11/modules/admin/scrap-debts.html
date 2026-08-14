@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Scrap Debts</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=55"></script>
+    <script src="/core/event-bus.js?v=55"></script>
+    <script src="/core/accounts-core.js?v=55"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=55"></script>
+    <script src="/core/dashboard-core.js?v=55"></script>
+    <script src="/core/subscription-manager.js?v=55"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <script src="/core/sms-wallet-core.js?v=4"></script>
+    <script src="/core/scrap-vba-core.js?v=70"></script>
+    <script src="/core/scrap-loans-store.js?v=2"></script>
+    <style>
+        body{font-family:Inter,Segoe UI,sans-serif;background:#f5f7fb;color:#0f172a;}
+        .page{padding:20px;}
+        .card{background:#fff;border:1px solid #dbe4ee;border-radius:12px;padding:20px;margin-bottom:12px;}
+        .grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;}
+        input,select,button{padding:9px;border:1px solid #cbd5e1;border-radius:8px;}
+        button{background:#0f3b2c;color:#fff;border:none;cursor:pointer;}
+        table{width:100%;border-collapse:collapse;font-size:13px;}
+        th,td{padding:8px;border-bottom:1px solid #eef2f7;text-align:left;}
+        th{background:#f8fafc;}
+        .small{font-size:12px;color:#64748b;}
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="card">
+        <h1>Customer & Loan Management</h1>
+        <p class="small">Supports Registered, Loan Registered, Others + ADV-LN, Standard, Investor 8% loans.</p>
+        <div id="smsDebugBadge" class="small" style="margin-top:8px;display:none;padding:8px;border-radius:8px;"></div>
+    </div>
+    <div class="card">
+        <h3>Create / Update Customer</h3>
+        <div class="grid">
+            <input id="customerName" placeholder="Customer name" list="custNames">
+            <select id="customerType">
+                <option value="REGISTERED">Registered</option>
+                <option value="LOAN_REGISTERED">Loan Registered</option>
+                <option value="OTHERS">Others</option>
+            </select>
+            <input id="customerPhone" placeholder="Phone">
+            <button id="saveCustomerBtn">Save Customer</button>
+        </div>
+    </div>
+    <div class="card">
+        <h3>Create Loan</h3>
+        <div class="grid">
+            <input id="loanCustomer" placeholder="Customer name" list="custNames">
+            <select id="loanType">
+                <option value="ADV_LN">ADV-LN (Cash Advance / Interest Free)</option>
+                <option value="STANDARD">Standard Interest Loan</option>
+                <option value="INVESTOR_8">Investor Loan (8% Monthly)</option>
+            </select>
+            <input id="loanAmount" type="number" step="0.01" placeholder="Principal amount">
+            <input id="loanMonthlyRate" type="number" step="0.01" value="8" placeholder="Monthly interest %">
+        </div>
+        <div style="margin-top:10px;">
+            <button id="createLoanBtn">Create Loan</button>
+            <button id="dailyInterestBtn">Apply Daily Interest</button>
+        </div>
+    </div>
+    <div class="card">
+        <h3>Advance Balance Update (Dashboard K Equivalent)</h3>
+        <div class="grid">
+            <input id="advCustomerName" placeholder="Customer name" list="custNames">
+            <input id="advBalanceAmount" type="number" step="0.01" placeholder="New advance due amount">
+            <input id="advNote" placeholder="Note (optional)">
+            <button id="saveAdvanceBtn">Save Advance Update</button>
+        </div>
+    </div>
+    <div class="card">
+        <h3>External Settlement Update (Dashboard Y Equivalent)</h3>
+        <div class="grid">
+            <input id="extCustomerName" placeholder="Customer name" list="custNames">
+            <input id="extSettlementAmount" type="number" step="0.01" placeholder="Settlement amount (+/-)">
+            <input id="extNote" placeholder="Note (optional)">
+            <button id="saveExtSettlementBtn">Save External Settlement</button>
+        </div>
+    </div>
+    <div class="card">
+        <h3>Active Loans</h3>
+        <table>
+            <thead><tr><th>Customer</th><th>Type</th><th>Principal</th><th>Balance</th><th>Monthly %</th><th>Last Interest</th><th>Actions</th></tr></thead>
+            <tbody id="loansBody"><tr><td colspan="7">No active loans</td></tr></tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>Annual Bonus (Rs. 70 per Kg)</h3>
+        <table>
+            <thead><tr><th>Supplier</th><th>Total Weight</th><th>Bonus (LKR)</th></tr></thead>
+            <tbody id="bonusBody"><tr><td colspan="3">No supplier history</td></tr></tbody>
+        </table>
+    </div>
+</div>
+<datalist id="custNames"></datalist>
+<script>
+/** Set in auth from users.businessId (or user.uid). */
+let SCRAP_BUSINESS_ID = '';
+let customerIndex = {};
+function fmt(v) {
+    return `LKR ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function smsSkipReasonText(code) {
+    if (code === 'event_disabled') return 'SMS skipped: event toggle is OFF.';
+    if (code === 'no_phone') return 'SMS skipped: customer phone number missing.';
+    if (code === 'wallet_exhausted') return 'SMS skipped: SMS wallet exhausted.';
+    if (code === 'quota_exhausted') return 'SMS skipped: Firestore quota exceeded (billing / daily limit).';
+    if (code === 'permission') return 'SMS skipped: permission denied for SMS queue.';
+    if (code === 'invalid_input') return 'SMS skipped: invalid phone/message input.';
+    if (code === 'db_unavailable') return 'SMS skipped: database unavailable.';
+    if (code === 'firestore_error') return 'SMS skipped: queue write failed (see detail below).';
+    return `SMS skipped: ${code || 'unknown reason'}`;
+}
+function showSmsDebug(result, extraReason) {
+    const el = document.getElementById('smsDebugBadge');
+    if (!el) return;
+    let ok = false;
+    let txt = '';
+    if (result && result.ok) {
+        ok = true;
+        if (result.via === 'rtdb_quota_fallback') {
+            txt = 'SMS queued via Realtime Database (Firestore write quota exceeded). Gateway app should send; cloud wallet was not debited — reconcile when Firestore is available again.';
+        } else if (result.fallback) {
+            txt = 'SMS queued via direct gateway fallback.';
+        } else {
+            txt = 'SMS queued successfully.';
+        }
+    } else {
+        txt = smsSkipReasonText(extraReason || (result && result.skipped));
+        if (result && result.error) {
+            txt += ' — ' + String(result.error);
+        }
+    }
+    el.style.display = 'block';
+    el.style.background = ok ? '#dcfce7' : '#fee2e2';
+    el.style.color = ok ? '#14532d' : '#7f1d1d';
+    el.style.border = `1px solid ${ok ? '#86efac' : '#fca5a5'}`;
+    el.textContent = txt;
+}
+
+function normalizedRate(loanType, inputRate) {
+    if (loanType === 'ADV_LN') return 0;
+    if (loanType === 'INVESTOR_8') return 8;
+    return Number(inputRate) || 0;
+}
+
+/** නම+loan type එකම නම් නව doc වෙනුවට නවතම active ණයට principal/balance එකතු කරයි (Bill නම් ගැලපීමට එක පේළියක්). */
+function scrapDebtNormalizeKey(name) {
+    let t = String(name || '').trim()
+        .replace(/^(mr|mrs|miss|ms|dr)\.?\s+/i, '')
+        .trim();
+    t = t.replace(/\s*[-–—]\s*(INVESTOR|INVESTOR_8|STD|STANDARD|ADV_LN|ADV|LOAN|REGISTERED|LOAN_REGISTERED|OTHERS)[\w\s%]*$/i, '').trim();
+    t = t.replace(/\s*\([^)]*(INVESTOR|investor|8%|registered|loan\s*registered|std|standard)[^)]*\)\s*$/i, '').trim();
+    return t.toLowerCase().replace(/\s+/g, ' ');
+}
+function scrapDebtCreatedMs(L) {
+    if (!L) return 0;
+    const c = L.createdAt;
+    if (c && typeof c.toMillis === 'function') return c.toMillis();
+    if (c && typeof c.seconds === 'number') return c.seconds * 1000 + Math.floor((c.nanoseconds || 0) / 1e6);
+    return 0;
+}
+
+function normTypeUniversalToScrapDebt(t) {
+    const v = String(t || '').toLowerCase();
+    if (v.includes('registered')) return 'REGISTERED';
+    if (v.includes('borrower')) return 'LOAN_REGISTERED';
+    if (v.includes('loan')) return 'LOAN_REGISTERED';
+    if (v.includes('other')) return 'OTHERS';
+    return 'OTHERS';
+}
+
+async function loadUniversalCustomersForDatalist() {
+    const snap = await db.collection('customers').where('businessId', '==', SCRAP_BUSINESS_ID).limit(500).get().catch(() => ({ docs: [] }));
+    const rows = snap.docs.map((d) => (d.data() || {})).filter((x) => x.archived !== true);
+    customerIndex = {};
+    rows.forEach((r) => {
+        const name = String(r.fullName || '').trim();
+        if (!name) return;
+        customerIndex[name.toLowerCase()] = r;
+    });
+    const dl = document.getElementById('custNames');
+    if (dl) {
+        dl.innerHTML = rows
+            .map((r) => `<option value="${String(r.fullName || '').replace(/\"/g, '&quot;')}"></option>`)
+            .join('');
+    }
+}
+
+function applySelectedCustomerToForm(nameInputId, typeSelectId, phoneInputId) {
+    const name = String(document.getElementById(nameInputId)?.value || '').trim().toLowerCase();
+    if (!name) return;
+    const row = customerIndex[name];
+    if (!row) return;
+    if (typeSelectId) {
+        const sel = document.getElementById(typeSelectId);
+        if (sel) sel.value = normTypeUniversalToScrapDebt(row.type || row.context || '');
+    }
+    if (phoneInputId) {
+        const p = document.getElementById(phoneInputId);
+        if (p && !String(p.value || '').trim()) p.value = row.mobile || '';
+    }
+}
+
+function wireCustomerAutofill() {
+    const pairs = [
+        { name: 'customerName', type: 'customerType', phone: 'customerPhone' },
+        { name: 'loanCustomer', type: null, phone: null },
+        { name: 'advCustomerName', type: null, phone: null },
+        { name: 'extCustomerName', type: null, phone: null }
+    ];
+    pairs.forEach((p) => {
+        const el = document.getElementById(p.name);
+        if (!el) return;
+        el.addEventListener('change', () => applySelectedCustomerToForm(p.name, p.type, p.phone));
+        el.addEventListener('blur', () => applySelectedCustomerToForm(p.name, p.type, p.phone));
+    });
+}
+
+async function saveCustomer() {
+    const name = String(document.getElementById('customerName').value || '').trim();
+    if (!name) return alert('Customer name is required.');
+    const type = document.getElementById('customerType').value;
+    const phone = String(document.getElementById('customerPhone').value || '').trim();
+    const docId = `${SCRAP_BUSINESS_ID}_${name.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
+    await db.collection('scrap_customers').doc(docId).set({
+        businessId: SCRAP_BUSINESS_ID,
+        name,
+        type,
+        phone,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.upsertCustomerLedger === 'function') {
+        await window.scrapVbaCore.upsertCustomerLedger(SCRAP_BUSINESS_ID, name);
+    }
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.logEvent === 'function') {
+        await window.scrapVbaCore.logEvent(SCRAP_BUSINESS_ID, 'CUSTOMER_SAVE', `${name} (${type})`, 'Admin');
+    }
+    alert('Customer saved.');
+}
+
+async function createLoan() {
+    const customerName = String(document.getElementById('loanCustomer').value || '').trim();
+    if (!customerName) return alert('Loan customer name is required.');
+    const loanType = document.getElementById('loanType').value;
+    const principal = Number(document.getElementById('loanAmount').value) || 0;
+    if (!principal) return alert('Loan amount is required.');
+    const monthlyRate = normalizedRate(loanType, document.getElementById('loanMonthlyRate').value);
+    const keyNew = scrapDebtNormalizeKey(customerName);
+    let allActive = [];
+    if (window.scrapLoansStore && typeof window.scrapLoansStore.fetchAllActive === 'function') {
+        allActive = await window.scrapLoansStore.fetchAllActive(SCRAP_BUSINESS_ID, { force: true });
+    }
+    const same = allActive.filter((L) => String(L.loanType || '') === loanType
+        && scrapDebtNormalizeKey(L.customerName) === keyNew
+        && (Number(L.balance) > 0.0001));
+    same.sort((a, b) => scrapDebtCreatedMs(b) - scrapDebtCreatedMs(a));
+    const top = same[0];
+    const postDisburseJournal = async (descSuffix) => {
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+            await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+                description: `Scrap loan ${descSuffix} - ${customerName}`,
+                reference: customerName,
+                referenceType: 'SCRAP_LOAN_GIVEN',
+                date: new Date().toISOString(),
+                entries: [
+                    { accountCode: '1-1050-01', accountName: 'Loans Given', debit: principal, credit: 0 },
+                    { accountCode: '1-1010-01', accountName: 'Cash', debit: 0, credit: principal }
+                ]
+            });
+        }
+    };
+    if (top && top.id) {
+        const ref = db.collection('scrap_loans').doc(top.id);
+        const curP = Number(top.principal) || 0;
+        const curB = Number(top.balance) || 0;
+        await ref.update({
+            principal: curP + principal,
+            balance: curB + principal,
+            lastSupplyAt: new Date().toISOString(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await postDisburseJournal('top-up (merged into existing)');
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.upsertCustomerLedger === 'function') {
+            await window.scrapVbaCore.upsertCustomerLedger(SCRAP_BUSINESS_ID, customerName);
+        }
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.logEvent === 'function') {
+            await window.scrapVbaCore.logEvent(SCRAP_BUSINESS_ID, 'LOAN_TOPUP', `${customerName} ${loanType} +${principal} → ${top.id}`, 'Admin');
+        }
+        alert('Same customer name & loan type already open — amount added to the newest active loan (not a second heading).');
+        if (window.scrapLoansStore && typeof window.scrapLoansStore.invalidate === 'function') {
+            window.scrapLoansStore.invalidate();
+        }
+        await loadActiveLoans();
+        return;
+    }
+    await db.collection('scrap_loans').add({
+        businessId: SCRAP_BUSINESS_ID,
+        customerName,
+        loanType,
+        principal,
+        balance: principal,
+        monthlyRate,
+        active: true,
+        source: loanType === 'INVESTOR_8' ? 'THIRD_PARTY_INVESTOR' : 'BUSINESS_CASH',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        lastInterestAppliedAt: new Date().toISOString(),
+        lastSupplyAt: new Date().toISOString()
+    });
+    await postDisburseJournal('disbursed');
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.upsertCustomerLedger === 'function') {
+        await window.scrapVbaCore.upsertCustomerLedger(SCRAP_BUSINESS_ID, customerName);
+    }
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.logEvent === 'function') {
+        await window.scrapVbaCore.logEvent(SCRAP_BUSINESS_ID, 'LOAN_CREATE', `${customerName} ${loanType} ${principal}`, 'Admin');
+    }
+    alert('Loan created.');
+    if (window.scrapLoansStore && typeof window.scrapLoansStore.invalidate === 'function') {
+        window.scrapLoansStore.invalidate();
+    }
+    await loadActiveLoans();
+}
+
+async function applyDailyInterest() {
+    let touched = 0;
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.calculateAllDailyInterest === 'function') {
+        const result = await window.scrapVbaCore.calculateAllDailyInterest(SCRAP_BUSINESS_ID);
+        touched = Number(result?.updated) || 0;
+        await window.scrapVbaCore.checkClosedLoans(SCRAP_BUSINESS_ID);
+    }
+    alert(`Daily interest applied to ${touched} active loan(s).`);
+    if (window.scrapLoansStore && typeof window.scrapLoansStore.invalidate === 'function') {
+        window.scrapLoansStore.invalidate();
+    }
+    await loadActiveLoans();
+}
+
+async function loadActiveLoans() {
+    if (!SCRAP_BUSINESS_ID) {
+        console.warn('[ScrapDebts] SCRAP_BUSINESS_ID not set');
+        return;
+    }
+    if (!window.scrapLoansStore || typeof window.scrapLoansStore.fetchAllActive !== 'function') {
+        console.warn('scrapLoansStore missing');
+        return;
+    }
+    const rows = (await window.scrapLoansStore.fetchAllActive(SCRAP_BUSINESS_ID))
+        .sort((a, b) => String(b.createdAt?.toDate ? b.createdAt.toDate().toISOString() : b.createdAt || '').localeCompare(
+            String(a.createdAt?.toDate ? a.createdAt.toDate().toISOString() : a.createdAt || '')
+        ));
+    document.getElementById('loansBody').innerHTML = rows.map((row) => `
+        <tr>
+            <td>${row.customerName || '-'}</td>
+            <td>${row.loanType || '-'}</td>
+            <td>${fmt(row.principal)}</td>
+            <td>${fmt(row.balance)}</td>
+            <td>${Number(row.monthlyRate || 0).toFixed(2)}%</td>
+            <td>${row.lastInterestAppliedAt ? new Date(row.lastInterestAppliedAt).toLocaleString() : '-'}</td>
+            <td>
+                <button data-action="pay" data-id="${row.id}" style="padding:6px 8px;">Post Payment</button>
+                <button data-action="close" data-id="${row.id}" style="padding:6px 8px;background:#334155;">Close</button>
+            </td>
+        </tr>
+    `).join('') || '<tr><td colspan="7">No active loans</td></tr>';
+    document.querySelectorAll('#loansBody button[data-action="pay"]').forEach((btn) => {
+        btn.addEventListener('click', async () => postLoanPayment(btn.dataset.id));
+    });
+    document.querySelectorAll('#loansBody button[data-action="close"]').forEach((btn) => {
+        btn.addEventListener('click', async () => closeLoan(btn.dataset.id));
+    });
+}
+
+async function postLoanPayment(loanId) {
+    const txt = prompt('Enter received payment amount:');
+    const pay = Number(txt);
+    if (!pay || pay <= 0) return;
+    const ref = db.collection('scrap_loans').doc(loanId);
+    const snap = await ref.get();
+    if (!snap.exists) return;
+    const row = snap.data();
+    const next = (Number(row.balance) || 0) - pay;
+    await ref.update({
+        balance: next,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+        await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+            description: `Scrap loan payment - ${row.customerName || ''}`,
+            reference: row.customerName || '',
+            referenceType: 'SCRAP_LOAN_PAYMENT',
+            date: new Date().toISOString(),
+            entries: [
+                { accountCode: '1-1010-01', accountName: 'Cash', debit: pay, credit: 0 },
+                { accountCode: '1-1050-01', accountName: 'Loans Given', debit: 0, credit: pay }
+            ]
+        });
+    }
+    if (window.scrapVbaCore) {
+        await window.scrapVbaCore.logEvent(SCRAP_BUSINESS_ID, 'LOAN_PAYMENT', `${row.customerName} ${pay}`, 'Admin');
+        await window.scrapVbaCore.checkClosedLoans(SCRAP_BUSINESS_ID);
+        const [customerSnap, settingsSnap] = await Promise.all([
+            db.collection('scrap_customers').where('businessId', '==', SCRAP_BUSINESS_ID).where('name', '==', String(row.customerName || '')).limit(1).get(),
+            db.collection('scrap_sms_settings').doc(SCRAP_BUSINESS_ID).get()
+        ]);
+        if (!customerSnap.empty) {
+            const customer = customerSnap.docs[0].data();
+            const settings = settingsSnap.exists ? settingsSnap.data() : {};
+            const safeName = String(row.customerName || '').trim().replace(/\s+/g, '+');
+            const tpl = String(settings.tplLoan || `Loan updated. Due: {{balance}}\nLink: https://digibiz-sys.web.app/a/${safeName}/${SCRAP_BUSINESS_ID} `);
+            const msg = tpl
+                .replace(/\{\{name\}\}/g, String(row.customerName || 'Customer'))
+                .replace(/\{\{balance\}\}/g, fmt(next))
+                .replace(/\{\{date\}\}/g, new Date().toLocaleString());
+            const enabledLoan = window.scrapVbaCore.isScrapSmsEventEnabled
+                ? await window.scrapVbaCore.isScrapSmsEventEnabled(SCRAP_BUSINESS_ID, 'loan')
+                : true;
+            if (enabledLoan && customer?.phone) {
+                const smsRes = await (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function'
+                    ? window.scrapVbaCore.enqueuePendingSmsForScrap(customer.phone, msg)
+                    : window.scrapVbaCore.enqueuePendingSms(SCRAP_BUSINESS_ID, customer.phone, msg));
+                showSmsDebug(smsRes);
+                const settlementTpl = String(settings.tplSettlement || '');
+                if (next <= 0) {
+                    const defaultSettlement = window.scrapVbaCore.buildSettlementMessage(String(row.customerName || 'Customer'), 0);
+                    const settlementMsg = window.scrapVbaCore.renderTemplate
+                        ? window.scrapVbaCore.renderTemplate(settlementTpl || defaultSettlement, {
+                            name: String(row.customerName || 'Customer'),
+                            amount: 'Rs. 0/=',
+                            direction: 'balance settled',
+                            date: new Date().toLocaleString()
+                        })
+                        : defaultSettlement;
+                    const settlementRes = await (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function'
+                        ? window.scrapVbaCore.enqueuePendingSmsForScrap(customer.phone, settlementMsg)
+                        : window.scrapVbaCore.enqueuePendingSms(SCRAP_BUSINESS_ID, customer.phone, settlementMsg));
+                    showSmsDebug(settlementRes);
+                }
+            } else {
+                showSmsDebug(null, enabledLoan ? 'no_phone' : 'event_disabled');
+            }
+        }
+    }
+    if (window.scrapLoansStore && typeof window.scrapLoansStore.invalidate === 'function') {
+        window.scrapLoansStore.invalidate();
+    }
+    await loadActiveLoans();
+}
+
+async function closeLoan(loanId) {
+    if (!confirm('Close this loan now?')) return;
+    await db.collection('scrap_loans').doc(loanId).update({
+        active: false,
+        closedAt: new Date().toISOString(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (window.scrapVbaCore) {
+        await window.scrapVbaCore.logEvent(SCRAP_BUSINESS_ID, 'LOAN_CLOSE_MANUAL', loanId, 'Admin');
+    }
+    if (window.scrapLoansStore && typeof window.scrapLoansStore.invalidate === 'function') {
+        window.scrapLoansStore.invalidate();
+    }
+    await loadActiveLoans();
+}
+
+async function loadAnnualBonus() {
+    const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString();
+    const snap = await db.collection('buying_history')
+        .where('businessId', '==', SCRAP_BUSINESS_ID)
+        .where('date', '>=', yearStart)
+        .get();
+    const totals = {};
+    snap.forEach((doc) => {
+        const row = doc.data();
+        const supplier = String(row.supplierName || '').trim() || 'Unknown';
+        totals[supplier] = (totals[supplier] || 0) + (Number(row.totalWeight) || 0);
+    });
+    const out = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+    document.getElementById('bonusBody').innerHTML = out.map(([supplier, weight]) => `
+        <tr><td>${supplier}</td><td>${weight.toFixed(2)}</td><td>${fmt(weight * 70)}</td></tr>
+    `).join('') || '<tr><td colspan="3">No supplier history</td></tr>';
+}
+
+async function saveAdvanceUpdate() {
+    const customerName = String(document.getElementById('advCustomerName').value || '').trim();
+    const amount = Number(document.getElementById('advBalanceAmount').value) || 0;
+    const note = String(document.getElementById('advNote').value || '').trim();
+    if (!customerName) return alert('Customer name is required.');
+    await db.collection('scrap_advances').doc(`${SCRAP_BUSINESS_ID}_${customerName.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`).set({
+        businessId: SCRAP_BUSINESS_ID,
+        customerName,
+        amount,
+        note,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    if (window.scrapVbaCore) {
+        await window.scrapVbaCore.logEvent(SCRAP_BUSINESS_ID, 'ADVANCE_BALANCE_UPDATE', `${customerName} ${amount}`, 'Admin');
+    }
+    const [customerSnap, settingsSnap] = await Promise.all([
+        db.collection('scrap_customers').where('businessId', '==', SCRAP_BUSINESS_ID).where('name', '==', customerName).limit(1).get(),
+        db.collection('scrap_sms_settings').doc(SCRAP_BUSINESS_ID).get()
+    ]);
+    if (!customerSnap.empty && window.scrapVbaCore && (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function' || typeof window.scrapVbaCore.enqueuePendingSms === 'function')) {
+        const customer = customerSnap.docs[0].data();
+        const settings = settingsSnap.exists ? settingsSnap.data() : {};
+        const safeName = customerName.trim().replace(/\s+/g, '+');
+        const defaultMsg = `Adv updated. Due: {{amount}}\nLink: https://digibiz-sys.web.app/a/${safeName}/${SCRAP_BUSINESS_ID} `;
+        const tpl = String(settings.tplAdvance || defaultMsg);
+        const msg = window.scrapVbaCore.renderTemplate
+            ? window.scrapVbaCore.renderTemplate(tpl, {
+                name: customerName,
+                amount: `Rs. ${Math.round(amount).toLocaleString()}/=`,
+                date: new Date().toLocaleString()
+            })
+            : defaultMsg.replace('{{amount}}', `Rs. ${Math.round(amount).toLocaleString()}/=`);
+        const enabledAdvance = window.scrapVbaCore.isScrapSmsEventEnabled
+            ? await window.scrapVbaCore.isScrapSmsEventEnabled(SCRAP_BUSINESS_ID, 'advance')
+            : true;
+        if (enabledAdvance && customer?.phone) {
+            const smsRes = await (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function'
+                    ? window.scrapVbaCore.enqueuePendingSmsForScrap(customer.phone, msg)
+                    : window.scrapVbaCore.enqueuePendingSms(SCRAP_BUSINESS_ID, customer.phone, msg));
+            showSmsDebug(smsRes);
+        } else {
+            showSmsDebug(null, enabledAdvance ? 'no_phone' : 'event_disabled');
+        }
+    }
+    alert('Advance update saved.');
+}
+
+async function saveExternalSettlement() {
+    const customerName = String(document.getElementById('extCustomerName').value || '').trim();
+    const amount = Number(document.getElementById('extSettlementAmount').value) || 0;
+    const note = String(document.getElementById('extNote').value || '').trim();
+    if (!customerName) return alert('Customer name is required.');
+    const extRef = await db.collection('scrap_external_settlements').add({
+        businessId: SCRAP_BUSINESS_ID,
+        customerName,
+        amount,
+        note,
+        date: new Date().toISOString(),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function' && amount !== 0) {
+        const absAmount = Math.abs(amount);
+        if (amount > 0) {
+            await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+                description: `External settlement receivable - ${customerName}`,
+                reference: extRef.id,
+                referenceType: 'SCRAP_EXT_SETTLEMENT',
+                date: new Date().toISOString(),
+                entries: [
+                    { accountCode: '1-1010-01', accountName: 'Cash', debit: absAmount, credit: 0 },
+                    { accountCode: '1-1060-01', accountName: 'External Settlements', debit: 0, credit: absAmount }
+                ]
+            });
+        } else {
+            await window.scrapVbaCore.postJournalEntry(SCRAP_BUSINESS_ID, {
+                description: `External settlement payable - ${customerName}`,
+                reference: extRef.id,
+                referenceType: 'SCRAP_EXT_SETTLEMENT',
+                date: new Date().toISOString(),
+                entries: [
+                    { accountCode: '1-1060-01', accountName: 'External Settlements', debit: absAmount, credit: 0 },
+                    { accountCode: '1-1010-01', accountName: 'Cash', debit: 0, credit: absAmount }
+                ]
+            });
+        }
+    }
+    if (window.scrapVbaCore) {
+        await window.scrapVbaCore.logEvent(SCRAP_BUSINESS_ID, 'EXTERNAL_SETTLEMENT', `${customerName} ${amount}`, 'Admin');
+    }
+    const [customerSnap, settingsSnap] = await Promise.all([
+        db.collection('scrap_customers').where('businessId', '==', SCRAP_BUSINESS_ID).where('name', '==', customerName).limit(1).get(),
+        db.collection('scrap_sms_settings').doc(SCRAP_BUSINESS_ID).get()
+    ]);
+    if (!customerSnap.empty && window.scrapVbaCore && (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function' || typeof window.scrapVbaCore.enqueuePendingSms === 'function')) {
+        const customer = customerSnap.docs[0].data();
+        const settings = settingsSnap.exists ? settingsSnap.data() : {};
+        const defaultMsg = window.scrapVbaCore.buildSettlementMessage(customerName, amount);
+        const tpl = String(settings.tplSettlement || defaultMsg);
+        const msg = window.scrapVbaCore.renderTemplate
+            ? window.scrapVbaCore.renderTemplate(tpl, {
+                name: customerName,
+                amount: `Rs. ${Math.round(Math.abs(amount)).toLocaleString()}/=`,
+                direction: amount > 0 ? 'you have to pay us' : (amount < 0 ? 'we have to pay you' : 'your balance is now zero and fully settled'),
+                date: new Date().toLocaleString()
+            })
+            : defaultMsg;
+        const enabledSettlement = window.scrapVbaCore.isScrapSmsEventEnabled
+            ? await window.scrapVbaCore.isScrapSmsEventEnabled(SCRAP_BUSINESS_ID, 'settlement')
+            : true;
+        if (enabledSettlement && customer?.phone) {
+            const smsRes = await (typeof window.scrapVbaCore.enqueuePendingSmsForScrap === 'function'
+                    ? window.scrapVbaCore.enqueuePendingSmsForScrap(customer.phone, msg)
+                    : window.scrapVbaCore.enqueuePendingSms(SCRAP_BUSINESS_ID, customer.phone, msg));
+            showSmsDebug(smsRes);
+        } else {
+            showSmsDebug(null, enabledSettlement ? 'no_phone' : 'event_disabled');
+        }
+    }
+    alert('External settlement saved.');
+}
+
+document.getElementById('saveCustomerBtn').addEventListener('click', saveCustomer);
+document.getElementById('createLoanBtn').addEventListener('click', createLoan);
+document.getElementById('dailyInterestBtn').addEventListener('click', applyDailyInterest);
+document.getElementById('saveAdvanceBtn').addEventListener('click', saveAdvanceUpdate);
+document.getElementById('saveExtSettlementBtn').addEventListener('click', saveExternalSettlement);
+
+auth.onAuthStateChanged(async (user) => {
+    if (!user) { window.location.href = '/'; return; }
+    
+    // Dynamic Business Context
+    let businessId = user.uid;
+    if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+        const ctx = await window.dashboardCore.getContext(user);
+        businessId = String((ctx && ctx.businessId) || user.uid);
+    } else {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+    }
+    
+    const bizDoc = await db.collection('businesses').doc(businessId).get();
+    const businessType = bizDoc.exists ? String(bizDoc.data().businessType || '').toLowerCase() : '';
+    
+    if (businessType !== 'scrap_collection_center') {
+        window.location.href = '/modules/admin/dashboard.html';
+        return;
+    }
+    
+    SCRAP_BUSINESS_ID = businessId;
+    await loadUniversalCustomersForDatalist();
+    wireCustomerAutofill();
+    await loadActiveLoans();
+    await loadAnnualBonus();
+});
+</script>
+</body>
+</html>

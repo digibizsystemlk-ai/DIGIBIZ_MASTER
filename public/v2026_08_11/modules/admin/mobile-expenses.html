@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <link rel="manifest" href="/modules/admin/mobile-expenses-manifest.json">
+    <meta name="theme-color" content="#0f3b2c">
+    <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', async function() {
+            try {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                for (let reg of regs) {
+                    if (reg.active && reg.active.scriptURL.includes('/sw.js')) {
+                        await reg.unregister();
+                        console.log('Unregistered root sw.js');
+                    }
+                }
+                await navigator.serviceWorker.register('/modules/admin/sw-expenses.js?v=1', { scope: '/modules/admin/mobile-expenses' });
+                console.log('Registered dedicated sw-expenses.js');
+            } catch (err) { console.log('SW setup error:', err); }
+        });
+    }
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Expenses — Digibiz</title>
+    <meta name="description" content="සරල දුරකථන වියදම් සටහන් පිටුව (Offline Support)">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/dashboard-core.js?v=117"></script>
+    <script src="/core/scrap-vba-core.js?v=117"></script>
+    <style>
+        body { font-family: Inter, Segoe UI, sans-serif; background: #f1f5f9; color: #0f172a; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        .header-bar { background: #0f3b2c; color: #fff; padding: 16px 20px; text-align: center; font-size: 18px; font-weight: 700; box-shadow: 0 4px 12px rgba(15,59,44,0.15); display: flex; justify-content: space-between; align-items: center; }
+        .header-title { margin: 0; font-size: 18px; font-weight: 700; }
+        .status-badge { background: #10b981; color: #fff; font-size: 10px; font-weight: 700; padding: 4px 8px; border-radius: 12px; text-transform: uppercase; }
+        .offline-badge { background: #f59e0b; display: none; }
+        .install-badge { background: #2563eb; color: #fff; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 12px; border: none; cursor: pointer; display: none; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
+        .container { padding: 20px; max-width: 500px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 20px; padding: 24px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01); border: 1px solid #e2e8f0; margin-bottom: 20px; }
+        
+        /* Passcode Screen */
+        #passcodeScreen { display: block; text-align: center; padding-top: 40px; }
+        .lock-icon { font-size: 48px; margin-bottom: 16px; }
+        .passcode-title { font-size: 22px; font-weight: 700; color: #0f3b2c; margin-bottom: 8px; }
+        .passcode-sub { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+        .passcode-input { width: 180px; font-size: 28px; letter-spacing: 12px; text-align: center; padding: 12px; border: 2px solid #cbd5e1; border-radius: 16px; font-weight: 800; color: #0f3b2c; margin-bottom: 20px; background: #f8fafc; transition: all 0.2s; }
+        .passcode-input:focus { border-color: #0f3b2c; outline: none; box-shadow: 0 0 0 4px rgba(15,59,44,0.1); background: #fff; }
+        .passcode-error { color: #ef4444; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
+        .btn-unlock { background: #0f3b2c; color: #fff; border: none; padding: 16px 32px; border-radius: 16px; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; max-width: 220px; box-shadow: 0 4px 12px rgba(15,59,44,0.2); transition: all 0.2s; }
+        .btn-unlock:active { transform: scale(0.97); }
+
+        /* Main Expense Form */
+        #appScreen { display: none; }
+        label { display: block; font-size: 12px; font-weight: 700; color: #475569; margin-top: 16px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+        input[type="number"], input[type="text"], textarea { width: 100%; padding: 16px; border: 2px solid #cbd5e1; border-radius: 16px; box-sizing: border-box; font-size: 16px; font-weight: 600; color: #0f172a; background: #f8fafc; transition: all 0.2s; }
+        input:focus, textarea:focus { border-color: #0f3b2c; background: #fff; outline: none; box-shadow: 0 0 0 4px rgba(15,59,44,0.1); }
+        .btn-submit { background: #0f3b2c; color: #fff; border: none; padding: 18px 24px; border-radius: 16px; font-size: 17px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 28px; box-shadow: 0 6px 20px rgba(15,59,44,0.25); transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-submit:active { transform: scale(0.97); box-shadow: 0 3px 10px rgba(15,59,44,0.15); }
+        .btn-loading { opacity: 0.7; pointer-events: none; background: #64748b !important; }
+        
+        /* Toast */
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #0f3b2c; color: #fff; padding: 14px 28px; border-radius: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); display: none; z-index: 10000; font-size: 15px; font-weight: 700; animation: slideUp 0.3s ease-out; white-space: nowrap; }
+        @keyframes slideUp { from { transform: translate(-50%, 100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+        /* Today list */
+        .list-title { font-size: 15px; font-weight: 700; color: #0f3b2c; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .expense-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; background: #f8fafc; border-radius: 14px; margin-bottom: 10px; border: 1px solid #e2e8f0; }
+        .expense-cat { font-weight: 700; font-size: 15px; color: #1e293b; }
+        .expense-note { font-size: 12px; color: #64748b; margin-top: 2px; }
+        .expense-amount { font-weight: 800; font-size: 16px; color: #0f3b2c; }
+        .empty-text { font-size: 13px; color: #64748b; text-align: center; padding: 20px 0; }
+    </style>
+</head>
+<body>
+
+<div class="header-bar">
+    <div class="header-title">💸 Mobile Expenses</div>
+    <div>
+        <button id="installAppBtn" class="status-badge install-badge" onclick="installApp()">📲 Install App</button>
+        <div id="statusBadge" class="status-badge">Online</div>
+        <div id="offlineBadge" class="status-badge offline-badge">Offline Mode</div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<div class="container">
+    <!-- Passcode Screen -->
+    <div id="passcodeScreen">
+        <div class="lock-icon">🔒</div>
+        <div class="passcode-title">මුරපදය ඇතුළත් කරන්න</div>
+        <div class="passcode-sub">මෙම පිටුවට පිවිසීමට PIN අංකය (Passcode) ඇතුළත් කරන්න.</div>
+        <input type="password" id="passcodeInput" class="passcode-input" pattern="[0-9]*" inputmode="numeric" maxlength="4" placeholder="••••">
+        <div id="passcodeError" class="passcode-error">❌ මුරපදය වැරදියි! නැවත උත්සාහ කරන්න.</div>
+        <button id="unlockBtn" class="btn-unlock">ඇතුළු වන්න (Unlock)</button>
+    </div>
+
+    <!-- Main Mobile Expense Entry Screen -->
+    <div id="appScreen">
+        <div class="card">
+            <div style="font-size: 18px; font-weight: 800; color: #0f3b2c; margin-bottom: 6px;">නව වියදමක් එකතු කරන්න</div>
+            <div style="font-size: 12px; color: #64748b; margin-bottom: 8px;">දිනය ස්වයංක්‍රීයව අද දින ලෙසද, සටහන [Mobile] ලෙසද පද්ධතියේ සටහන් වේ.</div>
+            
+            <label for="expAmount">මුදල (Rs)</label>
+            <input type="number" id="expAmount" step="0.01" min="0" placeholder="0.00" inputmode="decimal">
+
+            <label for="expCategory">වර්ගය (Category)</label>
+            <input type="text" id="expCategory" list="categoryList" placeholder="වර්ගය තෝරන්න හෝ ඇතුළත් කරන්න">
+            <datalist id="categoryList"></datalist>
+
+            <label for="expNote">සටහන (Note)</label>
+            <textarea id="expNote" rows="2" placeholder="අතිරේක සටහනක් ඇත්නම් ලියන්න"></textarea>
+
+            <button type="button" id="submitExpBtn" class="btn-submit">➕ වියදම සුරකින්න (Save)</button>
+        </div>
+
+        <div class="card">
+            <div class="list-title">
+                <span>🟢 අද දින වියදම් (Today Mobile)</span>
+                <span id="todayTotal" style="font-size:14px; font-weight:800; color:#166534; background:#dcfce7; padding:4px 10px; border-radius:10px;">Rs 0.00</span>
+            </div>
+            <div id="todayList">
+                <div class="empty-text">අද දින මෙතෙක් වියදම් සටහන් කර නොමැත.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+window.SCRAP_BUSINESS_ID = '';
+
+// Passcode handling & INSTANT UI RENDERING ON LOAD (Top Priority)
+const passcodeScreen = document.getElementById('passcodeScreen');
+const appScreen = document.getElementById('appScreen');
+const passcodeInput = document.getElementById('passcodeInput');
+const unlockBtn = document.getElementById('unlockBtn');
+const passcodeError = document.getElementById('passcodeError');
+
+if (sessionStorage.getItem('passcodeUnlocked') === 'true') {
+    passcodeScreen.style.display = 'none';
+    appScreen.style.display = 'block';
+} else {
+    passcodeScreen.style.display = 'block';
+    appScreen.style.display = 'none';
+    if (passcodeInput) passcodeInput.focus();
+}
+
+// Offline Detection
+function updateOnlineStatus() {
+    if (navigator.onLine) {
+        document.getElementById('statusBadge').style.display = 'inline-block';
+        document.getElementById('offlineBadge').style.display = 'none';
+    } else {
+        document.getElementById('statusBadge').style.display = 'none';
+        document.getElementById('offlineBadge').style.display = 'inline-block';
+    }
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
+
+// Enable Firestore Offline Persistence safely
+try {
+    if (typeof db !== 'undefined') {
+        db.enablePersistence({ experimentalTabSynchronization: true })
+            .then(() => console.log("🟢 Firestore Offline Persistence enabled"))
+            .catch(err => console.warn("⚠️ Firestore persistence warning:", err));
+    }
+} catch (persistErr) { console.warn("Persistence try block warning:", persistErr); }
+
+const fmt = (v) => `Rs ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function showToast(m) {
+    const t = document.getElementById('toast');
+    t.textContent = m;
+    t.style.display = 'block';
+    setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+// Category Memory Management
+function loadCategories() {
+    try {
+        const datalist = document.getElementById('categoryList');
+        const cats = JSON.parse(localStorage.getItem('mobileExpenseCategories') || '[]');
+        datalist.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    } catch(e) {}
+}
+function saveCategory(cat) {
+    if (!cat) return;
+    try {
+        const cats = JSON.parse(localStorage.getItem('mobileExpenseCategories') || '[]');
+        if (!cats.includes(cat)) {
+            cats.push(cat);
+            localStorage.setItem('mobileExpenseCategories', JSON.stringify(cats));
+            loadCategories();
+        }
+    } catch(e) {}
+}
+
+if (sessionStorage.getItem('passcodeUnlocked') === 'true') {
+    loadCategories();
+}
+
+// Load Today's Expenses
+async function loadTodayExpenses() {
+    if (!window.SCRAP_BUSINESS_ID) return;
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+    try {
+        const snap = await db.collection('scrap_expenses')
+            .where('businessId', '==', window.SCRAP_BUSINESS_ID)
+            .get();
+        
+        const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .filter(r => r.expenseDate === today && String(r.note || '').includes('[Mobile]'));
+        
+        rows.sort((a, b) => {
+            const dtA = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0;
+            const dtB = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0;
+            return dtB - dtA;
+        });
+
+        const listEl = document.getElementById('todayList');
+        const totalEl = document.getElementById('todayTotal');
+        
+        if (rows.length > 0) {
+            const total = rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+            totalEl.textContent = fmt(total);
+            listEl.innerHTML = rows.map(r => `
+                <div class="expense-item">
+                    <div>
+                        <div class="expense-cat">${String(r.category || '-')}</div>
+                        <div class="expense-note">${String(r.note || '').replace('[Mobile] ', '')}</div>
+                    </div>
+                    <div class="expense-amount">${fmt(r.amount)}</div>
+                </div>
+            `).join('');
+        } else {
+            totalEl.textContent = 'Rs 0.00';
+            listEl.innerHTML = '<div class="empty-text">අද දින මෙතෙක් වියදම් සටහන් කර නොමැත.</div>';
+        }
+    } catch (e) {
+        console.warn('Could not fetch today expenses:', e);
+    }
+}
+
+function verifyPasscode() {
+    if (passcodeInput.value === '1977') {
+        sessionStorage.setItem('passcodeUnlocked', 'true');
+        passcodeScreen.style.display = 'none';
+        appScreen.style.display = 'block';
+        loadCategories();
+        if (window.SCRAP_BUSINESS_ID) {
+            loadTodayExpenses();
+        }
+    } else {
+        passcodeError.style.display = 'block';
+        passcodeInput.value = '';
+        passcodeInput.focus();
+    }
+}
+
+unlockBtn.addEventListener('click', verifyPasscode);
+passcodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') verifyPasscode();
+});
+
+// Submit Expense
+document.getElementById('submitExpBtn').addEventListener('click', async () => {
+    try {
+        if (!window.SCRAP_BUSINESS_ID) {
+            alert('දෝෂය: ව්‍යාපාරික අංකය හමු නොවීය. කරුණාකර අන්තර්ජාල සම්බන්ධතාවය පරීක්ෂා කරන්න.');
+            return;
+        }
+
+        const user = firebase.auth().currentUser;
+        const email = String(user && user.email || '').trim().toLowerCase();
+        const isRasika = email === 'biz.himeshi@gmail.com';
+
+        const expenseDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' });
+        const amount = Number(document.getElementById('expAmount').value) || 0;
+        const category = String(document.getElementById('expCategory').value || '').trim();
+        const userNote = String(document.getElementById('expNote').value || '').trim();
+        const note = `[Mobile] ${userNote}`.trim();
+        const pay = 'CASH';
+
+        if (amount <= 0) return alert('කරුණාකර නිවැරදි මුදලක් ඇතුළත් කරන්න.');
+        if (!category) return alert('කරුණාකර වර්ගය ඇතුළත් කරන්න.');
+
+        let accCode = '5-5030-01';
+        let accName = 'Scrap overhead';
+        if (category.toLowerCase().includes('wages') || category.toLowerCase().includes('වැටුප්')) { accCode = '5-5050-01'; accName = 'Wages expense'; }
+        else if (category.toLowerCase().includes('transport') || category.toLowerCase().includes('ප්‍රවාහන')) { accCode = '5-5040-01'; accName = 'Transport expense'; }
+        else if (category.toLowerCase().includes('utilities') || category.toLowerCase().includes('බිල්')) { accCode = '5-5060-01'; accName = 'Utilities expense'; }
+        else if (category.toLowerCase().includes('rent') || category.toLowerCase().includes('කුලී')) { accCode = '5-5070-01'; accName = 'Rent expense'; }
+        else if (category.toLowerCase().includes('fuel') || category.toLowerCase().includes('ඉන්ධන')) { accCode = '5-5030-01'; accName = 'Fuel expense'; }
+
+        const btn = document.getElementById('submitExpBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '⏳ සුරකිමින් පවතී...';
+        btn.classList.add('btn-loading');
+
+        // Save to scrap_expenses
+        await db.collection('scrap_expenses').add({
+            businessId: window.SCRAP_BUSINESS_ID,
+            expenseDate,
+            amount,
+            category,
+            note,
+            accountCode: accCode,
+            accountName: accName,
+            paymentMethod: pay,
+            addedBy: isRasika ? 'Rasika' : (user && user.displayName || 'Owner'),
+            addedByEmail: email,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Save category to local storage memory
+        saveCategory(category);
+
+        // Journal Entry
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.postJournalEntry === 'function') {
+            await window.scrapVbaCore.postJournalEntry(window.SCRAP_BUSINESS_ID, {
+                description: `Scrap expense — ${category} (${note}) (by ${isRasika ? 'Rasika' : 'Owner'})`,
+                reference: expenseDate,
+                referenceType: 'SCRAP_EXPENSE',
+                date: expenseDate,
+                entries: [
+                    { accountCode: accCode, accountName: accName, debit: amount, credit: 0 },
+                    { accountCode: '1-1010-01', accountName: 'Cash - Main', debit: 0, credit: amount }
+                ]
+            });
+        }
+
+        // Profit Pool
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.updateProfitPool === 'function') {
+            await window.scrapVbaCore.updateProfitPool(window.SCRAP_BUSINESS_ID, -Math.abs(amount), 'EXPENSE', `Category: ${category} [Mobile]`);
+        }
+
+        document.getElementById('expAmount').value = '';
+        document.getElementById('expCategory').value = '';
+        document.getElementById('expNote').value = '';
+
+        btn.innerHTML = originalText;
+        btn.classList.remove('btn-loading');
+
+        showToast('✅ වියදම සාර්ථකව සුරකින ලදී!');
+        await loadTodayExpenses();
+    } catch (err) {
+        console.error('❌ Critical Error saving mobile expense:', err);
+        const btn = document.getElementById('submitExpBtn');
+        btn.innerHTML = '➕ වියදම සුරකින්න (Save)';
+        btn.classList.remove('btn-loading');
+        alert('දෝෂයක් සිදු විය: ' + err.message);
+    }
+});
+
+// Auth State Check
+auth.onAuthStateChanged(async (user) => {
+    if (!user) {
+        window.location.href = '/';
+        return;
+    }
+    
+    let businessId = user.uid;
+    try {
+        if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+            const ctx = await window.dashboardCore.getContext(user);
+            businessId = String((ctx && ctx.businessId) || user.uid);
+        } else {
+            const userDoc = await db.collection('users').doc(user.uid).get().catch(() => null);
+            if (userDoc && userDoc.exists) {
+                businessId = userDoc.data().businessId || user.uid;
+            }
+        }
+    } catch (e) { console.warn('Business ID fetch error:', e); }
+    
+    window.SCRAP_BUSINESS_ID = businessId;
+
+    if (sessionStorage.getItem('passcodeUnlocked') === 'true') {
+        loadTodayExpenses();
+    }
+});
+
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const installBtn = document.getElementById('installAppBtn');
+    if (installBtn) installBtn.style.display = 'inline-block';
+});
+
+function installApp() {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+            console.log('User accepted the install prompt');
+        } else {
+            console.log('User dismissed the install prompt');
+        }
+        deferredPrompt = null;
+        document.getElementById('installAppBtn').style.display = 'none';
+    });
+}
+</script>
+</body>
+</html>

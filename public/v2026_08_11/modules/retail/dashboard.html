@@ -1,0 +1,1703 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script>
+        window.addEventListener('error', function(e) {
+            var d = document.createElement('div');
+            d.style.position = 'fixed'; d.style.top = '10px'; d.style.left = '10px'; d.style.right = '10px';
+            d.style.background = '#fee2e2'; d.style.color = '#991b1b'; d.style.border = '2px solid #ef4444';
+            d.style.padding = '15px'; d.style.borderRadius = '8px'; d.style.zIndex = '99999999';
+            d.style.fontFamily = 'monospace'; d.style.fontSize = '14px'; d.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.1)';
+            d.innerHTML = '<strong>[DIGIBIZ FRONTEND ERROR]</strong><br>' +
+                          'Message: ' + e.message + '<br>' +
+                          'File: ' + e.filename + '<br>' +
+                          'Line: ' + e.lineno + ':' + e.colno + '<br>' +
+                          'Stack: <pre style="margin-top:5px; white-space:pre-wrap; font-size:12px;">' + (e.error ? e.error.stack : '') + '</pre>';
+            if (document.body) document.body.appendChild(d);
+        });
+    </script>
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Universal Dashboard</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js"></script>
+    <script src="/core/event-validation.js?v=58"></script>
+    <script src="/core/event-bus.js?v=58"></script>
+    <script src="/core/accounts-core.js?v=58"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=59"></script>
+    <script src="/core/dashboard-core.js?v=1003"></script>
+    <script src="/core/finalization-engine.js?v=3"></script>
+    <script src="/core/subscription-manager.js?v=61"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css?v=55">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter','Segoe UI',sans-serif;background:linear-gradient(135deg,#0f3b2c 0%,#114d39 100%);min-height:100vh;overflow-x:hidden;}
+        .main-content{min-height:100vh;}
+        .top-bar{background:#fff;padding:10px 24px;display:flex;justify-content:flex-start;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.1);position:sticky;top:0;z-index:99;gap:14px;}
+        .dashboard-logo-slot{width:44px;height:44px;flex-shrink:0;display:none;align-items:center;justify-content:center;}
+        .dashboard-logo-slot.show{display:flex;}
+        .dashboard-business-logo{width:40px;height:40px;object-fit:contain;border-radius:10px;border:1px solid #e2e8f0;background:#f8fafc;}
+        .dashboard-headline{font-size:15px;font-weight:800;color:#0f3b2c;letter-spacing:.6px;text-transform:uppercase;text-align:center;flex:1;min-width:0;}
+        .container{padding:15px;}
+        .business-type-selector,.filter-bar,.due-payments-widget,.data-table,.chart-card,.kpi-card{background:#fff;border-radius:12px;}
+        .business-type-selector{padding:10px 20px;margin-bottom:15px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+        .business-type-btn{padding:6px 16px;border:1px solid #e2e8f0;background:#fff;border-radius:20px;font-size:12px;cursor:pointer;}
+        .business-type-btn.active{background:#0a5c2e;color:#fff;}
+        .filter-bar{padding:12px 20px;margin-bottom:15px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
+        .filter-group{display:flex;flex-direction:column;gap:4px;min-width:120px;}
+        .filter-group label{font-size:10px;color:#64748b;font-weight:600;}
+        .filter-group select{padding:8px 10px;border:1px solid #e2e8f0;border-radius:10px;font-size:12px;}
+        .apply-btn{background:#0f3b2c;color:#fff;border:none;padding:8px 20px;border-radius:10px;font-size:12px;cursor:pointer;}
+        .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:15px;}
+        .kpi-card{padding:8px 6px;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.05);}
+        .kpi-card h4{color:#666;font-size:9px;margin-bottom:4px;text-transform:uppercase;}
+        .kpi-card .value{font-size:14px;font-weight:700;color:#2a5298;}
+        .due-payments-widget{padding:8px 15px;margin-bottom:15px;border-left:4px solid #ff6b6b;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+        .due-stats{display:flex;gap:12px;flex-wrap:wrap;}
+        .due-stat-card{text-align:center;padding:5px 10px;border-radius:8px;background:#f8fafc;min-width:80px;}
+        .due-value{font-size:13px;font-weight:700;}
+        .chart-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px;}
+        .chart-card{padding:10px;}
+        .chart-card h3{font-size:11px;margin-bottom:8px;border-left:3px solid #00d2ff;padding-left:8px;}
+        .chart-container{position:relative;height:140px;}
+        .data-table{padding:10px;margin-bottom:12px;overflow:auto;}
+        .data-table h3{margin-bottom:8px;font-size:12px;border-left:3px solid #ff6b6b;padding-left:8px;}
+        table{width:100%;border-collapse:collapse;font-size:11px;}
+        th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;}
+        th{background:#f8f9fa;}
+        .text-right{text-align:right;}
+        .footer{background:#0a2a44;color:#fff;text-align:center;padding:10px;margin-top:15px;border-radius:8px;font-size:10px;}
+        .dynamic-widgets{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px;}
+        .domain-widget{background:#fff;border-radius:12px;padding:12px;border-left:4px solid #0f3b2c;}
+        .domain-widget h4{font-size:11px;color:#0f3b2c;margin-bottom:8px;}
+        .domain-widget .v{font-size:18px;font-weight:700;color:#1e293b;}
+        .domain-widget .sub{font-size:11px;color:#64748b;margin-top:4px;}
+        .rep-summary-card{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px;display:none;}
+        .rep-summary-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+        .rep-summary-title{font-size:13px;font-weight:700;color:#0f3b2c;}
+        .rep-summary-filter{padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;}
+        .rep-summary-table{width:100%;border-collapse:collapse;font-size:12px;}
+        .rep-summary-table th,.rep-summary-table td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left;}
+        .rep-summary-table th{background:#f8fafc;}
+        .accounting-widget{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px;display:none;}
+        .accounting-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:10px;}
+        .accounting-kpi{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f9fafb;}
+        .accounting-kpi .k{font-size:11px;color:#6b7280;font-weight:600;}
+        .accounting-kpi .v{font-size:18px;font-weight:700;color:#111827;margin-top:3px;}
+        .install-prompt{position:fixed;bottom:20px;left:20px;right:20px;background:#fff;border-radius:14px;padding:12px 16px;box-shadow:0 12px 28px rgba(0,0,0,.15);z-index:2000;display:none;align-items:center;justify-content:space-between;gap:10px;border:1px solid #e2e8f0;}
+        .install-prompt.show{display:flex;}
+        .install-text{font-size:13px;color:#0f3b2c;font-weight:600;}
+        .install-actions{display:flex;gap:8px;}
+        .install-btn{background:#0f3b2c;color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;}
+        .close-btn{background:#f1f5f9;color:#475569;border:none;padding:8px 10px;border-radius:8px;cursor:pointer;}
+        .hero-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:15px;margin-bottom:15px;}
+        .hero-kpi-card{background:#fff;border-radius:20px;padding:30px 20px;text-align:center;box-shadow:0 10px 25px -5px rgba(0,0,0,0.1);border:1px solid #e2e8f0;transition:transform 0.2s;}
+        .hero-kpi-card:hover{transform:translateY(-5px);}
+        .hero-kpi-card h4{font-size:13px;color:#64748b;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;font-weight:800;}
+        .hero-kpi-card .value{font-size:36px;font-weight:900;color:#0f3b2c;}
+
+        @media (max-width:1200px){.chart-row{grid-template-columns:repeat(2,1fr);}}
+        @media (max-width:768px){.chart-row,.dynamic-widgets{grid-template-columns:1fr;}}
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="dashboard-logo-slot" id="dashboardLogoSlot" aria-hidden="true">
+                <img id="dashboardBusinessLogoImg" class="dashboard-business-logo" alt="" width="40" height="40" decoding="async" />
+            </div>
+            <div class="dashboard-headline" id="dashboardHeadline">REAL-TIME BUSINESS DASHBOARD</div>
+        </div>
+        <div class="container">
+            <div class="business-type-selector">
+                <label>View Mode:</label>
+                <button class="business-type-btn active" data-view="shop">Shop</button>
+                <button class="business-type-btn" data-view="vehicle">Distributor</button>
+                <button class="business-type-btn" data-view="combined">Combined</button>
+            </div>
+            <div class="filter-bar">
+                <div class="filter-group"><label>PERIOD</label><select id="periodSelect"><option value="today">Today</option><option value="month" selected>This Month</option></select></div>
+                <button class="apply-btn" id="refreshDashboardBtn">REFRESH</button>
+                <a href="/modules/distributor/web/new-order.html" class="apply-btn" style="background:#0f766e; text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-weight:700; padding:8px 16px; margin-left:auto;">🛒 + NEW SALES ORDER</a>
+            </div>
+            
+            <!-- Owner Profit Analytics Blocks (Visible to Business Owner on Main Dashboard) -->
+            <div id="coreOwnerProfitSection" style="margin-bottom: 15px;">
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin-bottom:12px;">
+                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:14px; text-align:center;">
+                        <div style="font-size:11px; font-weight:700; color:#166534; text-transform:uppercase;">📈 Today Profit</div>
+                        <div id="coreStatTodayProfit" style="font-size:20px; font-weight:800; color:#166534; margin-top:4px;">Rs. 0.00</div>
+                    </div>
+                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:14px; text-align:center;">
+                        <div style="font-size:11px; font-weight:700; color:#166534; text-transform:uppercase;">📈 This Week Profit</div>
+                        <div id="coreStatWeekProfit" style="font-size:20px; font-weight:800; color:#166534; margin-top:4px;">Rs. 0.00</div>
+                    </div>
+                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:14px; text-align:center;">
+                        <div style="font-size:11px; font-weight:700; color:#166534; text-transform:uppercase;">📈 This Month Profit</div>
+                        <div id="coreStatMonthProfit" style="font-size:20px; font-weight:800; color:#166534; margin-top:4px;">Rs. 0.00</div>
+                    </div>
+                    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:14px; text-align:center;">
+                        <div style="font-size:11px; font-weight:700; color:#166534; text-transform:uppercase;">📈 This Year Profit</div>
+                        <div id="coreStatYearProfit" style="font-size:20px; font-weight:800; color:#166534; margin-top:4px;">Rs. 0.00</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="kpi-grid" id="kpiGrid"></div>
+            <div class="hero-kpi-grid" id="heroKpiGrid"></div>
+
+            <div class="dynamic-widgets" id="dynamicWidgets"></div>
+
+
+            <div class="accounting-widget" id="coreAccountingSummaryWidget">
+                <div class="rep-summary-head">
+                    <div class="rep-summary-title">📒 Accounting Summary</div>
+                    <a href="/modules/distributor/web/accounting.html" class="apply-btn" style="text-decoration:none;padding:7px 12px;">Open Accounting Report</a>
+                </div>
+                <div class="accounting-grid">
+                    <div class="accounting-kpi"><div class="k">Total Purchases</div><div class="v" id="coreAccTotalPurchases">Rs 0.00</div></div>
+                    <div class="accounting-kpi"><div class="k">Supplier Outstanding</div><div class="v" id="coreAccSupplierOutstanding">Rs 0.00</div></div>
+                    <div class="accounting-kpi"><div class="k">Stock Value</div><div class="v" id="coreAccStockValue">Rs 0.00</div></div>
+                    <div class="accounting-kpi"><div class="k">Net Profit</div><div class="v" id="coreAccNetProfit">Rs 0.00</div></div>
+                </div>
+            </div>
+            <div class="rep-summary-card" id="repSummaryCard">
+                <div class="rep-summary-head">
+                    <div class="rep-summary-title">Rep Summary</div>
+                    <select id="repSummaryFilter" class="rep-summary-filter">
+                        <option value="ALL">All Reps</option>
+                    </select>
+                </div>
+                <table class="rep-summary-table">
+                    <thead>
+                        <tr>
+                            <th>Rep</th>
+                            <th>Total Orders</th>
+                            <th>Free Issues</th>
+                            <th>Collections</th>
+                        </tr>
+                    </thead>
+                    <tbody id="repSummaryBody"></tbody>
+                </table>
+            </div>
+            <!-- Low Stock Alerts Widget (Clickable Block) -->
+            <div id="coreLowStockWidget" onclick="openLowStockAlertModal()" style="background:linear-gradient(135deg, #7f1d1d, #991b1b); color:#fff; border-radius:14px; padding:16px 20px; margin-bottom:15px; cursor:pointer; box-shadow:0 4px 14px rgba(153,27,27,0.25); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; transition:transform 0.2s;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <div style="font-size:28px;">⚠️</div>
+                    <div>
+                        <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#fca5a5; font-weight:800;">Low Stock Alerts (අඩු තොග අනතුරු ඇඟවීම්)</div>
+                        <div id="coreLowStockCountText" style="font-size:18px; font-weight:800; color:#ffffff; margin-top:2px;">Loading stock alerts...</div>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.15); padding:8px 14px; border-radius:8px; font-weight:700; font-size:12px; border:1px solid rgba(255,255,255,0.3);">
+                    <span>🔍 View Alert List (ලැයිස්තුව බලන්න)</span> ➔
+                </div>
+            </div>
+
+            <!-- Low Stock Modal -->
+            <div id="lowStockModal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.65); z-index:99999; padding:20px; align-items:center; justify-content:center;">
+                <div style="background:#fff; border-radius:16px; max-width:760px; width:100%; max-height:85vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 40px rgba(0,0,0,0.3);">
+                    <div style="background:#991b1b; color:#fff; padding:16px 20px; display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0; font-size:16px; font-weight:800; display:flex; align-items:center; gap:8px;">⚠️ Low Stock Items Below Reorder Threshold</h3>
+                        <button onclick="closeLowStockAlertModal()" style="background:none; border:none; color:#fff; font-size:20px; font-weight:bold; cursor:pointer;">&times;</button>
+                    </div>
+                    <div style="padding:16px; overflow-y:auto; flex:1;">
+                        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                            <thead>
+                                <tr style="background:#fef2f2; color:#991b1b;">
+                                    <th style="padding:10px; text-align:left;">Item Name</th>
+                                    <th style="padding:10px; text-align:left;">Type</th>
+                                    <th style="padding:10px; text-align:right;">Current Stock</th>
+                                    <th style="padding:10px; text-align:right;">Alert Threshold</th>
+                                    <th style="padding:10px; text-align:center;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lowStockModalBody">
+                                <tr><td colspan="5" style="text-align:center; padding:20px; color:#64748b;">Loading low stock list...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="background:#f8fafc; padding:12px 20px; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end;">
+                        <button onclick="closeLowStockAlertModal()" style="padding:8px 16px; background:#64748b; color:#fff; border:none; border-radius:8px; font-weight:700; cursor:pointer;">Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Overdue Credit Collections Widget (Clickable Block) -->
+            <div id="coreOverdueCreditWidget" onclick="openOverdueCreditModal()" style="background:linear-gradient(135deg, #854d0e, #a16207); color:#fff; border-radius:14px; padding:16px 20px; margin-bottom:15px; cursor:pointer; box-shadow:0 4px 14px rgba(161,98,7,0.25); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; transition:transform 0.2s;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <div style="font-size:28px;">📅</div>
+                    <div>
+                        <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#fef08a; font-weight:800;">🚨 Overdue Credit Collections (කල් ඉකුත් වූ ණය ගෙවීම්)</div>
+                        <div id="coreOverdueCreditCountText" style="font-size:18px; font-weight:800; color:#ffffff; margin-top:2px;">Checking due dates...</div>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.15); padding:8px 14px; border-radius:8px; font-weight:700; font-size:12px; border:1px solid rgba(255,255,255,0.3);">
+                    <span>🔍 View Overdue Collections List</span> ➔
+                </div>
+            </div>
+
+            <!-- Overdue Credit Modal -->
+            <div id="overdueCreditModal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.65); z-index:99999; padding:20px; align-items:center; justify-content:center;">
+                <div style="background:#fff; border-radius:16px; max-width:780px; width:100%; max-height:85vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 40px rgba(0,0,0,0.3);">
+                    <div style="background:#854d0e; color:#fff; padding:16px 20px; display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="margin:0; font-size:16px; font-weight:800; display:flex; align-items:center; gap:8px;">📅 Overdue Credit Sales & Cheque Clearance Dates</h3>
+                        <button onclick="closeOverdueCreditModal()" style="background:none; border:none; color:#fff; font-size:20px; font-weight:bold; cursor:pointer;">&times;</button>
+                    </div>
+                    <div style="padding:16px; overflow-y:auto; flex:1;">
+                        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                            <thead>
+                                <tr style="background:#fefce8; color:#854d0e;">
+                                    <th style="padding:10px; text-align:left;">Customer / Shop</th>
+                                    <th style="padding:10px; text-align:left;">Area</th>
+                                    <th style="padding:10px; text-align:left;">Payment Mode</th>
+                                    <th style="padding:10px; text-align:left;">Due Date</th>
+                                    <th style="padding:10px; text-align:right;">Amount (Rs.)</th>
+                                    <th style="padding:10px; text-align:center;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="overdueCreditModalBody">
+                                <tr><td colspan="6" style="text-align:center; padding:20px; color:#64748b;">Checking overdue collections...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="background:#f8fafc; padding:12px 20px; border-top:1px solid #e2e8f0; display:flex; justify-content:flex-end;">
+                        <button onclick="closeOverdueCreditModal()" style="padding:8px 16px; background:#64748b; color:#fff; border:none; border-radius:8px; font-weight:700; cursor:pointer;">Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="due-payments-widget">
+                <div><i class="fas fa-clock" style="color:#ff6b6b;"></i> Payment Reminders</div>
+                <div class="due-stats">
+                    <div class="due-stat-card"><div>Overdue</div><div class="due-value" id="overdueCount">0</div></div>
+                    <div class="due-stat-card"><div>Due Today</div><div class="due-value" id="todayDueCount">0</div></div>
+                    <div class="due-stat-card"><div>Pending Orders</div><div class="due-value" id="pendingOrdersCount">0</div></div>
+                    <div class="due-stat-card"><div>Cash Flow</div><div class="due-value" id="cashFlowCount">LKR 0</div></div>
+                </div>
+            </div>
+            <div id="chartRows">
+                <div class="chart-row">
+                    <div class="chart-card"><h3 id="revenueChartTitle">Revenue Comparison</h3><div class="chart-container"><canvas id="revenueChart"></canvas></div></div>
+                    <div class="chart-card"><h3 id="ordersChartTitle">Orders vs Pending</h3><div class="chart-container"><canvas id="ordersChart"></canvas></div></div>
+                    <div class="chart-card"><h3 id="cashFlowChartTitle">Cash Flow</h3><div class="chart-container"><canvas id="cashFlowChart"></canvas></div></div>
+                </div>
+                <div class="chart-row" id="distributorExtraCharts" style="display:none;">
+                    <div class="chart-card"><h3>Sales trend (7 days)</h3><div class="chart-container"><canvas id="distTrendChart"></canvas></div></div>
+                    <div class="chart-card"><h3>Brand mix (month est.)</h3><div class="chart-container"><canvas id="distBrandChart"></canvas></div></div>
+                    <div class="chart-card"><h3>Rep collections (top)</h3><div class="chart-container"><canvas id="distRepChart"></canvas></div></div>
+                </div>
+                <div class="chart-row" id="distributorExtraCharts2" style="display:none;">
+                    <div class="chart-card"><h3>Returns vs free (units, MTD)</h3><div class="chart-container"><canvas id="distReturnsChart"></canvas></div></div>
+                    <div class="chart-card"><h3>Order status mix</h3><div class="chart-container"><canvas id="distStatusChart"></canvas></div></div>
+                    <div class="chart-card"><h3>Category proxy (top brands)</h3><div class="chart-container"><canvas id="distCategoryChart"></canvas></div></div>
+                </div>
+                <div class="chart-row" id="manufacturerExtraCharts" style="display:none;">
+                    <div class="chart-card"><h3>Purchases (last 30 days)</h3><div class="chart-container"><canvas id="mfgPurchasesChart"></canvas></div></div>
+                    <div class="chart-card"><h3>Sales (last 30 days)</h3><div class="chart-container"><canvas id="mfgSalesChart"></canvas></div></div>
+                    <div class="chart-card"><h3>Production output (last 30 days)</h3><div class="chart-container"><canvas id="mfgProductionChart"></canvas></div></div>
+                </div>
+                <div class="chart-row" id="manufacturerExtraCharts2" style="display:none;">
+                    <div class="chart-card"><h3>Profit trend (last 30 days)</h3><div class="chart-container"><canvas id="mfgProfitChart"></canvas></div></div>
+                </div>
+                <div class="chart-row" id="scrapExtraCharts" style="display:none;">
+                    <div class="chart-card"><h3>Scrap GL — cumulative balances (Rs)</h3><div class="chart-container"><canvas id="scrapGlBarChart"></canvas></div></div>
+                </div>
+            </div>
+            <div class="data-table" id="distributorQuickSection" style="display:none;">
+                <h3>Low stock SKUs</h3>
+                <table><thead><tr><th>Product</th><th>Brand</th><th class="text-right">Qty</th></tr></thead><tbody id="lowStockBody"></tbody></table>
+            </div>
+            <div class="data-table" id="distributorTopProducts" style="display:none;">
+                <h3>Top lines this month (by value)</h3>
+                <table><thead><tr><th>Product</th><th>Brand</th><th class="text-right">Est. value</th></tr></thead><tbody id="topProductsBody"></tbody></table>
+            </div>
+            <div class="data-table" id="distributorRecentOrders" style="display:none;">
+                <h3>Recent orders</h3>
+                <table><thead><tr><th>Order</th><th>Date</th><th>Shop</th><th>Status</th><th class="text-right">Amount</th></tr></thead><tbody id="recentOrdersBody"></tbody></table>
+            </div>
+            <div class="data-table">
+                <h3 id="recentActivityTitle">Today Journal Activity</h3>
+                <table><thead><tr><th>Description</th><th>Date</th><th class="text-right" id="recentActivityAmtHdr">Amount</th></tr></thead><tbody id="recentTableBody"></tbody></table>
+            </div>
+            <div class="footer">DIGIBIZ Universal Dashboard</div>
+        </div>
+    </div>
+    <script>
+        const metricMeta = {
+            todaySales: { label: 'Today Sales', currency: true },
+            monthSales: { label: 'Month Sales', currency: true },
+            pendingOrders: { label: 'Pending Orders' },
+            cashFlow: { label: 'Cash & Bank', currency: true },
+            lowStock: { label: 'Low Stock' },
+            expiringSoon: { label: 'Expiring Soon' },
+            expiredCount: { label: 'Expired Items' },
+            drugCategories: { label: 'Drug Categories' },
+            prescriptionUploads: { label: 'Prescription Uploads' },
+            unitConvertibleItems: { label: 'Unit Convertibles' },
+            bulkWeightPricedItems: { label: 'Weight Priced Items' },
+            bulkItems: { label: 'Bulk Items' },
+            inventoryUnitsTracked: { label: 'Tracked Units' },
+            quotationCount: { label: 'Quotation Count' },
+            quoteConversionRate: { label: 'Quote Conversion', suffix: '%' },
+            todayAppointments: { label: 'Today Appointments' },
+            upcomingAppointments: { label: 'Upcoming Appointments' },
+            serviceBills: { label: 'Service Bills' },
+            clients: { label: 'Clients' },
+            utilization: { label: 'Utilization', suffix: '%' },
+            pendingQueueCount: { label: 'Pending queue' },
+            approvedCount: { label: 'Approved orders' },
+            rejectedCount: { label: 'Rejected' },
+            dispatchedCount: { label: 'Dispatched' },
+            deliveredCount: { label: 'Delivered' },
+            totalStockValue: { label: 'Stock value (est.)', currency: true },
+            outOfStockCount: { label: 'Out of stock SKUs' },
+            lowStockAlertCount: { label: 'Low stock SKUs' },
+            returnsCat1Units: { label: 'Returns Cat 1 (units)' },
+            returnsCat2Units: { label: 'Returns Cat 2 (units)' },
+            freeIssueUnits: { label: 'Free issue units' },
+            freeIssueValueEst: { label: 'Free issue value (est.)', currency: true },
+            outstandingBalance: { label: 'Outstanding balance', currency: true },
+            activeReps: { label: 'Active reps' },
+            newCustomers: { label: 'New shops (MTD)' },
+            monthOrderCount: { label: 'Orders w/ lines (MTD)' }
+            ,rmStockValue: { label: 'Raw Material Stock', currency: true }
+            ,fgStockValue: { label: 'Finished Goods Stock', currency: true }
+            ,productionRuns: { label: 'Production Runs (MTD)' }
+            ,productionStatus: { label: 'Production Status', suffix: '%' }
+            ,materialEfficiencyYield: { label: 'Material Efficiency', suffix: '%' }
+            ,pendingSettlements: { label: 'Pending Settlements' }
+            ,rmPurchaseMonth: { label: 'Raw Material Purchases', currency: true }
+            ,productionCostMonth: { label: 'Processing Costs', currency: true }
+            ,operationalCostMonth: { label: 'Operational Costs', currency: true }
+            ,sideIncomeMonth: { label: 'Side Income', currency: true }
+            ,todayBuying: { label: 'Today Buying', currency: true }
+            ,monthBuying: { label: 'Month Buying', currency: true }
+            ,monthProfit: { label: 'Month profit / margin', currency: true }
+            ,scrapGlRevenue: { label: 'GL revenue (cumulative)', currency: true }
+            ,scrapGlCogs: { label: 'GL COGS (cumulative)', currency: true }
+            ,scrapGlLoansGiven: { label: 'GL loans given', currency: true }
+            ,scrapGlInterestIncome: { label: 'GL interest income', currency: true }
+            ,scrapGlNet1030: { label: 'GL 1-1030-01 net (AR + inventory)', currency: true }
+            ,scrapGlNet1060: { label: 'GL 1-1060-01 net (advances + external)', currency: true }
+            ,stockValue: { label: 'Stock Value', currency: true }
+            ,supplierOutstanding: { label: 'Supplier Outstanding', currency: true }
+            ,customerOutstanding: { label: 'Customer Outstanding', currency: true }
+            ,outstandingLoans: { label: 'Loan Outstanding', currency: true }
+            ,todayStockIn: { label: 'Today Stock IN (kg)' }
+            ,todayStockOut: { label: 'Today Stock OUT (kg)' }
+            ,monthStockIn: { label: 'MTD Stock IN (kg)' }
+            ,monthStockOut: { label: 'MTD Stock OUT (kg)' }
+            ,externalSettlementNet: { label: 'External Settlement Net', currency: true }
+            ,advanceOutstanding: { label: 'Advance Outstanding', currency: true }
+            ,cashBalance: { label: 'Cash Balance', currency: true }
+            ,bankBalance: { label: 'Bank Balance', currency: true }
+        };
+
+        let dashboardContext = null;
+        let charts = {};
+        let deferredInstallPrompt = null;
+        let finalizationChecked = false;
+        let manufacturerSnapshotUnsubs = [];
+        let retailSnapshotUnsubs = [];
+        let dashboardPollTimer = null;
+
+        function updateDashboardBusinessLogo() {
+            const slot = document.getElementById('dashboardLogoSlot');
+            const img = document.getElementById('dashboardBusinessLogoImg');
+            if (!slot || !img) return;
+            const url = dashboardContext && String(dashboardContext.logoUrl || '').trim();
+            if (url) {
+                img.src = url;
+                img.alt = 'Business logo';
+                slot.classList.add('show');
+            } else {
+                img.removeAttribute('src');
+                img.alt = '';
+                slot.classList.remove('show');
+            }
+        }
+
+        function formatLKR(value) {
+            return `LKR ${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+        function formatRs(value) {
+            return `Rs ${(Number(value) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+
+        function resolveKpiDefinitions(structure) {
+            return structure.map((id) => ({ id, ...(metricMeta[id] || { label: id }) }));
+        }
+
+        function initKPIGrid(structure) {
+            const defs = resolveKpiDefinitions(structure);
+            document.getElementById('kpiGrid').innerHTML = defs
+                .map((kpi) => `<div class="kpi-card"><h4>${kpi.label}</h4><div class="value" id="kpi-${kpi.id}">0</div></div>`)
+                .join('');
+        }
+
+        function setKpiValue(id, value, currency = false, suffix = '') {
+            const target = document.getElementById(`kpi-${id}`);
+            if (!target) return;
+            target.textContent = currency ? formatLKR(value) : `${value || 0}${suffix}`;
+        }
+        function setKpiByCandidateIds(ids, value, currency = false, suffix = '') {
+            if (!Array.isArray(ids)) return;
+            const txt = currency ? formatLKR(value) : `${value || 0}${suffix}`;
+            ids.forEach((id) => {
+                const el = document.getElementById(id) || document.getElementById(`kpi-${id}`);
+                if (el) el.textContent = txt;
+            });
+        }
+
+
+        function renderCharts(metrics) {
+            const type = dashboardContext.businessType;
+            const today = Number(metrics.todaySales ?? 0);
+            const month = Number(metrics.monthSales ?? 0);
+            const pending = Number(metrics.pendingOrders ?? 0);
+            const cashFlow = Number(metrics.cashFlow) || 0;
+            const quoteCount = Number(metrics.quotationCount) || 0;
+            const salesDocCount = Number(metrics.hardwareSalesVsQuotations?.sales) || 0;
+            const chartLabels = {
+                pharmacy: ['Prescription Revenue', 'Monthly Revenue'],
+                hardware: ['Sales Docs', 'Quotation Docs'],
+                service: ['Today Services', 'Service Revenue'],
+                manufacturer: ['Month Sales', 'Net Profit'],
+                distributor: ['Today Sales', 'Month Sales'],
+                retail: ['Today Sales', 'Month Sales'],
+                scrap_collection_center: ['Today sales', 'Month sales']
+            };
+
+            document.getElementById('revenueChartTitle').textContent = type === 'scrap_collection_center' ? 'Scrap: Daily Profit Variation (Last 365 Days)' : (type === 'service' ? 'Service Revenue' : (type === 'hardware' ? 'Sales vs Quotations' : (type === 'manufacturer' ? 'Manufacturing Revenue & Profit' : 'Revenue Comparison')));
+            document.getElementById('ordersChartTitle').textContent = type === 'scrap_collection_center' ? 'Scrap: Daily Total Buying (Last 365 Days)' : (type === 'service' ? 'Appointments Overview' : (type === 'pharmacy' ? 'Prescription Queue' : 'Orders vs Pending'));
+            document.getElementById('cashFlowChartTitle').textContent = type === 'scrap_collection_center' ? 'Scrap: Daily Total Sales (Last 365 Days)' : (type === 'service' ? 'Service Cash Flow' : 'Cash Flow');
+
+            const chartDefs = [
+                { key: 'revenueChart', type: 'bar', labels: chartLabels[type] || ['Today', 'Month'], data: type === 'hardware' ? [salesDocCount, quoteCount] : (type === 'scrap_collection_center' ? [Number(metrics.todaySales) || 0, Number(metrics.monthSales) || 0] : [today, month]), colors: ['#0f3b2c', '#10b981'] },
+                { key: 'ordersChart', type: 'doughnut', labels: type === 'scrap_collection_center' ? ['Today buying', 'Today sales'] : ['Pending', 'Processed'], data: type === 'scrap_collection_center' ? [Math.max(0, Number(metrics.todayBuying) || 0), Math.max(0, Number(metrics.todaySales) || 0)] : [pending, Math.max(0, month - pending)], colors: type === 'scrap_collection_center' ? ['#f97316', '#22c55e'] : ['#f97316', '#22c55e'] },
+                { key: 'cashFlowChart', type: 'line', labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'], data: metrics.cashFlowWeeks || [0, 0, 0, 0], colors: ['#00d2ff'] }
+            ];
+
+            // SCRAP MODULE OVERRIDES (365 Days)
+            if (type === 'scrap_collection_center' && metrics.dateLabels365) {
+                const labels = metrics.dateLabels365;
+                
+                // 1. Profit Area Chart
+                const ctxP = document.getElementById('revenueChart');
+                if (ctxP) {
+                    if (charts.revenueChart) charts.revenueChart.destroy();
+                    charts.revenueChart = new Chart(ctxP, {
+                        type: 'line',
+                        data: {
+                            labels,
+                            datasets: [{ label: 'Daily Profit (Rs)', data: metrics.profit365Data || [], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', fill: true, tension: 0.3, borderWidth: 2, pointRadius: 0 }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } }, scales: { x: { display: false } } }
+                    });
+                }
+
+                // 2. Buying Area Chart
+                const ctxB = document.getElementById('ordersChart');
+                if (ctxB) {
+                    if (charts.ordersChart) charts.ordersChart.destroy();
+                    charts.ordersChart = new Chart(ctxB, {
+                        type: 'line',
+                        data: {
+                            labels,
+                            datasets: [{ label: 'Daily Buying (Rs)', data: metrics.buy365Data || [], borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.15)', fill: true, tension: 0.3, borderWidth: 2, pointRadius: 0 }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } }, scales: { x: { display: false } } }
+                    });
+                }
+
+                // 3. Sales Area Chart
+                const ctxS = document.getElementById('cashFlowChart');
+                if (ctxS) {
+                    if (charts.cashFlowChart) charts.cashFlowChart.destroy();
+                    charts.cashFlowChart = new Chart(ctxS, {
+                        type: 'line',
+                        data: {
+                            labels,
+                            datasets: [{ label: 'Daily Sales (Rs)', data: metrics.sell365Data || [], borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)', fill: true, tension: 0.3, borderWidth: 2, pointRadius: 0 }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } }, scales: { x: { display: false } } }
+                    });
+                }
+            } else {
+                // Default Rendering logic for other business types
+                chartDefs.forEach((def) => {
+                    const ctx = document.getElementById(def.key);
+                    if (!ctx) return;
+                    if (charts[def.key]) charts[def.key].destroy();
+                    charts[def.key] = new Chart(ctx, {
+                        type: def.type,
+                        data: {
+                            labels: def.labels,
+                            datasets: [{ data: def.data, backgroundColor: def.colors, borderColor: def.colors[0], borderWidth: 2, fill: false }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: def.type !== 'line' } } }
+                    });
+                });
+            }
+
+            if (type === 'distributor' && metrics) {
+                const pend = Number(metrics.pendingQueueCount) || 0;
+                const appr = Number(metrics.approvedCount) || 0;
+                const rest = Math.max(0, (Number(metrics.dispatchedCount) || 0) + (Number(metrics.deliveredCount) || 0) + (Number(metrics.rejectedCount) || 0));
+                const oc = document.getElementById('ordersChart');
+                if (oc) {
+                    if (charts.ordersChart) charts.ordersChart.destroy();
+                    charts.ordersChart = new Chart(oc, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Pending queue', 'Approved', 'Other'],
+                            datasets: [{ data: [pend, appr, rest], backgroundColor: ['#f97316', '#22c55e', '#94a3b8'] }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } } }
+                    });
+                }
+            }
+            renderDistributorSupplementCharts(metrics);
+            renderManufacturerSupplementCharts(metrics);
+            renderScrapSupplementCharts(metrics);
+        }
+
+        function renderScrapSupplementCharts(metrics) {
+            const row = document.getElementById('scrapExtraCharts');
+            const id = 'scrapGlBarChart';
+            if (charts[id]) {
+                charts[id].destroy();
+                charts[id] = null;
+            }
+            if (!row) return;
+            if (!dashboardContext || dashboardContext.businessType !== 'scrap_collection_center' || !metrics) {
+                row.style.display = 'none';
+                return;
+            }
+            const labels = ['Revenue GL', 'COGS GL', 'Loans GL', 'Interest GL'];
+            const data = [
+                Math.max(0, Number(metrics.scrapGlRevenue) || 0),
+                Math.max(0, Number(metrics.scrapGlCogs) || 0),
+                Math.max(0, Number(metrics.scrapGlLoansGiven) || 0),
+                Math.max(0, Number(metrics.scrapGlInterestIncome) || 0)
+            ];
+            if (!data.some((x) => x > 0.01)) {
+                row.style.display = 'none';
+                return;
+            }
+            row.style.display = 'grid';
+            const el = document.getElementById(id);
+            if (!el) return;
+            charts[id] = new Chart(el, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Rs (cumulative from GL)',
+                        data,
+                        backgroundColor: ['#10b981', '#ef4444', '#9333ea', '#0ea5e9']
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+        }
+
+        function renderDistributorSupplementCharts(metrics) {
+            const extra = document.getElementById('distributorExtraCharts');
+            const extra2 = document.getElementById('distributorExtraCharts2');
+            if (!extra || !extra2) return;
+            ['distTrendChart', 'distBrandChart', 'distRepChart', 'distReturnsChart', 'distStatusChart', 'distCategoryChart'].forEach((k) => {
+                if (charts[k]) {
+                    charts[k].destroy();
+                    charts[k] = null;
+                }
+            });
+            if (!dashboardContext || dashboardContext.businessType !== 'distributor' || !metrics) {
+                extra.style.display = 'none';
+                extra2.style.display = 'none';
+                return;
+            }
+            extra.style.display = 'grid';
+            extra2.style.display = 'grid';
+
+            const segmentColors = (n) => Array.from({ length: n }, (_, i) => `hsl(${(i * 47) % 360} 62% 48%)`);
+            const mk = (id, type, labels, data, bgColors) => {
+                const el = document.getElementById(id);
+                if (!el || !Array.isArray(labels) || !Array.isArray(data) || labels.length === 0 || data.length === 0) return;
+                let dataset;
+                if (type === 'line') {
+                    const c = (Array.isArray(bgColors) && bgColors[0]) || '#0ea5e9';
+                    dataset = {
+                        label: 'Sales',
+                        data,
+                        borderColor: c,
+                        backgroundColor: `${c}26`,
+                        fill: true,
+                        tension: 0.25,
+                        borderWidth: 2,
+                        pointRadius: 2
+                    };
+                } else {
+                    const n = data.length;
+                    const colors = Array.isArray(bgColors) && bgColors.length === n ? bgColors : segmentColors(n);
+                    dataset = { data, backgroundColor: colors, borderWidth: 1, borderColor: '#fff' };
+                }
+                charts[id] = new Chart(el, {
+                    type,
+                    data: { labels, datasets: [dataset] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: type !== 'line' } } }
+                });
+            };
+
+            mk('distTrendChart', 'line', metrics.distributorTrendLabels || [], metrics.distributorTrendData || [], ['#0ea5e9']);
+            mk('distBrandChart', 'bar', metrics.distributorBrandLabels || [], metrics.distributorBrandData || []);
+            mk('distRepChart', 'bar', metrics.distributorRepLeaderLabels || [], metrics.distributorRepLeaderData || []);
+            const r1 = Number(metrics.returnsCat1Units) || 0;
+            const r2 = Number(metrics.returnsCat2Units) || 0;
+            const fq = Number(metrics.freeIssueUnits) || 0;
+            mk('distReturnsChart', 'bar', ['Cat 1 returns', 'Cat 2 returns', 'Free units'], [r1, r2, fq], ['#b45309', '#059669', '#f59e0b']);
+            mk('distStatusChart', 'doughnut', ['Approved', 'Rejected', 'Dispatched', 'Delivered'],
+                [metrics.approvedCount || 0, metrics.rejectedCount || 0, metrics.dispatchedCount || 0, metrics.deliveredCount || 0],
+                ['#22c55e', '#ef4444', '#3b82f6', '#0d9488']);
+            mk('distCategoryChart', 'polarArea', metrics.distributorBrandLabels || [], metrics.distributorBrandData || []);
+        }
+
+        function renderManufacturerSupplementCharts(metrics) {
+            const extra = document.getElementById('manufacturerExtraCharts');
+            const extra2 = document.getElementById('manufacturerExtraCharts2');
+            if (!extra || !extra2) return;
+            ['mfgPurchasesChart', 'mfgSalesChart', 'mfgProductionChart', 'mfgProfitChart'].forEach((k) => {
+                if (charts[k]) { charts[k].destroy(); charts[k] = null; }
+            });
+            if (!dashboardContext || dashboardContext.businessType !== 'manufacturer' || !metrics) {
+                extra.style.display = 'none';
+                extra2.style.display = 'none';
+                return;
+            }
+            const labels = Array.isArray(metrics.manufacturer30Labels) ? metrics.manufacturer30Labels : [];
+            if (!labels.length) {
+                extra.style.display = 'none';
+                extra2.style.display = 'none';
+                return;
+            }
+            extra.style.display = 'grid';
+            extra2.style.display = 'grid';
+            const mkLine = (id, data, color, fill) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const splitKey = id === 'mfgPurchasesChart'
+                    ? 'manufacturerPurchasesPaymentSplit30'
+                    : (id === 'mfgSalesChart' ? 'manufacturerSalesPaymentSplit30' : '');
+                const splitRows = splitKey ? (metrics[splitKey] || []) : [];
+                charts[id] = new Chart(el, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [{
+                            data: Array.isArray(data) ? data : [],
+                            borderColor: color,
+                            backgroundColor: fill,
+                            fill: true,
+                            borderWidth: 2,
+                            tension: 0.25,
+                            pointRadius: 1.8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    afterLabel: function (ctx) {
+                                        if (!splitRows.length) return '';
+                                        const idx = ctx.dataIndex;
+                                        const row = splitRows[idx] || { cash: 0, credit: 0, cheque: 0 };
+                                        return `Cash: Rs ${formatLKR(row.cash || 0).replace('LKR ','')} | Credit: Rs ${formatLKR(row.credit || 0).replace('LKR ','')} | Cheque: Rs ${formatLKR(row.cheque || 0).replace('LKR ','')}`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            };
+            mkLine('mfgPurchasesChart', metrics.manufacturerPurchases30 || [], '#ef4444', 'rgba(239,68,68,.16)');
+            mkLine('mfgSalesChart', metrics.manufacturerSales30 || [], '#10b981', 'rgba(16,185,129,.16)');
+            mkLine('mfgProductionChart', metrics.manufacturerProduction30 || [], '#0ea5e9', 'rgba(14,165,233,.16)');
+            mkLine('mfgProfitChart', metrics.manufacturerProfit30 || [], '#7c3aed', 'rgba(124,58,237,.16)');
+        }
+
+        function renderDynamicWidgets(metrics) {
+            const t = dashboardContext.businessType;
+            let blocks = [];
+            if (t === 'pharmacy') {
+                blocks = [
+                    { title: 'Expiry Counter', value: `${metrics.expiringSoon || 0}`, sub: `${metrics.expiredCount || 0} already expired` },
+                    { title: 'Prescription Uploads', value: `${metrics.prescriptionUploads || 0}`, sub: 'Uploaded prescriptions' },
+                    { title: 'Drug Categories', value: `${metrics.drugCategories || 0}`, sub: 'Active medicine groups' }
+                ];
+            } else if (t === 'hardware') {
+                blocks = [
+                    { title: 'Unit Conversions', value: `${metrics.unitConvertibleItems || 0}`, sub: 'Feet/inch convertible items' },
+                    { title: 'Weight Pricing', value: `${metrics.bulkWeightPricedItems || 0}`, sub: 'Kg/ton based price rules' },
+                    { title: 'Bulk Summary', value: `${metrics.bulkItems || 0}`, sub: `${metrics.inventoryUnitsTracked || 0} unit-tracked SKUs` },
+                    { title: 'Quotation Count', value: `${metrics.quotationCount || 0}`, sub: 'Active quotations' },
+                    { title: 'Quote Conversion', value: `${(Number(metrics.quoteConversionRate) || 0).toFixed(1)}%`, sub: 'Converted to invoice' }
+                ];
+            } else if (t === 'service') {
+                blocks = [
+                    { title: 'Appointments', value: `${metrics.todayAppointments || 0}`, sub: `${metrics.upcomingAppointments || 0} upcoming` },
+                    { title: 'Service Revenue', value: formatLKR(metrics.todaySales || 0), sub: 'Current service turnover' },
+                    { title: 'Service Utilization', value: `${(Number(metrics.utilization) || 0).toFixed(1)}%`, sub: `${metrics.serviceBills || 0} billed jobs` }
+                ];
+            } else if (t === 'distributor') {
+                blocks = [
+                    { title: 'Returns (units)', value: `${(Number(metrics.returnsCat1Units) || 0) + (Number(metrics.returnsCat2Units) || 0)}`, sub: `Cat 1: ${metrics.returnsCat1Units || 0} · Cat 2: ${metrics.returnsCat2Units || 0}` },
+                    { title: 'Free issues', value: `${metrics.freeIssueUnits || 0} u`, sub: formatLKR(metrics.freeIssueValueEst || 0) + ' est. value' },
+                    { title: 'Stock health', value: `${metrics.outOfStockCount || 0} OOS`, sub: `${metrics.lowStockAlertCount || 0} low-stock SKUs` }
+                ];
+            } else if (t === 'scrap_collection_center') {
+                blocks = [
+                    { title: 'Stock value (KPI)', value: formatLKR(metrics.stockValue || 0), sub: 'Items: qty x cost. If no cost, falls back to GL 1-1030-01 (same code mixes AR + inventory in ledger).' },
+                    { title: 'Cash + bank (GL)', value: formatLKR(metrics.cashFlow || 0), sub: '1-1010 / 1-1020 from opening + ledger + loan journals' },
+                    { title: 'Supplier advances', value: formatLKR(metrics.advanceOutstanding || 0), sub: 'From scrap_advances. GL 1-1060-01 also includes external settlements: net ' + formatLKR(metrics.scrapGlNet1060 || 0) },
+                    { title: 'GL revenue / COGS (cumulative)', value: formatLKR(metrics.scrapGlRevenue || 0), sub: 'COGS ' + formatLKR(metrics.scrapGlCogs || 0) + ' | 1-1030 GL net ' + formatLKR(metrics.scrapGlNet1030 || 0) },
+                    { title: 'Stock movement (today, kg)', value: ((Number(metrics.todayStockIn) || 0).toFixed(2)) + ' / ' + ((Number(metrics.todayStockOut) || 0).toFixed(2)), sub: 'IN / OUT' },
+                    { title: 'MTD margin (ops)', value: formatLKR(metrics.monthProfit || 0), sub: 'Sales ' + formatLKR(metrics.monthSales || 0) + ' - Buys ' + formatLKR(metrics.monthBuying || 0) },
+                    { title: 'Loans (balances) vs GL 1-1050', value: formatLKR(metrics.outstandingLoans || 0) + ' | ' + formatLKR(metrics.scrapGlLoansGiven || 0), sub: 'Positive balances on all loan docs | GL loans given' },
+                    { title: 'External settlement (MTD)', value: formatLKR(metrics.externalSettlementNet || 0), sub: 'From settlement list (this month)' }
+                ];
+            } else if (t === 'tire_centre') {
+                blocks = [
+                    { title: 'Tire Stock Health', value: `${metrics.lowStock || 0} Low/OOS`, sub: `${metrics.totalTireSkus || 0} active tire SKUs` },
+                    { title: 'Today Appointments', value: `${metrics.todayAppointments || 0}`, sub: 'Booked service jobs' },
+                    { title: 'Cash in Drawer', value: formatLKR(metrics.cashBalance || 0), sub: 'Live drawer balance' },
+                    { title: 'Bank Balance', value: formatLKR(metrics.bankBalance || 0), sub: 'Live bank balance' }
+                ];
+            }
+            document.getElementById('dynamicWidgets').innerHTML = blocks.map((b) => `
+                <div class="domain-widget">
+                    <h4>${b.title}</h4>
+                    <div class="v">${b.value}</div>
+                    <div class="sub">${b.sub}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderCashFlowSummaryWidget(metrics) {
+            const widgetEl = document.getElementById('cashFlowBankingWidget');
+            if (widgetEl) widgetEl.style.display = 'none';
+        }
+
+        function renderRepSummary(metrics) {
+            const card = document.getElementById('repSummaryCard');
+            const filter = document.getElementById('repSummaryFilter');
+            const body = document.getElementById('repSummaryBody');
+            if (!card || !filter || !body) return;
+            const isDistributor = dashboardContext && dashboardContext.businessType === 'distributor';
+            if (!isDistributor) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            const reps = Array.isArray(metrics.repSummary) ? metrics.repSummary : [];
+            const currentVal = filter.value || 'ALL';
+            filter.innerHTML = '<option value="ALL">All Reps</option>' +
+                reps.map((rep) => `<option value="${rep.repId}">${rep.repName}</option>`).join('');
+            filter.value = reps.some((rep) => rep.repId === currentVal) ? currentVal : 'ALL';
+            const selected = filter.value;
+            const rows = reps.filter((rep) => selected === 'ALL' || rep.repId === selected);
+            body.innerHTML = rows.map((rep) => `
+                <tr>
+                    <td>${rep.repName}</td>
+                    <td>${rep.totalOrders || 0}</td>
+                    <td>${rep.freeIssues || 0}</td>
+                    <td>${formatLKR(rep.collections || 0)}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="4">No rep data</td></tr>';
+        }
+
+        function syncLegacyViewModeVisibility() {
+            const selector = document.querySelector('.business-type-selector');
+            if (selector) {
+                selector.style.display = 'none';
+            }
+        }
+
+        async function loadCoreAccountingWidget() {
+            const card = document.getElementById('coreAccountingSummaryWidget');
+            if (!card) return;
+            const email = String((auth && auth.currentUser && auth.currentUser.email) || '').trim().toLowerCase();
+            const BDK_EMAIL = 'biz.sirimal@gmail.com';
+            const BDK_EMAIL_ALT = '2biz.sirimal@gmail.com';
+            const BDK_BID = 'oDhSDYHQ2dV1DP33koysmZAqaY13';
+            if (email !== BDK_EMAIL && email !== BDK_EMAIL_ALT) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            try {
+                const [jeSnap, slSnap, abSnap] = await Promise.all([
+                    db.collection('journal_entries').where('businessId', '==', BDK_BID).get(),
+                    db.collection('supplier_ledger').where('businessId', '==', BDK_BID).get(),
+                    db.collection('account_balances').where('businessId', '==', BDK_BID).get()
+                ]);
+                let purchases = 0;
+                let supplierOutstanding = 0;
+                let stockValue = 0;
+                let cashFlow = 0;
+                let revenue = 0;
+                let expenses = 0;
+                jeSnap.forEach((doc) => {
+                    const x = doc.data() || {};
+                    const account = String(x.account || '').toLowerCase();
+                    const amount = Number(x.amount) || 0;
+                    const entryType = String(x.entryType || '').toLowerCase() || 'debit';
+                    if (account === 'purchases') purchases += amount;
+                    if (account.includes('cash') || account.includes('bank')) {
+                        cashFlow += (entryType === 'debit' ? amount : -amount);
+                    }
+                    if (account.includes('revenue') || account.includes('sales') || account.includes('income')) {
+                        revenue += (entryType === 'credit' ? amount : -amount);
+                    }
+                    if (account.includes('expense') || account.includes('purchase') || account.includes('cost')) {
+                        expenses += (entryType === 'debit' ? amount : -amount);
+                    }
+                });
+                slSnap.forEach((doc) => {
+                    const x = doc.data() || {};
+                    const amt = Number(x.amount) || 0;
+                    const type = String(x.type || '').toLowerCase();
+                    supplierOutstanding += (type === 'credit' ? amt : -amt);
+                });
+                abSnap.forEach((doc) => {
+                    const x = doc.data() || {};
+                    const account = String(x.account || '').toLowerCase();
+                    if (account === 'stockvalue') stockValue = Number(x.balance) || 0;
+                    if (!stockValue && account === 'inventory') stockValue = Number(x.balance) || 0;
+                });
+                const netProfit = revenue - expenses;
+                document.getElementById('coreAccTotalPurchases').textContent = formatRs(purchases);
+                document.getElementById('coreAccSupplierOutstanding').textContent = formatRs(supplierOutstanding);
+                document.getElementById('coreAccStockValue').textContent = formatRs(stockValue);
+                document.getElementById('coreAccNetProfit').textContent = formatRs(netProfit);
+                // Stock value KPI id varies by dashboard structure; update all known candidates.
+                if (stockValue > 0) setKpiByCandidateIds(['kpi-stockValue', 'kpi-totalStockValue', 'stockValue'], stockValue, true);
+                // Cash flow KPI id can vary by case/legacy naming. Preserve metrics.cashFlow if set.
+                if (cashFlow > 0) {
+                    setKpiByCandidateIds(['kpi-cashFlow', 'kpi-cashflow', 'cashFlow'], cashFlow, true);
+                    const dueCash = document.getElementById('cashFlowCount');
+                    if (dueCash) dueCash.textContent = formatLKR(cashFlow);
+                }
+            } catch (e) {
+                console.warn('Core dashboard accounting widget failed', e);
+            }
+        }
+
+        async function renderDashboard() {
+            if (!dashboardContext || !dashboardContext.businessId) {
+                console.log('[Dashboard] Waiting for context...');
+                return;
+            }
+            if (!finalizationChecked && window.FinalizationEngine && window.FinalizationEngine.runAutoFinalizationForCurrentUser) {
+                finalizationChecked = true;
+                try { await window.FinalizationEngine.runAutoFinalizationForCurrentUser(); } catch (_) {}
+            }
+            const metrics = await window.dashboardCore.getMetrics(dashboardContext);
+            if (!metrics) return;
+            const structure = window.dashboardCore.getDashboardStructure(dashboardContext.businessType);
+            initKPIGrid(structure);
+            const recentEntries = await window.dashboardCore.getRecentJournalActivities(dashboardContext.businessId, 100, dashboardContext.businessType);
+
+            const headline = document.getElementById('dashboardHeadline');
+            if (headline) {
+                headline.textContent = dashboardContext.businessType === 'distributor'
+                    ? 'REAL-TIME DISTRIBUTOR BUSINESS DASHBOARD'
+                    : `REAL-TIME ${String(dashboardContext.businessType || 'business').toUpperCase()} BUSINESS DASHBOARD`;
+            }
+            updateDashboardBusinessLogo();
+            syncLegacyViewModeVisibility();
+
+            resolveKpiDefinitions(structure).forEach((kpi) => {
+                const rawValue = metrics[kpi.id] ?? 0;
+                setKpiValue(kpi.id, rawValue, Boolean(kpi.currency), kpi.suffix || '');
+            });
+
+            // Special handling for cashFlow split details on top row KPI Card
+            // Removed as per user request to avoid confusion
+            /*
+            const cashFlowEl = document.getElementById('kpi-cashFlow');
+            if (cashFlowEl) {
+                const cashBalance = metrics.cashBalance ?? 0;
+                const bankBalance = metrics.bankBalance ?? 0;
+                const parent = cashFlowEl.parentElement;
+                if (parent) {
+                    let splitEl = parent.querySelector('.kpi-split-details');
+                    if (!splitEl) {
+                        splitEl = document.createElement('div');
+                        splitEl.className = 'kpi-split-details';
+                        splitEl.style.fontSize = '12px';
+                        splitEl.style.color = '#64748b';
+                        splitEl.style.marginTop = '6px';
+                        splitEl.style.fontWeight = '600';
+                        parent.appendChild(splitEl);
+                    }
+                    splitEl.textContent = `Cash: ${formatLKR(cashBalance)} | Bank: ${formatLKR(bankBalance)}`;
+                }
+            }
+            */
+
+            // Special Hero KPI Handling for Scrap
+            const heroGrid = document.getElementById('heroKpiGrid');
+            if (dashboardContext.businessType === 'scrap_collection_center' && heroGrid) {
+                const heroIds = ['cashBalance', 'bankBalance'];
+                heroGrid.innerHTML = heroIds.map(id => {
+                    const kpi = metricMeta[id];
+                    return `<div class="hero-kpi-card"><h4>${kpi.label}</h4><div class="value" id="kpi-${id}">${formatLKR(metrics[id] || 0)}</div></div>`;
+                }).join('');
+                heroGrid.style.display = 'grid';
+                heroGrid.style.gridTemplateColumns = '';
+                heroGrid.style.gap = '';
+                heroGrid.style.marginBottom = '';
+                // Remove from regular grid to avoid double display
+                heroIds.forEach(id => {
+                    const el = document.getElementById(`kpi-${id}`);
+                    if (el && el.closest('.kpi-card')) el.closest('.kpi-card').remove();
+                });
+            } else {
+                if (heroGrid) heroGrid.style.display = 'none';
+            }
+
+
+            document.getElementById('pendingOrdersCount').textContent = metrics.pendingOrders || 0;
+            
+            const cashFlowCount = document.getElementById('cashFlowCount');
+            if (cashFlowCount) {
+                cashFlowCount.textContent = formatLKR(metrics.cashFlow || 0);
+            }
+            
+            document.getElementById('overdueCount').textContent = recentEntries.filter((e) => e.referenceType === 'LOAN').length;
+            document.getElementById('todayDueCount').textContent = recentEntries.filter((e) => e.referenceType === 'LOAN_PAYMENT').length;
+
+            const rtTitle = document.getElementById('recentActivityTitle');
+            const rtAmt = document.getElementById('recentActivityAmtHdr');
+            if (rtTitle) {
+                rtTitle.textContent = dashboardContext.businessType === 'scrap_collection_center'
+                    ? 'Recent GL activity (account ledger)'
+                    : 'Today Journal Activity';
+            }
+            if (rtAmt) {
+                rtAmt.textContent = dashboardContext.businessType === 'scrap_collection_center'
+                    ? 'Dr ∨ Cr'
+                    : 'Amount';
+            }
+
+            const localTodayStr = new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Colombo' });
+            const todayEntries = recentEntries.filter((entry) => {
+                const entryDate = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date);
+                const entryLocalStr = entryDate.toLocaleDateString('en-US', { timeZone: 'Asia/Colombo' });
+                return entryLocalStr === localTodayStr;
+            });
+
+            document.getElementById('recentTableBody').innerHTML = todayEntries.map((entry) => {
+                const dt = entry.date?.toDate ? entry.date.toDate().toLocaleString() : '-';
+                return `<tr><td>${entry.memo || entry.description || '-'}</td><td>${dt}</td><td class="text-right">${formatLKR(entry.totalDebit || 0)}</td></tr>`;
+            }).join('') || '<tr><td colspan="3">No activity</td></tr>';
+
+            renderCharts(metrics);
+            renderDynamicWidgets(metrics);
+            renderCashFlowSummaryWidget(metrics);
+            renderRepSummary(metrics);
+            await loadCoreAccountingWidget();
+
+            const distIds = ['distributorQuickSection', 'distributorTopProducts', 'distributorRecentOrders', 'distributorExtraCharts', 'distributorExtraCharts2'];
+            if (dashboardContext.businessType === 'distributor') {
+                distIds.forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = id.startsWith('distributorExtra') ? 'grid' : 'block'; });
+                const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+                document.getElementById('lowStockBody').innerHTML = (metrics.lowStockList || []).map((r) =>
+                    `<tr><td>${esc(r.name)}</td><td>${esc(r.brand)}</td><td class="text-right">${r.q}</td></tr>`).join('') || '<tr><td colspan="3">No low stock rows</td></tr>';
+                document.getElementById('topProductsBody').innerHTML = (metrics.topProductLines || []).map((r) =>
+                    `<tr><td>${esc(r.name)}</td><td>${esc(r.brand)}</td><td class="text-right">${formatLKR(r.v)}</td></tr>`).join('') || '<tr><td colspan="3">No products</td></tr>';
+                document.getElementById('recentOrdersBody').innerHTML = (metrics.recentOrdersList || []).map((o) => {
+                    const dt = o.orderDate?.toDate ? o.orderDate.toDate().toLocaleDateString() : '-';
+                    const shop = o.shopName || o.shopId || '—';
+                    return `<tr><td>${esc(o.orderNumber || o.id.slice(-8))}</td><td>${dt}</td><td>${esc(shop)}</td><td>${esc(o.status)}</td><td class="text-right">${formatLKR(o.totalAmount || 0)}</td></tr>`;
+                }).join('') || '<tr><td colspan="5">No orders</td></tr>';
+            } else {
+                distIds.forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Show demo notice for custom business requests
+            if (sessionStorage.getItem('showDemoNotice') === 'true') {
+                if (window.dashboardCore) {
+                    window.dashboardCore.showDemoSystemNotice();
+                }
+                sessionStorage.removeItem('showDemoNotice');
+            }
+
+            document.getElementById('refreshDashboardBtn').addEventListener('click', () => renderDashboard());
+            document.querySelectorAll('.business-type-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.business-type-btn').forEach((b) => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderDashboard();
+                });
+            });
+            window.addEventListener('beforeinstallprompt', (event) => {
+                event.preventDefault();
+                deferredInstallPrompt = event;
+                const prompt = document.getElementById('installPrompt');
+                if (prompt) prompt.classList.add('show');
+            });
+            document.getElementById('installBtn')?.addEventListener('click', async () => {
+                if (!deferredInstallPrompt) return;
+                deferredInstallPrompt.prompt();
+                await deferredInstallPrompt.userChoice;
+                deferredInstallPrompt = null;
+                document.getElementById('installPrompt')?.classList.remove('show');
+            });
+            document.getElementById('closeInstallBtn')?.addEventListener('click', () => {
+                document.getElementById('installPrompt')?.classList.remove('show');
+            });
+            document.getElementById('repSummaryFilter')?.addEventListener('change', () => {
+                if (!dashboardContext) return;
+                window.dashboardCore.getMetrics(dashboardContext).then((metrics) => renderRepSummary(metrics));
+            });
+        });
+
+        function getPreferredBusinessId() {
+            return localStorage.getItem('selectedBusinessId')
+                || sessionStorage.getItem('selectedBusinessId')
+                || localStorage.getItem('currentBusinessId')
+                || sessionStorage.getItem('currentBusinessId')
+                || '';
+        }
+
+        function tearDownManufacturerDashboardRealtime() {
+            (manufacturerSnapshotUnsubs || []).forEach((u) => {
+                try { if (typeof u === 'function') u(); } catch (_) {}
+            });
+            manufacturerSnapshotUnsubs = [];
+        }
+
+        function tearDownRetailDashboardRealtime() {
+            (retailSnapshotUnsubs || []).forEach((u) => {
+                try { if (typeof u === 'function') u(); } catch (_) {}
+            });
+            retailSnapshotUnsubs = [];
+        }
+
+        function scheduleDebouncedRenderDashboard() {
+            if (window.__DIGIBIZ_DASH_DEB__) clearTimeout(window.__DIGIBIZ_DASH_DEB__);
+            window.__DIGIBIZ_DASH_DEB__ = setTimeout(() => {
+                if (document.visibilityState === 'visible') void renderDashboard();
+            }, 500);
+        }
+
+        function bindManufacturerDashboardRealtime() {
+            tearDownManufacturerDashboardRealtime();
+            if (!dashboardContext || dashboardContext.businessType !== 'manufacturer') return;
+            const bid = dashboardContext.businessId;
+            const fs = (typeof db !== 'undefined' && db) ? db : (window.db || (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore()));
+            if (!bid || !fs || !fs.collection) return;
+            const cols = [
+                'manufacturer_raw_material_history',
+                'manufacturer_sales',
+                'manufacturer_production_runs',
+                'manufacturer_expenses'
+            ];
+            cols.forEach((col) => {
+                try {
+                    const unsub = fs.collection(col).where('businessId', '==', bid).onSnapshot(
+                        () => { scheduleDebouncedRenderDashboard(); },
+                        (err) => console.warn('Manufacturer dashboard snapshot', col, err)
+                    );
+                    manufacturerSnapshotUnsubs.push(unsub);
+                } catch (e) {
+                    console.warn('Manufacturer dashboard snapshot bind failed', col, e);
+                }
+            });
+        }
+
+        function bindRetailDashboardRealtime() {
+            tearDownRetailDashboardRealtime();
+            if (!dashboardContext || dashboardContext.businessType !== 'retail') return;
+            const bid = dashboardContext.businessId;
+            const fs = (typeof db !== 'undefined' && db) ? db : (window.db || (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore()));
+            if (!bid || !fs || !fs.collection) return;
+
+            // Bind to orders subcollection
+            try {
+                const unsubOrders = fs.collection('orders').doc(bid).collection('list').onSnapshot(
+                    () => { scheduleDebouncedRenderDashboard(); },
+                    (err) => console.warn('Retail dashboard snapshot orders', err)
+                );
+                retailSnapshotUnsubs.push(unsubOrders);
+            } catch (e) { console.warn('Retail dashboard snapshot orders bind failed', e); }
+
+            // Bind to purchases orders subcollection
+            try {
+                const unsubPurchases = fs.collection('purchases').doc(bid).collection('orders').onSnapshot(
+                    () => { scheduleDebouncedRenderDashboard(); },
+                    (err) => console.warn('Retail dashboard snapshot purchases', err)
+                );
+                retailSnapshotUnsubs.push(unsubPurchases);
+            } catch (e) { console.warn('Retail dashboard snapshot purchases bind failed', e); }
+
+            // Bind to expenses subcollection
+            try {
+                const unsubExpenses = fs.collection('expenses').doc(bid).collection('list').onSnapshot(
+                    () => { scheduleDebouncedRenderDashboard(); },
+                    (err) => console.warn('Retail dashboard snapshot expenses', err)
+                );
+                retailSnapshotUnsubs.push(unsubExpenses);
+            } catch (e) { console.warn('Retail dashboard snapshot expenses bind failed', e); }
+
+            // Bind to journal entries subcollection
+            try {
+                const unsubJournal = fs.collection('journal').doc(bid).collection('entries').onSnapshot(
+                    () => { scheduleDebouncedRenderDashboard(); },
+                    (err) => console.warn('Retail dashboard snapshot journal', err)
+                );
+                retailSnapshotUnsubs.push(unsubJournal);
+            } catch (e) { console.warn('Retail dashboard snapshot journal bind failed', e); }
+        }
+
+        function bindDashboardPollInterval() {
+            if (dashboardPollTimer) clearInterval(dashboardPollTimer);
+            const ms = (dashboardContext && dashboardContext.businessType === 'manufacturer') ? 10000 : 30000;
+            dashboardPollTimer = setInterval(() => {
+                if (document.visibilityState === 'visible') void renderDashboard();
+            }, ms);
+        }
+
+        async function refreshDashboardContextAndRender(user) {
+            if (!user) return;
+            const preferred = getPreferredBusinessId();
+            if (preferred) {
+                localStorage.setItem('currentBusinessId', preferred);
+                sessionStorage.setItem('currentBusinessId', preferred);
+            }
+            dashboardContext = await window.dashboardCore.getContext(user);
+            if (!dashboardContext || !dashboardContext.businessId) {
+                window.location.href = '../../index.html';
+                return;
+            }
+            // Keep both keys in sync so old/new pages read same business context.
+            localStorage.setItem('selectedBusinessId', dashboardContext.businessId);
+            sessionStorage.setItem('selectedBusinessId', dashboardContext.businessId);
+            localStorage.setItem('currentBusinessId', dashboardContext.businessId);
+            sessionStorage.setItem('currentBusinessId', dashboardContext.businessId);
+
+            // Redirect Scrap users to Bill page as their primary landing page (Owner)
+            // Redirect Rasika to Expenses directly
+            const isStaging = window.location.hostname.includes('digibiz-test');
+            if (dashboardContext.businessType === 'scrap_collection_center' && !window.location.search.includes('no-redirect') && !isStaging) {
+                const user = firebase.auth().currentUser;
+                const email = String(user && user.email || '').trim().toLowerCase();
+                if (email === 'biz.himeshi@gmail.com') {
+                    window.location.href = '/modules/admin/scrap-expenses.html';
+                } else {
+                    window.location.href = '/modules/admin/scrap-buying.html?v=102';
+                }
+                return;
+            }
+
+            await renderDashboard();
+            await loadCoreOwnerProfitDashboard();
+
+            tearDownManufacturerDashboardRealtime();
+            bindManufacturerDashboardRealtime();
+            
+            tearDownRetailDashboardRealtime();
+            bindRetailDashboardRealtime();
+            
+            bindDashboardPollInterval();
+        }
+
+        async function loadCoreOwnerProfitDashboard() {
+            const sec = document.getElementById('coreOwnerProfitSection');
+            const u = firebase.auth().currentUser;
+            const bid = (dashboardContext && dashboardContext.businessId) || localStorage.getItem('currentBusinessId') || localStorage.getItem('selectedBusinessId') || (u && u.uid);
+            if (!bid) return;
+
+            if (sec) sec.style.display = 'block';
+
+            try {
+                const db = firebase.firestore();
+                const opt = navigator.onLine ? {} : { source: 'cache' };
+
+                const userEmail = (dashboardContext && (dashboardContext.userEmail || dashboardContext.email || dashboardContext.ownerEmail)) ||
+                                  (localStorage.getItem('digibiz_impersonate_active') === 'true' ? localStorage.getItem('digibiz_impersonate_email') : '') ||
+                                  localStorage.getItem('userEmail') ||
+                                  (u && u.email ? String(u.email).trim().toLowerCase() : null);
+
+                const oOwnerPromise = userEmail ? db.collection('orders').where('ownerEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+                const oUserPromise = userEmail ? db.collection('orders').where('userEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+                const pOwnerPromise = userEmail ? db.collection('products').where('ownerEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+                const eOwnerPromise = userEmail ? db.collection('expenses').where('ownerEmail', '==', userEmail).limit(1000).get(opt).catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] });
+
+                const [pFlat, pNested, pBiz, oFlat, oPending, oNested, oBiz, eFlat, eNested, eBiz, oOwner, oUser, pOwner, eOwner] = await Promise.all([
+                    db.collection('products').where('businessId', '==', bid).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('products').doc(bid).collection('list').get(opt).catch(() => ({ docs: [] })),
+                    db.collection('businesses').doc(bid).collection('products').get(opt).catch(() => ({ docs: [] })),
+                    db.collection('orders').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('pendingOrders').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('orders').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('businesses').doc(bid).collection('orders').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('expenses').where('businessId', '==', bid).limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('expenses').doc(bid).collection('list').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    db.collection('businesses').doc(bid).collection('expenses').limit(1000).get(opt).catch(() => ({ docs: [] })),
+                    oOwnerPromise,
+                    oUserPromise,
+                    pOwnerPromise,
+                    eOwnerPromise
+                ]);
+
+                const prodMap = {};
+                [...pFlat.docs, ...pNested.docs, ...pBiz.docs, ...pOwner.docs].forEach(d => {
+                    const data = d.data() || {};
+                    prodMap[d.id] = data;
+                    if (data.productCode) prodMap[String(data.productCode).trim()] = data;
+                });
+
+                const orderDocsMap = {};
+                [...oFlat.docs, ...oPending.docs, ...oNested.docs, ...oBiz.docs, ...oOwner.docs, ...oUser.docs].forEach(d => { orderDocsMap[d.id] = d; });
+                const allOrderDocs = Object.values(orderDocsMap);
+
+                const expDocsMap = {};
+                [...eFlat.docs, ...eNested.docs, ...eBiz.docs, ...eOwner.docs].forEach(d => { expDocsMap[d.id] = d; });
+                const allExpDocs = Object.values(expDocsMap);
+
+                const now = new Date();
+                const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const dayOfWeek = now.getDay();
+                const diffToMon = (dayOfWeek === 0 ? -6 : 1 - dayOfWeek);
+                const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMon);
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+                let profitToday = 0, profitWeek = 0, profitMonth = 0, profitYear = 0;
+
+                function parseDateAny(v) {
+                    if (!v) return null;
+                    if (typeof v.toDate === 'function') return v.toDate();
+                    if (v.seconds) return new Date(v.seconds * 1000);
+                    if (typeof v === 'number') return new Date(v);
+                    if (typeof v === 'string' || v instanceof Date) return new Date(v);
+                    return null;
+                }
+
+                function getCost(pRef, item) {
+                    if (item) {
+                        if (item.cost != null && !isNaN(Number(item.cost)) && Number(item.cost) >= 0) return Number(item.cost);
+                        if (item.buyingPrice != null && !isNaN(Number(item.buyingPrice)) && Number(item.buyingPrice) >= 0) return Number(item.buyingPrice);
+                        if (item.costPrice != null && !isNaN(Number(item.costPrice)) && Number(item.costPrice) >= 0) return Number(item.costPrice);
+                    }
+                    if (pRef) {
+                        if (pRef.cost != null && !isNaN(Number(pRef.cost)) && Number(pRef.cost) >= 0) return Number(pRef.cost);
+                        if (pRef.buyingPrice != null && !isNaN(Number(pRef.buyingPrice)) && Number(pRef.buyingPrice) >= 0) return Number(pRef.buyingPrice);
+                        if (pRef.buyPrice != null && !isNaN(Number(pRef.buyPrice)) && Number(pRef.buyPrice) >= 0) return Number(pRef.buyPrice);
+                        if (pRef.costPrice != null && !isNaN(Number(pRef.costPrice)) && Number(pRef.costPrice) >= 0) return Number(pRef.costPrice);
+                    }
+                    const unitP = Number(item && (item.price ?? item.unitPrice) || pRef && (pRef.price ?? pRef.unitPrice) || 0);
+                    return unitP > 0 ? unitP * 0.70 : 0;
+                }
+
+                allOrderDocs.forEach(doc => {
+                    const b = doc.data() || {};
+                    const status = String(b.status || '').toLowerCase();
+                    if (status === 'rejected' || status === 'cancelled') return;
+
+                    const dt = parseDateAny(b.orderDate || b.createdAt || b.date);
+                    if (!dt || isNaN(dt.getTime())) return;
+                    if (dt < startOfYear) return;
+
+                    let orderRevenue = 0, orderCogs = 0;
+                    const items = Array.isArray(b.items) ? b.items : [];
+                    items.forEach(line => {
+                        const soldQty = Math.max(0, Number(line.quantity != null ? line.quantity : (line.orderedQty != null ? line.orderedQty : line.qty)) || 0);
+                        const freeQty = Math.max(0, Number(line.freeQty) || 0);
+                        const returnQty = Math.max(0, Number(line.returnResellQty != null ? line.returnResellQty : line.returnQty) || 0);
+                        const billedQty = Math.max(0, soldQty - returnQty);
+                        const unitPrice = Number(line.price != null ? line.price : (line.unitPrice != null ? line.unitPrice : 0)) || 0;
+                        const isService = line.isService === true || line.category === 'Services' || String(line.category || '').toLowerCase().includes('service');
+
+                        const pRef = prodMap[line.productId] || prodMap[line.productCode] || prodMap[line.id];
+                        const buyPrice = isService ? 0 : getCost(pRef, line);
+
+                        orderRevenue += billedQty * unitPrice;
+                        orderCogs += (billedQty + freeQty) * buyPrice;
+                    });
+
+                    const orderTotal = Number(b.total ?? b.totalAmount ?? b.netTotal ?? b.orderLinesTotal ?? orderRevenue ?? 0);
+                    const grossMargin = isNaN(orderTotal - orderCogs) ? 0 : Math.max(0, orderTotal - orderCogs);
+
+                    if (dt >= startOfYear) profitYear += grossMargin;
+                    if (dt >= startOfMonth) profitMonth += grossMargin;
+                    if (dt >= startOfWeek) profitWeek += grossMargin;
+                    if (dt >= startOfToday) profitToday += grossMargin;
+                });
+
+                const mfgSalesSnap = await db.collection('manufacturer_sales').where('businessId', '==', bid).get().catch(() => ({ docs: [] }));
+                mfgSalesSnap.docs.forEach(doc => {
+                    const r = doc.data() || {};
+                    if (r.isActive === false) return;
+                    const dt = parseDateAny(r.createdAt);
+                    if (!dt || isNaN(dt.getTime())) return;
+                    if (dt < startOfYear) return;
+
+                    const amt = Number(r.amount || 0);
+                    const cogs = Number(r.cogsAmount || (Number(r.qty || 0) * Number(r.fgUnitCost || 0)));
+                    const grossProfit = amt - cogs;
+
+                    if (dt >= startOfYear) profitYear += grossProfit;
+                    if (dt >= startOfMonth) profitMonth += grossProfit;
+                    if (dt >= startOfWeek) profitWeek += grossProfit;
+                    if (dt >= startOfToday) profitToday += grossProfit;
+                });
+
+                allExpDocs.forEach(doc => {
+                    const r = doc.data() || {};
+                    const dt = parseDateAny(r.createdAt || r.expenseDate);
+                    if (!dt || isNaN(dt.getTime())) return;
+                    if (dt < startOfYear) return;
+                    const amt = Number(r.amount) || 0;
+                    if (dt >= startOfYear) profitYear -= amt;
+                    if (dt >= startOfMonth) profitMonth -= amt;
+                    if (dt >= startOfWeek) profitWeek -= amt;
+                    if (dt >= startOfToday) profitToday -= amt;
+                });
+
+                const fmtProfit = (v) => {
+                    const val = Math.round(v);
+                    const cls = val >= 0 ? '#166534' : '#991b1b';
+                    const sign = val >= 0 ? 'Rs. ' : '-Rs. ';
+                    return `<span style="color:${cls}">${sign}${Math.abs(val).toLocaleString()}</span>`;
+                };
+
+                if (document.getElementById('coreStatTodayProfit')) document.getElementById('coreStatTodayProfit').innerHTML = fmtProfit(profitToday);
+                if (document.getElementById('coreStatWeekProfit')) document.getElementById('coreStatWeekProfit').innerHTML = fmtProfit(profitWeek);
+                if (document.getElementById('coreStatMonthProfit')) document.getElementById('coreStatMonthProfit').innerHTML = fmtProfit(profitMonth);
+                if (document.getElementById('coreStatYearProfit')) document.getElementById('coreStatYearProfit').innerHTML = fmtProfit(profitYear);
+            } catch (e) {
+                console.warn('Core owner profit error:', e);
+            }
+        }
+
+        async function clearCoreTestOrders() {
+            const u = firebase.auth().currentUser;
+            if (!u) return;
+            const bid = (dashboardContext && dashboardContext.businessId) || localStorage.getItem('currentBusinessId') || localStorage.getItem('selectedBusinessId') || u.uid;
+
+            const conf = prompt('⚠️ WARNING: This will permanently delete ALL test orders, journal entries, ledger records, free issues, and sales history for this business so you can start fresh.\n\nType DELETE to confirm:');
+            if (String(conf || '').trim().toUpperCase() !== 'DELETE') {
+                alert('Action cancelled.');
+                return;
+            }
+
+            try {
+                const db = firebase.firestore();
+                const [oFlat, oPending, oNested, jEntries, jFlat, lFlat, slFlat, abFlat, fFlat1, fFlat2, eFlat, eNested] = await Promise.all([
+                    db.collection('orders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('pendingOrders').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('orders').doc(bid).collection('list').get().catch(() => ({ docs: [] })),
+                    db.collection('journal').doc(bid).collection('entries').get().catch(() => ({ docs: [] })),
+                    db.collection('journal_entries').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('ledger').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('supplier_ledger').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('account_balances').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('free_issues').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('freeIssues').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('expenses').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('expenses').doc(bid).collection('list').get().catch(() => ({ docs: [] }))
+                ]);
+
+                const refs = [];
+                [...oFlat.docs, ...oPending.docs, ...oNested.docs, ...jEntries.docs, ...jFlat.docs, ...lFlat.docs, ...slFlat.docs, ...abFlat.docs, ...fFlat1.docs, ...fFlat2.docs, ...eFlat.docs, ...eNested.docs].forEach(d => refs.push(d.ref));
+
+                if (refs.length === 0) {
+                    alert('No test transaction records found to delete.');
+                    return;
+                }
+
+                for (let i = 0; i < refs.length; i += 400) {
+                    const batch = db.batch();
+                    const chunk = refs.slice(i, i + 400);
+                    chunk.forEach(r => batch.delete(r));
+                    await batch.commit();
+                }
+
+                alert(`Successfully deleted ${refs.length} test records (orders + journal entries)! Everything is reset to 0.`);
+                location.reload();
+            } catch (e) {
+                alert('Error clearing test transactions: ' + e.message);
+            }
+        }
+
+        let lowStockItemsCache = [];
+
+        async function loadCoreLowStockAlerts() {
+            const bid = (dashboardContext && dashboardContext.businessId) || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            if (!bid || !window.db) return;
+            try {
+                const [rmSnap, fgSnap] = await Promise.all([
+                    db.collection('manufacturer_raw_materials').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+                    db.collection('manufacturer_finished_products').where('businessId', '==', bid).get().catch(() => ({ docs: [] }))
+                ]);
+
+                const items = [];
+                rmSnap.docs.forEach(doc => {
+                    const d = doc.data() || {};
+                    const q = Number(d.stockQty || 0);
+                    const threshold = Number(d.minStockLevel || d.reorderLevel || 5);
+                    if (d.isActive !== false && d.name && q <= threshold) {
+                        items.push({ id: doc.id, name: d.name, type: 'RAW_MATERIAL', unit: d.unit || 'Kg', stockQty: q, minStockLevel: threshold });
+                    }
+                });
+
+                fgSnap.docs.forEach(doc => {
+                    const d = doc.data() || {};
+                    const q = Number(d.stockQty || 0);
+                    const threshold = Number(d.minStockLevel || d.reorderLevel || 5);
+                    if (d.isActive !== false && d.name && q <= threshold) {
+                        items.push({ id: doc.id, name: d.name, type: 'FINISHED_PRODUCT', unit: d.unit || 'Units', stockQty: q, minStockLevel: threshold });
+                    }
+                });
+
+                lowStockItemsCache = items;
+                const txtEl = document.getElementById('coreLowStockCountText');
+                const widgetEl = document.getElementById('coreLowStockWidget');
+
+                if (!items.length) {
+                    if (txtEl) txtEl.textContent = '✅ All stock levels are sufficient (තොග මට්ටම් ප්‍රමාණවත්ය)';
+                    if (widgetEl) widgetEl.style.background = 'linear-gradient(135deg, #065f46, #047857)';
+                } else {
+                    if (txtEl) txtEl.textContent = `🚨 ${items.length} Item(s) Running Below Reorder Threshold (අඩු මට්ටමක පවතී)`;
+                    if (widgetEl) widgetEl.style.background = 'linear-gradient(135deg, #7f1d1d, #991b1b)';
+                }
+            } catch (e) {
+                console.warn('[Dashboard] Error loading low stock alerts:', e);
+            }
+        }
+
+        function openLowStockAlertModal() {
+            const modal = document.getElementById('lowStockModal');
+            const tbody = document.getElementById('lowStockModalBody');
+            if (!modal || !tbody) return;
+
+            modal.style.display = 'flex';
+            if (!lowStockItemsCache.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#10b981; font-weight:700;">✅ No low stock items detected! All materials have sufficient stock.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = lowStockItemsCache.map(x => `
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px; font-weight:700; color:#0f172a;">${x.name}</td>
+                    <td style="padding:10px;"><span style="background:${x.type === 'RAW_MATERIAL' ? '#e0f2fe' : '#fef3c7'}; color:${x.type === 'RAW_MATERIAL' ? '#0369a1' : '#b45309'}; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">${x.type}</span></td>
+                    <td style="padding:10px; text-align:right; font-weight:800; color:#dc2626;">${x.stockQty} ${x.unit}</td>
+                    <td style="padding:10px; text-align:right; font-weight:700; color:#475569;">${x.minStockLevel} ${x.unit}</td>
+                    <td style="padding:10px; text-align:center;">
+                        <a href="${x.type === 'RAW_MATERIAL' ? '/modules/manufacturer/inbound.html' : '/modules/manufacturer/outbound.html'}" style="padding:4px 10px; background:#0f766e; color:#fff; text-decoration:none; border-radius:6px; font-weight:700; font-size:11px;">
+                            ${x.type === 'RAW_MATERIAL' ? '📥 Restock (Inbound)' : '🏭 Produce (Outbound)'}
+                        </a>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function closeLowStockAlertModal() {
+            const modal = document.getElementById('lowStockModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        let overdueCreditItemsCache = [];
+
+        async function loadCoreOverdueCreditAlerts() {
+            const bid = (dashboardContext && dashboardContext.businessId) || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+            if (!bid || !window.db) return;
+            try {
+                const snap = await db.collection('manufacturer_sales').where('businessId', '==', bid).where('paymentStatus', 'in', ['PENDING', 'PENDING_CLEARANCE']).get().catch(() => ({ docs: [] }));
+                const items = [];
+                const todayMs = new Date().getTime();
+
+                snap.docs.forEach(doc => {
+                    const d = doc.data() || {};
+                    if (d.isActive === false) return;
+                    const isCredit = d.paymentMode === 'CREDIT';
+                    const isCheque = d.paymentMode === 'CHEQUE';
+                    const dueStr = isCredit ? d.dueDate : (isCheque ? d.chequeClearanceDate : null);
+                    const amt = Number(d.amount || 0);
+
+                    let isOverdue = false;
+                    if (dueStr) {
+                        const dueMs = new Date(dueStr + 'T23:59:59').getTime();
+                        if (!isNaN(dueMs) && dueMs < todayMs) {
+                            isOverdue = true;
+                        }
+                    }
+
+                    if (isOverdue) {
+                        items.push({
+                            id: doc.id,
+                            customer: d.companyName || 'Customer',
+                            area: d.area || 'N/A',
+                            phone: d.customerMobile || '',
+                            amount: amt,
+                            dueStr: dueStr || 'Overdue',
+                            paymentMode: d.paymentMode || 'CREDIT'
+                        });
+                    }
+                });
+
+                overdueCreditItemsCache = items;
+                const txtEl = document.getElementById('coreOverdueCreditCountText');
+                const widgetEl = document.getElementById('coreOverdueCreditWidget');
+
+                if (!items.length) {
+                    if (txtEl) txtEl.textContent = '✅ No overdue collections pending (කල් ඉකුත් වූ ණය නැත)';
+                    if (widgetEl) widgetEl.style.background = 'linear-gradient(135deg, #15803d, #166534)';
+                } else {
+                    const totalAmt = items.reduce((sum, x) => sum + x.amount, 0);
+                    if (txtEl) txtEl.textContent = `🚨 ${items.length} Overdue Credit Collections (Rs. ${totalAmt.toLocaleString()})`;
+                    if (widgetEl) widgetEl.style.background = 'linear-gradient(135deg, #854d0e, #a16207)';
+                }
+            } catch (e) {
+                console.warn('[Dashboard] Error loading overdue credit alerts:', e);
+            }
+        }
+
+        function openOverdueCreditModal() {
+            const modal = document.getElementById('overdueCreditModal');
+            const tbody = document.getElementById('overdueCreditModalBody');
+            if (!modal || !tbody) return;
+
+            modal.style.display = 'flex';
+            if (!overdueCreditItemsCache.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#166534; font-weight:700;">✅ No overdue credit sales! All payments are up to date.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = overdueCreditItemsCache.map(x => `
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px; font-weight:700; color:#0f172a;">${x.customer}</td>
+                    <td style="padding:10px; color:#0369a1; font-weight:600;">📍 ${x.area}</td>
+                    <td style="padding:10px;"><span style="background:#fef2f2; color:#991b1b; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">${x.paymentMode}</span></td>
+                    <td style="padding:10px; font-weight:800; color:#dc2626;">📅 ${x.dueStr}</td>
+                    <td style="padding:10px; text-align:right; font-weight:800; color:#0f172a;">Rs. ${x.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td style="padding:10px; text-align:center;">
+                        <button onclick="settleCreditSaleDirect('${x.id}')" style="padding:4px 10px; background:#166534; color:#fff; border:none; border-radius:6px; font-weight:700; font-size:11px; cursor:pointer;">
+                            ✅ Mark Settled
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function closeOverdueCreditModal() {
+            const modal = document.getElementById('overdueCreditModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function settleCreditSaleDirect(saleId) {
+            if (!confirm('Mark this overdue credit sale as fully settled / paid?')) return;
+            try {
+                await db.collection('manufacturer_sales').doc(saleId).update({
+                    paymentStatus: 'PAID',
+                    settledAt: new Date()
+                });
+                alert('✅ Credit sale marked as settled successfully!');
+                await loadCoreOverdueCreditAlerts();
+                openOverdueCreditModal();
+            } catch (e) {
+                alert('Error settling credit sale: ' + e.message);
+            }
+        }
+
+        window.openLowStockAlertModal = openLowStockAlertModal;
+        window.closeLowStockAlertModal = closeLowStockAlertModal;
+        window.openOverdueCreditModal = openOverdueCreditModal;
+        window.closeOverdueCreditModal = closeOverdueCreditModal;
+        window.settleCreditSaleDirect = settleCreditSaleDirect;
+
+        async function startDashboardForUser(user) {
+            if (!user) return;
+            const ctx = await refreshDashboardContextAndRender(user);
+            const bType = (ctx && ctx.businessType) || localStorage.getItem('currentBusinessType');
+            if (bType && window.dashboardCore) {
+                const targetUrl = window.dashboardCore.getVerticalDashboardUrl(bType);
+                const urlParams = new URLSearchParams(window.location.search);
+                if (targetUrl && !window.location.pathname.endsWith(targetUrl) && urlParams.get('no_redirect') !== '1') {
+                    window.location.href = targetUrl;
+                    return;
+                }
+            }
+            loadCoreLowStockAlerts();
+            loadCoreOverdueCreditAlerts();
+            if (!window.__DIGIBIZ_CORE_DASHBOARD_WATCHERS_BOUND__) {
+                window.__DIGIBIZ_CORE_DASHBOARD_WATCHERS_BOUND__ = true;
+                window.addEventListener('storage', (ev) => {
+                    if (!ev) return;
+                    if (ev.key !== 'selectedBusinessId' && ev.key !== 'currentBusinessId') return;
+                    refreshDashboardContextAndRender(firebase.auth().currentUser || user);
+                });
+                window.addEventListener('digibiz:business-changed', () => {
+                    refreshDashboardContextAndRender(firebase.auth().currentUser || user);
+                });
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') {
+                        const selected = getPreferredBusinessId();
+                        if (selected && (!dashboardContext || selected !== dashboardContext.businessId)) {
+                            refreshDashboardContextAndRender(firebase.auth().currentUser || user);
+                        }
+                    }
+                });
+            }
+        }
+
+        auth.onAuthStateChanged(async (user) => {
+            const isImpersonating = localStorage.getItem('digibiz_impersonate_active') === 'true';
+            if (user) {
+                await startDashboardForUser(user);
+                return;
+            }
+            if (isImpersonating) {
+                const targetEmail = localStorage.getItem('digibiz_impersonate_email') || 'client@digibiz.lk';
+                const targetBizId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || 'CLIENT_BIZ';
+                await startDashboardForUser({ uid: targetBizId, email: targetEmail });
+                return;
+            }
+            // Auth state can be briefly null during token restore; avoid false redirect.
+            setTimeout(async () => {
+                const restored = auth.currentUser;
+                if (restored) {
+                    await startDashboardForUser(restored);
+                    return;
+                }
+                if (localStorage.getItem('digibiz_impersonate_active') === 'true') {
+                    const tEmail = localStorage.getItem('digibiz_impersonate_email') || 'client@digibiz.lk';
+                    const tBizId = localStorage.getItem('digibiz_impersonate_biz_id') || localStorage.getItem('currentBusinessId') || 'CLIENT_BIZ';
+                    await startDashboardForUser({ uid: tBizId, email: tEmail });
+                    return;
+                }
+                window.location.href = '/';
+            }, 1500);
+        });
+    </script>
+</body>
+</html>

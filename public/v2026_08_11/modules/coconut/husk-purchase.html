@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raw Husk Purchase — Procurement</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="coconut.css">
+    <script src="coconut-common.js"></script>
+</head>
+<body>
+
+    <main class="c-container">
+        <div class="c-header">
+            <div class="c-header-left">
+                <h1>🟤 Raw Husk Purchase (පොල් ලෙලි මිලදී ගැනීම්)</h1>
+                <p>Procure de-husked raw husks by weight (kg/MT) for husk chip and coir fibre production.</p>
+            </div>
+            <div class="c-header-actions">
+                <a href="production.html" class="c-btn c-btn-accent">🏭 Run Production</a>
+                <a href="coconut-stock.html" class="c-btn c-btn-secondary">📦 Husk Stock Status</a>
+            </div>
+        </div>
+
+        <div class="c-grid-2">
+            <!-- Purchase Form -->
+            <div class="c-card">
+                <div class="c-card-header">
+                    <div class="c-card-title">📝 Record Husk Procurement</div>
+                    <span class="c-badge c-badge-warning">Weight Basis (Kg)</span>
+                </div>
+
+                <form id="huskForm">
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Purchase Date *</label>
+                            <input type="date" id="hDate" class="c-input" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Supplier (ලෙලි සැපයුම්කරු) *</label>
+                            <div style="display:flex; gap:8px;">
+                                <select id="hSupplier" class="c-select" required style="flex:1;">
+                                    <option value="">Select Supplier...</option>
+                                </select>
+                                <button type="button" class="c-btn c-btn-accent c-btn-sm" id="btnQuickAddSupplier">+ Add</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Quantity in Kg (බර කිලෝග්‍රෑම්) *</label>
+                            <input type="number" id="hQtyKg" class="c-input" min="1" step="0.1" placeholder="e.g. 3500 kg" required>
+                        </div>
+                        <div class="c-form-group">
+                            <label>Cost Per Kg (කිලෝවක මිල) *</label>
+                            <input type="number" id="hCostPerKg" class="c-input" min="0" step="0.1" placeholder="e.g. 15.00" required>
+                        </div>
+                    </div>
+
+                    <div class="c-form-row">
+                        <div class="c-form-group">
+                            <label>Transport / Freight Cost (ප්‍රවාහන වියදම)</label>
+                            <input type="number" id="hTransport" class="c-input" min="0" step="10" placeholder="0.00" value="0">
+                        </div>
+                        <div class="c-form-group">
+                            <label>Payment Mode (ගෙවීම් ක්‍රමය) *</label>
+                            <select id="hPaymentMode" class="c-select" required>
+                                <option value="CASH">Cash (අත්පිට මුදල්)</option>
+                                <option value="CREDIT">Credit / Payable (ණයට)</option>
+                                <option value="BANK">Bank Transfer (බැංකු මාරු)</option>
+                                <option value="CHEQUE">Cheque (චෙක්පත්)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Cost Preview -->
+                    <div class="c-cart-total-box" style="margin-bottom:16px;">
+                        <div class="c-cart-row">
+                            <span>Raw Husk Base:</span>
+                            <strong id="prevHuskBase">Rs. 0.00</strong>
+                        </div>
+                        <div class="c-cart-row">
+                            <span>Transport / Loading:</span>
+                            <strong id="prevHuskTrans">Rs. 0.00</strong>
+                        </div>
+                        <div class="c-cart-row grand-total">
+                            <span>Total Husk Cost:</span>
+                            <span id="prevHuskTotal">Rs. 0.00</span>
+                        </div>
+                        <div style="font-size:11.5px; color:var(--c-text-muted); margin-top:6px;">
+                            Effective Landed Cost per Kg: <strong id="prevEffectiveKg" style="color:var(--c-primary);">Rs. 0.00</strong> / kg
+                        </div>
+                    </div>
+
+                    <div class="c-form-group" style="margin-bottom:16px;">
+                        <label>Vehicle / Weighbridge Slip # / Notes</label>
+                        <input type="text" id="hNotes" class="c-input" placeholder="e.g. Slip #4829, Lorry WP-LB-4812">
+                    </div>
+
+                    <button type="submit" class="c-btn c-btn-primary c-btn-lg" style="width:100%;" id="btnSaveHusk">
+                        💾 Save Husk Purchase & Update Stock
+                    </button>
+                </form>
+            </div>
+
+            <!-- Husk Stock & Production Ready Status -->
+            <div>
+                <div class="c-card">
+                    <div class="c-card-header">
+                        <div class="c-card-title">🟤 Live Raw Husk Stock Status</div>
+                    </div>
+                    <div style="text-align:center; padding:20px 0;">
+                        <div style="font-size:12px; font-weight:700; color:var(--c-text-muted); text-transform:uppercase;">Current Stock on Yard</div>
+                        <div style="font-size:36px; font-weight:900; color:var(--c-primary); margin:8px 0;" id="liveHuskStockKg">0.0 kg</div>
+                        <div style="font-size:13px; color:var(--c-text-muted);">
+                            Avg Valuation: <strong id="liveHuskAvgRate" style="color:var(--c-accent);">Rs. 0.00 / kg</strong> |
+                            Total Value: <strong id="liveHuskTotalVal" style="color:var(--c-primary);">Rs. 0.00</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="c-card" style="background:#fffbeb; border-color:#fde68a;">
+                    <div style="font-weight:700; font-size:13px; color:#92400e; margin-bottom:6px;">🏭 Downstream Production Link</div>
+                    <p style="font-size:12.5px; color:#78350f; line-height:1.6;">
+                        This raw husk stock directly feeds your <strong>Production Runs</strong>. When you process husks into Husk Chips or Coir Fibre, DigiBiz deducts from this stock at the weighted average rate and transfers the asset value to finished products.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Table -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">📜 Husk Purchase History (ලෙලි මිලදී ගැනීම් ලැයිස්තුව)</div>
+            </div>
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Supplier</th>
+                            <th class="text-right">Weight (Kg)</th>
+                            <th class="text-right">Cost / Kg</th>
+                            <th class="text-right">Transport</th>
+                            <th class="text-right">Total Cost</th>
+                            <th>Payment</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="huskHistoryBody">
+                        <tr><td colspan="8" class="text-center" style="padding:20px;">Loading records...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Quick Add Supplier Modal -->
+    <div class="c-modal-overlay" id="supplierModal">
+        <div class="c-modal">
+            <div class="c-modal-header">
+                <h3>➕ Add New Supplier</h3>
+                <button type="button" class="c-modal-close" id="btnCloseSupplierModal">×</button>
+            </div>
+            <form id="quickSupplierForm">
+                <div class="c-form-group" style="margin-bottom:12px;">
+                    <label>Supplier Name *</label>
+                    <input type="text" id="supName" class="c-input" required>
+                </div>
+                <div class="c-form-row">
+                    <div class="c-form-group"><label>Phone</label><input type="tel" id="supPhone" class="c-input"></div>
+                    <div class="c-form-group"><label>Area / Location</label><input type="text" id="supArea" class="c-input"></div>
+                </div>
+                <div class="c-modal-footer">
+                    <button type="button" class="c-btn c-btn-secondary" id="btnCancelSupplier">Cancel</button>
+                    <button type="submit" class="c-btn c-btn-primary">Save Supplier</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="husk-purchase.js"></script>
+</body>
+</html>

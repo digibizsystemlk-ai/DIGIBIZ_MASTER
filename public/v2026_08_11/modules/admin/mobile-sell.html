@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <link rel="manifest" href="/modules/admin/mobile-sell-manifest.json">
+    <meta name="theme-color" content="#0f3b2c">
+    <script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', async function() {
+            try {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                for (let reg of regs) {
+                    if (reg.active && reg.active.scriptURL.includes('/sw.js')) {
+                        await reg.unregister();
+                        console.log('Unregistered root sw.js');
+                    }
+                }
+                await navigator.serviceWorker.register('/modules/admin/sw-sell.js?v=1', { scope: '/modules/admin/mobile-sell' });
+                console.log('Registered dedicated sw-sell.js');
+            } catch (err) { console.log('SW setup error:', err); }
+        });
+    }
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Sell — Digibiz</title>
+    <meta name="description" content="සරල දුරකථන විකිණුම් (Sell) සටහන් පිටුව">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/dashboard-core.js?v=117"></script>
+    <script src="/core/scrap-vba-core.js?v=117"></script>
+    <style>
+        body { font-family: Inter, Segoe UI, sans-serif; background: #f1f5f9; color: #0f172a; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        .header-bar { background: #0f3b2c; color: #fff; padding: 16px 20px; text-align: center; font-size: 18px; font-weight: 700; box-shadow: 0 4px 12px rgba(15,59,44,0.15); display: flex; justify-content: space-between; align-items: center; }
+        .header-title { margin: 0; font-size: 18px; font-weight: 700; }
+        .status-badge { background: #10b981; color: #fff; font-size: 10px; font-weight: 700; padding: 4px 8px; border-radius: 12px; text-transform: uppercase; }
+        .offline-badge { background: #f59e0b; display: none; }
+        .install-badge { background: #2563eb; color: #fff; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 12px; border: none; cursor: pointer; display: none; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
+        .container { padding: 20px; max-width: 500px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 20px; padding: 24px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01); border: 1px solid #e2e8f0; margin-bottom: 20px; }
+        
+        /* Passcode Screen */
+        #passcodeScreen { display: block; text-align: center; padding-top: 40px; }
+        .lock-icon { font-size: 48px; margin-bottom: 16px; }
+        .passcode-title { font-size: 22px; font-weight: 700; color: #0f3b2c; margin-bottom: 8px; }
+        .passcode-sub { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+        .passcode-input { width: 180px; font-size: 28px; letter-spacing: 12px; text-align: center; padding: 12px; border: 2px solid #cbd5e1; border-radius: 16px; font-weight: 800; color: #0f3b2c; margin-bottom: 20px; background: #f8fafc; transition: all 0.2s; }
+        .passcode-input:focus { border-color: #0f3b2c; outline: none; box-shadow: 0 0 0 4px rgba(15,59,44,0.1); background: #fff; }
+        .passcode-error { color: #ef4444; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
+        .btn-unlock { background: #0f3b2c; color: #fff; border: none; padding: 16px 32px; border-radius: 16px; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; max-width: 220px; box-shadow: 0 4px 12px rgba(15,59,44,0.2); transition: all 0.2s; }
+        .btn-unlock:active { transform: scale(0.97); }
+
+        /* Main Screen */
+        #appScreen { display: none; }
+
+        label { display: block; font-size: 12px; font-weight: 700; color: #475569; margin-top: 16px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+        input[type="number"], input[type="text"], select, textarea { width: 100%; padding: 16px; border: 2px solid #cbd5e1; border-radius: 16px; box-sizing: border-box; font-size: 16px; font-weight: 600; color: #0f172a; background: #f8fafc; transition: all 0.2s; }
+        input:focus, select:focus, textarea:focus { border-color: #0f3b2c; background: #fff; outline: none; box-shadow: 0 0 0 4px rgba(15,59,44,0.1); }
+        
+        .stock-badge { margin-top: 8px; background: #e0f2fe; color: #0369a1; padding: 10px 14px; border-radius: 12px; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: space-between; border: 1px solid #bae6fd; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+        .total-box { margin-top: 20px; background: #f0fdf4; border: 2px solid #bbf7d0; padding: 16px 20px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; }
+        .total-lbl { font-size: 12px; font-weight: 800; color: #166534; text-transform: uppercase; }
+        .total-val { font-size: 22px; font-weight: 900; color: #14532d; }
+
+        .btn-submit { background: #0f3b2c; color: #fff; border: none; padding: 18px 24px; border-radius: 16px; font-size: 17px; font-weight: 700; cursor: pointer; width: 100%; margin-top: 24px; box-shadow: 0 6px 20px rgba(15,59,44,0.25); transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-submit:active { transform: scale(0.97); box-shadow: 0 3px 10px rgba(15,59,44,0.15); }
+        .btn-loading { opacity: 0.7; pointer-events: none; background: #64748b !important; }
+
+        /* Toast */
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #0f3b2c; color: #fff; padding: 14px 28px; border-radius: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); display: none; z-index: 10000; font-size: 15px; font-weight: 700; animation: slideUp 0.3s ease-out; white-space: nowrap; }
+        @keyframes slideUp { from { transform: translate(-50%, 100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+        /* Recent Sales List */
+        .sales-title { font-size: 16px; font-weight: 800; color: #0f3b2c; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+        .sale-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; background: #f8fafc; border-radius: 14px; margin-bottom: 10px; border: 1px solid #e2e8f0; }
+        .sale-buyer { font-weight: 700; font-size: 15px; color: #0f172a; }
+        .sale-details { font-size: 12px; color: #64748b; margin-top: 2px; }
+        .sale-amount { font-weight: 800; font-size: 16px; color: #166534; text-align: right; }
+        .empty-text { font-size: 13px; color: #64748b; text-align: center; padding: 20px 0; }
+    </style>
+</head>
+<body>
+
+<div class="header-bar">
+    <div class="header-title">🛒 Mobile Sell</div>
+    <div>
+        <button id="installAppBtn" class="status-badge install-badge" onclick="installApp()">📲 Install App</button>
+        <div id="statusBadge" class="status-badge">Online</div>
+        <div id="offlineBadge" class="status-badge offline-badge">Offline Mode</div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<div class="container">
+    <!-- Passcode Screen -->
+    <div id="passcodeScreen">
+        <div class="lock-icon">🔒</div>
+        <div class="passcode-title">මුරපදය ඇතුළත් කරන්න</div>
+        <div class="passcode-sub">මෙම පිටුවට පිවිසීමට PIN අංකය (Passcode) ඇතුළත් කරන්න.</div>
+        <input type="password" id="passcodeInput" class="passcode-input" pattern="[0-9]*" inputmode="numeric" maxlength="4" placeholder="••••">
+        <div id="passcodeError" class="passcode-error">❌ මුරපදය වැරදියි! නැවත උත්සාහ කරන්න.</div>
+        <button id="unlockBtn" class="btn-unlock">ඇතුළු වන්න (Unlock)</button>
+    </div>
+
+    <!-- Main Application Screen -->
+    <div id="appScreen">
+        <div class="card">
+            <h2 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 800; color: #0f3b2c;">🛒 විකිණීම සටහන් කිරීම (Record Sell)</h2>
+            
+            <label>1. BUYER NAME (ගැණුම්කරු)</label>
+            <input id="buyerName" list="buyerList" placeholder="ගැණුම්කරුගේ නම තෝරන්න හෝ ටයිප් කරන්න...">
+            <datalist id="buyerList"></datalist>
+
+            <label>2. ITEM (භාණ්ඩය)</label>
+            <select id="itemSelect">
+                <option value="">-- Item එක තෝරන්න (Select Item) --</option>
+            </select>
+
+            <!-- Stock display badge -->
+            <div id="stockBadge" class="stock-badge" style="display:none;">
+                <span>📦 පවතින Stock ප්‍රමාණය:</span>
+                <strong id="stockVal">0.00 kg</strong>
+            </div>
+
+            <label>3. SELL PRICE (විකුණුම් මිල - Per Kg/Pc)</label>
+            <input type="number" id="sellPrice" step="0.01" placeholder="0.00">
+
+            <label>4. QTY (ප්‍රමාණය - Kg / Pcs)</label>
+            <input type="number" id="qty" step="0.01" placeholder="0.00">
+
+            <!-- Total summary -->
+            <div class="total-box">
+                <span class="total-lbl">එකතුව (TOTAL):</span>
+                <span class="total-val" id="totalVal">LKR 0.00</span>
+            </div>
+
+            <label>5. PAYMENT MODE (ගෙවීම් ආකාරය)</label>
+            <select id="paymentMode">
+                <option value="CASH">Cash (මුදලින්)</option>
+                <option value="BANK">Bank Transfer (බැංකුවෙන්)</option>
+                <option value="AR">Accounts Receivable (ණයට / Credit)</option>
+            </select>
+
+            <button id="saveSellBtn" class="btn-submit">
+                <span>🛒 විකිණීම සටහන් කරන්න (Save Sell)</span>
+            </button>
+        </div>
+
+        <div class="card">
+            <div class="sales-title">
+                <span>📜 අද දින විකිණුම් (Today's Sales)</span>
+                <span id="salesCountBadge" style="font-size:12px; background:#f1f5f9; padding:3px 8px; border-radius:10px; color:#475569;">0 Sells</span>
+            </div>
+            <div id="recentSalesList">
+                <div class="empty-text">දත්ත කියවමින් පවතී...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let itemsMap = {};
+const fmt = (v) => `LKR ${(Number(v)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+const fmtW = (v) => window.scrapVbaCore && window.scrapVbaCore.formatWeight ? window.scrapVbaCore.formatWeight(v) : `${(Number(v)||0).toLocaleString()} kg`;
+
+// PWA Install prompt handling
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const btn = document.getElementById('installAppBtn');
+    if (btn) btn.style.display = 'inline-block';
+});
+
+function installApp() {
+    if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choiceResult) => {
+            if (choiceResult.outcome === 'accepted') {
+                document.getElementById('installAppBtn').style.display = 'none';
+            }
+            deferredPrompt = null;
+        });
+    }
+}
+
+function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.display = 'block';
+    setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+// Live calculation
+function calculateTotal() {
+    const p = Number(document.getElementById('sellPrice').value) || 0;
+    const q = Number(document.getElementById('qty').value) || 0;
+    const tot = p * q;
+    document.getElementById('totalVal').textContent = fmt(tot);
+}
+
+document.getElementById('sellPrice').addEventListener('input', calculateTotal);
+document.getElementById('qty').addEventListener('input', calculateTotal);
+
+// Item selection change handler
+document.getElementById('itemSelect').addEventListener('change', () => {
+    const itemId = document.getElementById('itemSelect').value;
+    const stockBadge = document.getElementById('stockBadge');
+    const stockVal = document.getElementById('stockVal');
+    const sellPriceInput = document.getElementById('sellPrice');
+
+    if (itemId && itemsMap[itemId]) {
+        const item = itemsMap[itemId];
+        stockVal.textContent = fmtW(item.currentStock || 0);
+        stockBadge.style.display = 'flex';
+        
+        // Prefill price if user hasn't typed a custom price or wants default
+        if (!sellPriceInput.value || sellPriceInput.dataset.autoFilled === 'true') {
+            sellPriceInput.value = Number(item.sellingPrice) || 0;
+            sellPriceInput.dataset.autoFilled = 'true';
+        }
+    } else {
+        stockBadge.style.display = 'none';
+    }
+    calculateTotal();
+});
+
+sellPriceInput = document.getElementById('sellPrice');
+sellPriceInput.addEventListener('input', () => {
+    sellPriceInput.dataset.autoFilled = 'false';
+});
+
+// Load Buyers from customers collection
+async function loadBuyers() {
+    if (!window.SCRAP_BUSINESS_ID) return;
+    const snap = await db.collection('customers').where('businessId','==',window.SCRAP_BUSINESS_ID).limit(700).get().catch(()=>({docs:[]}));
+    const list = document.getElementById('buyerList');
+    if (!list) return;
+    list.innerHTML = '';
+    snap.docs.forEach((d) => {
+        const row = d.data() || {};
+        const type = String(row.type || row.context || '').toLowerCase();
+        if (!type.includes('buyer')) return;
+        const name = String(row.fullName || '').trim();
+        if (!name) return;
+        const opt = document.createElement('option');
+        opt.value = name;
+        list.appendChild(opt);
+    });
+}
+
+// Load Scrap Items
+async function loadItems() {
+    if (!window.SCRAP_BUSINESS_ID) return;
+    const snap = await db.collection('scrap_items').where('businessId','==',window.SCRAP_BUSINESS_ID).get().catch(()=>({docs:[]}));
+    const select = document.getElementById('itemSelect');
+    select.innerHTML = '<option value="">-- Item එක තෝරන්න (Select Item) --</option>';
+    
+    itemsMap = {};
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => String(a.itemName || '').localeCompare(String(b.itemName || '')));
+
+    items.forEach(item => {
+        itemsMap[item.id] = item;
+        const opt = document.createElement('option');
+        opt.value = item.id;
+        opt.textContent = `${item.itemName || '-'} (Stock: ${fmtW(item.currentStock || 0)})`;
+        select.appendChild(opt);
+    });
+}
+
+// Load Recent Sales for Today
+async function loadRecentSales() {
+    if (!window.SCRAP_BUSINESS_ID) return;
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
+    const snap = await db.collection('selling_history')
+        .where('businessId', '==', window.SCRAP_BUSINESS_ID)
+        .where('createdAt', '>=', today)
+        .get()
+        .catch(() => ({ docs: [] }));
+
+    const list = document.getElementById('recentSalesList');
+    const badge = document.getElementById('salesCountBadge');
+
+    if (!snap.docs.length) {
+        list.innerHTML = '<div class="empty-text">අද දින තවම විකිණුම් සිදුකර නොමැත.</div>';
+        if (badge) badge.textContent = '0 Sells';
+        return;
+    }
+
+    let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    rows.sort((a,b) => {
+        const tA = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
+        const tB = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+        return tB - tA;
+    });
+
+    if (badge) badge.textContent = `${rows.length} Sells`;
+
+    let html = '';
+    rows.forEach(r => {
+        const dt = r.createdAt ? (r.createdAt.toDate ? r.createdAt.toDate() : new Date(r.createdAt)) : new Date();
+        const timeStr = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const buyer = r.buyerName || 'General Buyer';
+        
+        // Primary item
+        const firstItem = (r.items && r.items[0]) ? r.items[0] : {};
+        const itemName = firstItem.itemName || '-';
+        const qtyStr = fmtW(r.totalWeight || r.qty || 0);
+
+        html += `
+            <div class="sale-item">
+                <div>
+                    <div class="sale-buyer">${buyer}</div>
+                    <div class="sale-details">📦 ${itemName} • ${qtyStr} (${timeStr})</div>
+                </div>
+                <div class="sale-amount">${fmt(r.totalAmount || 0)}</div>
+            </div>
+        `;
+    });
+    list.innerHTML = html;
+}
+
+// Save Sell Event
+document.getElementById('saveSellBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('saveSellBtn');
+    if (btn.disabled || !window.SCRAP_BUSINESS_ID) return;
+
+    const buyerName = document.getElementById('buyerName').value.trim();
+    const itemId = document.getElementById('itemSelect').value;
+    const sellPrice = Number(document.getElementById('sellPrice').value) || 0;
+    const qty = Number(document.getElementById('qty').value) || 0;
+    const paymentMode = document.getElementById('paymentMode').value;
+
+    if (!buyerName) return alert('කරුණාකර ගැණුම්කරුගේ නම (Buyer Name) ඇතුළත් කරන්න.');
+    if (!itemId || !itemsMap[itemId]) return alert('කරුණාකර භාණ්ඩය (Item) තෝරන්න.');
+    if (qty <= 0) return alert('කරුණාකර ප්‍රමාණය (Qty) 0 ට වඩා වැඩි අගයක් ඇතුළත් කරන්න.');
+    if (sellPrice < 0) return alert('අවලංගු විකිණුම් මිලකි.');
+
+    const item = itemsMap[itemId];
+    const lineRevenue = qty * sellPrice;
+
+    if (!confirm(`විකිණීම තහවුරු කරන්න?\nConfirm Sale?\n\nBuyer: ${buyerName}\nItem: ${item.itemName}\nQty: ${fmtW(qty)}\nPrice: LKR ${sellPrice}\nTotal: ${fmt(lineRevenue)}\nMode: ${paymentMode}`)) return;
+
+    btn.disabled = true;
+    const oldTxt = btn.innerHTML;
+    btn.innerHTML = '⏳ Saving Sale...';
+    btn.classList.add('btn-loading');
+
+    try {
+        const cp = Number(item.costPrice || 0);
+        const expectedProfitUnit = Number(item.profit || 0);
+
+        const lineCogs = qty * cp;
+        const lineRealizedProfit = lineRevenue - lineCogs;
+        const lineExpectedProfit = qty * expectedProfitUnit;
+
+        const line = {
+            itemId: item.id,
+            itemName: item.itemName,
+            qty: qty,
+            weight: qty,
+            sellingPrice: sellPrice,
+            amount: lineRevenue,
+            costPrice: cp,
+            cogs: lineCogs,
+            realizedProfit: lineRealizedProfit,
+            expectedProfitPart: lineExpectedProfit
+        };
+
+        // 1. Update Item Stock
+        const itemRef = db.collection('scrap_items').doc(item.id);
+        const nextStock = (Number(item.currentStock) || 0) - qty;
+        await itemRef.update({
+            currentStock: nextStock,
+            totalBuyingValue: nextStock * cp,
+            totalSellingValue: nextStock * (Number(item.sellingPrice)||0),
+            potentialProfitValue: nextStock * expectedProfitUnit,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 2. Record Selling History
+        await db.collection('selling_history').add({
+            businessId: window.SCRAP_BUSINESS_ID,
+            buyerName,
+            paymentMode,
+            date: new Date().toISOString(),
+            items: [line],
+            qty,
+            totalWeight: qty,
+            totalAmount: lineRevenue,
+            cogsAmount: lineCogs,
+            realizedProfit: lineRealizedProfit,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 3. Profit Pool Adjustment
+        const poolAdjustment = lineRealizedProfit - lineExpectedProfit;
+        if (window.scrapVbaCore && typeof window.scrapVbaCore.updateProfitPool === 'function') {
+            await window.scrapVbaCore.updateProfitPool(window.SCRAP_BUSINESS_ID, poolAdjustment, 'SALE_REALIZED', `Sale to ${buyerName}. Adj: ${poolAdjustment.toFixed(2)}`);
+        }
+
+        // 4. Post Journal Entry
+        if (window.scrapVbaCore?.postJournalEntry) {
+            const debitLine = paymentMode === 'AR' 
+                ? { accountCode: '1-1030-01', accountName: 'Accounts Receivable (Scrap)', debit: lineRevenue, credit: 0 }
+                : (paymentMode === 'BANK' 
+                    ? { accountCode: '1-1020-01', accountName: 'Bank - Current Account', debit: lineRevenue, credit: 0 } 
+                    : { accountCode: '1-1010-01', accountName: 'Cash - Main', debit: lineRevenue, credit: 0 });
+
+            await window.scrapVbaCore.postJournalEntry(window.SCRAP_BUSINESS_ID, {
+                description: `Scrap Sale - ${buyerName} (${item.itemName}) [Mobile]`,
+                reference: buyerName,
+                referenceType: 'SCRAP_SALE',
+                date: new Date().toISOString(),
+                entries: [
+                    debitLine,
+                    { accountCode: '4-4010-01', accountName: 'Sales Income (Scrap)', debit: 0, credit: lineRevenue },
+                    { accountCode: '5-5010-01', accountName: 'Cost of Goods Sold (Scrap)', debit: lineCogs, credit: 0 },
+                    { accountCode: '1-1050-01', accountName: 'Scrap Inventory', debit: 0, credit: lineCogs }
+                ]
+            });
+        }
+
+        // Reset inputs
+        document.getElementById('itemSelect').value = '';
+        document.getElementById('sellPrice').value = '';
+        document.getElementById('qty').value = '';
+        document.getElementById('totalVal').textContent = 'LKR 0.00';
+        document.getElementById('stockBadge').style.display = 'none';
+
+        await loadItems();
+        await loadRecentSales();
+        showToast('✅ විකිණීම සාර්ථකව සටහන් කරන ලදී!');
+    } catch (e) {
+        console.error(e);
+        alert('Error saving sell: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = oldTxt;
+        btn.classList.remove('btn-loading');
+    }
+});
+
+// Passcode Verification
+function verifyPasscode() {
+    const code = document.getElementById('passcodeInput').value;
+    if (code === '1977') {
+        sessionStorage.setItem('passcodeUnlocked', 'true');
+        document.getElementById('passcodeScreen').style.display = 'none';
+        document.getElementById('appScreen').style.display = 'block';
+        if (window.SCRAP_BUSINESS_ID) {
+            loadBuyers();
+            loadItems();
+            loadRecentSales();
+        }
+    } else {
+        document.getElementById('passcodeError').style.display = 'block';
+        document.getElementById('passcodeInput').value = '';
+        document.getElementById('passcodeInput').focus();
+    }
+}
+
+document.getElementById('unlockBtn').addEventListener('click', verifyPasscode);
+document.getElementById('passcodeInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') verifyPasscode();
+});
+
+// Online / Offline Status
+window.addEventListener('online', () => {
+    document.getElementById('statusBadge').style.display = 'inline-block';
+    document.getElementById('offlineBadge').style.display = 'none';
+});
+window.addEventListener('offline', () => {
+    document.getElementById('statusBadge').style.display = 'none';
+    document.getElementById('offlineBadge').style.display = 'inline-block';
+});
+
+// Auth State Check
+auth.onAuthStateChanged(async (user) => {
+    if (!user) {
+        window.location.href = '/';
+        return;
+    }
+    
+    let businessId = user.uid;
+    try {
+        if (window.dashboardCore && typeof window.dashboardCore.getContext === 'function') {
+            const ctx = await window.dashboardCore.getContext(user);
+            businessId = String((ctx && ctx.businessId) || user.uid);
+        } else {
+            const userDoc = await db.collection('users').doc(user.uid).get().catch(() => null);
+            if (userDoc && userDoc.exists) {
+                businessId = userDoc.data().businessId || user.uid;
+            }
+        }
+    } catch (e) { console.warn('Business ID fetch error:', e); }
+    
+    window.SCRAP_BUSINESS_ID = businessId;
+
+    if (sessionStorage.getItem('passcodeUnlocked') === 'true') {
+        document.getElementById('passcodeScreen').style.display = 'none';
+        document.getElementById('appScreen').style.display = 'block';
+        loadBuyers();
+        loadItems();
+        loadRecentSales();
+    }
+});
+</script>
+</body>
+</html>

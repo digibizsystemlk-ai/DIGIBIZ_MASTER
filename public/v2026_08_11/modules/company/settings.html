@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - DIGIBIZ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/event-bus.js"></script>
+    <script src="/core/dashboard-core.js"></script>
+    <script src="/core/subscription-manager.js"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter',sans-serif;background:#f5f6fa;color:#1a1a2e;}
+        .main-content{padding:30px 35px;min-height:100vh;}
+        @media (max-width:768px){.main-content{padding:20px;}}
+        
+        .page-header{margin-bottom:30px;}
+        .page-header h1{font-size:26px;font-weight:700;color:#1a1a2e;}
+        .page-header h1 i{color:#10b981;margin-right:12px;}
+        .page-header p{color:#64748b;margin-top:8px;font-size:14px;}
+        
+        .two-column{display:grid;grid-template-columns:1fr 1fr;gap:25px;}
+        @media (max-width:900px){.two-column{grid-template-columns:1fr;}}
+        
+        .card{background:white;border-radius:20px;border:1px solid #e9ecef;overflow:hidden;margin-bottom:25px;}
+        .card-header{padding:18px 22px;border-bottom:1px solid #e9ecef;background:#fafbfc;}
+        .card-header h3{font-size:16px;font-weight:600;}
+        .card-header h3 i{margin-right:10px;color:#10b981;}
+        .card-body{padding:22px;}
+        
+        .form-group{margin-bottom:20px;}
+        .form-group label{display:block;font-size:13px;font-weight:500;color:#1a1a2e;margin-bottom:8px;}
+        .form-group label i{margin-right:6px;color:#10b981;}
+        .form-group input,.form-group select,.form-group textarea{width:100%;padding:12px;border:1px solid #e9ecef;border-radius:10px;font-size:14px;}
+        .form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:#10b981;}
+        
+        .btn-primary{background:#10b981;color:white;border:none;padding:10px 20px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:500;}
+        .btn-primary:hover{background:#059669;}
+        .btn-outline{background:transparent;border:1px solid #10b981;color:#10b981;padding:10px 20px;border-radius:10px;cursor:pointer;}
+        
+        .setting-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #e9ecef;}
+        .setting-label{font-weight:500;}
+        .setting-desc{font-size:12px;color:#6b7280;margin-top:4px;}
+        
+        .alert{background:#fef3c7;border-left:4px solid #f59e0b;padding:15px;border-radius:10px;margin-bottom:20px;}
+        .alert-success{background:#d1fae5;border-left-color:#10b981;}
+        .health-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+        .health-item{background:#f8fafc;border-radius:10px;padding:10px;}
+        .health-item .k{font-size:11px;color:#64748b;text-transform:uppercase;}
+        .health-item .v{font-size:15px;font-weight:700;color:#0f172a;}
+        
+        footer{text-align:center;padding:25px;color:#adb5bd;font-size:12px;border-top:1px solid #e9ecef;margin-top:20px;}
+        
+        /* Toggle Switch Styles */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #10b981;
+        }
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+    </style>
+</head>
+<body>
+    <div class="main-content">
+        <div class="page-header">
+            <h1><i class="fas fa-sliders-h"></i> System Settings</h1>
+            <p>Configure your business settings and preferences</p>
+        </div>
+        
+        <div class="two-column">
+            <div>
+                <!-- General Settings -->
+                <div class="card">
+                    <div class="card-header"><h3><i class="fas fa-globe"></i> General Settings</h3></div>
+                    <div class="card-body">
+                        <div id="alertMessage"></div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-dollar-sign"></i> Currency</label>
+                            <select id="currency">
+                                <option value="LKR">Sri Lankan Rupee (LKR) - Rs</option>
+                                <option value="USD">US Dollar (USD) - $</option>
+                                <option value="EUR">Euro (EUR) - €</option>
+                                <option value="GBP">British Pound (GBP) - £</option>
+                                <option value="INR">Indian Rupee (INR) - ₹</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-percent"></i> Default Tax Rate (%)</label>
+                            <input type="number" id="taxRate" step="0.01" placeholder="e.g., 0">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-language"></i> Language</label>
+                            <select id="language">
+                                <option value="si">Sinhala</option>
+                                <option value="en">English</option>
+                                <option value="ta">Tamil</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-calendar"></i> Date Format</label>
+                            <select id="dateFormat">
+                                <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                                <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                                <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                            </select>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div>
+                                <div class="setting-label">🔔 Email Notifications</div>
+                                <div class="setting-desc">Receive email alerts for orders and updates</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="emailNotifications">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div>
+                                <div class="setting-label">📱 SMS Notifications</div>
+                                <div class="setting-desc">Receive SMS alerts for important events</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="smsNotifications">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div style="margin-top:20px;">
+                            <button class="btn-primary" id="saveSettingsBtn"><i class="fas fa-save"></i> Save Settings</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Backup Settings -->
+                <div class="card">
+                    <div class="card-header"><h3><i class="fas fa-database"></i> Backup & Data</h3></div>
+                    <div class="card-body">
+                        <div class="setting-row">
+                            <div>
+                                <div class="setting-label">📋 Auto Backup</div>
+                                <div class="setting-desc">Automatically backup data daily</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="autoBackup">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div style="margin-top:20px;">
+                            <button class="btn-outline" onclick="exportData()"><i class="fas fa-download"></i> Export Data (CSV)</button>
+                            <button class="btn-outline" style="margin-left:10px;" onclick="requestBackup()"><i class="fas fa-cloud-upload-alt"></i> Request Backup</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><h3><i class="fas fa-heartbeat"></i> Subscription Health</h3></div>
+                    <div class="card-body">
+                        <div class="health-grid">
+                            <div class="health-item"><div class="k">Status</div><div class="v" id="subHealthStatus">-</div></div>
+                            <div class="health-item"><div class="k">Plan</div><div class="v" id="subHealthPlan">-</div></div>
+                            <div class="health-item"><div class="k">Expires</div><div class="v" id="subHealthExpiry">-</div></div>
+                            <div class="health-item"><div class="k">Days Left</div><div class="v" id="subHealthDays">-</div></div>
+                        </div>
+                        <div style="margin-top:12px;">
+                            <a href="/core/subscription.html" class="btn-outline" style="text-decoration:none;display:inline-block;">Open Subscription</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div>
+                <!-- Notification Settings -->
+                <div class="card">
+                    <div class="card-header"><h3><i class="fas fa-bell"></i> Notification Preferences</h3></div>
+                    <div class="card-body">
+                        <div class="setting-row">
+                            <div>
+                                <div class="setting-label">📦 New Orders</div>
+                                <div class="setting-desc">Notify when new order is received</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="notifyNewOrders" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div>
+                                <div class="setting-label">📊 Low Stock Alerts</div>
+                                <div class="setting-desc">Notify when stock is below minimum level</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="notifyLowStock" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="setting-row">
+                            <div>
+                                <div class="setting-label">💰 Payment Received</div>
+                                <div class="setting-desc">Notify when payment is received</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="notifyPayments" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Invoice Settings -->
+                <div class="card">
+                    <div class="card-header"><h3><i class="fas fa-file-invoice"></i> Invoice Settings</h3></div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label><i class="fas fa-hashtag"></i> Invoice Prefix</label>
+                            <input type="text" id="invoicePrefix" placeholder="e.g., INV-">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label><i class="fas fa-comment"></i> Invoice Footer Note</label>
+                            <textarea id="invoiceFooter" rows="2" placeholder="Thank you for your business!"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer><p>© 2025 DIGIBIZ Universal - Complete Business Management Platform</p></footer>
+    </div>
+
+    <script>
+        let currentBusinessId = null;
+        let distributorSettingsReadOnly = false;
+
+        function applyDistributorSettingsLock() {
+            const ro = distributorSettingsReadOnly;
+            ['currency', 'taxRate', 'language', 'dateFormat', 'emailNotifications', 'smsNotifications', 'autoBackup', 'notifyNewOrders', 'notifyLowStock', 'notifyPayments', 'invoicePrefix', 'invoiceFooter'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = ro;
+            });
+            const saveBtn = document.getElementById('saveSettingsBtn');
+            if (saveBtn) saveBtn.disabled = ro;
+        }
+
+        function showMessage(message, isSuccess) {
+            const msgDiv = document.getElementById('alertMessage');
+            msgDiv.innerHTML = `<div class="alert ${isSuccess ? 'alert-success' : ''}"><i class="fas ${isSuccess ? 'fa-check-circle' : 'fa-exclamation-triangle'}"></i> ${message}</div>`;
+            setTimeout(() => { msgDiv.innerHTML = ''; }, 3000);
+        }
+
+        async function loadSettings() {
+            if (!currentBusinessId) return;
+            
+            try {
+                const doc = await db.collection('settings').doc(currentBusinessId).get();
+                if (doc.exists) {
+                    const data = doc.data();
+                    document.getElementById('currency').value = data.currency || 'LKR';
+                    document.getElementById('taxRate').value = Number.isFinite(Number(data.taxRate)) ? Number(data.taxRate) : 0;
+                    document.getElementById('language').value = data.language || 'en';
+                    document.getElementById('dateFormat').value = data.dateFormat || 'DD/MM/YYYY';
+                    document.getElementById('emailNotifications').checked = data.emailNotifications !== false;
+                    document.getElementById('smsNotifications').checked = data.smsNotifications || false;
+                    document.getElementById('autoBackup').checked = data.autoBackup || false;
+                    document.getElementById('notifyNewOrders').checked = data.notifyNewOrders !== false;
+                    document.getElementById('notifyLowStock').checked = data.notifyLowStock !== false;
+                    document.getElementById('notifyPayments').checked = data.notifyPayments !== false;
+                    document.getElementById('invoicePrefix').value = data.invoicePrefix || 'INV-';
+                    document.getElementById('invoiceFooter').value = data.invoiceFooter || 'Thank you for your business!';
+                }
+            } catch (error) {
+                console.error('Error loading settings:', error);
+            }
+        }
+
+        async function saveSettings() {
+            if (distributorSettingsReadOnly) {
+                showMessage('Only the business owner can change settings for this distributor account.', false);
+                return;
+            }
+            const settings = {
+                currency: document.getElementById('currency').value,
+                taxRate: Math.max(0, parseFloat(document.getElementById('taxRate').value) || 0),
+                language: document.getElementById('language').value,
+                dateFormat: document.getElementById('dateFormat').value,
+                emailNotifications: document.getElementById('emailNotifications').checked,
+                smsNotifications: document.getElementById('smsNotifications').checked,
+                autoBackup: document.getElementById('autoBackup').checked,
+                notifyNewOrders: document.getElementById('notifyNewOrders').checked,
+                notifyLowStock: document.getElementById('notifyLowStock').checked,
+                notifyPayments: document.getElementById('notifyPayments').checked,
+                invoicePrefix: document.getElementById('invoicePrefix').value,
+                invoiceFooter: document.getElementById('invoiceFooter').value,
+                updatedAt: new Date()
+            };
+            
+            try {
+                await db.collection('settings').doc(currentBusinessId).set(settings, { merge: true });
+                showMessage('Settings saved successfully!', true);
+                
+                if (window.eventBus) {
+                    window.eventBus.publish('SETTINGS_UPDATED', settings);
+                }
+            } catch (error) {
+                console.error('Error saving settings:', error);
+                showMessage('Error saving settings', false);
+            }
+        }
+
+        function exportData() {
+            alert('Export feature - Would download all business data as CSV');
+        }
+
+        function requestBackup() {
+            alert('Backup requested. You will receive an email when ready.');
+        }
+
+        document.getElementById('saveSettingsBtn').onclick = saveSettings;
+        window.exportData = exportData;
+        window.requestBackup = requestBackup;
+        
+        function renderSubscriptionHealth(state) {
+            document.getElementById('subHealthStatus').textContent = state && state.expired ? 'Expired' : 'Active';
+            document.getElementById('subHealthPlan').textContent = state && state.plan ? state.plan : 'TRIAL';
+            document.getElementById('subHealthExpiry').textContent = state && state.expireDate ? new Date(state.expireDate).toLocaleDateString() : '-';
+            document.getElementById('subHealthDays').textContent = state && Number.isFinite(state.remainingDays) ? String(state.remainingDays) : '-';
+        }
+
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = '/';
+                return;
+            }
+            
+            const userDoc = await db.collection('users').doc(user.uid).get();
+            currentBusinessId = userDoc.data()?.businessId;
+            
+            if (!currentBusinessId) {
+                alert('No business found. Please create a business first.');
+                window.location.href = '../company/profile.html';
+                return;
+            }
+            
+            await loadSettings();
+            const roleInfo = await window.getUserRole(user.uid, currentBusinessId);
+            let navRole = String((roleInfo && roleInfo.role) || '');
+            try {
+                const bud = await db.collection('businesses').doc(currentBusinessId).collection('users').doc(user.uid).get();
+                if (bud.exists && bud.data().role) navRole = String(bud.data().role);
+            } catch (e) { /* ignore */ }
+            const uSnap = await db.collection('users').doc(user.uid).get();
+            const globalRole = uSnap.exists ? String(uSnap.data().role || '') : '';
+            const bizSnap = await db.collection('businesses').doc(currentBusinessId).get();
+            const btype = bizSnap.exists ? String(bizSnap.data().businessType || '').toLowerCase() : '';
+            if (globalRole === 'SUPER_ADMIN') {
+                distributorSettingsReadOnly = false;
+            } else {
+                distributorSettingsReadOnly = btype === 'distributor' && window.DigibizDistributorPermissions
+                    && !window.DigibizDistributorPermissions.permissionsForRole(navRole).canSettingsChange;
+            }
+            applyDistributorSettingsLock();
+            const state = await window.subscriptionManager.initializeForUser(user, roleInfo ? roleInfo.role : 'VIEWER', currentBusinessId);
+            renderSubscriptionHealth(state);
+        });
+    </script>
+</body>
+</html>

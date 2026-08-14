@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Hardware POS</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/dashboard-core.js?v=4"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:'Inter','Segoe UI',sans-serif;background:#f4f7fb;color:#0f172a;}
+        .main{padding:18px;}
+        .header{background:#fff;border-left:4px solid #0f3b2c;border-radius:12px;padding:14px 16px;margin-bottom:12px;}
+        .header h1{font-size:22px;color:#0f3b2c;}
+        .layout{display:grid;grid-template-columns:1.15fr 1fr .9fr;gap:12px;}
+        .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:12px;}
+        .search-row{display:grid;grid-template-columns:1fr 160px;gap:8px;margin-bottom:10px;}
+        input,select,button{padding:10px;border:1px solid #cbd5e1;border-radius:8px;width:100%;}
+        button{border:none;background:#0f3b2c;color:#fff;cursor:pointer;}
+        table{width:100%;border-collapse:collapse;font-size:12px;}
+        th,td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left;}
+        th{background:#f8fafc;}
+        .muted{font-size:11px;color:#64748b;}
+        .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px;}
+        .quote{background:#7c3aed;}
+        .convert{background:#1d4ed8;}
+        .total{font-size:22px;font-weight:700;text-align:right;color:#0f3b2c;}
+        .q-list{max-height:480px;overflow:auto;}
+        .q-item{border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:8px;background:#f8fafc;}
+        .q-item strong{color:#0f3b2c;}
+        .q-actions{display:flex;gap:6px;margin-top:8px;}
+        .q-actions button{padding:7px 10px;font-size:12px;}
+        .q-banner{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;}
+        .q-banner.expired{background:#fee2e2;color:#b91c1c;}
+        .q-banner.valid{background:#dcfce7;color:#166534;}
+        .mini-input{width:72px;padding:6px;}
+        @media (max-width:1200px){.layout{grid-template-columns:1fr;}.search-row{grid-template-columns:1fr;}}
+    </style>
+</head>
+<body>
+<div class="main">
+    <div class="header">
+        <h1>🧾 Hardware POS + Quotation</h1>
+        <p>Unit price auto-switching, bulk pricing, quotation search, and invoice conversion.</p>
+    </div>
+    <div class="layout">
+        <div class="card">
+            <div class="search-row">
+                <input id="searchInput" placeholder="Search hardware item">
+                <input id="customerName" placeholder="Customer">
+            </div>
+            <div style="max-height:480px;overflow:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Stock</th>
+                            <th>Unit</th>
+                            <th>Sell As</th>
+                            <th>Qty</th>
+                            <th>Inch</th>
+                            <th>Unit Price</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productBody"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Cart / Quote</h3>
+            <div style="max-height:340px;overflow:auto;">
+                <table>
+                    <thead><tr><th>Item</th><th>Unit Breakdown</th><th>Qty</th><th>Amount</th><th></th></tr></thead>
+                    <tbody id="cartBody"></tbody>
+                </table>
+            </div>
+            <div class="total" id="totalAmount">LKR 0.00</div>
+            <p class="muted">Bulk support: HalfCube = 0.5 x pricePerCube, QuarterCube = 0.25 x pricePerCube.</p>
+            <div class="actions">
+                <button class="quote" id="saveQuoteBtn">Save Quotation</button>
+                <button class="quote" id="downloadQuotePdfBtn">Download Quote PDF</button>
+                <button id="checkoutBtn">Create Invoice</button>
+                <button class="convert" id="downloadInvoicePdfBtn">Download Invoice PDF</button>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Quotation Search</h3>
+            <div class="search-row">
+                <input id="quoteSearchInput" placeholder="Search QT number / customer">
+                <button class="convert" id="refreshQuotesBtn">Refresh</button>
+            </div>
+            <div class="q-list" id="quotationList"></div>
+        </div>
+    </div>
+</div>
+<script>
+    let state = { context: null, user: null, products: [], cart: [] };
+
+    function formatLKR(v) {
+        return `LKR ${(Number(v) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    function buildNo(prefix) {
+        return `${prefix}-${String(Date.now()).slice(-8)}`;
+    }
+    function resolveUnitPrice(item, unit) {
+        const base = Number(item.unitPrice) || 0;
+        if (unit === 'Feet') return base;
+        if (unit === 'Inch') return base / 12;
+        if (unit === 'HalfCube') return (Number(item.pricePerCube) || base) * 0.5;
+        if (unit === 'QuarterCube') return (Number(item.pricePerCube) || base) * 0.25;
+        if (unit === 'Kg') return Number(item.pricePerKg) || base;
+        return base;
+    }
+    function remainingLengthAfterSale(item, qty, unit, inchesPart = 0) {
+        const baseInches = ((Number(item.lengthFeet) || 0) * 12) + (Number(item.lengthInches) || 0);
+        if (baseInches <= 0) return null;
+        let soldInches = 0;
+        if (unit === 'Feet') soldInches = (qty * 12) + (Number(inchesPart) || 0);
+        else if (unit === 'Inch') soldInches = qty;
+        else return null;
+        const rem = Math.max(0, baseInches - soldInches);
+        return { feet: Math.floor(rem / 12), inches: Math.round(rem % 12), totalInches: rem };
+    }
+
+    async function loadProducts() {
+        const snap = await window.db.collection('products').doc(state.context.businessId).collection('list')
+            .where('businessType', '==', 'hardware')
+            .get();
+        state.products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        renderProducts();
+    }
+
+    function renderProducts() {
+        const q = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+        const rows = state.products.filter((p) => (p.name || '').toLowerCase().includes(q));
+        document.getElementById('productBody').innerHTML = rows.map((p) => {
+            const options = ['Feet', 'Inch', 'Items', 'Pieces', 'HalfCube', 'QuarterCube', 'Kg']
+                .filter((u) => ['Feet', 'Inch', 'Items', 'Pieces'].includes(u) || p.pricePerCube || p.pricePerKg)
+                .map((u) => `<option value="${u}">${u}</option>`).join('');
+            return `
+                <tr>
+                    <td>${p.name || '-'}</td>
+                    <td>${Number(p.stock) || 0}</td>
+                    <td>${p.stockUnit || '-'}</td>
+                    <td><select id="unit-${p.id}" onchange="updatePreviewPrice('${p.id}')">${options}</select></td>
+                    <td><input id="qty-${p.id}" type="number" min="0.01" step="0.01" value="1"></td>
+                    <td><input id="inch-${p.id}" class="mini-input" type="number" min="0" max="11" step="1" value="0"></td>
+                    <td><span id="price-${p.id}">${formatLKR(resolveUnitPrice(p, 'Feet'))}</span></td>
+                    <td><button onclick="addToCart('${p.id}')">Add</button></td>
+                </tr>
+            `;
+        }).join('') || '<tr><td colspan="8">No hardware items.</td></tr>';
+    }
+
+    function updatePreviewPrice(id) {
+        const item = state.products.find((p) => p.id === id);
+        if (!item) return;
+        const unit = document.getElementById(`unit-${id}`).value;
+        document.getElementById(`price-${id}`).textContent = formatLKR(resolveUnitPrice(item, unit));
+    }
+
+    function renderCart() {
+        document.getElementById('cartBody').innerHTML = state.cart.map((line, idx) => `
+            <tr>
+                <td>${line.name}</td>
+                <td>${line.measureLabel || line.unit}</td>
+                <td>${line.qty}</td>
+                <td>${formatLKR(line.amount)}</td>
+                <td><button onclick="removeLine(${idx})">X</button></td>
+            </tr>
+        `).join('') || '<tr><td colspan="5">Cart empty</td></tr>';
+        const total = state.cart.reduce((s, l) => s + l.amount, 0);
+        document.getElementById('totalAmount').textContent = formatLKR(total);
+    }
+
+    function addToCart(id) {
+        const item = state.products.find((p) => p.id === id);
+        if (!item) return;
+        const unit = document.getElementById(`unit-${id}`).value;
+        const qty = Number(document.getElementById(`qty-${id}`).value) || 0;
+        const inchesPart = Number(document.getElementById(`inch-${id}`).value) || 0;
+        if (qty <= 0) { alert('Invalid qty'); return; }
+        const unitPrice = resolveUnitPrice(item, unit);
+        let qtyForAmount = qty;
+        let measureLabel = unit;
+        if (unit === 'Feet') {
+            qtyForAmount = qty + (inchesPart / 12);
+            measureLabel = `${qty}ft ${inchesPart}in`;
+        } else if (unit === 'Inch') {
+            measureLabel = `${qty}in`;
+        } else if (unit === 'HalfCube') {
+            measureLabel = `${qty} x HalfCube`;
+        } else if (unit === 'QuarterCube') {
+            measureLabel = `${qty} x QuarterCube`;
+        } else if (unit === 'Kg') {
+            measureLabel = `${qty}kg`;
+        }
+        const amount = qtyForAmount * unitPrice;
+        state.cart.push({ id, name: item.name || '-', unit, qty, inchesPart, qtyForAmount, unitPrice, amount, measureLabel });
+        renderCart();
+    }
+
+    function removeLine(idx) {
+        state.cart.splice(idx, 1);
+        renderCart();
+    }
+
+    async function persistInvoice(status) {
+        if (!state.cart.length) { alert('Cart empty'); return null; }
+        const customerName = document.getElementById('customerName').value.trim() || 'Walk-in Customer';
+        const total = state.cart.reduce((s, l) => s + l.amount, 0);
+        const docNo = buildNo(status === 'QUOTATION' ? 'QT' : 'INV');
+        const payload = {
+            docNo,
+            status,
+            businessId: state.context.businessId,
+            businessType: 'hardware',
+            customerName,
+            items: state.cart,
+            total,
+            createdBy: state.user.uid,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        const ref = window.db.collection('orders').doc(state.context.businessId).collection('list').doc();
+        await ref.set(payload);
+        return { id: ref.id, ...payload };
+    }
+
+    function printInvoice(doc, mode = 'print') {
+        const rows = (doc.items || []).map((line) => `
+            <tr>
+                <td>${line.name}</td>
+                <td>${line.measureLabel || line.unit}</td>
+                <td>${line.qty}</td>
+                <td>${formatLKR(line.unitPrice)}</td>
+                <td>${formatLKR(line.amount)}</td>
+            </tr>
+        `).join('');
+        const win = window.open('', '_blank');
+        win.document.write(`
+            <html><head><title>${doc.docNo}</title>
+            <style>body{font-family:Arial;padding:20px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}h3{margin:0 0 8px;} .r{text-align:right;}</style>
+            </head><body>
+                <h3>DIGIBIZ Hardware ${doc.status}</h3>
+                <div>No: <strong>${doc.docNo}</strong></div>
+                <div>Customer: ${doc.customerName || 'Walk-in Customer'}</div>
+                <div>Date: ${new Date().toLocaleString()}</div>
+                <hr/>
+                <table>
+                    <thead><tr><th>Item</th><th>Unit Breakdown</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <h3 class="r">Total: ${formatLKR(doc.total)}</h3>
+            <\/body><\/html>
+        `);
+        win.document.close();
+        win.focus();
+        if (mode === 'download') {
+            setTimeout(() => win.print(), 250);
+        } else {
+            win.print();
+        }
+    }
+
+    async function checkoutInvoice(sourceQuoteRef = null) {
+        const inv = await persistInvoice('INVOICE');
+        if (!inv) return;
+        const batch = window.db.batch();
+        state.cart.forEach((line) => {
+            const item = state.products.find((p) => p.id === line.id);
+            const ref = window.db.collection('products').doc(state.context.businessId).collection('list').doc(line.id);
+            const update = { updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+            if (line.unit === 'Feet' || line.unit === 'Inch') {
+                const rem = remainingLengthAfterSale(item || {}, line.qty, line.unit, line.inchesPart || 0);
+                if (rem) {
+                    update.lengthFeet = rem.feet;
+                    update.lengthInches = rem.inches;
+                    update.stock = rem.totalInches / 12;
+                } else {
+                    update.stock = firebase.firestore.FieldValue.increment(-line.qtyForAmount);
+                }
+            } else {
+                update.stock = firebase.firestore.FieldValue.increment(-line.qtyForAmount);
+            }
+            batch.update(ref, update);
+        });
+        await batch.commit();
+
+        if (window.eventBus && window.eventBus.publish) {
+            window.eventBus.publish('SALE_COMPLETED', {
+                amount: inv.total,
+                invoiceNo: inv.docNo,
+                businessId: state.context.businessId
+            });
+        }
+        if (sourceQuoteRef) {
+            await sourceQuoteRef.update({
+                status: 'CONVERTED',
+                convertedToInvoiceNo: inv.docNo,
+                convertedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+        alert(`Invoice created: ${inv.docNo}`);
+        printInvoice(inv);
+        state.cart = [];
+        renderCart();
+        await loadProducts();
+        await loadQuotations();
+    }
+
+    async function saveQuotation() {
+        const qt = await persistInvoice('QUOTATION');
+        if (!qt) return;
+        const now = new Date();
+        const validUntil = new Date(now);
+        validUntil.setDate(validUntil.getDate() + 7);
+        await window.db.collection('orders').doc(state.context.businessId).collection('list').doc(qt.id).update({
+            validUntil: validUntil.toISOString(),
+            validityDays: 7
+        });
+        alert(`Quotation saved: ${qt.docNo}`);
+        await loadQuotations();
+    }
+
+    async function getQuotationById(id) {
+        const snap = await window.db.collection('orders').doc(state.context.businessId).collection('list').doc(id).get();
+        if (!snap.exists) return null;
+        const data = snap.data();
+        if (data.status !== 'QUOTATION') return null;
+        return snap;
+    }
+
+    async function loadQuotationToCart(id) {
+        const quoteDoc = await getQuotationById(id);
+        if (!quoteDoc) { alert('Quotation not found'); return; }
+        const data = quoteDoc.data();
+        state.cart = Array.isArray(data.items) ? data.items : [];
+        document.getElementById('customerName').value = data.customerName || '';
+        renderCart();
+    }
+
+    async function convertQuotationById(id) {
+        const quoteDoc = await getQuotationById(id);
+        if (!quoteDoc) { alert('Quotation not found'); return; }
+        const data = quoteDoc.data();
+        state.cart = Array.isArray(data.items) ? data.items : [];
+        document.getElementById('customerName').value = data.customerName || '';
+        renderCart();
+        await checkoutInvoice(quoteDoc.ref);
+    }
+
+    async function loadQuotations() {
+        const q = (document.getElementById('quoteSearchInput').value || '').trim().toLowerCase();
+        const snap = await window.db.collection('orders').doc(state.context.businessId).collection('list')
+            .where('status', '==', 'QUOTATION')
+            .get();
+        const list = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((it) => !q || String(it.docNo || '').toLowerCase().includes(q) || String(it.customerName || '').toLowerCase().includes(q))
+            .sort((a, b) => String(b.docNo || '').localeCompare(String(a.docNo || '')));
+        document.getElementById('quotationList').innerHTML = list.map((qt) => {
+            const validUntil = qt.validUntil ? new Date(qt.validUntil) : null;
+            const isExpired = validUntil ? (validUntil < new Date()) : false;
+            const validText = validUntil ? `Valid until: ${validUntil.toLocaleDateString()}` : 'Validity: 7 days';
+            return `
+            <div class="q-item">
+                <div><strong>${qt.docNo}</strong> - ${qt.customerName || 'Walk-in Customer'} ${isExpired ? '<span class="q-banner expired">Expired</span>' : '<span class="q-banner valid">Valid</span>'}</div>
+                <div class="muted">${(qt.items || []).length} items | ${formatLKR(qt.total || 0)} | ${validText}</div>
+                <div class="q-actions">
+                    <button onclick="loadQuotationToCart('${qt.id}')">Load to POS</button>
+                    <button class="convert" onclick="convertQuotationById('${qt.id}')">Convert to Invoice</button>
+                    <button class="quote" onclick="downloadQuotationPdfById('${qt.id}')">Download PDF</button>
+                </div>
+            </div>
+        `;
+        }).join('') || '<div class="muted">No quotations found.</div>';
+    }
+
+    async function downloadQuotationPdfById(id) {
+        const quoteDoc = await getQuotationById(id);
+        if (!quoteDoc) { alert('Quotation not found'); return; }
+        const data = quoteDoc.data();
+        printInvoice(data, 'download');
+    }
+
+    window.addToCart = addToCart;
+    window.removeLine = removeLine;
+    window.updatePreviewPrice = updatePreviewPrice;
+    window.loadQuotationToCart = loadQuotationToCart;
+    window.convertQuotationById = convertQuotationById;
+    window.downloadQuotationPdfById = downloadQuotationPdfById;
+    document.getElementById('searchInput').addEventListener('input', renderProducts);
+    document.getElementById('quoteSearchInput').addEventListener('input', loadQuotations);
+    document.getElementById('refreshQuotesBtn').addEventListener('click', loadQuotations);
+    document.getElementById('saveQuoteBtn').addEventListener('click', saveQuotation);
+    document.getElementById('checkoutBtn').addEventListener('click', checkoutInvoice);
+    document.getElementById('downloadQuotePdfBtn').addEventListener('click', () => {
+        if (!state.cart.length) { alert('Cart is empty'); return; }
+        const customerName = document.getElementById('customerName').value.trim() || 'Walk-in Customer';
+        const total = state.cart.reduce((s, l) => s + l.amount, 0);
+        printInvoice({ docNo: 'QT-DRAFT', status: 'QUOTATION', customerName, items: state.cart, total }, 'download');
+    });
+    document.getElementById('downloadInvoicePdfBtn').addEventListener('click', () => {
+        if (!state.cart.length) { alert('Cart is empty'); return; }
+        const customerName = document.getElementById('customerName').value.trim() || 'Walk-in Customer';
+        const total = state.cart.reduce((s, l) => s + l.amount, 0);
+        printInvoice({ docNo: 'INV-DRAFT', status: 'INVOICE', customerName, items: state.cart, total }, 'download');
+    });
+
+    auth.onAuthStateChanged(async (user) => {
+        if (!user) { window.location.href = '/'; return; }
+        state.user = user;
+        state.context = await window.dashboardCore.getContext(user);
+        if (!state.context || state.context.businessType !== 'hardware') {
+            alert('This page is only for Hardware business type.');
+            window.location.href = '/core/dashboard.html';
+            return;
+        }
+        await loadProducts();
+        await loadQuotations();
+        renderCart();
+    });
+</script>
+</body>
+</html>

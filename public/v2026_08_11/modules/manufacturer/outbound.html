@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production & Manufacturing - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=2"></script>
+    <script src="/core/event-bus.js?v=2"></script>
+    <script src="/core/accounts-core.js?v=2"></script>
+    <script src="/core/dashboard-core.js?v=70"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-database-compat.js"></script>
+    <script src="/core/sms-wallet-core.js?v=4"></script>
+    <script src="/core/ui-helpers.js?v=1"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=10"></script>
+    <style id="mfgStyle"></style>
+</head>
+<body>
+<div class="mfg-wrap">
+    <div class="mfg-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+            <h2>🏭 Production & Manufacturing (නිෂ්පාදන ක්‍රියාවලිය)</h2>
+            <p id="mfgBusinessCtx"></p>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <a href="/modules/manufacturer/inbound.html" style="padding:10px 16px; background:#0284c7; color:#fff; text-decoration:none; border-radius:8px; font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(2,132,199,0.25);">
+                📥 Raw Material Purchases (Inbound)
+            </a>
+            <a href="/modules/manufacturer/stock.html?tab=fg" style="padding:10px 18px; background:#7c3aed; color:#fff; text-decoration:none; border-radius:8px; font-weight:800; font-size:13px; display:inline-flex; align-items:center; gap:6px; box-shadow:0 4px 12px rgba(124,58,237,0.35);">
+                📦 Finished Goods Stock Directory (නිමි භාණ්ඩ තොගය වෙත යන්න ➡️)
+            </a>
+        </div>
+    </div>
+
+    <!-- Live Asset Summary Card -->
+    <div id="mfgProductionSummaryCard" style="background:linear-gradient(135deg, #0f172a, #1e293b); color:#fff; padding:16px 20px; border-radius:12px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; box-shadow:0 4px 14px rgba(0,0,0,0.18);">
+        <div>
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#94a3b8; font-weight:700;">📦 Raw Material Stock Asset (ඉතිරි අමුද්‍රව්‍ය වත්කම)</div>
+            <div id="prodRmAssetVal" style="font-size:20px; font-weight:800; color:#38bdf8; margin-top:2px;">Rs. 0.00</div>
+        </div>
+        <div>
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#94a3b8; font-weight:700;">🏭 Finished Goods Asset (නිමි භාණ්ඩ වත්කම)</div>
+            <div id="prodFgAssetVal" style="font-size:20px; font-weight:800; color:#34d399; margin-top:2px;">Rs. 0.00</div>
+        </div>
+        <div>
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#94a3b8; font-weight:700;">⚙️ Active Production Batches</div>
+            <div id="prodBatchCount" style="font-size:20px; font-weight:800; color:#facc15; margin-top:2px;">0 Batches</div>
+        </div>
+    </div>
+
+    <div class="mfg-grid">
+        <!-- New Production Batch Form -->
+        <div class="mfg-card">
+            <h3>⚙️ Record Production Batch (අමුද්‍රව්‍ය යොදවා නිමි භාණ්ඩ නිෂ්පාදනය)</h3>
+            
+            <div class="mfg-row">
+                <div>
+                    <label>Finished Product Name (නිෂ්පාදනය කරන භාණ්ඩය) *</label>
+                    <input id="prodProductName" list="prodProductList" placeholder="e.g. Rubber Tire 195/65R15 / Tea Grade A" style="font-weight:600;">
+                    <datalist id="prodProductList"></datalist>
+                </div>
+                <div>
+                    <label>Quantity Produced (නිෂ්පාදනය කළ ප්‍රමාණය) *</label>
+                    <input type="number" id="producedQty" min="0.01" step="0.01" placeholder="e.g. 50">
+                </div>
+            </div>
+
+            <!-- Multi-Ingredient Raw Materials Selector Section -->
+            <div style="margin-top:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+                <label style="font-size:13px; font-weight:700; color:#1e293b; display:block; margin-bottom:8px;">
+                    🧪 Consumed Raw Materials List (භාවිතා කළ අමුද්‍රව්‍ය ලැයිස්තුව) *
+                </label>
+                
+                <div style="display:grid; grid-template-columns:2fr 1fr 1fr auto; gap:8px; align-items:end; margin-bottom:10px;">
+                    <div>
+                        <label style="font-size:11px; font-weight:700; color:#1e293b;">Select Raw Material (අමුද්‍රව්‍යය) *</label>
+                        <select id="consumedMaterialId" style="font-weight:600;">
+                            <option value="">Select Raw Material...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-size:11px; font-weight:700; color:#1e293b;">Qty / Weight Consumed *</label>
+                        <input type="number" id="consumedMaterialQty" min="0.001" step="0.001" placeholder="e.g. 2.5" style="font-weight:700; font-size:14px; color:#0284c7;">
+                    </div>
+                    <div>
+                        <label style="font-size:11px; font-weight:700; color:#1e293b;">Unit / Weight (ඒකකය / බර) *</label>
+                        <select id="consumedUnitType" style="font-weight:700; color:#0369a1;">
+                            <option value="Kg" selected>Kg (කිලෝ)</option>
+                            <option value="g">g (ග්‍රෑම්)</option>
+                            <option value="Unit">Unit (ඒකක)</option>
+                            <option value="L">Liters (L - ලීටර්)</option>
+                            <option value="ml">ml (මිලිලීටර්)</option>
+                            <option value="Pcs">Pcs (කෑලි)</option>
+                            <option value="Bags">Bags (මලු / බෑග්)</option>
+                            <option value="Meters">Meters (මීටර්)</option>
+                            <option value="Boxes">Boxes (පෙට්ටි)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button type="button" id="addMaterialIngredientBtn" style="padding:10px 14px; background:#0284c7; color:#fff; border:none; border-radius:6px; font-weight:700; cursor:pointer;">+ Add Material</button>
+                    </div>
+                </div>
+
+                <!-- Live Material Consumption Calculation Breakdown Card -->
+                <div id="rmConsumptionPreviewCard" style="display:none; background:#0f172a; color:#fff; border-radius:8px; padding:10px 14px; margin-bottom:10px; font-size:12px; box-shadow:0 2px 8px rgba(0,0,0,0.15);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                        <div>
+                            <span style="color:#94a3b8; font-size:10px; font-weight:700; text-transform:uppercase; display:block;">📦 Purchased Stock Available:</span>
+                            <div id="prevRmStockVal" style="font-size:13px; font-weight:800; color:#38bdf8; margin-top:2px;">0.00 Kg</div>
+                        </div>
+                        <div>
+                            <span style="color:#94a3b8; font-size:10px; font-weight:700; text-transform:uppercase; display:block;">🏷️ Unit Cost:</span>
+                            <div id="prevRmUnitCostVal" style="font-size:13px; font-weight:800; color:#cbd5e1; margin-top:2px;">Rs. 0.00 / Kg</div>
+                        </div>
+                        <div>
+                            <span style="color:#94a3b8; font-size:10px; font-weight:700; text-transform:uppercase; display:block;">🧪 Calculated Material Cost:</span>
+                            <div id="prevRmCalcCostVal" style="font-size:14px; font-weight:800; color:#facc15; margin-top:2px;">Rs. 0.00</div>
+                        </div>
+                        <div>
+                            <span style="color:#94a3b8; font-size:10px; font-weight:700; text-transform:uppercase; display:block;">📉 Stock Balance After Batch:</span>
+                            <div id="prevRmRemStockVal" style="font-size:13px; font-weight:800; color:#34d399; margin-top:2px;">0.00 Kg</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ingredients Table -->
+                <table style="width:100%; border-collapse:collapse; margin-top:8px; font-size:12px;">
+                    <thead>
+                        <tr style="background:#cbd5e1; text-align:left; color:#1e293b;">
+                            <th style="padding:6px;">Raw Material</th>
+                            <th style="padding:6px;">Stock Before Batch</th>
+                            <th style="padding:6px;">Qty Consumed</th>
+                            <th style="padding:6px;">Unit Cost</th>
+                            <th style="padding:6px;">Total Cost</th>
+                            <th style="padding:6px;">Balance After Batch</th>
+                            <th style="padding:6px; text-align:center;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ingredientRows">
+                        <tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:10px;">No raw materials added yet. Select material above and click "+ Add Material".</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Direct Labor & Overhead Expenses Section -->
+            <div class="mfg-row" style="margin-top:14px;">
+                <div>
+                    <label>Direct Labor Cost (ශ්‍රම පිරිවැය / කුලී) (Rs.)</label>
+                    <input type="number" id="laborCost" min="0" step="0.01" value="0" placeholder="0.00">
+                </div>
+                <div>
+                    <label>Overheads / Packaging Cost (මෙහෙයුම් & ඇසුරුම් පිරිවැය) (Rs.)</label>
+                    <input type="number" id="overheadCost" min="0" step="0.01" value="0" placeholder="0.00">
+                </div>
+            </div>
+
+            <!-- Full Absorption Cost Calculation Preview Box -->
+            <div style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:10px; padding:14px; margin-top:14px; display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div>
+                    <span style="font-size:11px; color:#64748b; font-weight:600;">Total Raw Material Cost:</span>
+                    <div id="rmTotalCostDisp" style="font-size:14px; font-weight:700; color:#0284c7;">Rs. 0.00</div>
+                </div>
+                <div>
+                    <span style="font-size:11px; color:#64748b; font-weight:600;">Total Labor + Overhead Expenses:</span>
+                    <div id="laborOverheadDisp" style="font-size:14px; font-weight:700; color:#d97706;">Rs. 0.00</div>
+                </div>
+                <div style="grid-column: span 2; border-top:1px dashed #94a3b8; padding-top:8px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <span style="font-size:11px; color:#475569; font-weight:600;">Total Production Batch Cost:</span>
+                        <div id="totalBatchCostDisp" style="font-size:16px; font-weight:800; color:#0f172a;">Rs. 0.00</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <span style="font-size:11px; color:#475569; font-weight:600;">Calculated Unit Production Cost (Absorbed):</span>
+                        <div id="calculatedFgUnitCostDisp" style="font-size:18px; font-weight:800; color:#059669;">Rs. 0.00 / item</div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="saveProdBatchBtn" style="margin-top:14px; background:#059669; color:#fff; padding:12px; font-weight:700; font-size:14px; border-radius:8px; border:none; cursor:pointer; width:100%;">
+                🏭 Complete Production Batch & Transfer Stock
+            </button>
+            <div id="prodMsg" class="mfg-msg"></div>
+        </div>
+
+        <div>
+            <!-- Finished Goods Stock Directory Card -->
+            <div class="mfg-card" style="margin-bottom:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+                    <h3 style="margin:0; border:none; padding:0; color:#059669;">📦 Manufactured Finished Goods Stock (නිමි භාණ්ඩ තොගය)</h3>
+                    <span style="font-size:12px; color:#059669; font-weight:700;" id="fgStockTotalBadge">0 Items in Stock</span>
+                </div>
+                <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                    <thead>
+                        <tr style="background:#f1f5f9; text-align:left; color:#334155;">
+                            <th style="padding:8px;">Product Name</th>
+                            <th style="padding:8px;">Stock Qty</th>
+                            <th style="padding:8px;">Absorbed Cost</th>
+                            <th style="padding:8px;">Total Asset Value</th>
+                            <th style="padding:8px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="outboundFgStockRows">
+                        <tr><td colspan="5" style="text-align:center; padding:16px; color:#64748b;">Loading finished goods stock...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Production History Table -->
+            <div class="mfg-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #f1f5f9;">
+                    <h3 style="margin:0; border:none; padding:0;">📜 Recent Production Batches (නිෂ්පාදන ලැයිස්තුව)</h3>
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <div>
+                            <label style="font-size:10px; font-weight:700; color:#64748b; margin:0;">From Date (සිට)</label>
+                            <input type="date" id="prodFilterFromDate" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px;">
+                        </div>
+                        <div>
+                            <label style="font-size:10px; font-weight:700; color:#64748b; margin:0;">To Date (දක්වා)</label>
+                            <input type="date" id="prodFilterToDate" style="padding:4px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px;">
+                        </div>
+                        <button type="button" onclick="renderProductionHistoryTable()" style="padding:6px 12px; background:#0f766e; color:#fff; border:none; border-radius:6px; font-weight:700; font-size:12px; cursor:pointer; margin-top:14px;">Filter</button>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Product</th>
+                            <th>Produced Qty</th>
+                            <th>Materials Consumed</th>
+                            <th>Labor/Overhead</th>
+                            <th>Absorbed Unit Cost</th>
+                            <th>Total Cost</th>
+                            <th style="text-align:center;">Stock Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productionHistoryRows"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
+
+const rawMaterialsMap = {};
+let selectedIngredients = [];
+
+function v(id){ return document.getElementById(id).value; }
+function n(id){ return Number(v(id)) || 0; }
+function escPrint(v){
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+async function loadRawMaterialsOptions() {
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    const sel = document.getElementById('consumedMaterialId');
+    if (!sel) return;
+
+    if (!bid) {
+        sel.innerHTML = '<option value="">(Select business or log in...)</option>';
+        return;
+    }
+    try {
+        const [snap, histSnap] = await Promise.all([
+            db.collection('manufacturer_raw_materials').where('businessId', '==', bid).get().catch(() => ({ docs: [] })),
+            db.collection('manufacturer_raw_material_history').where('businessId', '==', bid).limit(200).get().catch(() => ({ docs: [] }))
+        ]);
+
+        const historyMap = {};
+        histSnap.docs.forEach(d => {
+            const h = d.data() || {};
+            const name = String(h.materialName || '').trim();
+            if (!name) return;
+            const key = name.toUpperCase();
+            if (!historyMap[key]) {
+                historyMap[key] = {
+                    id: `HIST_${key}`,
+                    name: name,
+                    qty: Number(h.qty || 0),
+                    unit: String(h.unit || 'Kg').trim(),
+                    unitCost: Number(h.unitCost || h.unitPrice || 0)
+                };
+            } else {
+                historyMap[key].qty += Number(h.qty || 0);
+            }
+        });
+
+        sel.innerHTML = '<option value="">Select Raw Material...</option>';
+        Object.keys(rawMaterialsMap).forEach(k => delete rawMaterialsMap[k]);
+
+        snap.docs.forEach(doc => {
+            const data = doc.data() || {};
+            const name = String(data.name || '').trim();
+            if (!name) return;
+            const key = name.toUpperCase();
+            const qty = Number(data.stockQty != null ? data.stockQty : 0);
+            const unit = String(data.unit || (historyMap[key] ? historyMap[key].unit : 'Kg')).trim();
+            const unitCost = Number(data.lastUnitCost || data.unitCost || data.unitPrice || data.costPrice || (historyMap[key] ? historyMap[key].unitCost : 0));
+            
+            rawMaterialsMap[doc.id] = { id: doc.id, name, qty, unit, unitCost };
+            delete historyMap[key];
+        });
+
+        Object.keys(historyMap).forEach(key => {
+            const item = historyMap[key];
+            rawMaterialsMap[item.id] = item;
+        });
+
+        const materialIds = Object.keys(rawMaterialsMap);
+        if (!materialIds.length) {
+            sel.innerHTML = '<option value="">No raw materials found. Add in Inbound first.</option>';
+            return;
+        }
+
+        materialIds.forEach(id => {
+            const item = rawMaterialsMap[id];
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = `${item.name} (Available: ${item.qty} ${item.unit} @ Rs. ${item.unitCost.toFixed(2)})`;
+            sel.appendChild(opt);
+        });
+    } catch (e) {
+        console.warn('[Production] Error loading raw materials:', e);
+        sel.innerHTML = '<option value="">Error loading raw materials.</option>';
+    }
+}
+
+async function loadFinishedProductDatalist() {
+    const bid = ManufacturerModule.businessId;
+    if (!bid) return;
+    try {
+        const snap = await db.collection('manufacturer_finished_products').where('businessId', '==', bid).get().catch(() => ({ docs: [] }));
+        const datalist = document.getElementById('prodProductList');
+        let html = '';
+        const set = new Set();
+        snap.docs.forEach(doc => {
+            const name = String((doc.data() || {}).name || '').trim();
+            if (name && !set.has(name.toLowerCase())) {
+                set.add(name.toLowerCase());
+                html += `<option value="${escPrint(name)}"></option>`;
+            }
+        });
+        datalist.innerHTML = html;
+    } catch (e) {
+        console.warn('[Production] Error loading finished products datalist:', e);
+    }
+}
+
+function getEffectiveQtyInBaseUnit(qty, selectedUnit, baseUnit) {
+    const sUnit = String(selectedUnit || '').toLowerCase();
+    const bUnit = String(baseUnit || '').toLowerCase();
+    
+    if (sUnit === 'g' && bUnit === 'kg') return qty / 1000;
+    if (sUnit === 'kg' && bUnit === 'g') return qty * 1000;
+    if (sUnit === 'ml' && bUnit === 'l') return qty / 1000;
+    if (sUnit === 'l' && bUnit === 'ml') return qty * 1000;
+    return qty;
+}
+
+function updateConsumptionPreview() {
+    const rmId = v('consumedMaterialId');
+    const previewCard = document.getElementById('rmConsumptionPreviewCard');
+    if (!rmId || !rawMaterialsMap[rmId]) {
+        if (previewCard) previewCard.style.display = 'none';
+        return;
+    }
+    const rm = rawMaterialsMap[rmId];
+    const baseUnit = rm.unit || 'Kg';
+    const selectedUnit = v('consumedUnitType') || baseUnit;
+    const inputQty = n('consumedMaterialQty');
+    
+    const effectiveQty = getEffectiveQtyInBaseUnit(inputQty, selectedUnit, baseUnit);
+    const calcCost = effectiveQty * rm.unitCost;
+    const remStock = rm.qty - effectiveQty;
+
+    document.getElementById('prevRmStockVal').textContent = `${rm.qty.toLocaleString()} ${baseUnit}`;
+    document.getElementById('prevRmUnitCostVal').textContent = `Rs. ${rm.unitCost.toFixed(2)} / ${baseUnit}`;
+    document.getElementById('prevRmCalcCostVal').textContent = `Rs. ${calcCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    
+    const remEl = document.getElementById('prevRmRemStockVal');
+    remEl.textContent = `${remStock.toLocaleString()} ${baseUnit}`;
+    remEl.style.color = remStock < 0 ? '#f87171' : '#34d399';
+
+    if (previewCard) previewCard.style.display = 'block';
+}
+
+function addIngredient() {
+    const rmId = v('consumedMaterialId');
+    const inputQty = n('consumedMaterialQty');
+    const selectedUnit = v('consumedUnitType');
+    if (!rmId || !rawMaterialsMap[rmId]) {
+        alert('Please select a valid raw material.');
+        return;
+    }
+    if (inputQty <= 0) {
+        alert('Please enter a valid consumed quantity/weight.');
+        return;
+    }
+    const rm = rawMaterialsMap[rmId];
+    const baseUnit = rm.unit || 'Kg';
+    const effectiveQty = getEffectiveQtyInBaseUnit(inputQty, selectedUnit, baseUnit);
+    const subtotal = effectiveQty * rm.unitCost;
+
+    const existingIdx = selectedIngredients.findIndex(item => item.id === rmId);
+    if (existingIdx !== -1) {
+        selectedIngredients[existingIdx].inputQty += inputQty;
+        selectedIngredients[existingIdx].qty += effectiveQty;
+        selectedIngredients[existingIdx].subtotal = selectedIngredients[existingIdx].qty * selectedIngredients[existingIdx].unitCost;
+    } else {
+        selectedIngredients.push({
+            id: rmId,
+            name: rm.name,
+            availableQty: rm.qty,
+            inputQty: inputQty,
+            selectedUnit: selectedUnit || baseUnit,
+            qty: effectiveQty,
+            unit: baseUnit,
+            unitCost: rm.unitCost,
+            subtotal: subtotal
+        });
+    }
+
+    document.getElementById('consumedMaterialQty').value = '';
+    updateConsumptionPreview();
+    renderIngredientTable();
+    recalcFullProductionCost();
+}
+
+function removeIngredient(idx) {
+    selectedIngredients.splice(idx, 1);
+    renderIngredientTable();
+    recalcFullProductionCost();
+}
+
+function renderIngredientTable() {
+    const tbody = document.getElementById('ingredientRows');
+    if (!selectedIngredients.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:10px;">No raw materials added yet. Select material above and click "+ Add Material".</td></tr>';
+        return;
+    }
+    tbody.innerHTML = selectedIngredients.map((item, idx) => {
+        const stockBefore = Number(item.availableQty != null ? item.availableQty : item.qty);
+        const remStock = stockBefore - item.qty;
+        const qtyDisplay = item.selectedUnit && item.selectedUnit !== item.unit 
+            ? `${item.inputQty} ${item.selectedUnit} (${item.qty} ${item.unit})`
+            : `${item.qty} ${item.unit}`;
+        return `
+            <tr style="border-bottom:1px solid #e2e8f0;">
+                <td style="padding:6px; font-weight:600; color:#1e293b;">${escPrint(item.name)}</td>
+                <td style="padding:6px; color:#475569;">${stockBefore.toLocaleString()} ${item.unit || 'Kg'}</td>
+                <td style="padding:6px; font-weight:700; color:#0369a1;">${qtyDisplay}</td>
+                <td style="padding:6px;">Rs. ${item.unitCost.toFixed(2)} / ${item.unit || 'Kg'}</td>
+                <td style="padding:6px; font-weight:700; color:#0284c7;">Rs. ${item.subtotal.toFixed(2)}</td>
+                <td style="padding:6px; font-weight:700; color:${remStock < 0 ? '#ef4444' : '#059669'};">${remStock.toLocaleString()} ${item.unit || 'Kg'}</td>
+                <td style="padding:6px; text-align:center;">
+                    <button type="button" onclick="removeIngredient(${idx})" style="background:#ef4444; color:#fff; border:none; padding:4px 10px; border-radius:6px; cursor:pointer; font-weight:700; font-size:11px; white-space:nowrap;" title="Remove this material from production batch">🗑️ Remove</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function recalcFullProductionCost() {
+    const totalRmCost = selectedIngredients.reduce((sum, item) => sum + item.subtotal, 0);
+    const labor = n('laborCost');
+    const overhead = n('overheadCost');
+    const totalLaborOverhead = labor + overhead;
+    const totalBatchCost = totalRmCost + totalLaborOverhead;
+    const producedQty = n('producedQty');
+    const unitFgCost = producedQty > 0 ? (totalBatchCost / producedQty) : 0;
+
+    document.getElementById('rmTotalCostDisp').textContent = `Rs. ${totalRmCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('laborOverheadDisp').textContent = `Rs. ${totalLaborOverhead.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('totalBatchCostDisp').textContent = `Rs. ${totalBatchCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('calculatedFgUnitCostDisp').textContent = `Rs. ${unitFgCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / item`;
+}
+
+async function updateProductionAssetSummary() {
+    const bid = ManufacturerModule.businessId;
+    if (!bid) return;
+    try {
+        const rmSnap = await db.collection('manufacturer_raw_materials').where('businessId', '==', bid).get().catch(() => ({ docs: [] }));
+        let rmVal = 0;
+        rmSnap.docs.forEach(doc => {
+            const d = doc.data() || {};
+            const q = Number(d.stockQty || 0);
+            const c = Number(d.lastUnitCost || 0);
+            if (q > 0) rmVal += (q * c);
+        });
+
+        const fgSnap = await db.collection('manufacturer_finished_products').where('businessId', '==', bid).get().catch(() => ({ docs: [] }));
+        let fgVal = 0;
+        fgSnap.docs.forEach(doc => {
+            const d = doc.data() || {};
+            const q = Number(d.stockQty || 0);
+            const c = Number(d.unitCost || d.unitPrice || 0);
+            if (q > 0) fgVal += (q * c);
+        });
+
+        const batchSnap = await db.collection('manufacturer_production_batches').where('businessId', '==', bid).get().catch(() => ({ docs: [] }));
+
+        document.getElementById('prodRmAssetVal').textContent = `Rs. ${rmVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        document.getElementById('prodFgAssetVal').textContent = `Rs. ${fgVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        document.getElementById('prodBatchCount').textContent = `${batchSnap.docs.length} Batches`;
+    } catch (e) {
+        console.warn('[Production] Summary error:', e);
+    }
+}
+
+async function saveProductionBatch() {
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    const productName = v('prodProductName').trim();
+    const producedQty = n('producedQty');
+    const labor = n('laborCost');
+    const overhead = n('overheadCost');
+    const msgEl = document.getElementById('prodMsg');
+    msgEl.className = 'mfg-msg';
+
+    if (!bid) {
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Business ID not ready. Please refresh or log in again.';
+        return;
+    }
+    if (!productName) {
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Please enter finished product name.';
+        return;
+    }
+    if (producedQty <= 0) {
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Please enter valid produced quantity.';
+        return;
+    }
+
+    // Check availability of each ingredient
+    for (const item of selectedIngredients) {
+        const rm = rawMaterialsMap[item.id];
+        if (!rm || rm.qty < item.qty) {
+            msgEl.classList.add('err');
+            msgEl.textContent = `Insufficient stock for raw material "${item.name}"! Available: ${rm ? rm.qty : 0}, Required: ${item.qty}.`;
+            return;
+        }
+    }
+
+    const totalRmCost = selectedIngredients.reduce((sum, item) => sum + item.subtotal, 0);
+    const totalLaborOverhead = labor + overhead;
+    const totalBatchCost = totalRmCost + totalLaborOverhead;
+    const unitFgCost = Number((totalBatchCost / producedQty).toFixed(4));
+
+    const btn = document.getElementById('saveProdBatchBtn');
+    btn.disabled = true;
+    btn.textContent = 'Processing Production...';
+
+    try {
+        const batchId = 'PBATCH-' + Date.now();
+        const batchData = {
+            batchId,
+            businessId: bid,
+            productName,
+            producedQty,
+            ingredients: selectedIngredients,
+            totalRmCost,
+            laborCost: labor,
+            overheadCost: overhead,
+            totalBatchCost,
+            unitFgCost,
+            createdAt: new Date()
+        };
+
+        // 1. Record batch
+        await db.collection('manufacturer_production_batches').doc(batchId).set(batchData);
+
+        // 2. Deduct consumed raw materials stock for each ingredient
+        for (const item of selectedIngredients) {
+            const rmKey = String(item.name || 'MATERIAL').trim().toUpperCase();
+            const realDocId = (item.id && !item.id.startsWith('HIST_')) ? item.id : `${bid}_${rmKey}`;
+            await db.collection('manufacturer_raw_materials').doc(realDocId).set({
+                businessId: bid,
+                name: item.name,
+                unit: item.unit || 'Kg',
+                stockQty: firebase.firestore.FieldValue.increment(-Math.abs(item.qty)),
+                updatedAt: new Date()
+            }, { merge: true });
+        }
+
+        // 3. Post Labor & Overhead expenses into manufacturer_expenses if > 0
+        if (totalLaborOverhead > 0) {
+            const expId = 'PEXP-' + Date.now();
+            await db.collection('manufacturer_expenses').doc(expId).set({
+                expenseId: expId,
+                businessId: bid,
+                title: `Production Expense - Batch ${batchId} (${productName})`,
+                category: 'PRODUCTION_OVERHEAD_LABOR',
+                amount: totalLaborOverhead,
+                notes: `Labor: Rs. ${labor.toFixed(2)}, Overhead/Packaging: Rs. ${overhead.toFixed(2)}`,
+                paymentMode: 'CASH',
+                createdAt: new Date()
+            });
+        }
+
+        // 4. Increment finished goods stock & set absorbed unit cost
+        const fgKey = String(productName).trim().toUpperCase();
+        await db.collection('manufacturer_finished_products').doc(`${bid}_${fgKey}`).set({
+            businessId: bid,
+            name: productName,
+            stockQty: firebase.firestore.FieldValue.increment(producedQty),
+            unitCost: unitFgCost,
+            unitPrice: unitFgCost * 1.5, // default retail markup fallback
+            isActive: true,
+            updatedAt: new Date()
+        }, { merge: true });
+
+        // 5. Publish double-entry accounting event & sync flat balances
+        const rawMatSummary = selectedIngredients.map(i => `${i.name} (${i.qty} ${i.unit || 'Kg'})`).join(', ');
+        const rawQtyTotal = selectedIngredients.reduce((sum, i) => sum + Number(i.qty), 0);
+        ManufacturerModule.publishEvent('MANUFACTURING_PRODUCTION_RECORDED', {
+            businessId: bid,
+            runId: batchId,
+            rawMaterial: rawMatSummary || 'Raw Materials',
+            finishedProduct: productName,
+            rawQty: rawQtyTotal > 0 ? rawQtyTotal : 1,
+            finishedQty: producedQty,
+            totalCost: totalBatchCost,
+            rawCost: totalRmCost,
+            laborCost: labor,
+            overheadCost: overhead
+        });
+
+        try {
+            await ManufacturerModule.syncFlatAccountingProductionRecorded(batchData);
+        } catch (eFlat) {
+            console.warn('[Production] Flat accounting mirror failed:', eFlat);
+        }
+
+        msgEl.className = 'mfg-msg ok';
+        msgEl.textContent = `✅ Production batch saved! ${producedQty} units of "${productName}" created and added to Finished Goods Stock!`;
+
+        // Clear inputs & ingredients
+        document.getElementById('prodProductName').value = '';
+        document.getElementById('producedQty').value = '';
+        document.getElementById('laborCost').value = '0';
+        document.getElementById('overheadCost').value = '0';
+        selectedIngredients = [];
+        renderIngredientTable();
+        recalcFullProductionCost();
+
+        await loadRawMaterialsOptions();
+        await loadFinishedProductDatalist();
+        await refreshRawMaterialsStockTable();
+        await refreshFinishedGoodsStockTable();
+        await refreshProductionHistory();
+        await updateProductionAssetSummary();
+    } catch (err) {
+        console.error('[Production] Save error:', err);
+        msgEl.classList.add('err');
+        msgEl.textContent = 'Error saving batch: ' + err.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🏭 Complete Production Batch & Transfer Stock';
+    }
+}
+
+async function transferBatchToStock(batchId) {
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    if (!bid || !batchId) return;
+
+    try {
+        const docSnap = await db.collection('manufacturer_production_batches').doc(batchId).get();
+        if (!docSnap.exists) return alert('Production batch record not found.');
+
+        const data = docSnap.data() || {};
+        const productName = String(data.productName || '').trim();
+        const producedQty = Number(data.producedQty || 0);
+        const unitFgCost = Number(data.unitFgCost || 0);
+
+        if (!productName || producedQty <= 0) return alert('Invalid batch product details.');
+
+        const fgKey = productName.toUpperCase();
+        const docRef = db.collection('manufacturer_finished_products').doc(`${bid}_${fgKey}`);
+
+        await docRef.set({
+            businessId: bid,
+            name: productName,
+            stockQty: firebase.firestore.FieldValue.increment(producedQty),
+            unitCost: unitFgCost > 0 ? unitFgCost : 0,
+            unitPrice: unitFgCost * 1.5,
+            isActive: true,
+            updatedAt: new Date()
+        }, { merge: true });
+
+        await db.collection('manufacturer_production_batches').doc(batchId).update({
+            transferredToStock: true,
+            transferredAt: new Date()
+        });
+
+        alert(`✅ Successfully transferred ${producedQty} units of "${productName}" to Finished Goods Stock Directory (stock.html)!`);
+
+        await refreshFinishedGoodsStockTable();
+        await refreshProductionHistory();
+        await updateProductionAssetSummary();
+    } catch (e) {
+        alert('Error transferring batch to stock: ' + e.message);
+    }
+}
+
+let productionHistoryCache = [];
+
+async function refreshProductionHistory() {
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    if (!bid) return;
+    try {
+        const snap = await db.collection('manufacturer_production_batches')
+            .where('businessId', '==', bid).limit(200).get().catch(() => ({ docs: [] }));
+
+        productionHistoryCache = snap.docs
+            .map(d => ({ id: d.id, ...(d.data() || {}) }))
+            .sort((a, b) => {
+                const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+                const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+                return tb - ta;
+            });
+
+        renderProductionHistoryTable();
+    } catch (e) {
+        console.warn('[Production] History error:', e);
+    }
+}
+
+function renderProductionHistoryTable() {
+    const fromVal = document.getElementById('prodFilterFromDate').value;
+    const toVal = document.getElementById('prodFilterToDate').value;
+
+    const fromMs = fromVal ? new Date(fromVal + 'T00:00:00').getTime() : null;
+    const toMs = toVal ? new Date(toVal + 'T23:59:59').getTime() : null;
+
+    const filtered = productionHistoryCache.filter(x => {
+        const t = x.createdAt?.toDate ? x.createdAt.toDate().getTime() : new Date(x.createdAt || 0).getTime();
+        if (isNaN(t)) return false;
+        if (fromMs != null && t < fromMs) return false;
+        if (toMs != null && t > toMs) return false;
+        return true;
+    });
+
+    const tbody = document.getElementById('productionHistoryRows');
+    if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:20px; color:#94a3b8;">No matching production batches found for selected date range.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = filtered.map(x => {
+        const ingText = (x.ingredients || []).map(i => `${i.qty} ${i.unit || 'units'} of ${escPrint(i.name)}`).join('<br>') || `${x.consumedMaterialQty || 0} units of ${escPrint(x.consumedMaterialName || '-')}`;
+        const laborOverheadTotal = (Number(x.laborCost || 0) + Number(x.overheadCost || 0));
+        const actionBtn = x.transferredToStock
+            ? `<span style="background:#dcfce7; color:#15803d; padding:4px 8px; border-radius:12px; font-weight:800; font-size:11px;">✅ In Stock</span>`
+            : `<button type="button" onclick="transferBatchToStock('${x.id}')" style="background:#7c3aed; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:700; cursor:pointer; font-size:12px; white-space:nowrap;">📦 TRANSFER TO FINISHED GOODS</button>`;
+
+        return `
+            <tr>
+                <td>${ManufacturerModule.formatDate(x.createdAt)}</td>
+                <td style="font-weight:700; color:#1e293b;">${escPrint(x.productName || '-')}</td>
+                <td><span style="background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:12px; font-weight:700;">${Number(x.producedQty || 0).toLocaleString()} Units</span></td>
+                <td style="font-size:11px; line-height:1.3;">${ingText}</td>
+                <td style="font-weight:600; color:#d97706;">Rs. ${laborOverheadTotal.toFixed(2)}</td>
+                <td style="font-weight:700; color:#059669;">Rs. ${Number(x.unitFgCost || 0).toFixed(2)}</td>
+                <td style="font-weight:800; color:#0f172a;">Rs. ${Number(x.totalBatchCost || x.totalMaterialCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td style="text-align:center;">
+                    <div style="display:flex; gap:6px; justify-content:center; align-items:center;">
+                        ${actionBtn}
+                        <button type="button" onclick="deleteProdBatch('${x.id}')" style="background:#ef4444; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-weight:bold; cursor:pointer; font-size:12px;" title="Delete Production Batch & Restore Stock">🗑️</button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function deleteProdBatch(batchId) {
+    if (!confirm('Are you sure you want to delete this production batch? Consumed raw materials will be restored to stock, and produced finished goods stock will be reduced.')) return;
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    if (!bid || !batchId) return;
+
+    try {
+        const docRef = db.collection('manufacturer_production_batches').doc(batchId);
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+            const data = docSnap.data() || {};
+            const ingredients = data.ingredients || [];
+            const productName = String(data.productName || '').trim();
+            const producedQty = Number(data.producedQty || 0);
+
+            // 1. Restore consumed raw materials back to raw material stock
+            for (const item of ingredients) {
+                const rmKey = String(item.name || 'MATERIAL').trim().toUpperCase();
+                const realDocId = (item.id && !item.id.startsWith('HIST_')) ? item.id : `${bid}_${rmKey}`;
+                await db.collection('manufacturer_raw_materials').doc(realDocId).set({
+                    stockQty: firebase.firestore.FieldValue.increment(Math.abs(item.qty)),
+                    updatedAt: new Date()
+                }, { merge: true }).catch(() => {});
+            }
+
+            // 2. Reduce created finished goods stock balance
+            if (productName && producedQty > 0) {
+                const fgKey = productName.toUpperCase();
+                await db.collection('manufacturer_finished_products').doc(`${bid}_${fgKey}`).set({
+                    stockQty: firebase.firestore.FieldValue.increment(-Math.abs(producedQty)),
+                    updatedAt: new Date()
+                }, { merge: true }).catch(() => {});
+            }
+
+            await docRef.delete();
+            alert('✅ Production batch deleted and stock balances successfully restored!');
+        }
+        await refreshRawMaterialsStockTable();
+        await refreshFinishedGoodsStockTable();
+        await refreshProductionHistory();
+        await updateProductionAssetSummary();
+    } catch (e) {
+        alert('Error deleting batch: ' + e.message);
+    }
+}
+
+async function refreshRawMaterialsStockTable() {
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    const tbody = document.getElementById('outboundRmStockRows');
+    const badge = document.getElementById('rmStockTotalBadge');
+    if (!tbody || !bid) return;
+    try {
+        const snap = await db.collection('manufacturer_raw_materials')
+            .where('businessId', '==', bid)
+            .get()
+            .catch(() => ({ docs: [] }));
+
+        const items = snap.docs
+            .map(d => ({ id: d.id, ...(d.data() || {}) }))
+            .filter(x => x.isActive !== false);
+
+        if (!items.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">No raw materials found in stock. Use "Inbound Purchases" to add raw materials.</td></tr>';
+            if (badge) badge.textContent = '0 Materials';
+            return;
+        }
+
+        let totalQty = 0;
+        tbody.innerHTML = items.map(x => {
+            const qty = Number(x.stockQty || 0);
+            const uCost = Number(x.lastUnitCost || x.unitCost || 0);
+            const totalVal = qty * uCost;
+            const unit = x.unit || 'Kg';
+            if (qty > 0) totalQty += qty;
+
+            let statusBadge = '<span style="background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">IN STOCK</span>';
+            if (qty <= 0) statusBadge = '<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">OUT OF STOCK</span>';
+            else if (qty < 5) statusBadge = '<span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">LOW STOCK</span>';
+
+            return `
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:8px 10px; font-weight:700; color:#0f172a;">${escPrint(x.name || '-')}</td>
+                    <td style="padding:8px 10px; font-weight:800; color:#0284c7;">${qty.toLocaleString()} ${escPrint(unit)}</td>
+                    <td style="padding:8px 10px;">Rs. ${uCost.toFixed(2)}</td>
+                    <td style="padding:8px 10px; font-weight:700; color:#059669;">Rs. ${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td style="padding:8px 10px;">${statusBadge}</td>
+                </tr>
+            `;
+        }).join('');
+
+        if (badge) badge.textContent = `${items.length} Material Types`;
+    } catch (e) {
+        console.warn('[Production] RM Stock refresh error:', e);
+    }
+}
+
+async function refreshFinishedGoodsStockTable() {
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    const tbody = document.getElementById('outboundFgStockRows');
+    const badge = document.getElementById('fgStockTotalBadge');
+    if (!tbody || !bid) return;
+    try {
+        const snap = await db.collection('manufacturer_finished_products')
+            .where('businessId', '==', bid)
+            .get()
+            .catch(() => ({ docs: [] }));
+
+        const items = snap.docs
+            .map(d => ({ id: d.id, ...(d.data() || {}) }))
+            .filter(x => x.isActive !== false);
+
+        if (!items.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">No finished goods in stock yet. Complete a production batch above to produce items.</td></tr>';
+            if (badge) badge.textContent = '0 Items in Stock';
+            return;
+        }
+
+        let totalQty = 0;
+        tbody.innerHTML = items.map(x => {
+            const qty = Number(x.stockQty || 0);
+            const uCost = Number(x.unitCost || x.unitPrice || 0);
+            const totalVal = qty * uCost;
+            if (qty > 0) totalQty += qty;
+
+            let statusBadge = '<span style="background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">IN STOCK</span>';
+            if (qty <= 0) statusBadge = '<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">OUT OF STOCK</span>';
+            else if (qty < 10) statusBadge = '<span style="background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px;">LOW STOCK</span>';
+
+            return `
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:8px 10px; font-weight:700; color:#0f172a;">${escPrint(x.name || '-')}</td>
+                    <td style="padding:8px 10px; font-weight:800; color:#0369a1;">${qty.toLocaleString()} Units</td>
+                    <td style="padding:8px 10px;">Rs. ${uCost.toFixed(2)}</td>
+                    <td style="padding:8px 10px; font-weight:700; color:#059669;">Rs. ${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td style="padding:8px 10px;">${statusBadge}</td>
+                </tr>
+            `;
+        }).join('');
+
+        if (badge) badge.textContent = `${items.length} Product Lines (${totalQty.toLocaleString()} Total Units)`;
+    } catch (e) {
+        console.warn('[Production] FG Stock refresh error:', e);
+    }
+}
+
+(async function(){
+    await ManufacturerModule.init('outbound');
+    document.getElementById('addMaterialIngredientBtn').onclick = addIngredient;
+    document.getElementById('producedQty').addEventListener('input', recalcFullProductionCost);
+    document.getElementById('laborCost').addEventListener('input', recalcFullProductionCost);
+    document.getElementById('overheadCost').addEventListener('input', recalcFullProductionCost);
+    document.getElementById('saveProdBatchBtn').onclick = saveProductionBatch;
+    window.removeIngredient = removeIngredient;
+    window.transferBatchToStock = transferBatchToStock;
+
+    const consumedSel = document.getElementById('consumedMaterialId');
+    const consumedQtyInput = document.getElementById('consumedMaterialQty');
+    const consumedUnitSel = document.getElementById('consumedUnitType');
+
+    if (consumedSel) {
+        consumedSel.addEventListener('change', function() {
+            const rmId = this.value;
+            if (rmId && rawMaterialsMap[rmId]) {
+                const u = rawMaterialsMap[rmId].unit || 'Kg';
+                if (consumedUnitSel && [...consumedUnitSel.options].some(o => o.value === u)) {
+                    consumedUnitSel.value = u;
+                }
+            }
+            updateConsumptionPreview();
+        });
+    }
+    if (consumedQtyInput) {
+        consumedQtyInput.addEventListener('input', updateConsumptionPreview);
+    }
+    if (consumedUnitSel) {
+        consumedUnitSel.addEventListener('change', updateConsumptionPreview);
+    }
+
+    await loadRawMaterialsOptions();
+    await loadFinishedProductDatalist();
+    await refreshRawMaterialsStockTable();
+    await refreshFinishedGoodsStockTable();
+    await refreshProductionHistory();
+    await updateProductionAssetSummary();
+})();
+</script>
+</body>
+</html>

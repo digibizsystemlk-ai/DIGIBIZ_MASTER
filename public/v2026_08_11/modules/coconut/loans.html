@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loans & Borrowings — Coconut Module</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-storage-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=74"></script>
+    <script src="/core/dashboard-core.js?v=74"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2002"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="coconut.css">
+    <script src="coconut-common.js"></script>
+</head>
+<body>
+
+    <main class="c-container">
+        <div class="c-header">
+            <div class="c-header-left">
+                <h1>🏦 Loans & Borrowings Management (ණය සහ ණයගැතිභාවය)</h1>
+                <p>Track business loans, credit facilities, interest charges, and record repayments with automatic GL journal postings.</p>
+            </div>
+            <div class="c-header-actions">
+                <button type="button" class="c-btn c-btn-primary" id="btnOpenNewLoan">➕ Record New Loan</button>
+                <a href="finance-ledger.html" class="c-btn c-btn-secondary">💰 Finance Ledger</a>
+            </div>
+        </div>
+
+        <!-- Loans Summary Hero -->
+        <div class="c-hero-banner">
+            <div>
+                <div class="c-hero-stat-label">Active Loans & Facilities</div>
+                <div class="c-hero-stat-val" id="activeLoansCount">0 Loans</div>
+            </div>
+            <div>
+                <div class="c-hero-stat-label">Total Outstanding Principal Balance</div>
+                <div class="c-hero-stat-val" id="totalLoanBalance" style="color:#f87171;">Rs. 0.00</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:2px;">Account 2-2030-01 (Loans Payable)</div>
+            </div>
+            <div>
+                <div class="c-hero-stat-label">Total Principal Repaid</div>
+                <div class="c-hero-stat-val" id="totalLoanRepaid" style="color:#34d399;">Rs. 0.00</div>
+            </div>
+        </div>
+
+        <!-- Loans Table -->
+        <div class="c-card">
+            <div class="c-card-header">
+                <div class="c-card-title">📜 Active & Historical Borrowings</div>
+            </div>
+            <div class="c-table-wrapper">
+                <table class="c-table">
+                    <thead>
+                        <tr>
+                            <th>Borrowed Date</th>
+                            <th>Lender / Bank</th>
+                            <th class="text-right">Original Principal</th>
+                            <th class="text-right">Interest Rate</th>
+                            <th class="text-right">Total Repaid</th>
+                            <th class="text-right">Balance Due (LKR)</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="loansTableBody">
+                        <tr><td colspan="7" class="text-center" style="padding:20px;">Loading loans...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- New Loan Modal -->
+    <div class="c-modal-overlay" id="loanModal">
+        <div class="c-modal">
+            <div class="c-modal-header">
+                <h3>➕ Record New Loan / Borrowing</h3>
+                <button type="button" class="c-modal-close" id="btnCloseLoanModal">×</button>
+            </div>
+            <form id="loanForm">
+                <div class="c-form-row">
+                    <div class="c-form-group">
+                        <label>Borrowed Date *</label>
+                        <input type="date" id="lDate" class="c-input" required>
+                    </div>
+                    <div class="c-form-group">
+                        <label>Lender / Bank Name *</label>
+                        <input type="text" id="lLender" class="c-input" placeholder="e.g. Commercial Bank / Private Loan" required>
+                    </div>
+                </div>
+
+                <div class="c-form-row">
+                    <div class="c-form-group">
+                        <label>Loan Amount / Principal (LKR) *</label>
+                        <input type="number" id="lAmount" class="c-input" min="1000" step="100" placeholder="e.g. 500000.00" required>
+                    </div>
+                    <div class="c-form-group">
+                        <label>Annual Interest Rate (%)</label>
+                        <input type="number" id="lInterestRate" class="c-input" min="0" step="0.1" placeholder="e.g. 14.5" value="0">
+                    </div>
+                </div>
+
+                <div class="c-form-group" style="margin-bottom:12px;">
+                    <label>Disbursed Into *</label>
+                    <select id="lDepositMode" class="c-select" required>
+                        <option value="BANK">Bank Account (බැංකු ගිණුමට)</option>
+                        <option value="CASH">Cash in Drawer (පෙට්ටියට)</option>
+                    </select>
+                </div>
+
+                <div class="c-form-group" style="margin-bottom:16px;">
+                    <label>Agreement Ref / Notes</label>
+                    <input type="text" id="lNotes" class="c-input" placeholder="e.g. Facility #LN-9182 / 2 year term">
+                </div>
+
+                <div class="c-modal-footer">
+                    <button type="button" class="c-btn c-btn-secondary" id="btnCancelLoan">Cancel</button>
+                    <button type="submit" class="c-btn c-btn-primary">Save & Disburse Loan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Loan Repayment Modal -->
+    <div class="c-modal-overlay" id="repayModal">
+        <div class="c-modal">
+            <div class="c-modal-header">
+                <h3>💳 Record Loan Repayment</h3>
+                <button type="button" class="c-modal-close" id="btnCloseRepayModal">×</button>
+            </div>
+            <form id="repayForm">
+                <input type="hidden" id="rLoanId">
+                <div class="c-cart-total-box" style="margin-bottom:12px; background:#eff6ff; border-color:#bfdbfe;">
+                    <div style="font-size:12px; color:#1e40af;">
+                        Lender: <strong id="rLenderDisplay">-</strong> | Outstanding Principal: <strong id="rBalanceDisplay">Rs. 0.00</strong>
+                    </div>
+                </div>
+
+                <div class="c-form-row">
+                    <div class="c-form-group">
+                        <label>Repayment Date *</label>
+                        <input type="date" id="rDate" class="c-input" required>
+                    </div>
+                    <div class="c-form-group">
+                        <label>Paid From *</label>
+                        <select id="rPaymentMode" class="c-select" required>
+                            <option value="BANK">Bank Account (බැංකුවෙන්)</option>
+                            <option value="CASH">Cash in Drawer (පෙට්ටියෙන්)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="c-form-row">
+                    <div class="c-form-group">
+                        <label>Principal Paid (මූලික මුදල - LKR) *</label>
+                        <input type="number" id="rPrincipal" class="c-input" min="0" step="10" placeholder="0.00" required>
+                    </div>
+                    <div class="c-form-group">
+                        <label>Interest Paid (පොලී වියදම - LKR)</label>
+                        <input type="number" id="rInterest" class="c-input" min="0" step="10" placeholder="0.00" value="0">
+                    </div>
+                </div>
+
+                <div class="c-form-group" style="margin-bottom:16px;">
+                    <label>Cheque # / Receipt Reference</label>
+                    <input type="text" id="rNotes" class="c-input" placeholder="e.g. Monthly installment slip #481">
+                </div>
+
+                <div class="c-modal-footer">
+                    <button type="button" class="c-btn c-btn-secondary" id="btnCancelRepay">Cancel</button>
+                    <button type="submit" class="c-btn c-btn-primary">Post Repayment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="loans.js"></script>
+</body>
+</html>

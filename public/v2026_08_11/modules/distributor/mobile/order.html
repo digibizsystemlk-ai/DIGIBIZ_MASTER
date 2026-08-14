@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Take Order</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/core/distributor-inventory.js?v=34"></script>
+    <script src="/core/mw-trading-dsl-config.js?v=2"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        body{font-family:Arial;background:#f5f5f5;padding:10px;padding-bottom:80px;}
+        
+        /* Header */
+        .header{background:#10b981;color:white;padding:15px;margin:-10px -10px 10px -10px;display:flex;justify-content:space-between;align-items:center;}
+        .header h2{font-size:18px;}
+        .logout-btn{background:white;color:#10b981;border:none;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:12px;}
+        
+        /* Cards */
+        .card{background:white;border-radius:12px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);}
+        .card-header{background:#f8f9fa;padding:12px 15px;border-bottom:1px solid #eee;font-weight:bold;}
+        .card-body{padding:12px 15px;}
+        
+        /* Shop Section */
+        .shop-select-row{display:flex;gap:10px;align-items:center;}
+        .shop-select-row input{flex:2;padding:10px;border:1px solid #ddd;border-radius:8px;}
+        .shop-select-row button{flex:1;background:#10b981;color:white;border:none;padding:10px;border-radius:8px;cursor:pointer;}
+        .new-shop-input{display:none;margin-top:10px;}
+        .new-shop-input input{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;}
+        .pay-row{display:flex;gap:10px;align-items:center;margin-top:10px;}
+        .pay-row select{flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;}
+        
+        /* Products */
+        .search-box input{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;margin-bottom:12px;}
+        .product-item{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #eee;}
+        .product-info{flex:2;}
+        .product-name{font-weight:bold;}
+        .product-price{color:#10b981;font-size:12px;}
+        .product-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+        .qty-btn{width:30px;height:30px;background:#f0f0f0;border:none;border-radius:6px;font-size:16px;cursor:pointer;}
+        .free-btn{background:#fef3c7;color:#92400e;border:none;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer;}
+        .return-btn{background:#fee2e2;color:#dc2626;border:none;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer;}
+        
+        /* Cart */
+        .cart-item{background:#f8f9fa;padding:12px;margin-bottom:8px;border-radius:8px;}
+        .cart-item-header{display:flex;justify-content:space-between;margin-bottom:6px;}
+        .cart-item-name{font-weight:bold;}
+        .cart-item-price{color:#10b981;}
+        .cart-item-details{font-size:11px;color:#666;margin-top:5px;}
+        .free-badge{background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:10px;font-size:10px;display:inline-block;}
+        .return-badge{background:#fee2e2;color:#dc2626;padding:2px 6px;border-radius:10px;font-size:10px;display:inline-block;}
+        .remove-item{color:#dc2626;cursor:pointer;font-size:12px;margin-left:10px;}
+        
+        .total-row{display:flex;justify-content:space-between;padding:12px;background:#f8f9fa;border-radius:8px;margin-top:10px;font-weight:bold;}
+        .submit-btn{width:100%;padding:14px;background:#10b981;color:white;border:none;border-radius:10px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:10px;}
+        
+        /* Modals */
+        .modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1000;}
+        .modal-content{background:white;width:90%;max-width:350px;border-radius:16px;padding:20px;}
+        .modal-content h3{margin-bottom:15px;}
+        .modal-content input,.modal-content select{width:100%;padding:10px;margin:8px 0;border:1px solid #ddd;border-radius:8px;}
+        .modal-buttons{display:flex;gap:10px;margin-top:15px;}
+        .modal-buttons button{flex:1;padding:10px;border:none;border-radius:8px;cursor:pointer;}
+        .btn-confirm{background:#10b981;color:white;}
+        .btn-cancel{background:#f0f0f0;}
+        
+        .history-btn{position:fixed;bottom:20px;right:20px;background:#10b981;color:white;width:50px;height:50px;border-radius:25px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:24px;box-shadow:0 2px 10px rgba(0,0,0,0.2);}
+        .edit-banner{display:none;background:#fef3c7;color:#92400e;padding:10px 12px;margin:-10px -10px 10px -10px;font-size:13px;text-align:center;line-height:1.35;}
+        .line-edit-btn{background:#e0f2fe;color:#0369a1;border:none;padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;}
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h2>📝 Take Order</h2>
+    <button class="logout-btn" onclick="logout()">Logout</button>
+</div>
+<div class="edit-banner" id="editBanner"></div>
+<p style="font-size:12px;padding:8px 12px;margin:0 0 10px;background:#fff;border-radius:8px;border:1px solid #d1fae5;color:#065f46;">
+    <a href="/modules/distributor/web/index.html?tab=pending" style="color:#047857;font-weight:600;">Order status (web)</a>
+    · <a href="history.html" style="color:#047857;font-weight:600;">History</a>
+</p>
+
+<!-- Shop Section -->
+<div class="card">
+    <div class="card-header">🏪 Shop</div>
+    <div class="card-body">
+        <div class="shop-select-row">
+            <input type="text" id="shopSearch" list="shopOptions" placeholder="Search or type shop">
+            <datalist id="shopOptions"></datalist>
+            <button onclick="showNewShopInput()">+ New</button>
+        </div>
+        <p id="mwShopNote" style="display:none;font-size:11px;color:#64748b;margin-top:8px;line-height:1.35;">MW Trading: suggestions include every active shop in this business (not only this device), so names you added before stay easy to find.</p>
+        <div class="pay-row">
+            <select id="paymentMethod">
+                <option value="CASH">Cash</option>
+                <option value="CREDIT">Credit</option>
+                <option value="CHEQUE">Cheque</option>
+            </select>
+        </div>
+        <div class="new-shop-input" id="newShopInput">
+            <input type="text" id="newShopName" placeholder="Enter shop name">
+            <button onclick="addNewShop()" style="margin-top:5px; background:#10b981; color:white; border:none; padding:8px; border-radius:8px;">Add Shop</button>
+        </div>
+    </div>
+</div>
+
+<!-- Products Section -->
+<div class="card">
+    <div class="card-header">📦 Products</div>
+    <div class="card-body">
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="🔍 Search product..." onkeyup="searchProducts()">
+        </div>
+        <div id="productsList">Loading...</div>
+    </div>
+</div>
+
+<!-- Cart Section -->
+<div class="card">
+    <div class="card-header">🛒 Cart (<span id="cartCount">0</span>)</div>
+    <div class="card-body">
+        <div id="cartList">No items added</div>
+        <div class="total-row">
+            <span>Total Amount</span>
+            <span id="totalAmount">Rs 0</span>
+        </div>
+    </div>
+</div>
+
+<button class="submit-btn" id="submitOrderBtn" onclick="submitOrder()">✅ SUBMIT ORDER</button>
+
+<a href="history.html" class="history-btn">📋</a>
+
+<!-- Free Items Modal -->
+<div id="freeModal" class="modal">
+    <div class="modal-content">
+        <h3>🎁 Free Items</h3>
+        <p id="freeProductName" style="margin-bottom:10px;"></p>
+        <input type="number" id="freeQty" placeholder="Free quantity">
+        <input type="text" id="freeReason" placeholder="Reason (e.g., Bulk purchase)">
+        <div class="modal-buttons">
+            <button class="btn-confirm" onclick="addFreeItem()">Add</button>
+            <button class="btn-cancel" onclick="closeModal('freeModal')">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Returns Modal -->
+<div id="returnModal" class="modal">
+    <div class="modal-content">
+        <h3>↩️ Returns</h3>
+        <select id="returnProductSelect"></select>
+        <input type="number" id="returnQty" placeholder="Return quantity" min="1">
+        <p style="font-size:12px;margin:8px 0;color:#444;">Return type</p>
+        <label style="display:block;font-size:13px;margin:4px 0;"><input type="radio" name="returnDisposition" value="RESELL" checked> <strong>Agent return</strong> (resell — returns to sellable stock when the order is approved)</label>
+        <label style="display:block;font-size:13px;margin:4px 0;"><input type="radio" name="returnDisposition" value="TO_COMPANY"> <strong>Company return</strong> (factory — not added to sellable stock)</label>
+        <input type="text" id="returnReasonText" placeholder="Note (optional, e.g. Damaged / Wrong item)">
+        <div class="modal-buttons">
+            <button class="btn-confirm" onclick="addReturn()">Add</button>
+            <button class="btn-cancel" onclick="closeModal('returnModal')">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Per-line editor: sales, free issue, agent vs company returns -->
+<div id="lineModal" class="modal">
+    <div class="modal-content">
+        <h3>✏️ Line quantities</h3>
+        <p id="lineProductName" style="margin-bottom:8px;font-size:14px;"></p>
+        <label style="font-size:12px;color:#555;">Sales qty</label>
+        <input type="number" id="lineSalesQty" min="0" step="1">
+        <label style="font-size:12px;color:#555;">Free issue qty</label>
+        <input type="number" id="lineFreeQty" min="0" step="1">
+        <label style="font-size:12px;color:#555;">Free issue reason</label>
+        <input type="text" id="lineFreeReason" placeholder="Required if free qty > 0">
+        <label style="font-size:12px;color:#555;">Agent return qty</label>
+        <input type="number" id="lineAgentReturnQty" min="0" step="1">
+        <label style="font-size:12px;color:#555;">Company return qty</label>
+        <input type="number" id="lineCompanyReturnQty" min="0" step="1">
+        <label style="font-size:12px;color:#555;">Return note (optional)</label>
+        <input type="text" id="lineReturnReason" placeholder="e.g. Damaged / Wrong item">
+        <div class="modal-buttons">
+            <button class="btn-confirm" onclick="saveLineModal()">Save</button>
+            <button class="btn-cancel" onclick="closeModal('lineModal')">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Firebase Config
+    const firebaseConfig = {
+        apiKey: "AIzaSyBLFefSjFXp84Hg7nnIfuJ18SFcM92bsno",
+        authDomain: "digibiz-sys.firebaseapp.com",
+        projectId: "digibiz-sys",
+        storageBucket: "digibiz-sys.firebasestorage.app",
+        messagingSenderId: "761278318158",
+        appId: "1:761278318158:web:f4451f5cf5f8762192a51f"
+    };
+    
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    
+    let repId, repName, businessId, products = [], cart = [], returns = [];
+    let selectedProductForFree = null;
+    let selectedProductForReturn = null;
+    let selectedProductForLine = null;
+    let allShops = [];
+    let selectedShopId = '';
+    let productsUnsubscribe = null;
+    let editingOrderId = null;
+    let isMwTradingMobile = false;
+
+    function getEditOrderIdFromUrl() {
+        try { return new URLSearchParams(window.location.search).get('edit'); } catch (e) { return null; }
+    }
+    function clearEditQueryFromUrl() {
+        try { history.replaceState(null, '', 'order.html'); } catch (e) {}
+    }
+    function updateEditBannerAndSubmitLabel() {
+        const b = document.getElementById('editBanner');
+        const btn = document.getElementById('submitOrderBtn');
+        if (!b || !btn) return;
+        if (editingOrderId) {
+            b.style.display = 'block';
+            b.textContent = 'Editing a pending order. It stays pending until a manager approves.';
+            btn.textContent = '💾 UPDATE PENDING ORDER';
+        } else {
+            b.style.display = 'none';
+            btn.textContent = '✅ SUBMIT ORDER';
+        }
+    }
+    function recalcCartLine(item) {
+        const p = products.find((x) => x.id === item.productId);
+        const existingUp = Number(item.unitPrice) || 0;
+        const up = isMwTradingMobile && existingUp > 0
+            ? existingUp
+            : (p ? (Number(p.unitPrice) || 0) : existingUp);
+        item.unitPrice = up;
+        const rr = Math.max(0, parseInt(item.returnResellQty, 10) || 0);
+        const rc = Math.max(0, parseInt(item.returnCompanyQty, 10) || 0);
+        item.returnResellQty = rr;
+        item.returnCompanyQty = rc;
+        item.returnQty = rr + rc;
+        item.total = Math.max(0, (Number(item.qty) || 0) - item.returnQty) * up;
+    }
+    async function tryLoadPendingOrderForEdit(orderId) {
+        const snap = await db.collection('pendingOrders').doc(orderId).get();
+        if (!snap.exists) {
+            alert('Order not found.');
+            clearEditQueryFromUrl();
+            return;
+        }
+        const o = snap.data();
+        if (o.repId !== repId) {
+            alert('You can only edit your own orders.');
+            clearEditQueryFromUrl();
+            return;
+        }
+        if (String(o.status || 'pending').toLowerCase() !== 'pending') {
+            alert('Only pending orders can be edited.');
+            clearEditQueryFromUrl();
+            return;
+        }
+        editingOrderId = orderId;
+        selectedShopId = o.shopId || '';
+        let shopName = '';
+        const local = allShops.find((s) => s.id === selectedShopId);
+        if (local) shopName = local.name;
+        else if (selectedShopId) {
+            try {
+                const sd = await db.collection('shops').doc(selectedShopId).get();
+                if (sd.exists) shopName = sd.data().name || '';
+            } catch (e) {}
+        }
+        document.getElementById('shopSearch').value = shopName || o.shopName || '';
+        if (o.paymentMethod) {
+            var pm = String(o.paymentMethod || '').toUpperCase();
+            if (pm === 'BANK') pm = 'CREDIT';
+            var sel = document.getElementById('paymentMethod');
+            var ok = Array.from(sel.options).some(function (o) { return o.value === pm; });
+            sel.value = ok ? pm : 'CASH';
+        }
+        cart = (Array.isArray(o.items) ? o.items : []).map((it) => {
+            const unitPrice = Number(it.unitPrice) || 0;
+            const qty = Number(it.orderedQty) || 0;
+            const fq = Number(it.freeQty) || 0;
+            let rr = Number(it.returnResellQty) || 0;
+            let rc = Number(it.returnCompanyQty) || 0;
+            const rqLegacy = Number(it.returnQty) || 0;
+            if (!rr && !rc && rqLegacy > 0) rr = rqLegacy;
+            const ret = rr + rc;
+            const total = Number(it.totalPrice) != null && !Number.isNaN(Number(it.totalPrice))
+                ? Number(it.totalPrice)
+                : ((qty + fq - ret) * unitPrice);
+            return {
+                productId: it.productId,
+                productName: it.productName || 'Item',
+                productBrand: it.productBrand || '',
+                qty,
+                freeQty: fq,
+                freeReason: it.freeReason || '',
+                returnResellQty: rr,
+                returnCompanyQty: rc,
+                returnQty: ret,
+                returnReason: it.returnReason || '',
+                unitPrice,
+                total
+            };
+        }).filter((row) => row.productId);
+        cart.forEach((line) => recalcCartLine(line));
+        updateCart();
+        showProducts();
+        updateEditBannerAndSubmitLabel();
+    }
+    function openLineModal(productId) {
+        const line = cart.find((c) => c.productId === productId);
+        if (!line) { alert('Add this product to the cart first (use + / line editor).'); return; }
+        selectedProductForLine = line;
+        const p = products.find((x) => x.id === productId);
+        document.getElementById('lineProductName').textContent = (p && p.name) ? p.name : line.productName;
+        document.getElementById('lineSalesQty').value = line.qty || 0;
+        document.getElementById('lineFreeQty').value = line.freeQty || 0;
+        document.getElementById('lineFreeReason').value = line.freeReason || '';
+        document.getElementById('lineAgentReturnQty').value = line.returnResellQty || 0;
+        document.getElementById('lineCompanyReturnQty').value = line.returnCompanyQty || 0;
+        document.getElementById('lineReturnReason').value = line.returnReason || '';
+        document.getElementById('lineModal').style.display = 'flex';
+    }
+    function saveLineModal() {
+        if (!selectedProductForLine) return;
+        const line = selectedProductForLine;
+        const p = products.find(x => x.id === line.productId);
+        const avail = getProductAvailableStock(p);
+
+        const newQty = Math.max(0, parseInt(document.getElementById('lineSalesQty').value, 10) || 0);
+        const newFree = Math.max(0, parseInt(document.getElementById('lineFreeQty').value, 10) || 0);
+
+        if ((newQty + newFree) > avail) {
+            alert('Insufficient stock! Available: ' + avail);
+            return;
+        }
+
+        line.qty = newQty;
+        line.freeQty = newFree;
+        line.freeReason = document.getElementById('lineFreeReason').value.trim();
+        line.returnResellQty = Math.max(0, parseInt(document.getElementById('lineAgentReturnQty').value, 10) || 0);
+        line.returnCompanyQty = Math.max(0, parseInt(document.getElementById('lineCompanyReturnQty').value, 10) || 0);
+        line.returnReason = document.getElementById('lineReturnReason').value.trim();
+        if (line.freeQty > 0 && !line.freeReason) { alert('Enter a reason for free issue qty'); return; }
+        recalcCartLine(line);
+        if (line.qty === 0 && line.freeQty === 0 && (line.returnResellQty + line.returnCompanyQty) === 0) {
+            cart = cart.filter((c) => c.productId !== line.productId);
+        }
+        closeModal('lineModal');
+        selectedProductForLine = null;
+        updateCart();
+        showProducts();
+    }
+
+    function productLineBrand(p) {
+        return (p && p.brand) ? String(p.brand).trim() : '';
+    }
+    function toMillis(v) {
+        if (!v) return 0;
+        if (typeof v.toDate === 'function') return v.toDate().getTime();
+        if (v.seconds) return Number(v.seconds) * 1000;
+        var d = new Date(v);
+        return isNaN(d.getTime()) ? 0 : d.getTime();
+    }
+    function fifoBatchInfo(product) {
+        var batches = Array.isArray(product && product.stockBatches) ? product.stockBatches.slice() : [];
+        batches = batches.filter(function (b) { return Number(b.availableQty || 0) > 0; });
+        batches.sort(function (a, b) { return toMillis(a.createdAt) - toMillis(b.createdAt); });
+        if (!batches.length) return null;
+        var oldest = batches[0];
+        return {
+            identifier: oldest.specialIdentifier || oldest.batchId || 'BATCH',
+            sellingPrice: Number(oldest.sellingPrice != null ? oldest.sellingPrice : (product.unitPrice || 0)) || 0,
+            availableQty: Number(oldest.availableQty || 0) || 0
+        };
+    }
+    
+    // ============ INIT ============
+    firebase.auth().onAuthStateChanged(async user => {
+        if (!user) { location.href = 'index.html'; return; }
+        
+        let snap = await db.collection('reps').where('userId', '==', user.uid).get();
+        if (snap.empty) snap = await db.collection('reps').where('email', '==', user.email).get();
+        if (snap.empty) { alert('No rep profile'); logout(); return; }
+        
+        let rep = snap.docs[0];
+        repId = rep.id;
+        repName = rep.data().name || rep.data().fullName || rep.data().displayName || 'Rep';
+        businessId = rep.data().businessId;
+
+        isMwTradingMobile = false;
+        try {
+            const bs = await db.collection('businesses').doc(businessId).get();
+            const bd = bs.exists ? (bs.data() || {}) : null;
+            isMwTradingMobile = !!(window.DigibizMwDslConfig && window.DigibizMwDslConfig.isMwTradingTenantActive(businessId, bd));
+        } catch (eMw) { isMwTradingMobile = false; }
+        const mwNote = document.getElementById('mwShopNote');
+        if (mwNote) mwNote.style.display = isMwTradingMobile ? 'block' : 'none';
+        
+        await loadShops();
+        await loadProducts();
+        const editId = getEditOrderIdFromUrl();
+        if (editId) await tryLoadPendingOrderForEdit(editId);
+        updateEditBannerAndSubmitLabel();
+    });
+    
+    // ============ SHOPS ============
+    async function loadShops() {
+        const byId = {};
+        let snap = await db.collection('shops')
+            .where('assignedRepId', '==', repId)
+            .where('isActive', '==', true)
+            .get();
+        snap.forEach(doc => {
+            const nm = String((doc.data() && doc.data().name) || '').trim();
+            if (!nm) return;
+            byId[doc.id] = { id: doc.id, name: nm };
+        });
+        if (isMwTradingMobile) {
+            const snapAll = await db.collection('shops').where('businessId', '==', businessId).limit(320).get().catch(() => ({ forEach: function () {} }));
+            snapAll.forEach(doc => {
+                const d = doc.data() || {};
+                if (d.isActive === false) return;
+                const nm = String(d.name || '').trim();
+                if (!nm) return;
+                if (!byId[doc.id]) byId[doc.id] = { id: doc.id, name: nm };
+            });
+        }
+        allShops = Object.values(byId).sort((a, b) => a.name.localeCompare(b.name));
+        let options = document.getElementById('shopOptions');
+        options.innerHTML = '';
+        allShops.forEach(shop => {
+            let opt = document.createElement('option');
+            opt.value = shop.name;
+            opt.label = `${shop.name} (${shop.id.slice(-5)})`;
+            options.appendChild(opt);
+        });
+        const ns = document.getElementById('newShopName');
+        if (ns) {
+            if (isMwTradingMobile) ns.setAttribute('list', 'shopOptions');
+            else ns.removeAttribute('list');
+        }
+    }
+    
+    function showNewShopInput() {
+        let div = document.getElementById('newShopInput');
+        div.style.display = div.style.display === 'none' ? 'block' : 'none';
+    }
+    
+    async function addNewShop() {
+        let shopName = document.getElementById('newShopName').value.trim();
+        if (!shopName) { alert('Please enter shop name'); return; }
+        
+        // Check if already exists
+        let existing = allShops.find(s => s.name.toLowerCase() === shopName.toLowerCase());
+        if (existing) {
+            alert('Shop already exists!');
+            return;
+        }
+        
+        let newShop = {
+            name: shopName,
+            assignedRepId: repId,
+            businessId: businessId,
+            isActive: true,
+            createdAt: new Date()
+        };
+        
+        let docRef = await db.collection('shops').add(newShop);
+        allShops.push({ id: docRef.id, name: shopName });
+        
+        // Add to autocomplete
+        let options = document.getElementById('shopOptions');
+        let opt = document.createElement('option');
+        opt.value = shopName;
+        opt.label = `${shopName} (${docRef.id.slice(-5)})`;
+        options.appendChild(opt);
+        document.getElementById('shopSearch').value = shopName;
+        selectedShopId = docRef.id;
+        
+        document.getElementById('newShopName').value = '';
+        document.getElementById('newShopInput').style.display = 'none';
+        alert('Shop added successfully!');
+    }
+    
+    // ============ PRODUCTS ============
+    async function loadProducts() {
+        if (productsUnsubscribe) productsUnsubscribe();
+        return new Promise((resolve) => {
+            let first = true;
+            productsUnsubscribe = db.collection('products')
+                .where('businessId', '==', businessId)
+                .where('isActive', '==', true)
+                .onSnapshot((snap) => {
+                    products = [];
+                    snap.forEach((doc) => products.push({ id: doc.id, ...doc.data() }));
+                    showProducts();
+                    if (first) {
+                        first = false;
+                        resolve();
+                    }
+                }, (error) => {
+                    console.error('Inventory stream error:', error);
+                    resolve();
+                });
+        });
+    }
+    
+    function getProductAvailableStock(p) {
+        if (!p) return 0;
+        return window.DigiBizDistributorInventory ? window.DigiBizDistributorInventory.numericStock(p) : (Number(p.stock || p.currentStock) || 0);
+    }
+
+    function showProducts() {
+        let search = document.getElementById('searchInput').value.toLowerCase();
+        let filtered = products.filter(p =>
+            p.name.toLowerCase().includes(search) ||
+            (p.brand && String(p.brand).toLowerCase().includes(search)) ||
+            (p.category && String(p.category).toLowerCase().includes(search))
+        );
+        
+        let html = '';
+        for (let p of filtered) {
+            let inCart = cart.find(c => c.productId === p.id);
+            let qty = inCart ? inCart.qty : 0;
+            const pb = productLineBrand(p);
+            const brandHtml = pb ? `<span style="font-size:12px;color:#64748b;font-weight:normal;"> · ${pb}</span>` : '';
+            const fifo = fifoBatchInfo(p);
+            const batchBadge = fifo ? `<span style="display:inline-block;margin-top:4px;font-size:10px;color:#7c2d12;background:#ffedd5;padding:2px 6px;border-radius:10px;">FIFO ${fifo.identifier}</span>` : '';
+            const unitPrice = fifo ? fifo.sellingPrice : (Number(p.unitPrice) || 0);
+            const avail = getProductAvailableStock(p);
+            const totalInCart = inCart ? (Number(inCart.qty) + Number(inCart.freeQty)) : 0;
+            const isOver = totalInCart > avail;
+
+            html += `
+                <div class="product-item" style="${isOver ? 'border-left:4px solid #ef4444;background:#fff1f2;' : ''}">
+                    <div class="product-info">
+                        <div class="product-name">${p.name}${brandHtml}</div>
+                        <div class="product-price">
+                            Rs ${unitPrice} | Stock: <strong style="${avail <= 0 ? 'color:#ef4444' : ''}">${avail}</strong>
+                            ${isOver ? '<br><span style="color:#ef4444;font-size:10px;font-weight:bold;">⚠️ Exceeds stock</span>' : ''}
+                        </div>
+                        ${batchBadge}
+                    </div>
+                    <div class="product-actions">
+                        <button class="qty-btn" onclick="changeQty('${p.id}', -1)">-</button>
+                        <span style="min-width:30px;text-align:center;font-weight:bold;${isOver ? 'color:#ef4444;' : ''}">${qty}</span>
+                        <button class="qty-btn" onclick="changeQty('${p.id}', 1)" ${avail <= totalInCart ? 'style="opacity:0.5"' : ''}>+</button>
+                        <button class="free-btn" onclick="openFreeModal('${p.id}', ${JSON.stringify(p.name)})">🎁 Free</button>
+                        <button class="return-btn" onclick="openReturnModal('${p.id}', ${JSON.stringify(p.name)})">↩️ Return</button>
+                        ${inCart ? `<button type="button" class="line-edit-btn" onclick="openLineModal('${p.id}')">✏️ Line</button>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        document.getElementById('productsList').innerHTML = html || '<div>No products</div>';
+    }
+    
+    function changeQty(productId, delta) {
+        let product = products.find(p => p.id === productId);
+        if (!product) return;
+        const fifo = fifoBatchInfo(product);
+        const effectivePrice = fifo ? fifo.sellingPrice : (Number(product.unitPrice) || 0);
+        
+        let existing = cart.find(c => c.productId === productId);
+        let newQty = (existing ? existing.qty : 0) + delta;
+        const freeQty = existing ? (existing.freeQty || 0) : 0;
+        const avail = getProductAvailableStock(product);
+
+        if (delta > 0 && (newQty + freeQty) > avail) {
+            alert('Insufficient stock! Available: ' + avail);
+            return;
+        }
+        
+        if (newQty <= 0) {
+            if (existing && ((existing.freeQty || 0) + (existing.returnResellQty || 0) + (existing.returnCompanyQty || 0) > 0)) {
+                existing.qty = 0;
+                if (existing.returnResellQty == null) existing.returnResellQty = 0;
+                if (existing.returnCompanyQty == null) existing.returnCompanyQty = 0;
+                recalcCartLine(existing);
+            } else {
+                cart = cart.filter(c => c.productId !== productId);
+            }
+        } else if (existing) {
+            existing.qty = newQty;
+            if (existing.productBrand == null || existing.productBrand === '') existing.productBrand = productLineBrand(product);
+            existing.batchIdentifier = fifo ? fifo.identifier : '';
+            existing.unitPrice = effectivePrice;
+            if (existing.returnResellQty == null) existing.returnResellQty = 0;
+            if (existing.returnCompanyQty == null) existing.returnCompanyQty = 0;
+            recalcCartLine(existing);
+        } else {
+            cart.push({
+                productId: product.id,
+                productName: product.name,
+                productBrand: productLineBrand(product),
+                qty: newQty,
+                freeQty: 0,
+                freeReason: '',
+                returnQty: 0,
+                returnResellQty: 0,
+                returnCompanyQty: 0,
+                returnReason: '',
+                batchIdentifier: fifo ? fifo.identifier : '',
+                unitPrice: effectivePrice,
+                total: 0
+            });
+            recalcCartLine(cart[cart.length - 1]);
+        }
+        updateCart();
+        showProducts();
+    }
+    
+    // ============ FREE ITEMS ============
+    function openFreeModal(productId, productName) {
+        selectedProductForFree = products.find(p => p.id === productId);
+        document.getElementById('freeProductName').innerText = productName;
+        document.getElementById('freeQty').value = '';
+        document.getElementById('freeReason').value = '';
+        document.getElementById('freeModal').style.display = 'flex';
+    }
+    
+    function addFreeItem() {
+        let qty = parseInt(document.getElementById('freeQty').value);
+        let reason = document.getElementById('freeReason').value;
+        
+        if (!qty || qty <= 0) { alert('Enter quantity'); return; }
+        if (!reason) { alert('Enter reason'); return; }
+
+        const avail = getProductAvailableStock(selectedProductForFree);
+        let existing = cart.find(c => c.productId === selectedProductForFree.id);
+        const currentOrdered = existing ? (existing.qty || 0) : 0;
+        const currentFree = existing ? (existing.freeQty || 0) : 0;
+
+        if ((currentOrdered + currentFree + qty) > avail) {
+            alert('Insufficient stock for free issue! Available: ' + avail);
+            return;
+        }
+        
+        if (existing) {
+            existing.freeQty = (existing.freeQty || 0) + qty;
+            existing.freeReason = reason;
+            if (existing.productBrand == null || existing.productBrand === '') existing.productBrand = productLineBrand(selectedProductForFree);
+            const fifo = fifoBatchInfo(selectedProductForFree);
+            existing.batchIdentifier = fifo ? fifo.identifier : (existing.batchIdentifier || '');
+            existing.unitPrice = fifo ? fifo.sellingPrice : existing.unitPrice;
+            if (existing.returnResellQty == null) existing.returnResellQty = 0;
+            if (existing.returnCompanyQty == null) existing.returnCompanyQty = 0;
+            recalcCartLine(existing);
+        } else {
+            const fifo = fifoBatchInfo(selectedProductForFree);
+            cart.push({
+                productId: selectedProductForFree.id,
+                productName: selectedProductForFree.name,
+                productBrand: productLineBrand(selectedProductForFree),
+                qty: 0,
+                freeQty: qty,
+                freeReason: reason,
+                returnQty: 0,
+                returnResellQty: 0,
+                returnCompanyQty: 0,
+                returnReason: '',
+                batchIdentifier: fifo ? fifo.identifier : '',
+                unitPrice: fifo ? fifo.sellingPrice : selectedProductForFree.unitPrice,
+                total: 0
+            });
+            recalcCartLine(cart[cart.length - 1]);
+        }
+        closeModal('freeModal');
+        updateCart();
+        showProducts();
+    }
+    
+    // ============ RETURNS ============
+    function openReturnModal(productId, productName) {
+        selectedProductForReturn = products.find(p => p.id === productId);
+        
+        let select = document.getElementById('returnProductSelect');
+        select.innerHTML = '';
+        for (let p of products) {
+            let opt = document.createElement('option');
+            opt.value = p.id;
+            const pb = productLineBrand(p);
+            opt.text = pb ? (p.name + ' · ' + pb) : p.name;
+            if (p.id === productId) opt.selected = true;
+            select.appendChild(opt);
+        }
+        
+        document.getElementById('returnQty').value = '';
+        document.querySelectorAll('input[name="returnDisposition"]').forEach((el, i) => { el.checked = (i === 0); });
+        document.getElementById('returnReasonText').value = '';
+        document.getElementById('returnModal').style.display = 'flex';
+    }
+    
+    function addReturn() {
+        let productId = document.getElementById('returnProductSelect').value;
+        let qty = parseInt(document.getElementById('returnQty').value, 10);
+        const dispEl = document.querySelector('input[name="returnDisposition"]:checked');
+        const disposition = dispEl ? dispEl.value : 'RESELL';
+        let reason = document.getElementById('returnReasonText').value.trim();
+        
+        if (!productId) { alert('Select product'); return; }
+        if (!qty || qty <= 0) { alert('Enter quantity'); return; }
+        
+        let product = products.find(p => p.id === productId);
+        const rrAdd = disposition === 'RESELL' ? qty : 0;
+        const rcAdd = disposition === 'TO_COMPANY' ? qty : 0;
+        
+        let existing = cart.find(c => c.productId === productId);
+        if (existing) {
+            existing.returnResellQty = (existing.returnResellQty || 0) + rrAdd;
+            existing.returnCompanyQty = (existing.returnCompanyQty || 0) + rcAdd;
+            existing.returnReason = reason || existing.returnReason || '';
+            existing.returnQty = (existing.returnResellQty || 0) + (existing.returnCompanyQty || 0);
+            if (existing.productBrand == null || existing.productBrand === '') existing.productBrand = productLineBrand(product);
+            const fifo = fifoBatchInfo(product);
+            existing.batchIdentifier = fifo ? fifo.identifier : (existing.batchIdentifier || '');
+            existing.unitPrice = fifo ? fifo.sellingPrice : existing.unitPrice;
+            recalcCartLine(existing);
+        } else {
+            const fifo = fifoBatchInfo(product);
+            cart.push({
+                productId: product.id,
+                productName: product.name,
+                productBrand: productLineBrand(product),
+                qty: 0,
+                freeQty: 0,
+                freeReason: '',
+                returnResellQty: rrAdd,
+                returnCompanyQty: rcAdd,
+                returnQty: rrAdd + rcAdd,
+                returnReason: reason,
+                batchIdentifier: fifo ? fifo.identifier : '',
+                unitPrice: fifo ? fifo.sellingPrice : product.unitPrice,
+                total: 0
+            });
+            recalcCartLine(cart[cart.length - 1]);
+        }
+        closeModal('returnModal');
+        updateCart();
+        showProducts();
+    }
+    
+    // ============ CART ============
+    function updateCart() {
+        let itemCount = cart.reduce((sum, i) => sum + (i.qty || 0) + (i.freeQty || 0), 0);
+        let total = cart.reduce((sum, i) => sum + (i.total || 0), 0);
+        
+        document.getElementById('cartCount').innerHTML = itemCount;
+        document.getElementById('totalAmount').innerHTML = 'Rs ' + total.toLocaleString();
+        
+        // Stock Validation Check
+        let hasStockError = false;
+        cart.forEach(item => {
+            const p = products.find(x => x.id === item.productId);
+            const avail = getProductAvailableStock(p);
+            if ((Number(item.qty) + Number(item.freeQty)) > avail) hasStockError = true;
+        });
+        const subBtn = document.getElementById('submitOrderBtn');
+        if (subBtn) {
+            subBtn.disabled = hasStockError;
+            subBtn.style.opacity = hasStockError ? '0.5' : '1';
+            subBtn.style.background = hasStockError ? '#9ca3af' : '#10b981';
+        }
+
+        if (cart.length === 0) {
+            document.getElementById('cartList').innerHTML = 'No items added';
+            return;
+        }
+        
+        let html = '';
+        for (let i = 0; i < cart.length; i++) {
+            let item = cart[i];
+            const p = products.find(x => x.id === item.productId);
+            const avail = getProductAvailableStock(p);
+            const isOver = (Number(item.qty) + Number(item.freeQty)) > avail;
+
+            html += `
+                <div class="cart-item" style="${isOver ? 'border:2px solid #ef4444;background:#fff1f2;' : ''}">
+                    <div class="cart-item-header">
+                        <span class="cart-item-name">${item.productName}${item.productBrand ? '<span style="color:#64748b;font-weight:normal;"> · ' + item.productBrand + '</span>' : ''}${item.batchIdentifier ? '<span style="color:#7c2d12;font-weight:normal;"> · ' + item.batchIdentifier + '</span>' : ''}</span>
+                        <span class="cart-item-price">Rs ${(item.total || 0).toLocaleString()}</span>
+                        <span class="remove-item" onclick="removeCartItem(${i})">🗑️</span>
+                    </div>
+                    <div class="cart-item-details">
+                        Qty: ${item.qty || 0} units
+                        ${item.freeQty ? `<span class="free-badge">🎁 Free: ${item.freeQty} (${item.freeReason})</span>` : ''}
+                        ${item.returnQty ? `<span class="return-badge">↩️ Return: ${item.returnQty} — agent ${item.returnResellQty || 0}, company ${item.returnCompanyQty || 0}${item.returnReason ? ' (' + item.returnReason + ')' : ''}</span>` : ''}
+                        ${isOver ? `<div style="color:#ef4444;font-weight:bold;margin-top:5px;">🚨 Error: Only ${avail} available in stock!</div>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        document.getElementById('cartList').innerHTML = html;
+    }
+    
+    function removeCartItem(index) {
+        cart.splice(index, 1);
+        updateCart();
+        showProducts();
+    }
+    
+    // ============ SUBMIT ORDER ============
+    async function adjustMainInventoryForOrder(orderData, businessId) {
+        if (!orderData || !Array.isArray(orderData.items) || !orderData.items.length) return;
+        const bId = businessId || localStorage.getItem('currentBusinessId') || sessionStorage.getItem('currentBusinessId');
+        if (!bId) return;
+
+        try {
+            const batch = db.batch();
+            const productsSnap = await db.collection('products').where('businessId', '==', bId).get();
+            const byId = {};
+            const byName = {};
+            productsSnap.docs.forEach(doc => {
+                byId[doc.id] = doc;
+                const d = doc.data() || {};
+                const nameKey = String(d.name || d.productName || '').toLowerCase().trim();
+                if (nameKey) byName[nameKey] = doc;
+            });
+
+            const agg = new Map();
+            orderData.items.forEach(item => {
+                const pid = item.productId || item.id;
+                const productDoc = pid ? byId[pid] : byName[String(item.productName || item.name || '').toLowerCase().trim()];
+                if (!productDoc) return;
+
+                const orderedQty = Number(item.orderedQty || item.qty || 0) || 0;
+                const freeQty = Number(item.freeQty || 0) || 0;
+                const returnQty = Number(item.returnResellQty != null ? item.returnResellQty : (item.returnQty || 0)) || 0;
+                const deductQty = Math.max(0, orderedQty + freeQty - returnQty);
+
+                if (deductQty > 0) {
+                    const key = productDoc.ref.path;
+                    if (!agg.has(key)) {
+                        agg.set(key, { ref: productDoc.ref, doc: productDoc, deductQty: 0 });
+                    }
+                    agg.get(key).deductQty += deductQty;
+                }
+            });
+
+            agg.forEach(({ ref, doc, deductQty }) => {
+                if (deductQty <= 0) return;
+                const pData = doc.data() || {};
+                const curStock = Number(pData.stock != null ? pData.stock : pData.currentStock) || 0;
+                const nextStock = Math.max(0, curStock - deductQty);
+
+                const payload = {
+                    stock: nextStock,
+                    currentStock: nextStock,
+                    updatedAt: new Date()
+                };
+                batch.update(ref, payload);
+            });
+
+            await batch.commit();
+            console.log('[Inventory] Mobile order main stock deducted successfully.');
+        } catch (err) {
+            console.error('[Inventory] Error deducting stock for mobile order:', err);
+        }
+    }
+
+    async function submitOrder() {
+        const searchShop = document.getElementById('shopSearch').value.trim().toLowerCase();
+        const matchedShop = allShops.find((s) => s.name.toLowerCase() === searchShop);
+        let shopId = selectedShopId || (matchedShop ? matchedShop.id : '');
+        if (!shopId) { alert('Please select a shop'); return; }
+        if (cart.length === 0) { alert('Please add at least one product'); return; }
+        const paymentMethod = document.getElementById('paymentMethod').value;
+        
+        let subtotal = cart.reduce((sum, i) => sum + (Math.max(0, (Number(i.qty) || 0) - (Number(i.returnQty) || 0)) * (Number(i.unitPrice) || 0)), 0);
+        const totalAmount = cart.reduce((sum, i) => sum + (Number(i.total) || 0), 0);
+        
+        let orderNumber = 'ORD-' + Date.now();
+        if (editingOrderId) {
+            try {
+                const ex = await db.collection('pendingOrders').doc(editingOrderId).get();
+                if (ex.exists && ex.data().orderNumber) orderNumber = ex.data().orderNumber;
+            } catch (e) {}
+        }
+
+        let orderData = {
+            businessId: businessId,
+            repId: repId,
+            repName: repName || '',
+            shopId: shopId,
+            orderNumber: orderNumber,
+            orderDate: new Date(),
+            status: 'pending',
+            items: cart.map(item => ({
+                productId: item.productId,
+                productName: item.productName,
+                productBrand: item.productBrand || '',
+                batchIdentifier: item.batchIdentifier || '',
+                orderedQty: item.qty || 0,
+                freeQty: item.freeQty || 0,
+                freeReason: item.freeReason || '',
+                returnQty: ((item.returnResellQty || 0) + (item.returnCompanyQty || 0)) || (item.returnQty || 0),
+                returnResellQty: item.returnResellQty || 0,
+                returnCompanyQty: item.returnCompanyQty || 0,
+                returnReason: item.returnReason || '',
+                unitPrice: item.unitPrice,
+                totalPrice: item.total || 0
+            })),
+            subtotal: subtotal,
+            totalAmount: totalAmount,
+            freeIssuesTotal: cart.reduce((sum, item) => sum + (item.freeQty || 0), 0),
+            collectionAmount: 0,
+            paymentMethod: paymentMethod,
+            createdAt: new Date()
+        };
+        
+        try {
+            if (editingOrderId) {
+                await db.collection('pendingOrders').doc(editingOrderId).update({
+                    shopId: shopId,
+                    items: orderData.items,
+                    subtotal: orderData.subtotal,
+                    totalAmount: orderData.totalAmount,
+                    freeIssuesTotal: orderData.freeIssuesTotal,
+                    paymentMethod: paymentMethod,
+                    updatedAt: new Date(),
+                    lastRepEditAt: new Date()
+                });
+                alert('✅ Pending order updated.');
+                clearEditQueryFromUrl();
+                editingOrderId = null;
+            } else {
+                try {
+                    await adjustMainInventoryForOrder(orderData, currentBusinessId);
+                    orderData.stockDeducted = true;
+                } catch (eStock) { console.warn('[MobileOrder] Stock deduct warn:', eStock); }
+                await db.collection('pendingOrders').add(orderData);
+                alert('✅ Order submitted & stock updated!');
+            }
+            cart = [];
+            updateCart();
+            document.getElementById('shopSearch').value = '';
+            selectedShopId = '';
+            showProducts();
+            updateEditBannerAndSubmitLabel();
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    }
+    
+    // ============ UTILITIES ============
+    function searchProducts() { showProducts(); }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    function logout() { firebase.auth().signOut(); location.href = 'index.html'; }
+    document.getElementById('shopSearch').addEventListener('input', (event) => {
+        const lookup = String(event.target.value || '').trim().toLowerCase();
+        const shop = allShops.find((row) => row.name.toLowerCase() === lookup);
+        selectedShopId = shop ? shop.id : '';
+    });
+</script>
+</body>
+</html>

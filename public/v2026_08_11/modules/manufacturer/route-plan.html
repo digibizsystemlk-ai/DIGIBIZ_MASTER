@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Route Plan & 7-Day Shop Revisit Schedule - DIGIBIZ</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/dashboard-core.js?v=70"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <script src="/modules/manufacturer/manufacturer-common.js?v=2026"></script>
+    <style id="mfgStyle"></style>
+    <style>
+        .route-tab { padding:10px 18px; border:none; background:#e2e8f0; color:#475569; border-radius:10px; font-weight:700; font-size:13px; cursor:pointer; transition:all 0.2s; }
+        .route-tab.active { background:#0f766e; color:#fff; box-shadow:0 4px 12px rgba(15,118,110,0.3); }
+        .shop-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.04); display:flex; flex-direction:column; justify-content:space-between; gap:12px; transition:transform 0.2s, box-shadow 0.2s; }
+        .shop-card:hover { transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,0.08); }
+        .badge-today { background:#fee2e2; color:#991b1b; padding:4px 10px; border-radius:12px; font-weight:800; font-size:11px; }
+        .badge-tomorrow { background:#fef3c7; color:#b45309; padding:4px 10px; border-radius:12px; font-weight:800; font-size:11px; }
+        .badge-day3 { background:#e0f2fe; color:#0369a1; padding:4px 10px; border-radius:12px; font-weight:800; font-size:11px; }
+    </style>
+</head>
+<body>
+<div class="mfg-wrap">
+    <div class="mfg-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+            <h2>🗺️ Sales Route Plan & 7-Day Revisit Schedule (අලෙවි සංචාරක සැලසුම)</h2>
+            <p id="mfgBusinessCtx"></p>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <a href="/modules/manufacturer/sales.html" style="padding:10px 16px; background:#059669; color:#fff; text-decoration:none; border-radius:8px; font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(5,150,105,0.25);">
+                🛍️ Finished Goods Sales (sales.html 🔗)
+            </a>
+            <a href="/modules/manufacturer/stock.html" style="padding:10px 16px; background:#7c3aed; color:#fff; text-decoration:none; border-radius:8px; font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:6px; box-shadow:0 2px 8px rgba(124,58,237,0.25);">
+                📦 Stock Directory (stock.html 🔗)
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary KPI Header Card -->
+    <div style="background:linear-gradient(135deg, #0f766e, #047857); color:#fff; padding:18px 22px; border-radius:14px; margin-bottom:20px; box-shadow:0 4px 14px rgba(15,118,110,0.25); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+        <div>
+            <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:#99f6e4; font-weight:800;">7-Day Automated Revisit Cycle (දින 7 වෙළඳසැල් සංචාරක සැලසුම)</div>
+            <div style="font-size:18px; font-weight:800; margin-top:2px;">Plan Ahead for Upcoming Shop Visits & Maximum Sales Efficiency</div>
+            <div style="font-size:12px; color:#ccfbf1; margin-top:4px;">Sales completed in <code>sales.html</code> automatically schedule follow-up visits exactly 7 days later.</div>
+        </div>
+        <div style="display:flex; gap:16px; background:rgba(255,255,255,0.15); padding:10px 18px; border-radius:10px; border:1px solid rgba(255,255,255,0.25);">
+            <div style="text-align:center;">
+                <div style="font-size:10px; text-transform:uppercase; color:#99f6e4; font-weight:700;">Today's Visits</div>
+                <div id="kpiTodayCount" style="font-size:20px; font-weight:900;">0</div>
+            </div>
+            <div style="text-align:center; border-left:1px solid rgba(255,255,255,0.25); padding-left:16px;">
+                <div style="font-size:10px; text-transform:uppercase; color:#99f6e4; font-weight:700;">Next 3 Days Total</div>
+                <div id="kpi3DayCount" style="font-size:20px; font-weight:900;">0</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter & Day Selection Bar -->
+    <div class="mfg-card" style="margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid #f1f5f9;">
+            <!-- Day Tabs -->
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button type="button" class="route-tab active" id="tabDayToday" onclick="switchRouteDay('TODAY')">
+                    📅 Day 1: Today (අද)
+                </button>
+                <button type="button" class="route-tab" id="tabDayTomorrow" onclick="switchRouteDay('TOMORROW')">
+                    📅 Day 2: Tomorrow (හෙට)
+                </button>
+                <button type="button" class="route-tab" id="tabDay3" onclick="switchRouteDay('DAY3')">
+                    📅 Day 3: Day After Tomorrow (අනිද්දා)
+                </button>
+                <button type="button" class="route-tab" id="tabDayAll" onclick="switchRouteDay('ALL3')">
+                    🗓️ Combined Next 3 Days (ඉදිරි දින 3ම)
+                </button>
+            </div>
+
+            <!-- Search & Area Filter -->
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input type="text" id="searchShopInput" placeholder="Search shop name or phone..." style="padding:8px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:12px; width:200px;">
+                <select id="filterAreaSelect" style="padding:8px; border:1px solid #cbd5e1; border-radius:8px; font-size:12px; font-weight:600;">
+                    <option value="">All Areas (සියලු කලාප)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Schedule List Container -->
+        <div id="routePlanCardGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px;">
+            <div style="grid-column:1/-1; text-align:center; padding:30px; color:#64748b;">Loading sales route schedule...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('mfgStyle').textContent = ManufacturerModule.baseStyles;
+
+let routeDocsCache = [];
+let activeDayMode = 'TODAY'; // 'TODAY', 'TOMORROW', 'DAY3', 'ALL3'
+
+function escPrint(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+function getFormattedDateStr(d) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+async function loadRoutePlanData() {
+    const bid = ManufacturerModule.businessId || localStorage.getItem('currentBusinessId');
+    const grid = document.getElementById('routePlanCardGrid');
+    if (!bid) {
+        if (grid) grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#ef4444; padding:20px;">Business ID not ready. Please refresh or log in.</div>';
+        return;
+    }
+
+    try {
+        const snap = await db.collection('manufacturer_route_plans')
+            .where('businessId', '==', String(bid).trim())
+            .get()
+            .catch(() => ({ docs: [] }));
+
+        routeDocsCache = snap.docs.map(d => ({ id: d.id, ...(d.data() || {}) }));
+
+        // Populate Area Filter
+        const areasSet = new Set();
+        routeDocsCache.forEach(x => { if (x.area) areasSet.add(x.area); });
+        const areaSel = document.getElementById('filterAreaSelect');
+        areaSel.innerHTML = '<option value="">All Areas (සියලු කලාප)</option>' + Array.from(areasSet).sort().map(a => `<option value="${escPrint(a)}">${escPrint(a)}</option>`).join('');
+
+        renderRoutePlan();
+    } catch (e) {
+        console.error('[RoutePlan] Error loading route data:', e);
+        if (grid) grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:#ef4444; padding:20px;">Error loading schedule: ${e.message}</div>`;
+    }
+}
+
+function switchRouteDay(mode) {
+    activeDayMode = mode;
+    document.querySelectorAll('.route-tab').forEach(b => b.classList.remove('active'));
+    if (mode === 'TODAY') document.getElementById('tabDayToday').classList.add('active');
+    if (mode === 'TOMORROW') document.getElementById('tabDayTomorrow').classList.add('active');
+    if (mode === 'DAY3') document.getElementById('tabDay3').classList.add('active');
+    if (mode === 'ALL3') document.getElementById('tabDayAll').classList.add('active');
+
+    renderRoutePlan();
+}
+
+function renderRoutePlan() {
+    const now = new Date();
+    const todayStr = getFormattedDateStr(now);
+
+    const tom = new Date(now); tom.setDate(tom.getDate() + 1);
+    const tomStr = getFormattedDateStr(tom);
+
+    const day3 = new Date(now); day3.setDate(day3.getDate() + 2);
+    const day3Str = getFormattedDateStr(day3);
+
+    const searchQ = (document.getElementById('searchShopInput').value || '').trim().toLowerCase();
+    const areaFilter = (document.getElementById('filterAreaSelect').value || '').trim();
+
+    let countToday = 0;
+    let countNext3Days = 0;
+
+    const itemsToDisplay = [];
+
+    routeDocsCache.forEach(x => {
+        let visitDateStr = '';
+        if (x.nextVisitDate?.toDate) {
+            visitDateStr = getFormattedDateStr(x.nextVisitDate.toDate());
+        } else if (x.nextVisitDate) {
+            visitDateStr = getFormattedDateStr(new Date(x.nextVisitDate));
+        }
+
+        // Count for KPI
+        if (visitDateStr <= todayStr && x.visitStatus !== 'COMPLETED') countToday++;
+        if (visitDateStr <= day3Str && x.visitStatus !== 'COMPLETED') countNext3Days++;
+
+        // Filter by Area & Search
+        if (areaFilter && x.area !== areaFilter) return;
+        if (searchQ) {
+            const nameMatch = String(x.customerName || '').toLowerCase().includes(searchQ);
+            const phoneMatch = String(x.customerPhone || '').toLowerCase().includes(searchQ);
+            const areaMatch = String(x.area || '').toLowerCase().includes(searchQ);
+            if (!nameMatch && !phoneMatch && !areaMatch) return;
+        }
+
+        // Day Mode Filtering & Automatic Rollover
+        const isOverdueOrToday = (visitDateStr <= todayStr);
+        let includeInView = false;
+        let isRolledOver = false;
+
+        if (activeDayMode === 'TODAY') {
+            if (isOverdueOrToday) {
+                includeInView = true;
+            }
+        } else if (activeDayMode === 'TOMORROW') {
+            if (visitDateStr === tomStr) {
+                includeInView = true;
+            } else if (isOverdueOrToday) {
+                // AUTOMATIC ROLLOVER: Overdue/unvisited shops roll over into Tomorrow's list!
+                includeInView = true;
+                isRolledOver = true;
+            }
+        } else if (activeDayMode === 'DAY3') {
+            if (visitDateStr === day3Str) {
+                includeInView = true;
+            } else if (isOverdueOrToday || visitDateStr === tomStr) {
+                includeInView = true;
+                isRolledOver = true;
+            }
+        } else if (activeDayMode === 'ALL3') {
+            if (visitDateStr <= day3Str) {
+                includeInView = true;
+                if (isOverdueOrToday && visitDateStr < todayStr) isRolledOver = true;
+            }
+        }
+
+        if (!includeInView) return;
+
+        itemsToDisplay.push({ ...x, visitDateStr, isRolledOver });
+    });
+
+    // Update Header KPIs
+    document.getElementById('kpiTodayCount').textContent = countToday;
+    document.getElementById('kpi3DayCount').textContent = countNext3Days;
+
+    const grid = document.getElementById('routePlanCardGrid');
+
+    if (!itemsToDisplay.length) {
+        grid.innerHTML = `
+            <div style="grid-column:1/-1; text-align:center; padding:40px; background:#f8fafc; border-radius:12px; border:2px dashed #cbd5e1;">
+                <div style="font-size:32px;">🌴</div>
+                <div style="font-size:15px; font-weight:700; color:#475569; margin-top:6px;">No shop visits pending for this filter!</div>
+                <div style="font-size:12px; color:#94a3b8; margin-top:4px;">Sales completed in sales.html automatically schedule and update 7-day shop revisit cycles.</div>
+            </div>
+        `;
+        return;
+    }
+
+    // Sort by visit date
+    itemsToDisplay.sort((a, b) => a.visitDateStr.localeCompare(b.visitDateStr));
+
+    grid.innerHTML = itemsToDisplay.map(x => {
+        let badgeHtml = '';
+        if (x.isRolledOver) {
+            badgeHtml = `<span style="background:#fef2f2; color:#dc2626; padding:4px 10px; border-radius:12px; font-weight:800; font-size:11px; border:1px solid #fecaca;">⚠️ ROLLED OVER (අතපසු වූ වෙළඳසැලක්)</span>`;
+        } else if (x.visitDateStr <= todayStr) {
+            badgeHtml = `<span class="badge-today">🚨 VISIT TODAY (${x.visitDateStr})</span>`;
+        } else if (x.visitDateStr === tomStr) {
+            badgeHtml = `<span class="badge-tomorrow">📅 TOMORROW (${x.visitDateStr})</span>`;
+        } else {
+            badgeHtml = `<span class="badge-day3">📅 DAY 3 (${x.visitDateStr})</span>`;
+        }
+
+        const phoneDigits = String(x.customerPhone || '').replace(/\D/g, '');
+        const waUrl = phoneDigits ? `https://wa.me/${phoneDigits.length === 9 ? '94' + phoneDigits : phoneDigits}?text=${encodeURIComponent(`Hello ${x.customerName}, DIGIBIZ sales rep will visit your shop for restock. Thank you!`)}` : '#';
+
+        return `
+            <div class="shop-card" style="${x.isRolledOver ? 'border-left:4px solid #dc2626; background:#fffdfd;' : ''}">
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+                        <h3 style="margin:0; font-size:16px; color:#0f172a; font-weight:800;">🏪 ${escPrint(x.customerName)}</h3>
+                        ${badgeHtml}
+                    </div>
+                    <div style="font-size:12px; font-weight:700; color:#0284c7; margin-top:4px;">📍 Area: ${escPrint(x.area || 'General')}</div>
+                    <div style="font-size:12px; color:#475569; margin-top:2px;">📞 Phone: ${escPrint(x.customerPhone || 'Not provided')}</div>
+
+                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; margin-top:10px; font-size:12px;">
+                        <div style="font-weight:700; color:#334155;">📦 Last Recorded Sale Details (sales.html):</div>
+                        <div style="color:#64748b; margin-top:2px;">Item: <strong>${escPrint(x.lastProductName || '-')}</strong> (${Number(x.lastQty || 0)} units)</div>
+                        <div style="color:#059669; font-weight:800; margin-top:2px;">Amount: Rs. ${Number(x.lastAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                    </div>
+                </div>
+
+                ${phoneDigits ? `
+                    <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+                        <a href="${waUrl}" target="_blank" style="padding:6px 12px; background:#25D366; color:#fff; text-decoration:none; border-radius:6px; font-weight:700; font-size:11px; display:inline-flex; align-items:center; gap:4px;">
+                            💬 WhatsApp Contact
+                        </a>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
+(async function(){
+    try {
+        await ManufacturerModule.init('route-plan');
+    } catch (eInit) {
+        console.warn('[RoutePlan] Init module warning:', eInit);
+    }
+
+    document.getElementById('searchShopInput').addEventListener('input', renderRoutePlan);
+    document.getElementById('filterAreaSelect').addEventListener('change', renderRoutePlan);
+
+    window.switchRouteDay = switchRouteDay;
+
+    await loadRoutePlanData();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gate Pass & Short Outings - DIGIBIZ</title>
+    <style>
+        html.digibiz-sidebar-reserved body {
+            margin-left: 260px;
+        }
+
+        @media (max-width:768px) {
+            html.digibiz-sidebar-reserved body {
+                margin-left: 0;
+            }
+        }
+    </style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <script src="attendance-core.js?v=120"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f8fafc;
+            color: #1e293b;
+            padding: 30px;
+        }
+
+        .header-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .header-title h2 {
+            font-size: 24px;
+            font-weight: 800;
+            color: #0f172a;
+        }
+
+        .header-title p {
+            font-size: 14px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+            transition: all 0.2s;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+        }
+
+        .card-box {
+            background: white;
+            border-radius: 20px;
+            border: 1px solid #e2e8f0;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            padding: 24px;
+            margin-bottom: 25px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #475569;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            font-size: 13px;
+        }
+
+        .table-custom {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table-custom th,
+        .table-custom td {
+            padding: 14px 18px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 13px;
+        }
+
+        .table-custom th {
+            background: #f8fafc;
+            font-weight: 700;
+            color: #475569;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .badge-leave {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge-salary {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header-section">
+        <div class="header-title">
+            <h2>🚗 Gate Pass & Short Outings Management</h2>
+            <p>පෞද්ගලික අවශ්‍යතාවලට එළියට යෑම් (Short Passes) සටහන් කිරීම සහ වැටුප්/Leave වලින් කැපීම්</p>
+        </div>
+        <button class="btn-primary" onclick="openAddGatePassModal()"><i class="fa-solid fa-plus"></i> New Gate Pass /
+            Short Outing</button>
+    </div>
+
+    <!-- Gate Pass Entry Box -->
+    <div class="card-box">
+        <h3 style="font-size:16px;font-weight:800;color:#0f172a;margin-bottom:16px;">📝 Log Short Personal Outing (Gate
+            Pass)</h3>
+        <form id="gatePassForm" onsubmit="saveGatePass(event)">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Select Employee:</label>
+                    <select id="empSelect" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Date:</label>
+                    <input type="date" id="passDate" required>
+                </div>
+                <div class="form-group">
+                    <label>Out Time (එළියට ගිය වේලාව):</label>
+                    <input type="time" id="outTime" required>
+                </div>
+                <div class="form-group">
+                    <label>In Time (නැවත පැමිණි වේලාව):</label>
+                    <input type="time" id="inTime" required>
+                </div>
+                <div class="form-group">
+                    <label>Deduction Method (අඩුකරන ක්‍රමය):</label>
+                    <select id="deductMethod">
+                        <option value="LEAVE">Deduct from Leave Balance (ලීව් වලින් කැපීම)</option>
+                        <option value="SALARY">Deduct from Monthly Salary (වැටුපෙන් කැපීම)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Reason / Note (හේතුව):</label>
+                    <input type="text" id="reason" placeholder="Personal errand, Medical, Bank, etc.">
+                </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;">
+                <button type="submit" class="btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save Gate Pass
+                    Record</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Gate Pass History Table -->
+    <div class="card-box" style="padding:0;">
+        <div
+            style="padding:20px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
+            <h3 style="font-size:16px;font-weight:800;color:#0f172a;">📋 Monthly Gate Pass & Short Outing Summary</h3>
+        </div>
+        <table class="table-custom">
+            <thead>
+                <tr>
+                    <th>Emp ID</th>
+                    <th>Employee Name</th>
+                    <th>Date</th>
+                    <th>Out Time</th>
+                    <th>In Time</th>
+                    <th>Duration</th>
+                    <th>Deduction Method</th>
+                    <th>Reason</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="gatePassTableBody">
+                <!-- Dynamically populated -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.AttendanceCore) {
+                AttendanceCore.canAccessModule().then(ok => {
+                    if (!ok) {
+                        alert('⚠️ නැවත ලොගින් වීමට අවශ්‍යයි. මෙය Administration පිටුවක් බැවින් Owner/Admin/Accountant ලෙස පමණක් ප්‍රවේශය හිමි වේ.');
+                        window.location.href = '/';
+                        return;
+                    }
+                    AttendanceCore.bootstrapAuthorizedBusiness().then(() => {
+                        bootPage();
+                    });
+                });
+            } else {
+                bootPage();
+            }
+        });
+
+        function bootPage() {
+            document.getElementById('passDate').value = new Date().toISOString().split('T')[0];
+            populateEmployeeSelect();
+            loadGatePasses();
+        }
+
+        function getRegisteredEmployees() {
+            return window.AttendanceCore ? AttendanceCore.getEmployees() : [];
+        }
+
+        function populateEmployeeSelect() {
+            const select = document.getElementById('empSelect');
+            const employees = getRegisteredEmployees();
+            let html = '';
+            if (employees && employees.length > 0) {
+                employees.forEach(emp => {
+                    html += `<option value="${emp.empId}">${emp.name} (${emp.empId})</option>`;
+                });
+            } else {
+                html = `<option value="">⚠️ සේවකයින් නොමැත. පළමුව Employee Directory එකේ සේවකයින් එක් කරන්න</option>`;
+            }
+            select.innerHTML = html;
+        }
+
+        function saveGatePass(e) {
+            e.preventDefault();
+            const empId = document.getElementById('empSelect').value;
+            if (!empId) {
+                alert('⚠️ සේවකයෙකු තෝරන්න. පළමුව Employee Directory එකේ සේවකයින් ලියාපදිංචි කරන්න.');
+                return;
+            }
+            const employees = getRegisteredEmployees();
+            const emp = employees.find(e => e.empId === empId);
+
+            const date = document.getElementById('passDate').value;
+            const outTime = document.getElementById('outTime').value;
+            const inTime = document.getElementById('inTime').value;
+            const deductMethod = document.getElementById('deductMethod').value;
+            const reason = document.getElementById('reason').value.trim() || 'Personal Errand';
+
+            // Calculate duration in hours
+            const [outH, outM] = outTime.split(':').map(Number);
+            const [inH, inM] = inTime.split(':').map(Number);
+            let diffMins = (inH * 60 + inM) - (outH * 60 + outM);
+            if (diffMins < 0) diffMins += 24 * 60;
+
+            const durationHours = (diffMins / 60).toFixed(1);
+
+            const newPass = {
+                id: 'GP-' + Date.now(),
+                empId: empId,
+                empName: emp ? emp.name : 'Employee',
+                date: date,
+                outTime: outTime,
+                inTime: inTime,
+                durationHours: durationHours,
+                deductMethod: deductMethod,
+                reason: reason,
+                timestamp: Date.now()
+            };
+
+            let passes = window.AttendanceCore ? AttendanceCore.getGatePasses() : [];
+            passes.unshift(newPass);
+            if (window.AttendanceCore) AttendanceCore.setGatePasses(passes);
+
+            // Sync to Firestore (business-scoped only)
+            if (window.AttendanceCore) AttendanceCore.pushGatePass(newPass);
+
+            alert(`✅ Gate Pass recorded successfully!\nEmployee: ${newPass.empName}\nDuration: ${durationHours} hrs\nDeduction: ${deductMethod === 'LEAVE' ? 'Leave Balance' : 'Salary Deduction'}`);
+            loadGatePasses();
+        }
+
+        function loadGatePasses() {
+            let passes = window.AttendanceCore ? AttendanceCore.getGatePasses() : [];
+
+            const tableBody = document.getElementById('gatePassTableBody');
+            let html = '';
+            if (passes.length > 0) {
+                passes.forEach(gp => {
+                    const badgeClass = gp.deductMethod === 'LEAVE' ? 'badge-leave' : 'badge-salary';
+                    const methodLabel = gp.deductMethod === 'LEAVE' ? '🌿 Deduct Leave Balance' : '💰 Deduct Monthly Salary';
+
+                    html += `
+                        <tr>
+                            <td><strong>${gp.empId}</strong></td>
+                            <td>${gp.empName}</td>
+                            <td>${gp.date}</td>
+                            <td>${gp.outTime}</td>
+                            <td>${gp.inTime}</td>
+                            <td><strong>${gp.durationHours} hrs</strong></td>
+                            <td><span class="badge ${badgeClass}">${methodLabel}</span></td>
+                            <td>${gp.reason}</td>
+                            <td>
+                                <button onclick="deleteGatePass('${gp.id}')" style="background:#ef4444;color:white;border:none;padding:5px 10px;border-radius:6px;font-weight:700;font-size:11px;cursor:pointer;">
+                                    <i class="fa-solid fa-trash"></i> Delete
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            } else {
+                html = `
+                    <tr>
+                        <td colspan="9" style="text-align:center;color:#64748b;padding:30px;font-weight:600;">
+                            ⚠️ මෙතෙක් කිසිදු Gate Pass / Short Outing සටහනක් ඇතුළත් කර නොමැත.
+                        </td>
+                    </tr>
+                `;
+            }
+            tableBody.innerHTML = html;
+        }
+
+        function deleteGatePass(id) {
+            if (confirm('මෙම Gate Pass සටහන ඉවත් කිරීමට තහවුරු කරන්න?')) {
+                let passes = window.AttendanceCore ? AttendanceCore.getGatePasses() : [];
+                const removed = passes.find(p => p.id === id);
+                passes = passes.filter(p => p.id !== id);
+                if (window.AttendanceCore) AttendanceCore.setGatePasses(passes);
+                // Also sync deletion to Firestore (best-effort; push with empty could create; use delete path)
+                if (window.AttendanceCore && window.db && id) {
+                    const bid = AttendanceCore.resolveBusinessId();
+                    if (bid) {
+                        window.db.collection('businesses').doc(bid).collection('gate_passes').doc(id).delete().catch(() => { });
+                    }
+                }
+                loadGatePasses();
+            }
+        }
+    </script>
+</body>
+
+</html>

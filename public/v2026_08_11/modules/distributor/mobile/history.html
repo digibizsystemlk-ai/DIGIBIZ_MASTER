@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My pending orders</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 12px;
+            padding-bottom: 80px;
+        }
+
+        .top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        a.home {
+            color: #10b981;
+            font-weight: bold;
+            text-decoration: none;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .1);
+        }
+
+        .meta {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .btn {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: #10b981;
+            color: #fff;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 13px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="top">
+        <h2 style="font-size:18px;">Order history</h2>
+        <a class="home" href="order.html">← Order</a>
+    </div>
+    <div id="list">Loading…</div>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBLFefSjFXp84Hg7nnIfuJ18SFcM92bsno",
+            authDomain: "digibiz-sys.firebaseapp.com",
+            projectId: "digibiz-sys",
+            storageBucket: "digibiz-sys.firebasestorage.app",
+            messagingSenderId: "761278318158",
+            appId: "1:761278318158:web:f4451f5cf5f8762192a51f"
+        };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (!user) { location.href = 'index.html'; return; }
+            try {
+                // 1. Get the user's business context first (always allowed for self)
+                const userDoc = await db.collection('users').doc(user.uid).get();
+                // Fallback to user.uid for Owners who don't have a businessId field
+                const businessId = userDoc.exists ? (userDoc.data().businessId || user.uid) : user.uid;
+
+                if (!businessId) {
+                    document.getElementById('list').innerHTML = '<p style="text-align:center; color:#64748b; margin-top:20px;">No business profile linked to your account.</p>';
+                    return;
+                }
+
+                // 2. Try to find a rep profile within this business context
+                // Query must include businessId filter to satisfy security rules for REPs
+                let snap = await db.collection('reps')
+                    .where('businessId', '==', businessId)
+                    .where('userId', '==', user.uid)
+                    .get();
+
+                if (snap.empty) {
+                    snap = await db.collection('reps')
+                        .where('businessId', '==', businessId)
+                        .where('email', '==', user.email)
+                        .get();
+                }
+
+                let repId = null;
+                let isOwnerView = false;
+
+                if (!snap.empty) {
+                    const repDoc = snap.docs[0];
+                    repId = repDoc.id;
+                } else {
+                    isOwnerView = true;
+                }
+
+                const debugInfo = `UID: ${user.uid.slice(0, 5)}... | BID: ${businessId ? businessId.slice(0, 5) : 'null'}... | Role: ${isOwnerView ? 'OWNER' : 'REP'}`;
+
+                // 3. Query BOTH pending and finalized orders
+                let pendingSnap, historySnap;
+                try {
+                    let pQuery = db.collection('pendingOrders').where('businessId', '==', businessId);
+                    let hQuery = db.collection('orders').where('businessId', '==', businessId);
+
+                    // If NOT an owner, we MUST filter by repId for security reasons
+                    if (!isOwnerView) {
+                        pQuery = pQuery.where('repId', '==', repId);
+                        hQuery = hQuery.where('repId', '==', repId);
+                    }
+
+                    const results = await Promise.all([
+                        pQuery.limit(100).get(),
+                        hQuery.limit(100).get()
+                    ]);
+                    pendingSnap = results[0];
+                    historySnap = results[1];
+                } catch (queryErr) {
+                    if (queryErr.message && queryErr.message.includes('https://console.firebase.google.com')) {
+                        const url = queryErr.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/)[0];
+                        document.getElementById('list').innerHTML = `
+                            <div style="padding:20px; color:#1e293b; background:#f1f5f9; border-radius:12px; border:1px solid #cbd5e1;">
+                                <h3 style="margin-top:0; color:#0f172a;">Index Required</h3>
+                                <p style="font-size:14px;">To see your history, we need to enable a performance index in the database.</p>
+                                <a href="${url}" target="_blank" style="display:inline-block; padding:12px 20px; background:#2563eb; color:#fff; text-decoration:none; border-radius:8px; font-weight:600; margin-top:10px;">Click here to enable Index</a>
+                                <p style="font-size:12px; color:#64748b; margin-top:15px;">After clicking, please wait 2-3 minutes for the database to update, then refresh this page.</p>
+                            </div>`;
+                        return;
+                    }
+                    throw queryErr;
+                }
+
+                const mine = [];
+                pendingSnap.forEach(d => mine.push({ id: d.id, ...d.data(), status: 'PENDING' }));
+                historySnap.forEach(d => mine.push({ id: d.id, ...d.data() }));
+
+                const unique = Array.from(new Map(mine.map(o => [o.id, o])).values());
+                unique.sort((a, b) => {
+                    const ta = a.orderDate && a.orderDate.toDate ? a.orderDate.toDate().getTime() : (a.createdAt && a.createdAt.toDate ? a.createdAt.toDate().getTime() : 0);
+                    const tb = b.orderDate && b.orderDate.toDate ? b.orderDate.toDate().getTime() : (b.createdAt && b.createdAt.toDate ? b.createdAt.toDate().getTime() : 0);
+                    return tb - ta;
+                });
+
+                if (!unique.length) {
+                    document.getElementById('list').innerHTML = `<p style="text-align:center; color:#64748b; margin-top:20px;">No orders found for this ${isOwnerView ? 'business' : 'profile'}.</p>`;
+                    return;
+                }
+
+                document.getElementById('list').innerHTML = unique.map((o) => {
+                    const dt = o.orderDate && o.orderDate.toDate ? o.orderDate.toDate().toLocaleString() : (o.createdAt && o.createdAt.toDate ? o.createdAt.toDate().toLocaleString() : '—');
+                    const amt = Number(o.totalAmount || o.grandTotal || o.amount) || 0;
+                    const status = String(o.status || 'PROCESSED').toUpperCase();
+                    const color = status === 'PENDING' ? '#f59e0b' : (['REJECTED', 'CANCELLED'].includes(status) ? '#ef4444' : '#10b981');
+
+                    const itemsListHtml = Array.isArray(o.items) && o.items.length ? `
+                        <div style="margin-top:10px; padding-top:8px; border-top:1px dashed #cbd5e1; font-size:12px;">
+                            <strong style="color:#0f766e; display:block; margin-bottom:6px;">📦 Items Breakdown:</strong>
+                            ${o.items.map(it => {
+                                const name = it.productName || it.name || it.productCode || 'Item';
+                                const qty = Number(it.orderedQty != null ? it.orderedQty : it.qty) || 0;
+                                const free = Number(it.freeQty) || 0;
+                                const price = Number(it.unitPrice) || 0;
+                                const lineTotal = qty * price;
+                                return `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; padding:4px 0; border-bottom:1px solid #f1f5f9;">
+                                    <div>
+                                        <!-- Item Description clearly shown on Mobile Bill View -->
+                                        <div style="font-weight:700; color:#0f172a; font-size:13px;">${escapeHtml(name)}</div>
+                                        <div style="font-size:11px; color:#64748b; margin-top:2px;">
+                                            Qty: <strong>${qty}</strong> × Rs. ${price.toLocaleString()}
+                                            ${free > 0 ? `<span style="background:#dcfce7; color:#15803d; font-weight:700; padding:1px 6px; border-radius:4px; margin-left:4px;">+ ${free} FREE</span>` : ''}
+                                        </div>
+                                    </div>
+                                    <div style="font-weight:700; color:#0f172a; font-size:13px;">Rs. ${lineTotal.toLocaleString()}</div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    ` : '';
+
+                    return `<div class="card">
+                        <div style="display:flex; justify-content:space-between; align-items:start;">
+                            <strong>Order #${o.orderNumber || o.id.slice(-8).toUpperCase()}</strong>
+                            <span style="font-size:10px; padding:2px 6px; border-radius:4px; background:${color}; color:#fff;">${status}</span>
+                        </div>
+                        <div class="meta" style="margin:4px 0;">${dt} · <strong>Rs ${amt.toLocaleString()}</strong></div>
+                        <div class="meta" style="color:#0f172a; font-weight:600;">🏪 ${o.shopName || o.customerName || '—'}</div>
+                        ${itemsListHtml}
+                        ${status === 'PENDING' ? `<a class="btn" href="order.html?edit=${encodeURIComponent(o.id)}" style="margin-top:10px; text-align:center;">Edit pending order</a>` : ''}
+                    </div>`;
+                }).join('');
+            } catch (err) {
+                console.error(err);
+                const dbg = typeof debugInfo !== 'undefined' ? debugInfo : 'Initializing...';
+                document.getElementById('list').innerHTML = `<div style="padding:20px; color:#ef4444; background:#fee2e2; border-radius:12px;">
+                    <strong>Error:</strong><br>
+                    <small>${err.message || 'Unknown error occurred'}</small><br>
+                    <hr style="border:0; border-top:1px solid #fecaca; margin:10px 0;">
+                    <small style="color:#991b1b; font-size:10px;">Debug: ${dbg}</small>
+                </div>`;
+            }
+        });
+    </script>
+</body>
+
+</html>

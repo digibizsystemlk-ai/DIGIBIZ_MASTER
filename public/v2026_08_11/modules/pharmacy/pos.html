@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <script src="/core/pwa-init.js?v=1"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIGIBIZ - Pharmacy POS</title>
+    <style>html.digibiz-sidebar-reserved body{margin-left:260px;}@media (max-width:768px){html.digibiz-sidebar-reserved body{margin-left:0;}}</style>
+    <script>document.documentElement.classList.add('digibiz-sidebar-reserved');</script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+    <script src="/core/firebase-init.js?v=100"></script>
+    <script src="/scripts/admin-impersonation.js?v=100"></script>
+    <script src="/core/event-validation.js?v=4"></script>
+    <script src="/core/event-bus.js?v=4"></script>
+    <script src="/core/accounts-core.js?v=4"></script>
+    <script src="/core/auth-roles.js?v=120"></script>
+    <script src="/core/business-types.js?v=4"></script>
+    <script src="/core/dashboard-core.js?v=4"></script>
+    <script src="/core/subscription-manager.js?v=4"></script>
+    <script src="/core/sidebar.js?v=2001"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background:#f4f7f6; color:#1e293b; min-height:100vh; }
+        .main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+        
+        .header-card {
+            background: linear-gradient(135deg, #0f3b2c 0%, #165b44 100%);
+            border-radius: 16px; padding: 20px 24px; color: #ffffff; margin-bottom: 20px;
+            box-shadow: 0 10px 25px -5px rgba(15, 59, 44, 0.25);
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+        }
+        .header-card h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+        .header-card p { color: #a7f3d0; font-size: 13px; font-weight: 500; }
+
+        .layout { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; }
+        .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03); }
+        .card h3 { font-size: 15px; font-weight: 800; color: #0f3b2c; margin-bottom: 14px; }
+        
+        .search-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; margin-bottom: 14px; }
+        input {
+            width: 100%; padding: 10px 14px; border: 1.5px solid #cbd5e1; border-radius: 10px;
+            font-size: 13px; font-weight: 500; outline: none; transition: border-color 0.2s;
+        }
+        input:focus { border-color: #10b981; }
+
+        .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid #f1f5f9; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+        th { background: #f8fafc; color: #475569; font-weight: 700; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; font-size: 11px; text-transform: uppercase; }
+        td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+        tr:hover td { background: #f8fafc; }
+
+        .badge { padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-block; }
+        .expired { background: #fee2e2; color: #dc2626; }
+        .soon { background: #ffedd5; color: #c2410c; }
+        .ok { background: #d1fae5; color: #059669; }
+
+        .btn-add { background: #0f3b2c; color: #fff; border: none; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+        .btn-add:hover { background: #165b44; }
+        .btn-add:disabled { background: #cbd5e1; cursor: not-allowed; }
+
+        .cart-total { font-size: 24px; font-weight: 900; color: #0f3b2c; text-align: right; margin: 16px 0 12px 0; border-top: 2px solid #f1f5f9; padding-top: 12px; }
+        .actions { display: flex; gap: 10px; justify-content: flex-end; }
+        .checkout-btn { background: #10b981; color: #fff; border: none; padding: 12px 20px; border-radius: 10px; font-weight: 800; font-size: 14px; cursor: pointer; flex: 1; }
+        .checkout-btn:hover { background: #059669; }
+        .print-btn { background: #2563eb; color: #fff; border: none; padding: 12px 16px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; }
+        .print-btn:hover { background: #1d4ed8; }
+
+        @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } .search-row { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="main">
+        <div class="header-card">
+            <div>
+                <h1>💊 Pharmacy Point of Sale</h1>
+                <p>විකුණුම් පර්යන්තය සහ රිසිට්පත් නිකුත් කිරීම</p>
+            </div>
+        </div>
+
+        <div class="layout">
+            <!-- Left: Medicine Batch Finder -->
+            <div class="card">
+                <h3>🔍 Search Medicine Batches</h3>
+                <div class="search-row">
+                    <input id="searchInput" placeholder="Search medicine name or category...">
+                    <input id="customerName" placeholder="Customer name (Walk-in)">
+                </div>
+                <div class="table-wrap" style="max-height: 480px; overflow-y: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Medicine</th>
+                                <th>Batch</th>
+                                <th>Expiry</th>
+                                <th>Stock</th>
+                                <th>Price</th>
+                                <th>Status</th>
+                                <th>Qty</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="batchBody">
+                            <tr><td colspan="8" style="text-align:center; padding:20px; color:#94a3b8;">Loading medicine stock...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right: Cart & Checkout -->
+            <div class="card">
+                <h3>🛒 Invoice Cart</h3>
+                <div class="table-wrap" style="max-height: 380px; overflow-y: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Medicine</th>
+                                <th>Batch</th>
+                                <th>Qty</th>
+                                <th style="text-align:right;">Amount</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="cartBody">
+                            <tr><td colspan="5" style="text-align:center; padding:20px; color:#94a3b8;">Cart is empty. Select items to sell.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="cart-total" id="cartTotal">LKR 0.00</div>
+
+                <div class="actions">
+                    <button class="checkout-btn" id="checkoutBtn">Complete Sale & Print</button>
+                    <button class="print-btn" id="printBtn">Draft Print</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let state = { context: null, user: null, products: [], cart: [] };
+
+        function formatLKR(v) {
+            return `LKR ${(Number(v) || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+        function toDateSafe(input) {
+            if (!input) return null;
+            if (input.toDate) return input.toDate();
+            const d = new Date(input);
+            return Number.isNaN(d.getTime()) ? null : d;
+        }
+        function getExpiryMeta(expiryDate) {
+            const d = toDateSafe(expiryDate);
+            if (!d) return { label: 'N/A', cls: 'ok', locked: false, soon: false };
+            const now = new Date(); now.setHours(0, 0, 0, 0);
+            const in30 = new Date(now); in30.setDate(in30.getDate() + 30);
+            if (d < now) return { label: d.toLocaleDateString(), cls: 'expired', locked: true, soon: false };
+            if (d <= in30) return { label: d.toLocaleDateString(), cls: 'soon', locked: false, soon: true };
+            return { label: d.toLocaleDateString(), cls: 'ok', locked: false, soon: false };
+        }
+        function buildInvoiceNo() {
+            const n = Date.now();
+            return `PH-${String(n).slice(-8)}`;
+        }
+
+        async function loadBatches() {
+            const snap = await window.db.collection('products')
+                .doc(state.context.businessId)
+                .collection('list')
+                .get();
+            state.products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            renderBatches();
+        }
+
+        function renderBatches() {
+            const q = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+            const sorted = [...state.products]
+                .filter((p) => (p.name || '').toLowerCase().includes(q) || (p.drugCategory || '').toLowerCase().includes(q))
+                .sort((a, b) => {
+                    const da = toDateSafe(a.expiryDate) || new Date('9999-12-31');
+                    const dbb = toDateSafe(b.expiryDate) || new Date('9999-12-31');
+                    return da - dbb;
+                });
+
+            if (!sorted.length) {
+                document.getElementById('batchBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:20px; color:#94a3b8;">No matching medicine batches found.</td></tr>';
+                return;
+            }
+
+            document.getElementById('batchBody').innerHTML = sorted.map((p) => {
+                const exp = getExpiryMeta(p.expiryDate);
+                const stock = Number(p.stock) || 0;
+                const locked = exp.locked || stock <= 0;
+                const statusText = exp.locked ? 'Expired' : (exp.soon ? 'Soon' : 'Available');
+                return `
+                    <tr>
+                        <td><strong>${p.name || '-'}</strong></td>
+                        <td><code>${p.batchNumber || '-'}</code></td>
+                        <td>${exp.label}</td>
+                        <td>${stock}</td>
+                        <td>${formatLKR(p.sellPrice || 0)}</td>
+                        <td><span class="badge ${exp.cls}">${statusText}</span></td>
+                        <td><input id="qty-${p.id}" type="number" min="1" max="${stock}" value="1" style="width:60px; padding:4px 6px;"></td>
+                        <td><button class="btn-add" ${locked ? 'disabled' : ''} onclick="addToCart('${p.id}')">${locked ? 'Locked' : '+ Add'}</button></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderCart() {
+            if (!state.cart.length) {
+                document.getElementById('cartBody').innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#94a3b8;">Cart is empty. Select items to sell.</td></tr>';
+                document.getElementById('cartTotal').textContent = formatLKR(0);
+                return;
+            }
+
+            document.getElementById('cartBody').innerHTML = state.cart.map((line, idx) => `
+                <tr>
+                    <td><strong>${line.name}</strong></td>
+                    <td><code>${line.batchNumber || '-'}</code></td>
+                    <td>${line.qty}</td>
+                    <td style="text-align:right;"><strong>${formatLKR(line.qty * line.price)}</strong></td>
+                    <td><button style="background:#fee2e2; color:#dc2626; border:none; padding:4px 8px; border-radius:6px; font-weight:700; cursor:pointer;" onclick="removeCart(${idx})">✕</button></td>
+                </tr>
+            `).join('');
+
+            const total = state.cart.reduce((s, l) => s + (l.qty * l.price), 0);
+            document.getElementById('cartTotal').textContent = formatLKR(total);
+        }
+
+        function addToCart(id) {
+            const item = state.products.find((p) => p.id === id);
+            if (!item) return;
+            const exp = getExpiryMeta(item.expiryDate);
+            if (exp.locked) { alert('Expired medicine cannot be sold.'); return; }
+            const qty = Number(document.getElementById(`qty-${id}`).value) || 1;
+            if (qty <= 0 || qty > (Number(item.stock) || 0)) { alert('Invalid quantity or insufficient stock.'); return; }
+            const existing = state.cart.find((c) => c.id === id);
+            if (existing) existing.qty += qty;
+            else state.cart.push({
+                id: item.id,
+                name: item.name || 'Medicine',
+                batchNumber: item.batchNumber || '-',
+                expiryDate: item.expiryDate || null,
+                qty,
+                price: Number(item.sellPrice) || 0
+            });
+            renderCart();
+        }
+
+        function removeCart(index) {
+            state.cart.splice(index, 1);
+            renderCart();
+        }
+
+        async function printInvoice(order) {
+            try {
+                const bid = state.context.businessId;
+                const bizSnap = await window.db.collection('businesses').doc(bid).get();
+                const bizData = bizSnap.exists ? bizSnap.data() : {};
+                const docSettings = bizData.documentSettings || {};
+                const s = docSettings.pos_receipt || docSettings.invoice || {};
+
+                const header = s.header || bizData.name || 'PHARMACY RECEIPT';
+                const subheader = s.subheader || [bizData.address, bizData.phone].filter(Boolean).join(' | ') || '';
+                const footer = s.footer || 'Thank you! Wish you a speedy recovery.';
+                const showLogo = s.showLogo !== false;
+
+                const rows = (order.items || []).map((it) => `
+                    <tr>
+                        <td>
+                            ${it.name}
+                            ${it.batchNumber ? `<div style="font-size:9px;color:#666;">Batch: ${it.batchNumber}</div>` : ''}
+                        </td>
+                        <td style="text-align:center;">${it.qty}</td>
+                        <td style="text-align:right;">${(it.price).toFixed(2)}</td>
+                        <td style="text-align:right;">${(it.qty * it.price).toFixed(2)}</td>
+                    </tr>
+                `).join('');
+
+                const html = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Invoice ${order.invoiceNo}</title>
+    <style>
+        @media print {
+            @page { size: 80mm auto; margin: 5mm; }
+            body { width: 70mm; margin: 0; }
+        }
+        body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; line-height: 1.4; color: #000; padding: 10px; width: 70mm; margin: 0 auto; background: #fff; }
+        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 8px; margin-bottom: 10px; }
+        .biz-name { font-size: 15px; font-weight: 800; text-transform: uppercase; margin: 0; }
+        .biz-sub { font-size: 9px; margin: 4px 0 0; }
+        .receipt-title { font-size: 12px; font-weight: 700; text-align: center; margin: 10px 0; text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 4px; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 10px; }
+        .meta-label { font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
+        th, td { padding: 4px 2px; text-align: left; border-bottom: 1px solid #eee; }
+        th { font-weight: 700; text-transform: uppercase; font-size: 9px; }
+        .total-section { margin-top: 10px; border-top: 2px solid #000; padding-top: 6px; }
+        .total-row { display: flex; justify-content: space-between; font-weight: 800; font-size: 13px; }
+        .footer { text-align: center; font-size: 10px; margin-top: 20px; border-top: 1px dashed #000; padding-top: 8px; font-style: italic; }
+        .softby { text-align: center; font-size: 8px; color: #666; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        ${showLogo && bizData.logoUrl ? `<img src="${bizData.logoUrl}" style="height:40px; margin-bottom:5px;"><br>` : ''}
+        <h1 class="biz-name">${header}</h1>
+        <div class="biz-sub">${subheader}</div>
+    </div>
+    
+    <div class="receipt-title">Pharmacy Receipt</div>
+    
+    <div class="meta-row"><span class="meta-label">Inv No:</span><span>${order.invoiceNo}</span></div>
+    <div class="meta-row"><span class="meta-label">Date:</span><span>${new Date(order.date).toLocaleString()}</span></div>
+    <div class="meta-row"><span class="meta-label">Cust:</span><span>${order.customerName || 'Walk-in'}</span></div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th style="text-align:center;">Qty</th>
+                <th style="text-align:right;">Price</th>
+                <th style="text-align:right;">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${rows}
+        </tbody>
+    </table>
+    
+    <div class="total-section">
+        <div class="total-row">
+            <span>NET AMOUNT</span>
+            <span>Rs. ${(order.total).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+        </div>
+    </div>
+    
+    <div class="footer">
+        ${footer}
+    </div>
+    <div class="softby">Software by DIGIBIZ - 0713446500</div>
+
+    <script>
+        window.onload = function() {
+            window.print();
+            setTimeout(() => { window.close(); }, 1000);
+        };
+    <\/script>
+</body>
+</html>`;
+
+                const win = window.open('', '_blank', 'width=400,height=600');
+                if (!win) {
+                    alert('Popup blocked. Please allow popups to print the invoice.');
+                    return;
+                }
+                win.document.write(html);
+                win.document.close();
+            } catch (e) {
+                console.error(e);
+                alert('Printing failed: ' + e.message);
+            }
+        }
+
+        async function checkout() {
+            if (!state.cart.length) { alert('Cart is empty.'); return; }
+            const customerName = document.getElementById('customerName').value.trim() || 'Walk-in Customer';
+            const total = state.cart.reduce((s, i) => s + (i.qty * i.price), 0);
+            const invoiceNo = buildInvoiceNo();
+            const order = {
+                invoiceNo,
+                customerName,
+                businessId: state.context.businessId,
+                businessType: 'pharmacy',
+                items: state.cart,
+                total,
+                status: 'Completed',
+                createdBy: state.user.uid,
+                date: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            const batch = window.db.batch();
+            const orderRef = window.db.collection('orders').doc(state.context.businessId).collection('list').doc();
+            batch.set(orderRef, order);
+            state.cart.forEach((line) => {
+                const ref = window.db.collection('products').doc(state.context.businessId).collection('list').doc(line.id);
+                batch.update(ref, {
+                    stock: firebase.firestore.FieldValue.increment(-line.qty),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            });
+            await batch.commit();
+
+            if (window.eventBus && window.eventBus.publish) {
+                window.eventBus.publish('SALE_COMPLETED', {
+                    amount: total,
+                    invoiceNo,
+                    businessId: state.context.businessId
+                });
+            }
+
+            alert(`Sale completed: ${invoiceNo}`);
+            const completedOrder = { ...order, total, invoiceNo, date: new Date() };
+            state.cart = [];
+            renderCart();
+            await loadBatches();
+            printInvoice(completedOrder);
+        }
+
+        window.addToCart = addToCart;
+        window.removeCart = removeCart;
+        document.getElementById('searchInput').addEventListener('input', renderBatches);
+        document.getElementById('checkoutBtn').addEventListener('click', checkout);
+        document.getElementById('printBtn').addEventListener('click', () => {
+            const total = state.cart.reduce((s, i) => s + (i.qty * i.price), 0);
+            printInvoice({
+                invoiceNo: 'DRAFT',
+                customerName: document.getElementById('customerName').value.trim() || 'Walk-in Customer',
+                items: state.cart,
+                total,
+                date: new Date()
+            });
+        });
+
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) { window.location.href = '/'; return; }
+            state.user = user;
+            state.context = await window.dashboardCore.getContext(user);
+            if (!state.context || state.context.businessType !== 'pharmacy') {
+                alert('This page is only for Pharmacy business.');
+                window.location.href = '/core/dashboard.html';
+                return;
+            }
+            await loadBatches();
+            renderCart();
+        });
+    </script>
+</body>
+</html>
