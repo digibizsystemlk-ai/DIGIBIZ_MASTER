@@ -158,7 +158,8 @@
                     }
                 }
 
-                if (data && (data.isLocked || data.lockStatus === 'LOCKED')) {
+                const isLockedDoc = !!(data && (data.isLocked || data.lockStatus === 'LOCKED') && data.versionTag !== 'LATEST_DEV');
+                if (isLockedDoc) {
                     const lockConfig = {
                         isLocked: true,
                         lockStatus: 'LOCKED',
@@ -182,16 +183,23 @@
     window.evaluateSandboxRouting = function() {
         try {
             const config = window.getClientVersionLockConfig && window.getClientVersionLockConfig();
-            if (!config) return;
-
-            const isLocked = !!(config.isLocked || config.lockStatus === 'LOCKED');
-            const versionTag = config.versionTag || 'STABLE_FREEZE_2026_08_11';
             const currentPath = window.location.pathname;
-
             const isAlreadyInSnapshot = currentPath.includes('/snapshots/');
-            const targetSnapshotPrefix = `/snapshots/${versionTag}/`;
 
-            if (isLocked) {
+            if (!config) {
+                if (isAlreadyInSnapshot) {
+                    const livePath = currentPath.replace(/^\/snapshots\/[^\/]+\//, '/');
+                    console.log(`[SandboxGate] 🔓 Routing unlocked client back to live codebase: ${livePath}`);
+                    window.location.replace(livePath + window.location.search + window.location.hash);
+                }
+                return;
+            }
+
+            const isLocked = !!(config.isLocked || config.lockStatus === 'LOCKED') && config.versionTag !== 'LATEST_DEV';
+            const versionTag = config.versionTag || 'STABLE_FREEZE_2026_08_11';
+
+            if (isLocked && versionTag !== 'LATEST_DEV') {
+                const targetSnapshotPrefix = `/snapshots/${versionTag}/`;
                 if (!isAlreadyInSnapshot && (currentPath.startsWith('/modules/') || currentPath.startsWith('/admin/') || currentPath.endsWith('.html'))) {
                     const targetUrl = targetSnapshotPrefix + currentPath.replace(/^\//, '') + window.location.search + window.location.hash;
                     console.log(`[SandboxGate] 🔒 Routing locked client to frozen snapshot: ${targetUrl}`);
