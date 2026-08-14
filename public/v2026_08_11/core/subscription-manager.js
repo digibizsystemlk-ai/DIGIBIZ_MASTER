@@ -110,6 +110,48 @@ class SubscriptionManager {
             plan = 'LIVE_DEMO';
         }
 
+        // Auto-Lock PRO Accounts upon subscription check
+        if (plan === 'PRO' || plan === 'ENTERPRISE' || plan === 'PAID') {
+            try {
+                const versionTag = 'STABLE_FREEZE_2026_08_11';
+                const snapshotPath = '/v2026_08_11/';
+                const freezeDate = '2026-08-11';
+
+                window.db.collection('businesses').doc(businessId).set({
+                    versionLock: true,
+                    lockedVersionTag: versionTag,
+                    snapshotPath: snapshotPath,
+                    freezeDate: freezeDate,
+                    profileLocked: true
+                }, { merge: true });
+
+                if (userEmail) {
+                    const docId = userEmail.replace(/[^a-z0-9@]/g, '_');
+                    window.db.collection('client_version_control').doc(docId).set({
+                        email: userEmail,
+                        lockStatus: 'LOCKED',
+                        isLocked: true,
+                        versionTag: versionTag,
+                        snapshotPath: snapshotPath,
+                        freezeDate: freezeDate,
+                        flags: { suppressAutoUpdates: true, suppressBetaFeatures: true, lockBusinessType: true, bypassPwaPrompt: false },
+                        notes: 'Auto-locked upon PRO Plan activation',
+                        updatedBy: 'SYSTEM_AUTO_PRO_LOCK',
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+
+                    window.db.collection('users').doc(user.uid).set({
+                        versionLock: true,
+                        lockedVersionTag: versionTag,
+                        snapshotPath: snapshotPath,
+                        freezeDate: freezeDate
+                    }, { merge: true });
+                }
+            } catch (eAutoLock) {
+                console.warn('[SubscriptionManager] PRO auto-lock warn:', eAutoLock);
+            }
+        }
+
         const wallet = settingsData.smsWallet || {};
         const walletMissing = !snapshot.exists || !settingsData.smsWallet;
         if (window.SmsWalletCore && typeof window.SmsWalletCore.ensureSeeded === 'function') {
