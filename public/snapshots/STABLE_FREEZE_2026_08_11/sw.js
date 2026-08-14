@@ -1,4 +1,4 @@
-const CACHE_NAME = "digibiz-retail-v2057";
+const CACHE_NAME = "digibiz-retail-v2058";
 const PRECACHE_URLS = [
   "/assets/vendor/html2canvas.min.js",
   "/assets/vendor/sweetalert2.all.min.js",
